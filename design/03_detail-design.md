@@ -265,7 +265,7 @@ const CALLOUT = /^\[!(\w+)\]([+-]?)[ \t]*(.*)$/;
 
 実装は `blockquote` ノードの `data.hName` / `data.hProperties` を書き換える方式にし、HTML 文字列は組み立てない（本文中の Markdown をそのまま変換させるため）。入れ子の Callout も再帰で同じ処理になる。
 
-**種類と表示名・色**（未知の種類は `note` と同じ見た目）：
+**種類と表示名・色**（未知の種類は `note` と同じ見た目。**色は [05_ui-design.md §4.6](05_ui-design.md) を正とする**。下表の色の列は初版の名残）：
 
 | type | 別名 | 表示名 | 色（CSS変数） |
 |---|---|---|---|
@@ -340,6 +340,8 @@ const outLinks = remarkPluginFrontmatter.outLinks ?? [];
 ---
 
 ## 6. スタイル（`src/styles/global.css`）
+
+> 見た目の詳しい仕様（トークン・部品・スマホ幅・アクセシビリティ）は [05_ui-design.md](05_ui-design.md) を正とする。下はその要約。
 
 - **ダークモードのみ**。色は CSS 変数で `:root` に1セットだけ定義する（メディアクエリや切替は作らない）。トークン名は解説HTMLと同じ名前を使う（値は A 案のダーク配色）。
 

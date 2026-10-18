@@ -27,7 +27,7 @@
 | 9 | `Ctrl K` 検索・タグ・バックリンク | 3 | 探しやすくなる |
 | 10 | タブ・最近開いたノート・前後リンク・数式・YouTube | 4 | 仕上げ |
 
-> UI は「A ワークベンチ」案・ダークモードのみ（要件定義 §9、モック：https://claude.ai/artifact/HJnxFYfy9QDEu71LJ5RR6F ）。各ステップの画面はモックに合わせて作ります。
+> UI は「A ワークベンチ」案・ダークモードのみ（要件定義 §9、モック：https://claude.ai/artifact/HJnxFYfy9QDEu71LJ5RR6F ）。各ステップの画面はモックと [05_ui-design.md](05_ui-design.md) に合わせて作ります。
 
 ---
 
