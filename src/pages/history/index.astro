@@ -1,0 +1,82 @@
+---
+import { loadGitHistory } from '../../lib/git-history';
+import '../../styles/history.css';
+
+const data = loadGitHistory();
+---
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Git 履歴 — Knowledge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="history-wrap">
+      <a class="back-link" href="/">← Knowledge</a>
+      <header class="history-header">
+        <h1>リポジトリ Git 履歴</h1>
+        <p class="history-meta">
+          {data.enabled
+            ? `src / design のみ · ${data.commits.length} 件 · 生成 ${data.generatedAt ?? '—'}`
+            : 'ローカル専用（無効）'}
+        </p>
+      </header>
+
+      {!data.enabled ? (
+        <div class="history-note">
+          <p>
+            このページは学習用のローカル機能です。公開ビルドには含めません。
+            有効にするには次のいずれかで起動してください。
+          </p>
+          <ul>
+            <li><code>npm run dev:history</code></li>
+            <li><code>npm run build:history</code></li>
+            <li>環境変数 <code>INCLUDE_GIT_HISTORY=1</code></li>
+          </ul>
+          <p>作者の email は出しません。差分は <code>src/</code> と <code>design/</code> に限定します。</p>
+        </div>
+      ) : data.commits.length === 0 ? (
+        <div class="history-note">
+          <p>対象パス（src / design）に変更のあるコミットがありません。</p>
+          {data.error && <p>理由: <code>{data.error}</code></p>}
+        </div>
+      ) : (
+        <div class="history-table-wrap">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>日付</th>
+                <th>ハッシュ</th>
+                <th>件名</th>
+                <th>変更</th>
+                <th>詳細</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.commits.map((c) => (
+                <tr>
+                  <td class="date">{c.date}</td>
+                  <td class="hash">{c.shortHash}</td>
+                  <td class="subject">{c.subject}</td>
+                  <td class="counts">
+                    src {c.srcCount}
+                    {c.designCount > 0 ? ` / design ${c.designCount}` : ''}
+                  </td>
+                  <td>
+                    <a href={`/history/${c.shortHash}/`}>差分</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </body>
+</html>

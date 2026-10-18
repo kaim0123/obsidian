@@ -1,0 +1,25 @@
+---
+import { getCollection } from 'astro:content';
+
+// Step 1 の仮トップ：先頭100件のノートへのリンクを並べるだけ（Step 3 で本実装に置き換える）
+const notes = (await getCollection('notes')).sort((a, b) =>
+  a.id.localeCompare(b.id, 'ja', { numeric: true }),
+);
+---
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Knowledge</title>
+  </head>
+  <body>
+    <h1>Knowledge</h1>
+    <p>ノート {notes.length} 件（先頭100件を表示）</p>
+    <p><a href="/history/">Git 履歴（ローカル専用）</a></p>
+    <ul>
+      {notes.slice(0, 100).map((entry) => (
+        <li><a href={`/notes/${entry.id}`}>{entry.id}</a></li>
+      ))}
+    </ul>
+  </body>
+</html>

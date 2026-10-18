@@ -1,0 +1,74 @@
+---
+import { loadGitHistory } from '../../lib/git-history';
+import type { GitHistoryCommit } from '../../lib/git-history';
+import '../../styles/history.css';
+
+export function getStaticPaths() {
+  const data = loadGitHistory();
+  if (!data.enabled) return [];
+  return data.commits.map((c) => ({
+    params: { hash: c.shortHash },
+    props: { commit: c },
+  }));
+}
+
+interface Props {
+  commit: GitHistoryCommit;
+}
+
+const { commit } = Astro.props;
+---
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{commit.shortHash} — Git 履歴</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="history-wrap">
+      <a class="back-link" href="/history/">← 履歴一覧</a>
+      <header class="history-header">
+        <h1>
+          <span class="mono">{commit.shortHash}</span>
+          {' '}
+          {commit.subject}
+        </h1>
+        <p class="history-meta">
+          {commit.date}
+          · src {commit.srcCount}
+          {commit.designCount > 0 ? ` / design ${commit.designCount}` : ''}
+        </p>
+      </header>
+
+      <h2 class="history-meta" style="margin: 0 0 0.5rem; font-size: 0.9rem;">変更ファイル</h2>
+      <ul class="files-list">
+        {commit.files.map((f) => (
+          <li>
+            <span class="status">{f.status}</span>
+            <span>{f.path}</span>
+          </li>
+        ))}
+      </ul>
+
+      <h2 class="history-meta" style="margin: 0 0 0.5rem; font-size: 0.9rem;">差分</h2>
+      {commit.truncated && (
+        <div class="truncated-banner">
+          差分が 200KB を超えたため省略しています。必要ならローカルで
+          <code class="mono">git show {commit.shortHash} -- src design</code>
+          を実行してください。
+        </div>
+      )}
+      {commit.diff ? (
+        <pre class="diff-block">{commit.diff}</pre>
+      ) : (
+        <div class="history-note">表示できる差分がありません。</div>
+      )}
+    </div>
+  </body>
+</html>

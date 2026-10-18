@@ -75,7 +75,8 @@ obsidian/
 │  ├─ content.config.ts     … コレクション定義（docs を読む）
 │  ├─ lib/
 │  │  ├─ notes.ts           … ノート索引・フォルダツリー・パス⇔URL変換
-│  │  └─ explainers.ts      … 解説HTMLの一覧（public の目次ページ）
+│  │  ├─ explainers.ts      … 解説HTMLの一覧（public の目次ページ）
+│  │  └─ git-history.ts     … Git 履歴 JSON の読み込み（S-07）
 │  ├─ plugins/
 │  │  ├─ remark-wikilink.ts … [[...]] → リンク
 │  │  ├─ remark-callout.ts  … > [!type] → callout
@@ -93,11 +94,16 @@ obsidian/
 │  ├─ pages/
 │  │  ├─ index.astro        … トップ
 │  │  ├─ notes/[...path].astro  … ノート／フォルダページ
+│  │  ├─ history/           … S-07 一覧・差分（Could / ローカル限定）
 │  │  ├─ tags/index.astro   … Phase 3
 │  │  ├─ tags/[tag].astro   … Phase 3
 │  │  └─ 404.astro
 │  └─ styles/
-│     └─ global.css
+│     ├─ global.css
+│     └─ history.css        … S-07 用
+├─ scripts/
+│  ├─ extract-git-history.mjs … ビルド時に Git 履歴を抽出
+│  └─ with-git-history.mjs  … INCLUDE_GIT_HISTORY=1 付きで astro 起動
 ├─ astro.config.mjs
 └─ package.json
 ```
@@ -116,6 +122,8 @@ obsidian/
 | S-04 | タグ一覧 | `/tags/` | タグと件数 | 3 |
 | S-05 | タグ別 | `/tags/<tag>/` | そのタグのノート一覧 | 3 |
 | S-06 | 404 | — | 見つからないとき | 1 |
+| S-07 | Git 履歴 | `/history/` | コミット一覧表（日付・短縮ハッシュ・件名・変更ファイル数）。`INCLUDE_GIT_HISTORY=1` 時のみ実データ。対象は `src/`・`design/` | 4 |
+| S-07b | Git 差分 | `/history/<shortHash>/` | 上記コミットのファイル一覧と差分（email なし・200KB 超は省略） | 4 |
 | — | 解説HTML | `/41_アーキテクチャ/00-0_目次.html` など | `public/` のまま | 1 |
 
 ### 4.2 画面遷移
@@ -124,6 +132,8 @@ obsidian/
 flowchart TD
   TOP["S-01 トップ"] --> FOLDER["S-02 フォルダ"]
   TOP --> EXP["解説HTML（public）"]
+  TOP --> HIST["S-07 Git 履歴"]
+  HIST --> DIFF["S-07b Git 差分"]
   FOLDER --> FOLDER
   FOLDER --> NOTE["S-03 ノート"]
   NOTE -->|"[[ウィキリンク]]"| NOTE
@@ -231,3 +241,12 @@ UI は「A ワークベンチ」案に決定（要件定義 §9）。モック�
 ## 8. 対象外・今後の検討
 - 公開するときのホスティング先（GitHub Pages / Cloudflare Pages など）は未決定（要件 Q-1）。
 - グラフビュー（Obsidian のノート関係図）は今回作らない。
+
+## 9. Git 履歴ページ（S-07）
+
+学習用に、このリポジトリのコミットを表で追えるようにする（Could / Phase 4）。
+
+- **生成**：`astro.config.mjs` 読み込み時に `scripts/extract-git-history.mjs` が `.astro/git-history.json` を書く（`src/` 配下だと書き込みで Vite が再読込するため）。`INCLUDE_GIT_HISTORY=1` のときだけ実データを入れ、それ以外は空スタブ。
+- **表示範囲**：`src/**` と `design/**` のみ。`.env*` / `*credentials*` / `*secret*` は除外。作者 email は JSON に載せない。
+- **配信**：`.git` は出さない。生成 JSON は `.astro/`（既に gitignore）に置く。
+- **起動**：`npm run dev:history` / `npm run build:history`。

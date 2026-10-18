@@ -1,0 +1,27 @@
+---
+import { getCollection, render } from 'astro:content';
+
+// Step 1：ノートを表示するだけの最小構成。URL は id をそのまま使う（Step 2 で idToUrl に置き換える）
+export async function getStaticPaths() {
+  const notes = await getCollection('notes');
+  return notes.map((entry) => ({
+    params: { path: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+const title = entry.data.title ?? headings.find((h) => h.depth === 1)?.text ?? entry.id.split('/').pop();
+---
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}｜Knowledge</title>
+  </head>
+  <body>
+    <p><a href="/">← トップ</a> ／ {entry.id}</p>
+    <Content />
+  </body>
+</html>
