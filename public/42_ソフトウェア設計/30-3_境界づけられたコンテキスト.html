@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>境界づけられたコンテキスト — 意味のまとまりで区切り、関係を地図にする｜ソフトウェア設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">ソフトウェア設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 ドメイン駆動設計 › 31 戦略的設計 › 境界づけられたコンテキスト</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 ドメイン駆動設計 ／ 31 戦略的設計</span>
+      <h1>境界づけられたコンテキスト — 意味のまとまりで区切り、関係を地図にする</h1>
+      <p class="lead">大きなシステムでは、同じ「顧客」「商品」「ユーザー」が場所によって違う意味を持ちます。DDD の戦略設計では、そうした意味のまとまりを境界づけられたコンテキストとして切り出し、コンテキスト同士の関係をコンテキストマップで可視化します。なぜ区切るのか、境界の見つけ方、関係のパターン（特に腐敗防止層）、モノリスとマイクロサービスでの使い方、実装のポイントを解説します。</p>
+      <p class="meta">もとにしたノート：03_境界づけられたコンテキストとコンテキストマップ / 04_境界づけられたコンテキスト</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>大きなシステムでは、<strong>同じ単語が領域によって違う意味</strong>を持つことがよくあります。DDD の<strong>戦略設計</strong>では、そうした「意味のまとまり」を<strong>境界づけられたコンテキスト（Bounded Context）</strong>として切り出し、コンテキスト同士の関係を<strong>コンテキストマップ</strong>で可視化します。</p>
+    <ul>
+      <li>なぜ区切るのか — 全部入りのモデルの問題</li>
+      <li>境界づけられたコンテキストとは、ユビキタス言語との関係</li>
+      <li>コンテキストを見つける方法</li>
+      <li>コンテキストマップと、コンテキスト間の関係パターン（特に<strong>腐敗防止層</strong>）</li>
+      <li>EC サイトの分割例、モノリス・マイクロサービスとの関係</li>
+      <li>実装のポイントと、小さな練習のしかた</li>
+    </ul>
+    <p>パターンの細かい暗記より、「<strong>なぜ区切るのか</strong>」「<strong>図の読み方</strong>」を重視します。前提：<a href="30-1_DDDとは.html">DDDとは</a>、<a href="30-2_戦略的設計とユビキタス言語.html">戦略的設計とユビキタス言語</a>。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ区切るのか — 同じ言葉でも意味が違う</h2>
+    <h3 id="sec-2-1">2.1 同じ「顧客」でも意味が違う</h3>
+    <p>例えば社内システムで「顧客（Customer）」という言葉を考えます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コンテキスト</th><th>「顧客」に含まれる情報・意味</th></tr></thead>
+      <tbody>
+        <tr><td>営業</td><td>見込み客、商談ステータス、担当者</td></tr>
+        <tr><td>会計</td><td>請求先、与信限度、支払条件</td></tr>
+        <tr><td>配送</td><td>届け先住所、配送希望時間帯</td></tr>
+      </tbody>
+    </table></div>
+    <p>ほかにも、次のような例はどこにでもあります。</p>
+    <ul>
+      <li>「商品」… 販売時は「値段付きのもの」、倉庫内では「棚にある物体」、配送時は「梱包された荷物」</li>
+      <li>「ユーザー」… 認証では「ログインできる人」、マーケティングでは「広告を見る人」、サポートでは「問い合わせ主」</li>
+    </ul>
+    <p>こうしたとき、<strong>無理に1つの『ユーザー』『商品』クラスでまとめない</strong>のが DDD の考え方です。</p>
+
+    <h3 id="sec-2-2">2.2 無理に共通化するとどうなるか</h3>
+    <span class="code-label bad">✕ 悪い例：全部入りの User クラス</span>
+<pre><code>class User {
+  // 認証情報
+  email: string;
+  password: string;
+  // 購入履歴（ECの関心）
+  orders: Order[];
+  // 配送先（物流の関心）
+  shippingAddresses: Address[];
+  // マーケ情報（広告の関心）
+  adPreferences: AdPref;
+  // サポート履歴
+  supportTickets: Ticket[];
+  // ...全部1つに
+}</code></pre>
+    <p>1つの巨大な <code>User</code> クラスや <code>Customer</code> テーブルに全部詰め込むと、次の問題が起きやすくなります。</p>
+    <div class="grid c2">
+      <div class="card bad">
+        <h4>モデルの問題</h4>
+        <ul>
+          <li>クラスが肥大化する（フィールドが増え続け、誰も全体像を把握できない）</li>
+          <li>変更の影響範囲が広すぎる（営業の変更が会計に副作用を起こす）</li>
+          <li>テストが重い</li>
+          <li>どこで何に使われているか追えない</li>
+        </ul>
+      </div>
+      <div class="card bad">
+        <h4>チームの問題</h4>
+        <ul>
+          <li>チーム間で衝突する</li>
+          <li>チーム間で「顧客とは何か」の議論が終わらない</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-2-3">2.3 境界を引いて分ける</h3>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="同じ人物を、認証コンテキストではemailとpasswordを持つUser、ECコンテキストではordersとloyaltyを持つCustomer、配送コンテキストではaddressとdeliveryIdを持つRecipientとして表す">
+      <rect x="10" y="20" width="220" height="190" rx="12" class="d-box-accent"/>
+      <text x="120" y="48" text-anchor="middle" class="d-text-bold">認証コンテキスト</text>
+      <rect x="40" y="66" width="160" height="120" rx="8" class="d-box"/>
+      <text x="120" y="94" text-anchor="middle" class="d-text-bold">User</text>
+      <text x="120" y="124" text-anchor="middle" class="d-text-sub">email</text>
+      <text x="120" y="146" text-anchor="middle" class="d-text-sub">password</text>
+      <rect x="250" y="20" width="220" height="190" rx="12" class="d-box-good"/>
+      <text x="360" y="48" text-anchor="middle" class="d-text-bold">EC コンテキスト</text>
+      <rect x="280" y="66" width="160" height="120" rx="8" class="d-box"/>
+      <text x="360" y="94" text-anchor="middle" class="d-text-bold">Customer</text>
+      <text x="360" y="124" text-anchor="middle" class="d-text-sub">orders</text>
+      <text x="360" y="146" text-anchor="middle" class="d-text-sub">loyalty</text>
+      <rect x="490" y="20" width="220" height="190" rx="12" class="d-box-purple"/>
+      <text x="600" y="48" text-anchor="middle" class="d-text-bold">配送コンテキスト</text>
+      <rect x="520" y="66" width="160" height="120" rx="8" class="d-box"/>
+      <text x="600" y="94" text-anchor="middle" class="d-text-bold">Recipient</text>
+      <text x="600" y="124" text-anchor="middle" class="d-text-sub">address</text>
+      <text x="600" y="146" text-anchor="middle" class="d-text-sub">deliveryId</text>
+    </svg>
+    <figcaption>同じ人物を、コンテキストごとに違うモデルで表現する</figcaption>
+    </figure>
+    <p><strong>同じ人物</strong>を、コンテキストごとに違うモデルで表現し、それぞれ必要な情報だけを持ちます。</p>
+    <div class="callout key">
+      <p class="callout-title">境界づけられたコンテキストの考え方</p>
+      <p><strong>「この言葉・このモデルは、この境界の中ではこの意味」</strong>と、<strong>意味のまとまりごとに範囲を区切る</strong>設計単位です。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>境界づけられたコンテキストとは</h2>
+    <h3 id="sec-3-1">3.1 定義</h3>
+    <p><strong>境界づけられたコンテキスト（Bounded Context, BC）</strong>とは、次の3つを満たす<strong>独立した意味空間</strong>です。</p>
+    <ul>
+      <li><strong>一貫したユビキタス言語</strong>（現場と開発で共有する用語）が使われる</li>
+      <li><strong>その言葉に対応したモデル</strong>（クラス・テーブル・API）が閉じている</li>
+      <li><strong>外のコンテキストとは、はっきり境界がある</strong></li>
+    </ul>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>営業コンテキスト</h4>
+        <p><code>Prospect</code>（見込み客）、<code>Deal</code>（商談）…</p>
+        <p class="small muted">ここでは「顧客」は見込み・商談の文脈</p>
+      </div>
+      <div class="card good">
+        <h4>会計コンテキスト</h4>
+        <p><code>BillTo</code>（請求先）、<code>Invoice</code>（請求書）…</p>
+        <p class="small muted">ここでは「顧客」は請求・与信の文脈</p>
+      </div>
+    </div>
+    <p>1つの BC の中では、<strong>用語とモデルは矛盾なく使える</strong>ようにします。BC の外とは、<strong>翻訳（変換）</strong>を挟んで連携するのが基本です。</p>
+
+    <h3 id="sec-3-2">3.2 「コンテキスト」とは何の範囲か</h3>
+    <p>ここでいうコンテキストとは、次のような範囲のことです。</p>
+    <ul>
+      <li><strong>1つの業務の範囲</strong></li>
+      <li><strong>用語の意味が一貫している範囲</strong></li>
+      <li><strong>同じチームが扱う範囲</strong></li>
+      <li><strong>独立して変更できる範囲</strong></li>
+    </ul>
+    <p>抽象的ですが、実務では<strong>「サブシステム」や「マイクロサービス」</strong>に近いものと考えて OK です（ただし同じものではありません。<a href="#sec-8">8章</a>）。</p>
+
+    <h3 id="sec-3-3">3.3 ユビキタス言語は BC ごとに定義する</h3>
+    <p>BC を語るうえで欠かせないのが<strong>ユビキタス言語</strong>（開発者とビジネス側が、同じ言葉で同じものを指すこと）です。</p>
+    <ul>
+      <li>コードのクラス名・メソッド名に、現場の用語をそのまま使う</li>
+      <li>「ユーザー」「会員」「顧客」のような曖昧な言い換えを、BC 内では統一する</li>
+    </ul>
+    <p>ユビキタス言語は <strong>BC ごと</strong>に定義されます。営業 BC と会計 BC で「顧客」の呼び方や属性が違っても、<strong>それぞれの中で一貫していればよい</strong>のです。ユビキタス言語そのものは <a href="30-2_戦略的設計とユビキタス言語.html#sec-6">戦略的設計とユビキタス言語</a> で詳しく扱っています。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>コンテキストを見つける方法</h2>
+    <div class="grid c2">
+      <div class="card accent"><h4>ヒント1：言葉の意味がズレる境目</h4><p>「このチームでは『商品』の意味が違う」と気づいたら、そこが境界。</p></div>
+      <div class="card accent"><h4>ヒント2：チーム・部署の境目</h4><p>組織構造がコンテキストを反映することが多い（コンウェイの法則 → <a href="../41_アーキテクチャ/70-3_コンウェイの法則とTeamTopologies.html">41章</a>）。</p></div>
+      <div class="card accent"><h4>ヒント3：変更の頻度・理由</h4><p>同じ理由で変わる部分はまとめ、違う理由で変わる部分は分ける（<a href="20-5_SOLIDとオブジェクト指向.html">SRP</a> と同じ発想）。</p></div>
+      <div class="card accent"><h4>ヒント4：ライフサイクル</h4><p>別々のタイミングでデプロイ・リリースするなら、別のコンテキストかも。</p></div>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>コンテキストマップとは</h2>
+    <p><strong>コンテキストマップ（Context Map）</strong>は、複数の BC 同士が<strong>どう関係しているか</strong>を図にしたものです。</p>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="営業BCから会計BCへ顧客IDと請求情報を渡し、営業BCから配送BCへ受注確定イベントを送るコンテキストマップ">
+      <defs>
+        <marker id="arw313a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw313b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker>
+      </defs>
+      <rect x="120" y="20" width="180" height="60" rx="10" class="d-box-good"/>
+      <text x="210" y="56" text-anchor="middle" class="d-text-bold">会計 BC</text>
+      <rect x="120" y="170" width="180" height="60" rx="10" class="d-box-accent"/>
+      <text x="210" y="206" text-anchor="middle" class="d-text-bold">営業 BC</text>
+      <rect x="500" y="170" width="180" height="60" rx="10" class="d-box-purple"/>
+      <text x="590" y="206" text-anchor="middle" class="d-text-bold">配送 BC</text>
+      <line x1="210" y1="170" x2="210" y2="84" class="d-line" marker-end="url(#arw313a)"/>
+      <text x="224" y="124" class="d-text-sub">顧客ID・請求情報を受け取る</text>
+      <line x1="300" y1="200" x2="496" y2="200" class="d-line-accent" marker-end="url(#arw313b)"/>
+      <text x="398" y="190" text-anchor="middle" class="d-text-sub">受注確定イベントを送る</text>
+    </svg>
+    <figcaption>コンテキストマップの例 — 四角が BC、矢印が関係</figcaption>
+    </figure>
+    <p>マップを描くと、次のことが議論しやすくなります。</p>
+    <ul>
+      <li><strong>どこが「上流」で、どこが「下流」か</strong>（上流＝モデルや情報を提供する側、下流＝それに依存する側）</li>
+      <li><strong>データを誰が所有しているか</strong>（サービス間のデータ所有権は41章の <a href="../41_アーキテクチャ/40-4_データ所有権とSAGA.html">データ所有権と SAGA</a> を参照）</li>
+      <li><strong>連携は API か、イベントか、バッチか</strong></li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>コンテキスト間の関係パターン</h2>
+    <p>全部覚える必要はありません。<strong>よく出るもの</strong>だけ押さえます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パターン</th><th>イメージ</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>共有カーネル</strong>（Shared Kernel）</td><td>一部のモデルを2つ以上の BC で共有する。変更には両チームの合意が必要</td><td>共通の「金額」「通貨」型</td></tr>
+        <tr><td><strong>顧客／供給者</strong>（Customer-Supplier）</td><td>上流が下流のために情報を提供し、下流は上流の API・モデルに依存する</td><td>会計が営業の顧客 ID を参照</td></tr>
+        <tr><td><strong>順応者</strong>（Conformist）</td><td>下流が上流のモデルに合わせきる。<strong>合わせるしかない</strong>関係（相手が強い）</td><td>外部 SaaS のデータ形式に完全準拠</td></tr>
+        <tr><td><strong>腐敗防止層</strong>（Anti-Corruption Layer, ACL）</td><td>外部のモデルを自 BC の言葉に翻訳する変換層を挟み、外部の都合に汚染されないようにする</td><td>レガシー API をラップして自社用 DTO に変換</td></tr>
+        <tr><td><strong>公開ホストサービス</strong>（Open Host Service）</td><td>標準化した公開 API を広く提供する</td><td>共通の「注文照会 API」</td></tr>
+        <tr><td><strong>別々の道</strong>（Separate Ways）</td><td>相互作用が少なく、連携せずそれぞれ完全に独立に実装する</td><td>統合コストが利益を上回るとき</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-1">6.1 まず覚えたい：腐敗防止層（ACL）</h3>
+    <p>初心者がまず覚えるとよいのは <strong>ACL（腐敗防止層）</strong>です。<strong>外の世界の言葉やモデルが、自コンテキストのきれいなモデルを汚さないように、翻訳の層を挟む</strong> — これはレガシー連携でもマイクロサービス間でも頻出です。</p>
+    <span class="code-label">外部の古い API（自分では変えられない）</span>
+<pre><code>interface LegacyUserAPI {
+  getUsr(id: string): { uName: string; eAddr: string };
+}</code></pre>
+    <span class="code-label good">◯ 自社のコンテキストにとって良い形に変換する</span>
+<pre><code>class LegacyUserAdapter {
+  constructor(private legacy: LegacyUserAPI) {}
+  findUser(id: string): User {
+    const raw = this.legacy.getUsr(id);
+    return new User(raw.uName, raw.eAddr); // 自社の言葉に翻訳
+  }
+}</code></pre>
+    <p><code>getUsr</code> や <code>uName</code> のような外部の言葉は ACL の中に閉じ込められ、自社のコードは <code>findUser</code> と <code>User</code> だけを使います。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>具体例：EC サイトのコンテキスト分割</h2>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="認証コンテキストと商品カタログコンテキストが注文コンテキストにつながり、注文コンテキストから決済コンテキストと配送コンテキストへつながる">
+      <defs>
+        <marker id="arw313c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="90" y="20" width="220" height="60" rx="10" class="d-box"/>
+      <text x="200" y="47" text-anchor="middle" class="d-text-bold">認証コンテキスト</text>
+      <text x="200" y="67" text-anchor="middle" class="d-text-sub">Auth</text>
+      <rect x="410" y="20" width="220" height="60" rx="10" class="d-box"/>
+      <text x="520" y="47" text-anchor="middle" class="d-text-bold">商品カタログ</text>
+      <text x="520" y="67" text-anchor="middle" class="d-text-sub">Catalog</text>
+      <rect x="250" y="120" width="220" height="60" rx="10" class="d-box-accent"/>
+      <text x="360" y="147" text-anchor="middle" class="d-text-bold">注文コンテキスト</text>
+      <text x="360" y="167" text-anchor="middle" class="d-text-sub">Ordering</text>
+      <rect x="90" y="220" width="220" height="60" rx="10" class="d-box"/>
+      <text x="200" y="247" text-anchor="middle" class="d-text-bold">決済コンテキスト</text>
+      <text x="200" y="267" text-anchor="middle" class="d-text-sub">Payment</text>
+      <rect x="410" y="220" width="220" height="60" rx="10" class="d-box"/>
+      <text x="520" y="247" text-anchor="middle" class="d-text-bold">配送コンテキスト</text>
+      <text x="520" y="267" text-anchor="middle" class="d-text-sub">Shipping</text>
+      <line x1="200" y1="80" x2="300" y2="116" class="d-line" marker-end="url(#arw313c)"/>
+      <line x1="520" y1="80" x2="420" y2="116" class="d-line" marker-end="url(#arw313c)"/>
+      <line x1="300" y1="180" x2="210" y2="216" class="d-line" marker-end="url(#arw313c)"/>
+      <line x1="420" y1="180" x2="510" y2="216" class="d-line" marker-end="url(#arw313c)"/>
+    </svg>
+    <figcaption>EC サイトのコンテキスト分割の例</figcaption>
+    </figure>
+    <p><strong>各コンテキストは独立した言葉を持ちます</strong>。注文の「商品」と配送の「商品」は別モデルです。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>モノリスでもマイクロサービスでも使える</h2>
+    <h3 id="sec-8-1">8.1 マイクロサービスとの関係</h3>
+    <p>境界づけられたコンテキストは、<strong>マイクロサービスの分割単位</strong>としてしばしば採用されます。</p>
+    <ul>
+      <li>1コンテキスト ＝ 1マイクロサービス</li>
+      <li>コンテキスト間の通信 ＝ REST / gRPC / メッセージング</li>
+    </ul>
+    <p>モノリスとマイクロサービスの比較や分割の判断は、41章の <a href="../41_アーキテクチャ/40-2_モノリスとマイクロサービス.html">モノリスとマイクロサービス</a> で扱っています。</p>
+    <h3 id="sec-8-2">8.2 モノリスの中でも区切れる</h3>
+    <p>ただし、<strong>コンテキスト ≠ マイクロサービス</strong>です。<strong>1つのデプロイ単位（モノリス）の中でも、フォルダ・パッケージ・モジュールで BC を分ける</strong>ことはよくあります。</p>
+<pre><code>src/
+├─ sales/          ← 営業 BC（フォルダ・パッケージで境界）
+│   ├─ domain/
+│   └─ application/
+├─ accounting/     ← 会計 BC
+│   ├─ domain/
+│   └─ application/
+└─ shared-kernel/  ← 共有する最小限の型だけ</code></pre>
+    <p>このように区切っておくと、後からサービス分割する際の<strong>地図</strong>にもなります。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>実装のポイント</h2>
+    <h3 id="sec-9-1">9.1 コンテキスト間でモデルを共有しない</h3>
+    <span class="code-label bad">✕ 全コンテキストで同じ User</span>
+<pre><code>import { User } from '@shared/User';</code></pre>
+    <span class="code-label good">◯ 各コンテキストで独自モデル</span>
+<pre><code>import { User } from './auth/User';
+import { Customer } from './ordering/Customer';</code></pre>
+    <h3 id="sec-9-2">9.2 通信は小さな DTO で</h3>
+    <p>コンテキストをまたいで渡すデータは、<strong>最小限の DTO</strong>（Data Transfer Object：データを運ぶためだけの入れ物）で渡します。モデルをそのまま渡しません。</p>
+    <h3 id="sec-9-3">9.3 翻訳層を設ける</h3>
+    <p>外部コンテキストからのデータは、<strong>腐敗防止層で自社の言葉に変換</strong>します（<a href="#sec-6-1">6.1</a>）。</p>
+    <h3 id="sec-9-4">9.4 同じ ID でも別モデル</h3>
+    <p>同じ「user_id=123」でも、コンテキストごとに違うクラス（User の ID 型 / Customer の ID 型）で扱います。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>小さな練習のしかた</h2>
+    <ol class="steps">
+      <li>自分のプロジェクトで<strong>3つ以上の「言葉がブレやすい用語」</strong>を書き出す（例：ユーザー、注文、商品）</li>
+      <li>それぞれ<strong>どの業務の文脈か</strong>を分ける</li>
+      <li>紙に<strong>四角（BC）と矢印（関係）</strong>を描く</li>
+      <li><strong>誰がデータの正（ソース・オブ・トゥルース）を持つか</strong>を1行ずつメモする</li>
+    </ol>
+    <p>これだけで、コンテキストマップの入門は十分です。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「大きなドメインを1つのモデルで表現できる」</summary><div class="body"><p>できません。<strong>分割してこそ DDD</strong> です。全部入りのモデルは肥大化し、変更の影響範囲が広がり、チームが衝突します。</p></div></details>
+    <details open><summary>誤解2：「BC は必ずマイクロサービス」「BC は DB テーブルの境界と同じ」</summary><div class="body"><p>BC は<strong>モノリス内のモジュール境界</strong>でもかまいません。また、DB のテーブル境界とも<strong>必ずしも一致しません</strong>。同じテーブルを違うコンテキストから違う意味で読むこともあります。</p></div></details>
+    <details open><summary>誤解3：「最初から完璧なマップを描き、境界はずっと変えない」</summary><div class="body"><p>マップは進化させながら更新するもので、初版は「だいたい」でかまいません。境界も<strong>時間とともに変わります</strong>。業務が進化すれば、境界も引き直します。</p></div></details>
+    <details open><summary>誤解4：「1 BC に必ず1チーム」「全部つなぐべき」</summary><div class="body"><p>1 BC に1チームは目安にはなりますが、小さければ1チームが複数 BC を持つこともありえます。また、<strong>別々の道</strong>（連携しない）も正当な選択です。</p></div></details>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <ul>
+      <li>同じ言葉が場所によって違う意味を持つとき、<strong>無理に1つのモデルにまとめない</strong></li>
+      <li>境界づけられたコンテキストは、一貫したユビキタス言語とモデルが閉じた<strong>独立した意味空間</strong>。外とは翻訳を挟んで連携する</li>
+      <li>境界は、言葉のズレ・チームの境目・変更の理由・ライフサイクルから見つける</li>
+      <li>コンテキストマップで上流／下流、データの所有者、連携方法を明らかにする</li>
+      <li>関係パターンのうち、まず<strong>腐敗防止層（ACL）</strong>を覚える</li>
+      <li>BC はマイクロサービスの分割単位によく使われるが、<strong>モノリスの中のフォルダでも区切れる</strong></li>
+      <li>モデルは共有せず、小さな DTO と翻訳層で連携する。境界は業務とともに引き直す</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：42_ソフトウェア設計/30_ドメイン駆動設計/31_戦略的設計/03_境界づけられたコンテキストとコンテキストマップ</li>
+      <li>ノート：42_ソフトウェア設計/30_ドメイン駆動設計/31_戦略的設計/04_境界づけられたコンテキスト</li>
+      <li>関連ノート：43_モジュール設計「04_モジュール分割の考え方」「05_マイクロサービスとモノリス」</li>
+      <li>関連ノート：41_アーキテクチャ「クリーンアーキテクチャの概要」（<a href="../41_アーキテクチャ/23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a>）「03アーキテクチャに効く原則」（<a href="../41_アーキテクチャ/12-3_トレードオフと原則.html">トレードオフと原則</a>）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-2_戦略的設計とユビキタス言語.html"><span class="lbl">← 前のページ</span>戦略的設計とユビキタス言語</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-4_コアドメインとサブドメイン.html"><span class="lbl">次のページ →</span>コアドメインとサブドメイン</a>
+    </nav>
+    <footer class="page-foot">42_ソフトウェア設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

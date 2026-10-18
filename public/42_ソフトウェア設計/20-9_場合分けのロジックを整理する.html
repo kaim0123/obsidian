@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>場合分けのロジックを整理する｜ソフトウェア設計解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">ソフトウェア設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 パラダイム › 場合分けのロジックを整理する</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 パラダイム</span>
+      <h1>場合分けのロジックを整理する</h1>
+      <p class="lead">区分や種別ごとの <strong>if / else / 入れ子</strong> は、プログラムを複雑にする代表的な原因です。まずはメソッド単位で分岐を読みやすくし（早期 return・メソッド抽出・複文の分解）、次のページでクラス／列挙（区分オブジェクト）へ押し出します。</p>
+      <p class="meta">もとにしたノート：46_メソッド設計/40_本体の書き方/02_Guard_Clause、03_複雑度と分岐、04_Extract_Method／増田亨『現場で役立つシステム設計の原則』第2章前半</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>場合分けは「消す」より「閉じ込める」。</strong>条件に名前を付け、else を減らし、入れ子をほどいてから、区分ごとの本体は別クラスへ移します。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>区分や種別がコードを複雑にする</h2>
+    <p>業務アプリでは「顧客区分」「料金種別」「注文ステータス」のような <strong>区分・種別</strong> ごとに処理が分かれます。区分が1つ増えるたびに、同じパターンの <code>if</code> / <code>switch</code> がメソッドのあちこちへコピーされやすくなります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>症状</th><th>何が困るか</th></tr></thead>
+      <tbody>
+        <tr><td>同じ switch が複数箇所</td><td>区分追加のたびに漏れが出る</td></tr>
+        <tr><td>if の中に長い計算</td><td>変更箇所と影響範囲が見えない</td></tr>
+        <tr><td>深い入れ子</td><td>正常系が追えない・テストが爆発する</td></tr>
+      </tbody>
+    </table></div>
+    <p>整理の段階は次のとおりです。</p>
+    <ol class="steps">
+      <li>判断や計算を <strong>メソッドに独立</strong> させる</li>
+      <li><strong>else をなくし</strong>、早期 return（ガード節）にする</li>
+      <li><strong>複文（入れ子）を単文の並び</strong> に分解する</li>
+      <li>区分ごとの本体を <a href="20-10_区分オブジェクトと状態遷移.html">区分オブジェクト</a> へ移す</li>
+    </ol>
+
+    <h2 id="sec-2"><span class="num">2.</span>判断や処理のロジックをメソッドに独立させる</h2>
+    <p>if の中にごちゃごちゃ書いた式を直すより、<strong>名前付きメソッド</strong> に抽出した式を直すほうが安全です。変更箇所とその影響を、そのメソッドに閉じ込められます。</p>
+<pre><code>// ✕ if の中に計算がべた書き
+function fee(customer) {
+  if (customer.age &lt; 12) {
+    return 500 * (1 - 0.1);
+  }
+  // ...
+}
+
+// ◯ 意図がメソッド名で読める
+function fee(customer) {
+  if (isChild(customer)) return childFee();
+  if (isSenior(customer)) return seniorFee();
+  return adultFee();
+}</code></pre>
+    <p>抽出の手順の詳細はメソッド設計の Extract Method（docs: <code>46_メソッド設計/20_責務と分割/04_Extract_Method</code>）を参照してください。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>else 句をなくすと条件分岐が単純になる</h2>
+    <p>結果を変数にためて else でつなぐ書き方より、<strong>確定したらすぐ return</strong> する書き方のほうが、分岐同士の結びつきが弱くなります。順序の入れ替えや条件の追加がしやすくなります。この書き方を <strong>ガード節（Guard Clause）</strong> とも呼びます。</p>
+<pre><code>// ✕ else でつなぐ
+function fee(customer) {
+  let result;
+  if (isChild(customer)) {
+    result = childFee();
+  } else if (isSenior(customer)) {
+    result = seniorFee();
+  } else {
+    result = adultFee();
+  }
+  return result;
+}
+
+// ◯ else をなくし早期 return
+function fee(customer) {
+  if (isChild(customer)) return childFee();
+  if (isSenior(customer)) return seniorFee();
+  return adultFee();
+}</code></pre>
+    <p>「2つの同等な選択肢」のような対称的な分岐は、あえて if-else のままでよい場合もあります。詳細は docs の <code>02_Guard_Clause</code> を参照してください。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>複文は単文に分ける</h2>
+    <p><strong>複文</strong> は「文の中に文がある」入れ子構造です。ネストした if は、日本語の複文と同じく意図がわかりにくくなります。入れ子をほどき、<strong>単文を上から並べる</strong> 形にします。</p>
+<pre><code>// ✕ 複文（入れ子）
+function discount(order) {
+  if (order.isMember()) {
+    if (order.total() &gt;= 10000) {
+      return order.total() * 0.2;
+    } else {
+      return order.total() * 0.1;
+    }
+  }
+  return 0;
+}
+
+// ◯ 単文の並び + 早期 return
+function discount(order) {
+  if (!order.isMember()) return 0;
+  if (order.total() &gt;= 10000) return largeMemberDiscount(order);
+  return smallMemberDiscount(order);
+}</code></pre>
+
+    <h2 id="sec-5"><span class="num">5.</span>ここまでと次の一手</h2>
+    <p>メソッド単位で読みやすくなっても、同じ区分分岐がクラスやモジュールをまたいで残るなら、<strong>区分ごとのクラス／列挙</strong> に押し出します。共通の型で扱うと、使う側の if が消えます。</p>
+    <p>多態の考え方は <a href="20-4_多態とインターフェース.html">多態とインターフェース</a>、区分オブジェクトの実装は次のページへ進みます。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li>区分・種別の if は複雑さと重複の温床になる</li>
+      <li>判断・計算はメソッドに独立させ、意図を名前で表す</li>
+      <li>else を減らし早期 return（ガード節）で分岐を疎にする</li>
+      <li>入れ子の複文は単文の並びに分解する</li>
+      <li>散らばる区分ロジックは <a href="20-10_区分オブジェクトと状態遷移.html">区分オブジェクト</a> へ</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ガード節（早期 return）の主な利点はどれか</summary>
+      <div class="body"><p>異常系や確定した区分を先に返し、正常系（または残りの区分）を浅いインデントで読めるようにすること。分岐の入れ替え・追加もしやすい。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 「複文は単文に分ける」とは何か</summary>
+      <div class="body"><p>入れ子の if など「文の中の文」をほどき、早期 return や名前付きメソッドで一段階の判断を並べること。</p></div>
+    </details>
+    <details>
+      <summary>Q3. if 内の計算をメソッドに出す利点は</summary>
+      <div class="body"><p>変更箇所と影響範囲をそのメソッドに閉じ込められ、呼び出し側はメソッド名で意図が読める。</p></div>
+    </details>
+    <details>
+      <summary>Q4. メソッド整理のあと、まだ区分 if が散らばるときは</summary>
+      <div class="body"><p>区分ごとのクラスや振る舞い付き列挙（区分オブジェクト）にロジックを移し、共通インターフェースで扱う。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 対称的な二択でも必ず else を消すべきか</summary>
+      <div class="body"><p>いいえ。同等な二つの選択肢は if-else のままの方が読みやすいこともある。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：46_メソッド設計/40_本体の書き方/02_Guard_Clause、03_複雑度と分岐、20_責務と分割/04_Extract_Method</li>
+      <li>増田亨『現場で役立つシステム設計の原則』（技術評論社, 2017）第2章</li>
+      <li>関連ページ：<a href="20-4_多態とインターフェース.html">多態とインターフェース</a>、<a href="20-10_区分オブジェクトと状態遷移.html">区分オブジェクトと状態遷移</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-8_パラダイムの選び方と比較.html"><span class="lbl">← 前のページ</span>パラダイムの選び方と比較</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-10_区分オブジェクトと状態遷移.html"><span class="lbl">次のページ →</span>区分オブジェクトと状態遷移</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -22,6 +22,7 @@
 |---|---|---|---|
 | 『Atomic Design』 | Brad Frost, 2016（Web 版: atomicdesign.bradfrost.com） | Atoms → Molecules → Organisms → Templates → Pages の 5 段階と、パターンライブラリの運用 | [[04_Atomic_Design]] |
 | patterns.dev | Lydia Hallie, Addy Osmani（Web） | デザインパターン・レンダリングパターン・パフォーマンスパターンを図解で解説 | [[03_コンポーネントパターンの比較]] / [[03_パフォーマンスを設計で作り込む]] |
+| 『現場で役立つシステム設計の原則』第7章 | 増田亨, 技術評論社, 2017 | 画面関心事の分割・タスクベース UI・視覚とドメインの連動 | [[05_画面関心事の分割とドメイン連動]] / [[09_画面とドメインオブジェクトの設計]] |
 
 ### ディレクトリ・モジュール構成
 

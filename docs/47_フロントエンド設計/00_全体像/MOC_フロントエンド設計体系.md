@@ -18,7 +18,7 @@ tags:
 |---|---|---|
 | 00_全体像 | 本MOC・年表（[[00_フロントエンド設計の変遷]]） | — |
 | 10_基礎 | フロントエンドの責務 / UI = f(state) / 単方向データフロー | フロントは何を設計するのか |
-| 20_コンポーネント設計 | 分割の粒度 / Props＝部品の API / Container-Presentational / Compound・Headless / Atomic Design | 画面をどう部品に分けるか |
+| 20_コンポーネント設計 | 分割の粒度 / Props＝部品の API / Container-Presentational / Compound・Headless / Atomic Design / 画面関心事とドメイン連動 | 画面をどう部品に分けるか |
 | 30_状態とデータフロー | 状態の分類と置き場所 / SSOT / 派生状態 / サーバー状態との分担 | 状態をどこに持ち、どう流すか |
 | 40_ディレクトリ・モジュール構成 | Layer型 / Feature型 / FSD / bulletproof-react / 依存ルール / barrel ファイル | コードをどこに置くか |
 | 50_デザインシステム・スタイリング | デザイントークン / CSS 設計方式の比較 / コンポーネントライブラリ | 見た目をどう一貫させるか |
@@ -74,6 +74,7 @@ flowchart TD
 - [[02_Propsはコンポーネントの公開API]] — 公開面の設計
 - [[03_コンポーネントパターンの比較]] — Container-Presentational・Headless・Compound
 - [[04_Atomic_Design]] — 使いどころと限界
+- [[05_画面関心事の分割とドメイン連動]] — タスクベース UI・視覚と論理・ドメイン連動（増田本第7章）。本論は [[09_画面とドメインオブジェクトの設計]]
 - 関連（React での実装）:
   - [[10-2-Container-Presentational]]
   - [[10-4-Props設計]]

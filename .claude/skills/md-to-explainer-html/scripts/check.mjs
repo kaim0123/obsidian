@@ -39,21 +39,24 @@ for (const arg of dirs) {
     const out = (level, msg) => report(level, name, msg);
     const isToc = name === toc;
 
+    // 形式：共通CSSを読む（71〜74章）か、CSS・JS をページに埋め込む（41・42章）か
+    const shared = html.includes('_解説HTML/style.css');
+    const classes = shared ? knownClasses : pageClasses(html);
+
     // 骨組み
     if (!/<title>[^<]+｜[^<]+<\/title>/.test(html)) out('error', '<title> が「ページ名｜章テーマ解説」の形ではありません');
     if ((html.match(/<h1[\s>]/g) ?? []).length !== 1) out('error', 'h1 がちょうど1つではありません');
-    for (const part of ['class="topbar"', 'id="toc-list"', 'class="hero"', 'class="pager"', '_解説HTML/style.css', '_解説HTML/script.js']) {
+    const parts = ['class="topbar"', 'id="toc-list"', 'class="hero"', 'class="pager"'];
+    parts.push(...(shared ? ['_解説HTML/script.js'] : ['<style>', '<script>']));
+    for (const part of parts) {
       if (!html.includes(part)) out('error', `${part} がありません`);
     }
     if (/\/_site\//.test(html)) out('error', 'サイト用スクリプト（/_site/）を書き込まないでください');
-    if (/<style[\s>]/.test(html.replace(/<!-- workbench-theme:start -->[\s\S]*?<!-- workbench-theme:end -->/, ''))) {
-      out('warn', 'ページ内に <style> があります（共通CSSを使ってください）');
-    }
     if (/(href|src)="\.\.\/\.\.\//.test(html)) out('warn', '古いパス（../../）があります。public/<章>/ からは ../ で参照します');
 
-    // 必須見出し
+    // 必須見出し（埋め込み形式は 41章にならい理解度チェックなし）
     if (!isToc) {
-      for (const h of ['まとめ', '理解度チェック', '参考資料']) {
+      for (const h of shared ? ['まとめ', '理解度チェック', '参考資料'] : ['まとめ', '参考資料']) {
         if (!new RegExp(`<h2[^>]*>(<span class="num">[^<]*</span>)?${h}</h2>`).test(html)) out('error', `h2「${h}」がありません`);
       }
       if (!html.includes('class="meta"')) out('warn', 'hero に「もとにしたノート」（.meta）がありません');
@@ -62,7 +65,7 @@ for (const arg of dirs) {
     // クラス・id・リンク（<pre>・<code> 内のコード例は除く）
     const markup = html.replace(/<pre[\s\S]*?<\/pre>|<code>[\s\S]*?<\/code>/g, '');
     const used = new Set([...markup.matchAll(/class="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/).filter(Boolean)));
-    const unknown = [...used].filter((c) => !knownClasses.has(c));
+    const unknown = [...used].filter((c) => !classes.has(c));
     if (unknown.length) out('error', `style.css に無いクラス: ${unknown.join(', ')}`);
 
     const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
@@ -91,6 +94,12 @@ for (const arg of dirs) {
     // 目次への載せ漏れ
     if (tocHtml && !isToc && !tocHtml.includes(`href="${name}"`)) out('error', '目次ページからリンクされていません');
   });
+}
+
+/** ページに埋め込まれた <style> で定義されているクラス */
+function pageClasses(html) {
+  const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
+  return new Set(['prev', ...(css.replace(/url\([^)]*\)/g, '').match(/\.[a-zA-Z][\w-]*/g) ?? []).map((c) => c.slice(1))]);
 }
 
 function report(level, file, msg) {

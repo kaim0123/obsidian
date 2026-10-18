@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>区分オブジェクトと状態遷移｜ソフトウェア設計解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">ソフトウェア設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 パラダイム › 区分オブジェクトと状態遷移</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 パラダイム</span>
+      <h1>区分オブジェクトと状態遷移</h1>
+      <p class="lead">区分ごとの if / switch を、<strong>区分専用のクラス（または振る舞い付き列挙）</strong> に閉じ込めます。同じ型として扱い、生成はファクトリに寄せ、状態遷移は許可表で一目でわかるようにします。</p>
+      <p class="meta">もとにしたノート：44_クラス設計/20_責務の割り当て/07_区分オブジェクトと状態遷移、02_継承と多態／42/20/04_多態とインターフェース、03_型でドメインを表す／増田亨『現場で役立つシステム設計の原則』第2章後半</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>区分オブジェクト</strong> は、区分の定義とその区分だけの判断・計算をオブジェクトにまとめたものです。使う側は共通の型だけを見ればよく、区分追加は新しいクラス（または列挙定数）を足すだけで済みます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>区分ごとのロジックを別クラスに分ける</h2>
+    <p>前のページで分岐を読みやすくしても、区分本体が1つの巨大関数に残っていると、区分追加のたびにその関数を開くことになります。区分ごとにクラスを切り、<strong>その区分だけのルール</strong> を中に置きます。</p>
+<pre><code>// ✕ 区分のたびに switch が増える
+function fee(type: string): number {
+  switch (type) {
+    case "adult": return 1000;
+    case "child": return 500;
+    case "senior": return 700;
+    default: throw new Error("unknown");
+  }
+}
+
+// ◯ 区分ごとにクラス
+class AdultFee { yen() { return 1000; } }
+class ChildFee { yen() { return 500; } }
+class SeniorFee { yen() { return 700; } }</code></pre>
+
+    <h2 id="sec-2"><span class="num">2.</span>区分ごとのクラスを同じ「型」として扱う</h2>
+    <p>使う側が具象クラス名を知らなくてよいよう、<strong>共通のインターフェース（型）</strong> で扱います。これがポリモーフィズムによる条件分岐の置き換えです（→ <a href="20-4_多態とインターフェース.html">多態とインターフェース</a>）。</p>
+<pre><code>interface Fee {
+  yen(): number;
+}
+
+class AdultFee implements Fee {
+  yen() { return 1000; }
+}
+class ChildFee implements Fee {
+  yen() { return 500; }
+}
+
+function charge(fee: Fee): number {
+  return fee.yen(); // 区分の if はない
+}</code></pre>
+    <p>新しい区分は <strong>新クラスを追加するだけ</strong> で、<code>charge</code> は変更しません（開放閉鎖の原則）。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>区分ごとのクラスのインスタンスを生成する</h2>
+    <p>どこかで「どの区分か」を決めてインスタンスを作る必要があります。生成の分岐は <strong>ファクトリ（またはマップ）1か所</strong> に寄せ、業務ルール本体は各クラスに残します。</p>
+<pre><code>type FeeCode = "adult" | "child" | "senior";
+
+function createFee(code: FeeCode): Fee {
+  switch (code) {
+    case "adult": return new AdultFee();
+    case "child": return new ChildFee();
+    case "senior": return new SeniorFee();
+  }
+}</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>列挙型を使えばもっとかんたん</h2>
+    <p>Java の enum は定数だけでなくメソッド（振る舞い）を持てます。TypeScript では、ユニオン＋オブジェクトマップや、static 風の列挙オブジェクトがよく使われます。</p>
+<pre><code>const FeeType = {
+  Adult:  { yen() { return 1000; } },
+  Child:  { yen() { return 500; } },
+  Senior: { yen() { return 700; } },
+} as const;
+
+type FeeTypeKey = keyof typeof FeeType;
+
+function charge(key: FeeTypeKey): number {
+  return FeeType[key].yen();
+}</code></pre>
+    <p>言語ごとの列挙の書き方は docs の <code>44_クラス設計/10_クラスの基礎/05_クラスの種類の整理</code>（列挙型）も参照してください。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>区分オブジェクトで分析し整理する</h2>
+    <p><strong>区分オブジェクト</strong> とは、区分の定義と区分ごとの判断・加工・計算をオブジェクトにまとめたものです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>効果</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>置き場所が決まる</td><td>「子供料金はどこ？」→ <code>ChildFee</code> / <code>FeeType.Child</code></td></tr>
+        <tr><td>影響が閉じる</td><td>1区分の変更が他区分や呼び出し側に波及しにくい</td></tr>
+        <tr><td>重複 switch が減る</td><td>同じ区分分岐のコピーが減る</td></tr>
+      </tbody>
+    </table></div>
+    <p>金額そのものは値オブジェクト（→ <a href="30-6_エンティティと値オブジェクト.html">エンティティと値オブジェクト</a>）と組み合わせると、さらに型で安全になります。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>状態の遷移ルールをわかりやすく記述する</h2>
+    <p>ステータス（下書き→確定→出荷など）も区分の一種です。許可される遷移を if の山にせず、<strong>遷移表</strong> や状態ごとの型で表します。</p>
+<pre><code>type OrderStatus = "draft" | "confirmed" | "shipped" | "cancelled";
+
+const ALLOWED: Record&lt;OrderStatus, readonly OrderStatus[]&gt; = {
+  draft: ["confirmed", "cancelled"],
+  confirmed: ["shipped", "cancelled"],
+  shipped: [],
+  cancelled: [],
+};
+
+function canTransit(from: OrderStatus, to: OrderStatus): boolean {
+  return ALLOWED[from].includes(to);
+}</code></pre>
+    <p>状態ごとに型を分け、遷移を関数にする関数型寄りの整理は <a href="20-7_型でドメインを表す.html">型でドメインを表す</a> で詳しく扱っています。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
+    <ul>
+      <li>区分 if / switch の本体はクラス（または振る舞い付き列挙）へ閉じ込める</li>
+      <li>共通の型で扱い、生成の分岐はファクトリに寄せる</li>
+      <li>区分オブジェクト＝区分定義＋区分ごとの業務ロジック</li>
+      <li>状態遷移は許可表や状態型で一目でわかるようにする</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">8.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 区分オブジェクトの主な狙いは</summary>
+      <div class="body"><p>区分ごとの判断・計算をオブジェクトに閉じ込め、呼び出し側と他区分への影響を減らすこと。</p></div>
+    </details>
+    <details>
+      <summary>Q2. なぜ共通インターフェースが必要か</summary>
+      <div class="body"><p>使う側が具象クラスを知らなくてよくなり、区分追加が新クラス追加だけで済む（ポリモーフィズム／OCP）。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 生成時の switch は悪いのか</summary>
+      <div class="body"><p>生成はどこか1か所に必要。分岐をファクトリに寄せ、業務ルール本体を各クラスに残すのがポイント。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 状態遷移を表で持つ利点は</summary>
+      <div class="body"><p>許可される遷移が一覧でき、不正遷移のチェックと仕様の共有がしやすい。</p></div>
+    </details>
+    <details>
+      <summary>Q5. メソッド側の整理（ガード節など）との関係は</summary>
+      <div class="body"><p>先に分岐を読みやすくし、残った区分本体を区分オブジェクトへ移す、という段階的な整理になる（→ <a href="20-9_場合分けのロジックを整理する.html">場合分けのロジックを整理する</a>）。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：44_クラス設計・デザインパターン/20_責務の割り当て/07_区分オブジェクトと状態遷移</li>
+      <li>増田亨『現場で役立つシステム設計の原則』（技術評論社, 2017）第2章</li>
+      <li>Martin Fowler『リファクタリング』— ポリモーフィズムによる条件記述の置き換え</li>
+      <li>関連ページ：<a href="20-9_場合分けのロジックを整理する.html">場合分けのロジックを整理する</a>、<a href="20-4_多態とインターフェース.html">多態とインターフェース</a>、<a href="20-7_型でドメインを表す.html">型でドメインを表す</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-9_場合分けのロジックを整理する.html"><span class="lbl">← 前のページ</span>場合分けのロジックを整理する</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-1_DDDとは.html"><span class="lbl">次のページ →</span>DDDとは</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ケーススタディ — TODO アプリと注文管理システムで設計を通しで考える｜ソフトウェア設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">ソフトウェア設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 80 ケーススタディ › ケーススタディ</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">80 ケーススタディ</span>
+      <h1>ケーススタディ — TODO アプリと注文管理システムで設計を通しで考える</h1>
+      <p class="lead">小規模な TODO アプリと、業務ルールのある注文管理システムの2つを題材に、これまでのページの考え方を通しで使ってみます。要件整理からパラダイム・モジュール・クラスの選択、コンテキストと集約、ドメインイベント、よくある設計ミスの修正まで、各判断がどのページの考え方に当たるかを示しながら進めます。</p>
+      <p class="meta">もとにしたノート：01_ケーススタディ_TODOアプリ / 02_ケーススタディ_注文管理システム</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>規模と複雑さの違う2つの題材で、設計判断を一通り体験します。</p>
+    <div class="grid c2">
+      <div class="card accent"><h4>ケース1：TODO アプリ</h4><p>小規模な CRUD。<strong>過剰設計をしない</strong> 判断と、それでも効く関心の分離・高凝集・低結合を練習します。</p></div>
+      <div class="card purple"><h4>ケース2：注文管理システム</h4><p>業務ルールがある。<strong>DDD・パラダイム・イベント</strong> の考え方を統合します。</p></div>
+    </div>
+    <p>それぞれの設計判断には、もとになる考え方のページへのリンクを付けています。進め方の全体は <a href="50-1_設計の進め方と段階的な深化.html">設計の進め方と段階的な深化</a> の流れ（要件 → ユースケース → 名詞・動詞 → モジュール → クラス）に沿っています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>ケース1：TODO アプリの設計</h2>
+    <h3 id="sec-2-1">2.1 要件の整理</h3>
+    <p>まず <a href="50-1_設計の進め方と段階的な深化.html">要件・用語を整理</a> します。</p>
+    <div class="grid c2">
+      <div class="card"><h4>機能要件</h4><ul>
+        <li>タスクを追加・完了・削除できる</li>
+        <li>タスク一覧を表示できる</li>
+        <li>（任意）期限を設定できる</li>
+      </ul></div>
+      <div class="card"><h4>非機能要件</h4><ul>
+        <li>個人利用・小規模</li>
+        <li>ブラウザで動作する</li>
+      </ul></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>タスク</td><td>やるべきこと1件</td></tr>
+        <tr><td>完了</td><td>タスクを終了状態にする</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-2">2.2 パラダイムと構造の選択</h3>
+    <p>小規模な CRUD なので、<strong>過剰設計は不要</strong> です（→ <a href="20-8_パラダイムの選び方と比較.html">パラダイムの選び方と比較</a>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>選択</th><th>理由</th><th>考え方のページ</th></tr></thead>
+      <tbody>
+        <tr><td>手続き的なユースケースの流れ</td><td>追加・完了・削除の流れが明確</td><td><a href="20-1_手続き指向設計.html">手続き指向設計</a></td></tr>
+        <tr><td>シンプルな OOP</td><td>Task をオブジェクトとして表現</td><td><a href="20-2_オブジェクト指向とクラス.html">オブジェクト指向とクラス</a></td></tr>
+        <tr><td>関数型の要素</td><td>フィルタ・ソートは純粋関数で</td><td><a href="20-6_関数型と純粋関数.html">関数型と純粋関数</a></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">使わないと決めるのも設計判断</p>
+      <p><strong>DDD・イベント駆動は不要</strong> です（コンテキストが1つで、ドメインも単純）。DDD を使うべき場面は <a href="30-1_DDDとは.html">DDDとは</a>、イベントにすべきかの判断は <a href="40-1_イベント駆動設計.html">イベント駆動設計</a> を参照してください。</p>
+    </div>
+
+    <h3 id="sec-2-3">2.3 モジュール候補の洗い出し</h3>
+<pre><code>todo-app/
+  ├── ui/          … 表示・入力（関心: プレゼンテーション）
+  ├── application/ … ユースケースの流れ（追加・完了・削除）
+  ├── domain/      … Task のルール
+  └── storage/     … 永続化（localStorage 等）</code></pre>
+    <p><a href="10-3_関心の分離.html">関心の分離</a> を意識した分割です。依存の向きは <code>ui → application → domain</code> とし、<code>storage</code> は <code>domain</code> の Repository インターフェースを実装する形にすると、ドメインが保存方法を知らずに済みます（→ <a href="../41_アーキテクチャ/24-1_依存性逆転の原則.html">依存性逆転の原則</a>）。より詳しくは 43_モジュール設計 につながります。</p>
+
+    <h3 id="sec-2-4">2.4 クラス・関数の大まかな設計</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>中身</th><th>考え方のページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Task</strong>（エンティティ）</td><td><code>id, title, completed, dueDate?</code><br><code>complete()</code>, <code>isOverdue()</code></td><td><a href="30-6_エンティティと値オブジェクト.html">エンティティと値オブジェクト</a>、<a href="10-5_カプセル化と情報隠蔽.html">カプセル化と情報隠蔽</a></td></tr>
+        <tr><td><strong>TaskRepository</strong>（インターフェース）</td><td><code>save(task)</code>, <code>findAll()</code>, <code>delete(id)</code></td><td><a href="20-4_多態とインターフェース.html">多態とインターフェース</a>、<a href="30-7_集約とリポジトリ.html">集約とリポジトリ</a></td></tr>
+        <tr><td><strong>AddTaskUseCase / CompleteTaskUseCase</strong>（アプリケーション）</td><td>手続き的なオーケストレーション（処理の順番の制御）</td><td><a href="30-9_ドメイン層とユースケース.html">ドメイン層とユースケース</a></td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">◯ 純粋関数の例</span>
+<pre><code>function filterActive(tasks) {
+  return tasks.filter(t =&gt; !t.completed);
+}</code></pre>
+
+    <h3 id="sec-2-5">2.5 実装と振り返り</h3>
+    <p><strong>振り返りの問い</strong>（→ <a href="60-2_レガシーと設計レビュー.html">設計レビューのチェックリスト</a>）：</p>
+    <ul>
+      <li>☐ UI に永続化の詳細が漏れていないか</li>
+      <li>☐ Task に完了ルールが閉じているか</li>
+      <li>☐ テストは Task と <code>filterActive</code> だけで書けるか（→ <a href="50-2_テストとリファクタリング.html">テストとリファクタリング</a>）</li>
+      <li>☐ モジュール間の依存方向は一方向か</li>
+    </ul>
+    <p><strong>改善の余地</strong>：</p>
+    <ul>
+      <li>期限機能を足すとき、Task に <code>isOverdue()</code> を置くか</li>
+      <li>複数ユーザーになったら、コンテキスト分割を検討する（→ <a href="30-3_境界づけられたコンテキスト.html">境界づけられたコンテキスト</a>）</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">小規模でも効く</p>
+      <p>小規模でも「<a href="10-3_関心の分離.html">関心の分離</a>」「<a href="10-4_凝集度と結合度.html">高凝集・低結合</a>」は良い練習になります。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>ケース2：注文管理システム</h2>
+    <h3 id="sec-3-1">3.1 業務ルールの整理とユビキタス言語</h3>
+    <p><strong>業務ルール（例）</strong></p>
+    <ul>
+      <li>注文は <strong>確定</strong> するとキャンセルできない（配送前まで）</li>
+      <li>確定時に <strong>在庫を引当</strong> する</li>
+      <li>合計金額は <strong>明細の合計 − 割引</strong></li>
+      <li>5,000 円以上で <strong>送料無料</strong></li>
+    </ul>
+    <p><strong>ユビキタス言語</strong>（開発者と業務の専門家が共通で使う言葉。→ <a href="30-2_戦略的設計とユビキタス言語.html">戦略的設計とユビキタス言語</a>）</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>注文</td><td>顧客の購入依頼</td></tr>
+        <tr><td>明細</td><td>注文に含まれる商品1件</td></tr>
+        <tr><td>確定</td><td>注文を受け付け、在庫引当を行う</td></tr>
+        <tr><td>引当</td><td>在庫を一時的に確保する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-2">3.2 コンテキストと集約の設計</h3>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="注文コンテキスト（用語：注文・確定、集約：Order）から在庫コンテキスト（用語：引当・在庫数、集約：StockItem）へイベントで連携する。Order集約はOrderLineを2つ持つ">
+      <defs>
+        <marker id="arw801a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker>
+      </defs>
+      <rect x="20" y="20" width="270" height="220" rx="12" class="d-box-accent"/>
+      <text x="155" y="46" text-anchor="middle" class="d-text-bold">注文コンテキスト</text>
+      <text x="155" y="68" text-anchor="middle" class="d-text-sub">用語：注文・確定</text>
+      <rect x="45" y="84" width="220" height="140" rx="10" class="d-box"/>
+      <text x="155" y="106" text-anchor="middle" class="d-text-bold">Order 集約</text>
+      <rect x="65" y="118" width="180" height="32" rx="6" class="d-box-good"/>
+      <text x="155" y="139" text-anchor="middle" class="d-text-sub">Order（集約ルート）</text>
+      <rect x="85" y="158" width="160" height="26" rx="6" class="d-box"/>
+      <text x="165" y="176" text-anchor="middle" class="d-text-sub">OrderLine（明細）</text>
+      <rect x="85" y="190" width="160" height="26" rx="6" class="d-box"/>
+      <text x="165" y="208" text-anchor="middle" class="d-text-sub">OrderLine（明細）</text>
+      <line x1="290" y1="130" x2="426" y2="130" class="d-line-accent" marker-end="url(#arw801a)"/>
+      <text x="358" y="120" text-anchor="middle" class="d-text-accent">イベント</text>
+      <text x="358" y="152" text-anchor="middle" class="d-text-sub">OrderPlaced</text>
+      <rect x="430" y="20" width="270" height="220" rx="12" class="d-box-purple"/>
+      <text x="565" y="46" text-anchor="middle" class="d-text-bold">在庫コンテキスト</text>
+      <text x="565" y="68" text-anchor="middle" class="d-text-sub">用語：引当・在庫数</text>
+      <rect x="465" y="104" width="200" height="56" rx="10" class="d-box"/>
+      <text x="565" y="128" text-anchor="middle" class="d-text-bold">StockItem 集約</text>
+      <text x="565" y="148" text-anchor="middle" class="d-text-sub">在庫の引当</text>
+    </svg>
+    <figcaption>図1：注文と在庫は別のコンテキスト・別の集約。直接更新せず、イベントで連携する</figcaption>
+    </figure>
+    <ul>
+      <li>コンテキストごとに用語が違う（注文側は「注文・確定」、在庫側は「引当・在庫数」）→ <a href="30-3_境界づけられたコンテキスト.html">境界づけられたコンテキスト</a></li>
+      <li><strong>Order 集約</strong> は <code>Order</code>（集約ルート）と、その下の <code>OrderLine</code>（明細）からなる</li>
+      <li>外部は <code>order.confirm()</code> 経由でのみ確定する</li>
+      <li>在庫は Order 集約の外。イベントで連携する → <a href="30-7_集約とリポジトリ.html">集約とリポジトリ</a></li>
+    </ul>
+
+    <h3 id="sec-3-3">3.3 オブジェクトと関数の使い分け</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>置き場所</th><th>例</th><th>考え方のページ</th></tr></thead>
+      <tbody>
+        <tr><td>エンティティ（OOP）</td><td><code>Order.confirm()</code> — 状態遷移とルール</td><td><a href="30-6_エンティティと値オブジェクト.html">エンティティと値オブジェクト</a></td></tr>
+        <tr><td>値オブジェクト</td><td><code>Money</code>, <code>Discount</code> — 不変の計算</td><td><a href="30-6_エンティティと値オブジェクト.html">エンティティと値オブジェクト</a>、<a href="20-7_型でドメインを表す.html">型でドメインを表す</a></td></tr>
+        <tr><td>純粋関数</td><td><code>calculateShipping(total)</code> — 送料ルール</td><td><a href="20-6_関数型と純粋関数.html">関数型と純粋関数</a></td></tr>
+        <tr><td>アプリケーションサービス</td><td><code>PlaceOrderUseCase</code> — 流れの制御</td><td><a href="30-9_ドメイン層とユースケース.html">ドメイン層とユースケース</a></td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">◯ 値オブジェクトとエンティティ</span>
+<pre><code>// 値オブジェクト
+class Money {
+  constructor(amount) { this.amount = amount; }
+  subtract(other) { return new Money(this.amount - other.amount); }
+}
+
+// エンティティ
+class Order {
+  confirm() {
+    if (this.status !== 'draft') throw new Error('確定できません');
+    this.status = 'confirmed';
+    this.addDomainEvent(new OrderPlaced(this.id));
+  }
+}</code></pre>
+    <p><code>Money.subtract()</code> は自分を書き換えず新しい <code>Money</code> を返す（不変）ので、「明細の合計 − 割引」を安全に計算できます。<code>Order.confirm()</code> は「下書き（draft）のときだけ確定できる」というルールを自分で守ります。オブジェクト指向と関数型の組み合わせ方は <a href="20-8_パラダイムの選び方と比較.html">パラダイムの選び方と比較</a> も参照してください。</p>
+
+    <h3 id="sec-3-4">3.4 ドメインイベントの設計</h3>
+<pre><code>order.confirm()
+     │
+     └── OrderPlaced { orderId, lines, occurredAt }
+              │
+              ├──→ 在庫: StockReserved
+              ├──→ 通知: 確認メール
+              └──→ 分析: 売上記録</code></pre>
+    <p>小規模なモノリスなら <strong>プロセス内イベント</strong> から始め、成長したらメッセージングへ広げます（→ <a href="30-8_ドメインイベント.html">ドメインイベント</a>、<a href="40-1_イベント駆動設計.html">イベント駆動設計</a>）。サービスを分けたあとの連携方式は 41章の <a href="../41_アーキテクチャ/40-3_同期API・メッセージ・イベント駆動.html">同期API・メッセージ・イベント駆動</a> を参照してください。</p>
+
+    <h3 id="sec-3-5">3.5 よくある設計ミスと修正</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ミス</th><th>修正</th><th>考え方のページ</th></tr></thead>
+      <tbody>
+        <tr><td>確定ロジックが Controller に全部</td><td><code>Order.confirm()</code> に移す</td><td><a href="10-3_関心の分離.html">関心の分離</a>、<a href="60-2_レガシーと設計レビュー.html">良い設計・悪い設計の比較</a></td></tr>
+        <tr><td>在庫を Order が直接更新</td><td><code>OrderPlaced</code> イベントで在庫コンテキストが反応</td><td><a href="30-7_集約とリポジトリ.html">集約とリポジトリ</a>、<a href="30-8_ドメインイベント.html">ドメインイベント</a></td></tr>
+        <tr><td>割引が SQL と画面に分散</td><td><code>Discount</code> 値オブジェクトに集約</td><td><a href="30-6_エンティティと値オブジェクト.html">エンティティと値オブジェクト</a></td></tr>
+        <tr><td>貧血 Order（getter のみ）</td><td>確定・キャンセルを Order のメソッドに</td><td><a href="60-1_チームで設計を守る.html">よくある設計の失敗</a></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">設計の流れ</p>
+      <p><strong>業務の言葉 → 型とメソッド名 → 境界とイベント</strong></p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>2つのケースの比較</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>TODO アプリ</th><th>注文管理システム</th></tr></thead>
+      <tbody>
+        <tr><td>ドメイン</td><td>単純（CRUD 中心）</td><td>業務ルールがある</td></tr>
+        <tr><td>コンテキスト</td><td>1つ</td><td>注文・在庫など複数</td></tr>
+        <tr><td>DDD</td><td>使わない</td><td>集約・値オブジェクト・ユビキタス言語を使う</td></tr>
+        <tr><td>イベント</td><td>使わない</td><td>ドメインイベント（まずプロセス内）</td></tr>
+        <tr><td>共通して効くもの</td><td colspan="2">関心の分離、高凝集・低結合、純粋関数、依存の方向</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「どんなアプリでも DDD とイベント駆動で作るのが正しい」</summary><div class="body">
+      <p>TODO アプリのようにコンテキストが1つで単純なドメインなら不要です。規模と複雑さに合わせて選ぶことが設計です。</p>
+    </div></details>
+    <details open><summary>誤解2：「小さなアプリなら設計を考えなくてよい」</summary><div class="body">
+      <p>小規模でも関心の分離（ui / application / domain / storage）や依存の一方向化は効きます。テストのしやすさや、機能を足すときの楽さに表れます。</p>
+    </div></details>
+    <details open><summary>誤解3：「在庫の引当は Order がまとめてやったほうが分かりやすい」</summary><div class="body">
+      <p>在庫は別のコンテキスト・別の集約です。Order が直接更新すると境界が崩れます。<code>OrderPlaced</code> イベントで在庫側が反応する形にします。</p>
+    </div></details>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li><strong>TODO アプリ</strong>：小規模 CRUD なので過剰設計しない。手続き・シンプルな OOP・純粋関数を組み合わせ、ui / application / domain / storage に関心を分ける</li>
+      <li>振り返りでは「UI に永続化が漏れていないか」「ルールが Task に閉じているか」「依存が一方向か」を確かめる</li>
+      <li><strong>注文管理システム</strong>：業務ルールとユビキタス言語から始め、注文・在庫のコンテキストと Order 集約を設計する</li>
+      <li>エンティティ（状態とルール）・値オブジェクト（不変の計算）・純粋関数（送料ルール）・ユースケース（流れ）を使い分ける</li>
+      <li>コンテキスト間は <strong>ドメインイベント</strong> で連携し、小規模ならプロセス内から始める</li>
+      <li><strong>業務の言葉 → 型とメソッド名 → 境界とイベント</strong> の順に設計を落とし込む</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：42_ソフトウェア設計/80_ケーススタディ/01_ケーススタディ_TODOアプリ</li>
+      <li>ノート：42_ソフトウェア設計/80_ケーススタディ/02_ケーススタディ_注文管理システム</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-2_レガシーと設計レビュー.html"><span class="lbl">← 前のページ</span>レガシーと設計レビュー</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="90-1_用語集と推奨図書.html"><span class="lbl">次のページ →</span>用語集と推奨図書</a>
+    </nav>
+    <footer class="page-foot">42_ソフトウェア設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

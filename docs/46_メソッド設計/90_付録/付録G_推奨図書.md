@@ -11,6 +11,7 @@
 | **Clean Code** | Robert C. Martin | 関数ルール・命名・第3章が核心 |
 | **Refactoring** | Martin Fowler | Extract Method 等の技法カタログ |
 | **Code Complete** | Steve McConnell | 関数・変数・制御の実践 |
+| **現場で役立つシステム設計の原則** | 増田亨 | 段落・説明用変数・短いメソッド（第1章）→ [[05_段落と説明用の変数]] |
 
 ---
 
@@ -19,7 +20,7 @@
 | 書籍 | 著者 | 内容 |
 |------|------|------|
 | **Working Effectively with Legacy Code** | Michael Feathers | レガシー関数への段階的適用 |
-| **Implementation Patterns** | Kent Beck | 小さなパターン集 |
+| **Implementation Patterns**（実装パターン） | Kent Beck | 小さなパターン集。増田本第10章の推奨書 → [[06_オブジェクト指向設計の学び方]] |
 | **Object-Oriented Software Construction** | Bertrand Meyer | DbC・CQS の原典 |
 
 ---
