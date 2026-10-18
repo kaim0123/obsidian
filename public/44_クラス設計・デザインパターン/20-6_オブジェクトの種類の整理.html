@@ -627,7 +627,7 @@ type OrderResponseDto = {
       <p class="callout-title">判断の目安</p>
       <p><strong>最初は1つのモデルで始め</strong>、DB の都合でドメインのコードが歪んできたら分ける。</p>
     </div>
-    <p>増田本第6章の「オブジェクトはオブジェクトらしく、テーブルはテーブルらしく」の整理は 42_ソフトウェア設計 のノート『08_オブジェクトとテーブルの設計』、DB 側のコト中心設計は 68_データアーキテクチャ のノート『07_コトに注目するテーブル設計』にあります。</p>
+    <p>増田本第6章の「オブジェクトはオブジェクトらしく、テーブルはテーブルらしく」の整理は 42_ソフトウェア設計 のノート『08_オブジェクトとテーブルの設計』、DB 側のコト中心設計は 62_データアーキテクチャ のノート『07_コトに注目するテーブル設計』にあります。</p>
     <span class="code-label">分けた場合：リポジトリの中で変換する</span>
 <pre><code>class PrismaOrderRepository implements OrderRepository {
   async findById(id: OrderId): Promise&lt;Order&gt; {
