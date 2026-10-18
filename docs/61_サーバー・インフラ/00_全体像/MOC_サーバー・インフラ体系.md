@@ -80,6 +80,7 @@ flowchart LR
 3. [[03_仮想化とクラウド]] — ハイパーバイザ、VM とコンテナ、IaaS〜SaaS、責任共有モデル
 4. [[04_Linuxサーバーの基本]] — ディストリ、FHS、権限と sudo、apt、ログ、初期設定
 5. [[05_ネットワークの基本（IP・ポート・DNS）]] — IP / CIDR / NAT、ポート、DNS、疎通確認
+- 発展：[[IPサービス（DHCP・DNS・NAT・NTP・SNMP・Syslog）]] — インフラを支えるネットワークサービスとポート番号（CCNA 範囲）
 
 クリップ：[[クラウド vs オンプレ。何で動いている？AWS・GCP・Azureの裏側の技術を徹底解説]] ／ [[仮想化の仕組み]]
 
@@ -105,6 +106,7 @@ flowchart LR
 3. [[03_Terraform入門]] — HCL、plan / apply、state とリモート state、モジュール
 4. [[04_構成管理とAnsible]] — インベントリ、プレイブック、ロール、ansible-vault
 5. [[05_CloudFormationとCDK]] — スタック、変更セット、CDK（TypeScript）
+- 発展：[[ネットワーク自動化（SDN・REST API・NETCONF・構成管理）]] — ネットワーク機器の自動化、SDN、YANG / NETCONF、構成ドリフト（CCNA 範囲）
 
 ## 50_スケーリング・負荷分散
 1. [[01_スケーリングの基本]] — スケールアップ / アウト、ボトルネック、ステートレス化
@@ -121,6 +123,7 @@ flowchart LR
 3. [[03_ファイアウォールとネットワーク制御]] — ufw、セキュリティグループ、Docker と ufw の罠
 4. [[04_OSのハードニングとパッチ管理]] — 自動アップデート、fail2ban、CIS、Lynis
 5. [[05_ログ監査と侵入の検知]] — auth.log、auditd、AIDE、初動対応、Shop のチェックリスト
+- 発展：[[ネットワーク機器のセキュリティ（ACL・AAA・L2対策・VPN）]] — ACL、AAA（RADIUS / TACACS+）、ポートセキュリティ、VPN、無線 LAN セキュリティ（CCNA 範囲）
 
 クリップ：[[SSHの仕組み]] ／ [[MySQLはセキュリティが弱いのか]]
 
@@ -132,7 +135,7 @@ flowchart LR
 |---|---|
 | Docker・Kubernetes | 53_コンテナ（[[Dockerとは]]、[[09-Docker]]、[[10-Kubernetes]]） |
 | Linux コマンド・シェルの使い方 | 52_シェルCLI |
-| OS・ネットワークの理論（カーネル、TCP/IP、DNS の仕組み） | [[MOC_コンピューターサイエンス体系\|11_コンピューターサイエンス]]/50・60 |
+| OS・ネットワークの理論（カーネル、TCP/IP、DNS の仕組み、ルーティング、L2 スイッチング） | [[MOC_コンピューターサイエンス体系\|11_コンピューターサイエンス]]/50・60 |
 | AWS の個別製品（EC2・ELB・VPC・Route 53 など） | 63_AWS |
 | デプロイ戦略・リリース手順 | [[MOC_リリース・デプロイ体系\|65_リリース・デプロイ]] |
 | 監視・ログ収集・アラート | [[MOC_可観測性体系\|66_可観測性]]（[[13-監視・ログ]]） |
