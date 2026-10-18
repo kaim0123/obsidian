@@ -1,0 +1,32 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+  /** h2・h3 の見出し */
+  outline: MarkdownHeading[];
+}
+const { outline } = Astro.props;
+---
+<ul class="outline">
+  {outline.map((h) => (
+    <li class={h.depth === 3 ? 'h3' : undefined}>
+      <a href={`#${h.slug}`}>{h.text}</a>
+    </li>
+  ))}
+</ul>
+
+<style>
+  .outline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  li {
+    padding: 3px 0;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+  .h3 {
+    padding-left: 14px;
+  }
+</style>

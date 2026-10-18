@@ -30,7 +30,8 @@ const hasAside = Astro.slots.has('aside');
   </head>
   <body>
     <Header />
-    <!-- DOM 順は 本文 → 右パネル → ツリー（スマホ幅で本文を先に読むため）。PC 幅は order で並べ替える -->
+    <!-- DOM 順は 本文 → 右パネル → ツリー（スマホ幅で本文を先に読むため）。PC 幅は order で並べ替える。
+         ツリーはスマホ幅では popover のドロワー（Header の ≡ で開く。UI 設計 05 §2.3） -->
     <div class="workbench">
       <main class="content">
         <slot />
@@ -40,13 +41,24 @@ const hasAside = Astro.slots.has('aside');
           <slot name="aside" />
         </aside>
       )}
-      <div class="sidebar">
+      <div class="sidebar" id="explorer" popover>
+        <button class="drawer-close" type="button" popovertarget="explorer" popovertargetaction="hide" aria-label="閉じる">×</button>
         <FolderTree current={current} kind={kind} />
       </div>
     </div>
     <StatusBar items={status} right={statusRight} />
   </body>
 </html>
+
+<script>
+  // ドロワーを開いたら現在地の行を中央へ（無くても使える）
+  const drawer = document.getElementById('explorer');
+  drawer?.addEventListener('toggle', (e) => {
+    if ((e as ToggleEvent).newState !== 'open') return;
+    const row = drawer.querySelector<HTMLElement>('[aria-current="page"]');
+    if (row) drawer.scrollTop = row.offsetTop - drawer.clientHeight / 2;
+  });
+</script>
 
 <style is:global>
   body {
@@ -81,13 +93,70 @@ const hasAside = Astro.slots.has('aside');
     max-width: 280px;
     box-sizing: border-box;
   }
+  .drawer-close {
+    display: none;
+  }
   @media (min-width: 768px) {
     .sidebar { order: 1; align-self: stretch; }
     .content { order: 2; }
     .aside { order: 3; align-self: stretch; }
+    /* PC 幅は popover を使わず常に表示（ブラウザ既定の popover の見た目を打ち消す） */
+    .sidebar[popover] {
+      display: block;
+      position: static;
+      inset: auto;
+      width: auto;
+      height: auto;
+      margin: 0;
+      padding: 0;
+      overflow: visible;
+      color: inherit;
+      background: var(--surface-2);
+      border: 0;
+      border-right: 1px solid var(--border);
+    }
   }
   @media (max-width: 767px) {
     .content { padding: 20px 16px; }
     .aside, .sidebar { max-width: none; }
+    .workbench > .aside {
+      border-left: 0;
+      border-top: 1px solid var(--border);
+    }
+    .sidebar:popover-open {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: min(85vw, 320px);
+      height: 100dvh;
+      max-height: none;
+      margin: 0;
+      padding: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      color: inherit;
+      background: var(--surface-2);
+      border: 0;
+      border-right: 1px solid var(--border);
+    }
+    .sidebar::backdrop {
+      background: rgb(0 0 0 / 0.5);
+    }
+    .sidebar:popover-open .drawer-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-2);
+      font-size: 20px;
+      cursor: pointer;
+    }
   }
 </style>

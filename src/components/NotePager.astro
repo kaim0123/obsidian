@@ -1,0 +1,63 @@
+---
+import { neighborsInFolder } from '../lib/notes';
+
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+const { prev, next } = neighborsInFolder(id);
+---
+{(prev || next) && (
+  <nav class="pager" aria-label="前後のノート">
+    {prev && (
+      <a class="prev" href={prev.url} rel="prev">
+        <span class="lbl">← 前のノート</span>
+        <span class="name">{prev.name}</span>
+      </a>
+    )}
+    {next && (
+      <a class="next" href={next.url} rel="next">
+        <span class="lbl">次のノート →</span>
+        <span class="name">{next.name}</span>
+      </a>
+    )}
+  </nav>
+)}
+
+<style>
+  .pager {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  a {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+  }
+  a:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .next {
+    grid-column: 2;
+    text-align: right;
+  }
+  .lbl {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .name {
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+</style>

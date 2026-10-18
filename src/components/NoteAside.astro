@@ -1,6 +1,7 @@
 ---
 import type { MarkdownHeading } from 'astro';
 import { findFolder, folderOf, type OutLink } from '../lib/notes';
+import NoteOutline from './NoteOutline.astro';
 
 interface Props {
   /** h2・h3 の見出し */
@@ -15,15 +16,9 @@ const folderUrl = findFolder(folderPath)?.url ?? '/notes/';
 ---
 <div class="note-aside">
   {outline.length > 0 && (
-    <section>
+    <section class="aside-outline">
       <div class="aside-heading">アウトライン</div>
-      <ul class="outline">
-        {outline.map((h) => (
-          <li class={h.depth === 3 ? 'h3' : undefined}>
-            <a href={`#${h.slug}`}>{h.text}</a>
-          </li>
-        ))}
-      </ul>
+      <NoteOutline outline={outline} />
     </section>
   )}
 
@@ -82,9 +77,6 @@ const folderUrl = findFolder(folderPath)?.url ?? '/notes/';
     overflow-wrap: anywhere;
     line-height: 1.5;
   }
-  .outline .h3 {
-    padding-left: 14px;
-  }
   .props {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -99,5 +91,19 @@ const folderUrl = findFolder(folderPath)?.url ?? '/notes/';
   .props dd {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+  /* スマホ幅：縦に並ぶので固定と高さの上限を外し、アウトラインは本文の上に出す（UI 設計 05 §2.3） */
+  @media (max-width: 767px) {
+    .note-aside {
+      position: static;
+      max-height: none;
+      overflow: visible;
+    }
+    .aside-outline {
+      display: none;
+    }
+    .aside-outline + section {
+      margin-top: 0;
+    }
   }
 </style>

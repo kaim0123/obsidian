@@ -274,6 +274,15 @@ export function positionInFolder(id: string): string {
   return i === -1 ? label : `${label} › ${i + 1} / ${folder.notes.length}`;
 }
 
+/** 同じフォルダ内で前後のノート（名前順。端では片方が undefined） */
+export function neighborsInFolder(id: string): { prev?: NoteRef; next?: NoteRef } {
+  const folder = findFolder(folderOf(id));
+  if (!folder) return {};
+  const i = folder.notes.findIndex((n) => n.id === id);
+  if (i === -1) return {};
+  return { prev: folder.notes[i - 1], next: folder.notes[i + 1] };
+}
+
 export function breadcrumb(id: string): { label: string; url: string }[] {
   const index = getNoteIndex();
   const parts = id.split('/');

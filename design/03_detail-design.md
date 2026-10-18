@@ -333,7 +333,7 @@ const outLinks = remarkPluginFrontmatter.outLinks ?? [];
 - `<html lang="ja" style="color-scheme: dark">`、`<meta name="viewport">`、`<title>{title}｜Knowledge</title>`
 - props：`title`、`currentId?`（ツリーで開いておく場所）、`status: string[]`（ステータスバーに出す項目）
 - 構造：`Header` → 3列（`FolderTree` / `<main><slot /></main>` / `<slot name="aside" />`）→ `StatusBar`
-  - 3列は `display:flex; flex-wrap:wrap`。本文は `flex: 999 1 560px; min-width: 0`、ツリーは `flex: 1 1 240px; max-width: 280px`、右パネルは `flex: 1 1 220px; max-width: 260px`。スマホ幅では自然に縦に並ぶ。
+  - 3列は `display:flex; flex-wrap:wrap`。本文は `flex: 999 1 560px; min-width: 0`、ツリーは `flex: 1 1 240px; max-width: 280px`、右パネルは `flex: 1 1 220px; max-width: 260px`。スマホ幅では縦に並び、ツリーはドロワーになる（UI 設計 05 §2.3）。
 - `FolderTree`：`index.root` を再帰で表示。各フォルダは `<details>`、`currentId` の祖先だけ `open`。現在のノートは背景 `#2a3240`・文字白。2,346件を全部 HTML に出すと重いので、**開いているフォルダの中身と、トップレベルのフォルダ名だけ**を出力する。
 - `Header` の検索欄：Phase 1 は `<input type="search" disabled>` ではなく通常の入力欄だが、送信しても何もしない（Phase 3 で `CommandPalette` に置き換え）。
 - Google Fonts（IBM Plex Sans JP 400/500/700、JetBrains Mono 400/600）を `<link>` で読み込む。

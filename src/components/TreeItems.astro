@@ -105,4 +105,10 @@ const split = (name: string): [string, string] => {
     font-family: var(--mono, monospace);
     font-size: 11px;
   }
+  /* スマホ幅は指で押せる高さに（UI 設計 05 §4.2） */
+  @media (max-width: 767px) {
+    .row {
+      min-height: 44px;
+    }
+  }
 </style>

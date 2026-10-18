@@ -25,4 +25,10 @@ const { items, right } = Astro.props;
   .right {
     margin-left: auto;
   }
+  /* スマホ幅は先頭の1項目だけ（UI 設計 05 §4.5） */
+  @media (max-width: 767px) {
+    span:not(:first-child) {
+      display: none;
+    }
+  }
 </style>
