@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メソッド設計解説 — 目次｜メソッド設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<style>
+.idx-card{display:block;text-decoration:none;color:var(--text);transition:border-color .15s,transform .15s}
+.idx-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.idx-card h4{margin:8px 0 4px}
+.idx-card p{margin:0}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">メソッド設計解説</a>
+    <span class="crumb">目次</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>メソッド設計解説 — 目次</h1>
+      <p class="lead">Obsidian の「46_メソッド設計」ノートをもとにした解説ページの入口です。1つの関数・メソッドを「どう切り出し、どんな形にし、中身をどう書くか」——いちばん小さな単位の設計を、責務と分割・シグネチャ・本体の書き方・副作用と状態・契約とエラー・品質と運用まで、全38ページで解説します。</p>
+      <p class="meta">もとにしたノート：MOC_メソッド設計体系 と、10〜90 の各フォルダのノート</p>
+    </div>
+
+    <h2 id="how"><span class="num">1.</span>このサイトの読み方</h2>
+    <p>ページは MOC のフォルダ構成（メソッドの構成要素別：責務 → シグネチャ → 本体 → 副作用 → 契約とエラー）と同じ順番に並んでいます。各ページの下にある「前のページ／次のページ」で順に読み進められ、上部の「メソッド設計解説」からいつでもこの目次に戻れます。どのページも単体で読めるように書いてあるので、気になるテーマから読んでもかまいません。</p>
+    <p>46 章の骨格は McConnell『Code Complete』第7章「高品質なルーチン」と Martin『Clean Code』第3章「関数」で、そこに Ousterhout『A Philosophy of Software Design』（深いメソッド・エラーが起きない設計）、Fowler『リファクタリング』第2版、Normand『Grokking Simplicity』（アクション／計算／データ）の視点を加えています。クラスの責務や GoF は <a href="../44_クラス設計・デザインパターン/00-0_目次.html">クラス設計・デザインパターン解説</a>（44）、モジュール単位の分割は <a href="../43_モジュール設計/00-0_目次.html">モジュール設計解説</a>（43）が本拠地です。</p>
+    <div class="grid c3">
+      <div class="card accent"><h4>はじめて学ぶなら</h4><p>まず <a href="00-1_メソッド設計の全体像.html">メソッド設計の全体像</a> で地図を手に入れ、10 メソッドの基礎 → 20 責務と分割の順に進むのがおすすめです。</p></div>
+      <div class="card good"><h4>歴史から理解したいなら</h4><p><a href="00-2_メソッド設計の変遷.html">メソッド設計の変遷</a> で、goto の時代から構造化・OOP・関数型まで、ルールが生まれた順にたどります。</p></div>
+      <div class="card warn"><h4>今日のコードを直したいなら</h4><p><a href="40-2_GuardClause.html">Guard Clause</a>・<a href="20-4_ExtractMethod.html">Extract Method</a>・<a href="90-2_チェックリストとアンチパターン.html">チェックリスト</a> から。すぐ使える技法です。</p></div>
+    </div>
+
+    <h3 id="order">おすすめの読む順</h3>
+    <p>もとの教材（全8部・25章）の学習順です。各フォルダの後半にある「深掘り」ページ（20-5、30-4、40-4・40-5、50-5・50-6、60-3・60-4）は、慣れてきてから読み返してもかまいません。</p>
+    <ol class="steps">
+      <li><strong>はじめに</strong> — <a href="10-1_メソッド設計を学ぶ理由.html">学ぶ理由</a> → <a href="10-2_関数とメソッドの基本.html">関数とメソッドの基本</a></li>
+      <li><strong>設計の土台</strong> — <a href="20-1_メソッドの分割.html">メソッドの分割</a> → <a href="20-2_関心の分離と単一責任.html">関心の分離と単一責任</a> → <a href="20-3_KISS・DRY・YAGNI.html">KISS・DRY・YAGNI</a></li>
+      <li><strong>メソッドの切り方</strong> — <a href="20-4_ExtractMethod.html">Extract Method</a> → <a href="30-3_情報隠蔽.html">情報隠蔽</a> → <a href="30-2_引数の設計.html">引数の設計</a></li>
+      <li><strong>制御の書き方</strong> — <a href="40-2_GuardClause.html">Guard Clause</a> → <a href="60-1_DesignByContract.html">Design by Contract</a> → <a href="40-3_複雑度と分岐.html">複雑度と分岐</a></li>
+      <li><strong>振る舞いの設計</strong> — <a href="50-1_CQS.html">CQS</a> → <a href="50-2_純粋関数と副作用.html">純粋関数と副作用</a> → <a href="50-4_オブジェクトのメソッド.html">オブジェクトのメソッド</a> → <a href="50-3_FunctionalCoreImperativeShell.html">Functional Core, Imperative Shell</a></li>
+      <li><strong>読みやすいメソッド</strong> — <a href="30-1_命名.html">命名</a> → <a href="40-1_サイズと抽象度.html">サイズと抽象度</a> → <a href="60-2_エラー処理.html">エラー処理</a></li>
+      <li><strong>品質を保つための実践</strong> — <a href="70-1_テストしやすいメソッド設計.html">テストしやすさ</a> → <a href="70-2_リファクタリングの実践.html">リファクタリング</a> → <a href="70-3_コードレビューで見るポイント.html">コードレビュー</a></li>
+      <li><strong>チーム開発と演習</strong> — <a href="70-4_チームでメソッド設計を守る.html">チームで守る</a> → <a href="80-1_ケーススタディ.html">ケーススタディ</a> → <a href="70-5_設計レビューの実践.html">設計レビューの実践</a></li>
+    </ol>
+
+    <h2 id="g00"><span class="num">2.</span>00 全体像</h2>
+    <p>メソッド設計という分野の地図と、その歴史。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="00-1_メソッド設計の全体像.html"><span class="badge accent">00-1</span><h4>メソッド設計の全体像</h4><p class="small muted">いちばん小さな単位の設計、骨格になる本、フォルダ構成と問い、教材の学習順、他章との分担</p></a>
+      <a class="card idx-card" href="00-2_メソッド設計の変遷.html"><span class="badge accent">00-2</span><h4>メソッド設計の変遷</h4><p class="small muted">goto とモノリシック main、構造化、段階的詳細化、情報隠蔽、循環的複雑度、DbC、CQS、リファクタリング、Clean Code、純粋関数、FCIS</p></a>
+    </div>
+
+    <h2 id="g10"><span class="num">3.</span>10 メソッドの基礎</h2>
+    <p>メソッドとは何か、なぜ設計するのか。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="10-1_メソッド設計を学ぶ理由.html"><span class="badge accent">10-1</span><h4>メソッド設計を学ぶ理由</h4><p class="small muted">クラス設計・モジュール設計との違い、巨大な main から関数へ、メソッド設計が解決する問題、今日からできる最初の一歩</p></a>
+      <a class="card idx-card" href="10-2_関数とメソッドの基本.html"><span class="badge accent">10-2</span><h4>関数とメソッドの基本</h4><p class="small muted">関数とメソッドの違い、サブルーチン、構造化プログラミング、引数・戻り値・副作用、呼び出し関係の読み方</p></a>
+    </div>
+
+    <h2 id="g20"><span class="num">4.</span>20 責務と分割</h2>
+    <p>どこで切るか、何を1つにまとめるか。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="20-1_メソッドの分割.html"><span class="badge accent">20-1</span><h4>メソッドの分割</h4><p class="small muted">1関数に全部書く問題、段階的詳細化、同じ抽象度のステップ、粒度の判断、分割ワークショップ</p></a>
+      <a class="card idx-card" href="20-2_関心の分離と単一責任.html"><span class="badge accent">20-2</span><h4>関心の分離と単一責任</h4><p class="small muted">関数レベルの関心の分離、1メソッド1変更理由、オーケストレーション関数と詳細関数、名前で責任を表す</p></a>
+      <a class="card idx-card" href="20-3_KISS・DRY・YAGNI.html"><span class="badge accent">20-3</span><h4>KISS・DRY・YAGNI</h4><p class="small muted">3原則のメソッドでの使い方、原則同士の衝突、変更理由で判断するコツ、判断ワークショップ</p></a>
+      <a class="card idx-card" href="20-4_ExtractMethod.html"><span class="badge accent">20-4</span><h4>Extract Method</h4><p class="small muted">抽出候補になる長い関数のパターン、抽出の手順、Replace Temp with Query、抽出しすぎの落とし穴</p></a>
+      <a class="card idx-card" href="20-5_深いメソッドと浅いメソッド.html"><span class="badge accent">20-5</span><h4>深いメソッドと浅いメソッド</h4><p class="small muted">深さ（コストと利益）、一緒にすべきサイン・分けるべきサイン、良い分割と悪い分割、Clean Code との付き合い方</p></a>
+    </div>
+
+    <h2 id="g30"><span class="num">5.</span>30 シグネチャ設計</h2>
+    <p>外からどう見えるか。名前・引数・戻り値。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="30-1_命名.html"><span class="badge accent">30-1</span><h4>命名</h4><p class="small muted">動詞＋目的語、is/has/can/should の boolean、意図が伝わる名前、業務の用語、検索しやすい名前、命名規約</p></a>
+      <a class="card idx-card" href="30-2_引数の設計.html"><span class="badge accent">30-2</span><h4>引数の設計</h4><p class="small muted">引数の数の目安、Parameter Object、フラグ引数の問題、出力引数を避ける、Introduce Parameter Object</p></a>
+      <a class="card idx-card" href="30-3_情報隠蔽.html"><span class="badge accent">30-3</span><h4>情報隠蔽</h4><p class="small muted">関数レベルの情報隠蔽、公開 API と内部ヘルパーの線引き、戻り値・引数で内部表現を漏らさない</p></a>
+      <a class="card idx-card" href="30-4_戻り値の設計.html"><span class="badge accent">30-4</span><h4>戻り値の設計</h4><p class="small muted">番兵値を避ける、boolean、null・Optional、例外と Result 型、空のコレクション、複数の値、Promise</p></a>
+    </div>
+
+    <h2 id="g40"><span class="num">6.</span>40 本体の書き方</h2>
+    <p>中身をどう読ませるか。長さ・ネスト・分岐・ループ。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="40-1_サイズと抽象度.html"><span class="badge accent">40-1</span><h4>サイズと抽象度</h4><p class="small muted">関数は小さく、1関数1抽象度、20行の目安とその限界、構造のコメントは抽出のサイン、クラスも小さく</p></a>
+      <a class="card idx-card" href="40-2_GuardClause.html"><span class="badge accent">40-2</span><h4>Guard Clause</h4><p class="small muted">ネストした if の問題、早期 return、else をなくす、if-else のままでよい対称的な分岐</p></a>
+      <a class="card idx-card" href="40-3_複雑度と分岐.html"><span class="badge accent">40-3</span><h4>複雑度と分岐</h4><p class="small muted">循環的複雑度の測り方と目安、ポリモーフィズム・ルックアップへの置き換え、CI の閾値、区分の if と複文</p></a>
+      <a class="card idx-card" href="40-4_ループとコレクション処理.html"><span class="badge accent">40-4</span><h4>ループとコレクション処理</h4><p class="small muted">Replace Loop with Pipeline、map・filter・find・some の使い分け、reduce の乱用、ループが向く場面、非同期</p></a>
+      <a class="card idx-card" href="40-5_段落と説明用の変数.html"><span class="badge accent">40-5</span><h4>段落と説明用の変数</h4><p class="small muted">空行で段落に分ける、説明用の変数、破壊的代入を避ける、段落 → 変数 → 抽出の進め方</p></a>
+    </div>
+
+    <h2 id="g50"><span class="num">7.</span>50 副作用と状態</h2>
+    <p>何を変えるか。状態変更・I/O・純粋さ。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="50-1_CQS.html"><span class="badge accent">50-1</span><h4>CQS</h4><p class="small muted">Command と Query の分離、getter に副作用を入れない理由、lazy 初期化などの例外、CQRS との違い</p></a>
+      <a class="card idx-card" href="50-2_純粋関数と副作用.html"><span class="badge accent">50-2</span><h4>純粋関数と副作用</h4><p class="small muted">純粋関数の定義、副作用の種類、副作用を境界に押し出す、依存の引数化、共通処理の仕分け</p></a>
+      <a class="card idx-card" href="50-3_FunctionalCoreImperativeShell.html"><span class="badge accent">50-3</span><h4>Functional Core, Imperative Shell</h4><p class="small muted">核は純粋・外縁だけ I/O、Core と Shell の境界、ユースケース層での実践、OOP と FP の役割分担</p></a>
+      <a class="card idx-card" href="50-4_オブジェクトのメソッド.html"><span class="badge accent">50-4</span><h4>オブジェクトのメソッド</h4><p class="small muted">状態に対する操作としてのメソッド、Tell, Don't Ask、貧血モデル、ドメインルールの配置</p></a>
+      <a class="card idx-card" href="50-5_アクション・計算・データ.html"><span class="badge accent">50-5</span><h4>アクション・計算・データ</h4><p class="small muted">3分類の定義と見分け方、伝染のルール、暗黙的な入出力、計算を取り出す手順</p></a>
+      <a class="card idx-card" href="50-6_引数の破壊的変更とイミュータブル.html"><span class="badge accent">50-6</span><h4>引数の破壊的変更とイミュータブル</h4><p class="small muted">破壊的な配列メソッド、ES2023 の toSorted など、コピーオンライト、防御的コピー、浅い・深いコピー、readonly</p></a>
+    </div>
+
+    <h2 id="g60"><span class="num">8.</span>60 契約とエラー</h2>
+    <p>失敗をどう扱うか。前提条件・例外・null。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="60-1_DesignByContract.html"><span class="badge accent">60-1</span><h4>Design by Contract</h4><p class="small muted">事前条件・事後条件・不変条件、Fail Fast、先頭での前提チェック、Guard Clause との関係</p></a>
+      <a class="card idx-card" href="60-2_エラー処理.html"><span class="badge accent">60-2</span><h4>エラー処理</h4><p class="small muted">例外を使う場面・使わない場面、try-catch を境界に集める、分かりやすいエラーメッセージ、null の扱い</p></a>
+      <a class="card idx-card" href="60-3_エラーが起きない設計にする.html"><span class="badge accent">60-3</span><h4>エラーが起きない設計にする</h4><p class="small muted">エラーを定義からなくす・隠す・まとめる・クラッシュさせる、4技法の使い分けとやりすぎの注意</p></a>
+      <a class="card idx-card" href="60-4_null・undefined・Result型の使い分け.html"><span class="badge accent">60-4</span><h4>null・undefined・Result型</h4><p class="small muted">10億ドルの過ち、strictNullChecks、null と undefined の統一、?. と ??、例外と Result 型、neverthrow</p></a>
+    </div>
+
+    <h2 id="g70"><span class="num">9.</span>70 品質と運用</h2>
+    <p>テスト・リファクタリング・レビュー・チームのルールで品質を保つ。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="70-1_テストしやすいメソッド設計.html"><span class="badge accent">70-1</span><h4>テストしやすいメソッド設計</h4><p class="small muted">純粋関数のテスト、モックは Shell の境界だけ、モック地獄のサイン、テストからの設計フィードバック</p></a>
+      <a class="card idx-card" href="70-2_リファクタリングの実践.html"><span class="badge accent">70-2</span><h4>リファクタリングの実践</h4><p class="small muted">ルールオブスリー、主要3技法、200行関数の段階的な直し方、特性テストなどの安全網、技術的負債</p></a>
+      <a class="card idx-card" href="70-3_コードレビューで見るポイント.html"><span class="badge accent">70-3</span><h4>コードレビューで見るポイント</h4><p class="small muted">見る順番と時間配分、メソッド設計のチェックリスト、良い関数・悪い関数、改善提案の型</p></a>
+      <a class="card idx-card" href="70-4_チームでメソッド設計を守る.html"><span class="badge accent">70-4</span><h4>チームでメソッド設計を守る</h4><p class="small muted">関数スタイルガイド、ESLint と Formatter、CI の閾値と段階的導入、設計負債の可視化、オンボーディング</p></a>
+      <a class="card idx-card" href="70-5_設計レビューの実践.html"><span class="badge accent">70-5</span><h4>設計レビューの実践</h4><p class="small muted">60分の進め方、分割・制御・契約・品質の総合チェックリスト、Before/After の示し方、リファクタリング PR</p></a>
+    </div>
+
+    <h2 id="g80"><span class="num">10.</span>80 ケーススタディ</h2>
+    <p>ここまでの考え方を、注文処理と料金計算に当てはめる総合演習。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="80-1_ケーススタディ.html"><span class="badge accent">80-1</span><h4>ケーススタディ</h4><p class="small muted">200行の handleRequest の分割（Guard Clause・Extract Method・CQS）、料金計算の純粋関数化、FCIS、Result 型のバリデーション</p></a>
+    </div>
+
+    <h2 id="g90"><span class="num">11.</span>90 付録</h2>
+    <p>引き直すための用語集・チェックリスト・早見表・図解。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="90-1_用語集と推奨図書.html"><span class="badge accent">90-1</span><h4>用語集と推奨図書</h4><p class="small muted">五十音順の用語集と解説ページへのリンク、推奨図書（入門〜上級・関数型）、オンライン資料、学習のすすめ方</p></a>
+      <a class="card idx-card" href="90-2_チェックリストとアンチパターン.html"><span class="badge accent">90-2</span><h4>チェックリストとアンチパターン</h4><p class="small muted">6分類のチェックリスト、巨大関数・フラグ引数・ネスト地獄・モック地獄など8つのアンチパターンの症状と対策</p></a>
+      <a class="card idx-card" href="90-3_ルール早見表とリファクタリング技法.html"><span class="badge accent">90-3</span><h4>ルール早見表とリファクタリング技法</h4><p class="small muted">Clean Code の関数ルール、行数・複雑度の目安、抽出・制御フロー・副作用のリファクタリング技法、適用手順</p></a>
+      <a class="card idx-card" href="90-4_参考図解.html"><span class="badge accent">90-4</span><h4>参考図解</h4><p class="small muted">FCIS の構造、抽象度の階層、Guard Clause の Before/After、CQS、設計の階層での位置づけ</p></a>
+    </div>
+
+    <h2 id="related"><span class="num">12.</span>関連するフォルダ</h2>
+    <p>次のテーマは兄弟フォルダが本拠地です。46 では「メソッド単位での使い方」だけを書いています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地</th></tr></thead>
+      <tbody>
+        <tr><td>パラダイム（手続き・OOP・関数型）の一般論</td><td><a href="../42_ソフトウェア設計/00-0_目次.html">42_ソフトウェア設計</a> / 20 パラダイム</td></tr>
+        <tr><td>モジュール・パッケージ単位の分割</td><td><a href="../43_モジュール設計/00-0_目次.html">43_モジュール設計</a></td></tr>
+        <tr><td>クラスの責務・カプセル化・GoF</td><td><a href="../44_クラス設計・デザインパターン/00-0_目次.html">44_クラス設計・デザインパターン</a></td></tr>
+        <tr><td>Web API のインターフェース設計</td><td><a href="../45_API設計/00-0_目次.html">45_API設計</a></td></tr>
+        <tr><td>アーキテクチャスタイル</td><td><a href="../41_アーキテクチャ/00-0_目次.html">41_アーキテクチャ</a></td></tr>
+        <tr><td>KISS・DRY・YAGNI・SRP などの原則そのもの</td><td>48_原則</td></tr>
+        <tr><td>命名・フォーマットのチーム規約</td><td>59_AI開発ツール・コーディング規約</td></tr>
+        <tr><td>テスト戦略・テスト設計技法</td><td>81_テスト戦略 / 87_テスト設計技法</td></tr>
+      </tbody>
+    </table></div>
+
+    <nav class="pager" aria-label="ページ移動">
+      <span class="empty"></span>
+      <span class="idx">目次</span>
+      <a class="next" href="00-1_メソッド設計の全体像.html"><span class="lbl">次のページ →</span>メソッド設計の全体像</a>
+    </nav>
+    <footer class="page-foot">46_メソッド設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>
