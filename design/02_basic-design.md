@@ -71,12 +71,15 @@ obsidian/
 ├─ design/                  … 本設計書（サイトには出さない）
 ├─ docs/                    … ノート原本（変更しない）
 ├─ public/                  … 解説HTML原本（変更しない）＋ サイト用の静的ファイル
+│  └─ _site/site-nav.js     … 解説HTMLのパンくず先頭に「Knowledge」を足すスクリプト（F-42）
 ├─ src/
 │  ├─ content.config.ts     … コレクション定義（docs を読む）
 │  ├─ lib/
 │  │  ├─ notes.ts           … ノート索引・フォルダツリー・パス⇔URL変換
 │  │  ├─ explainers.ts      … 解説HTMLの一覧（public の目次ページ）
 │  │  └─ git-history.ts     … Git 履歴 JSON の読み込み（S-07）
+│  ├─ integrations/
+│  │  └─ explainer-nav.ts … 解説HTMLに全体ナビを「配信時だけ」差し込む（F-42）
 │  ├─ plugins/
 │  │  ├─ remark-wikilink.ts … [[...]] → リンク
 │  │  ├─ remark-callout.ts  … > [!type] → callout
@@ -237,6 +240,26 @@ UI は「A ワークベンチ」案に決定（要件定義 §9）。モック�
 | N-07 ダークモードのみ | CSS 変数で §4.4 の色を定義する。`color-scheme: dark` を指定し、OS の設定に関係なく常にダーク表示 |
 
 ---
+
+## 7.1 解説HTMLから全体へ戻る仕組み（F-42）
+
+解説HTMLは章ごとに独立しており、単体でも使えるようにしておく。そのため**原本には手を入れず、サイトが配信するときだけ**ナビを足す。
+
+```mermaid
+flowchart LR
+  P["public/41_…/x.html<br/>（原本・変更しない）"]
+  P -->|"単体で開く"| S["そのまま表示<br/>（ナビなし）"]
+  P -->|"dev：配信時に差し込み"| D["x.html ＋ &lt;script src=/_site/site-nav.js&gt;"]
+  P -->|"build：dist のコピーに差し込み"| D
+  D --> N["パンくず先頭に<br/>Knowledge › を追加"]
+```
+
+| 場面 | 仕組み |
+|---|---|
+| `npm run dev` | `explainer-nav` インテグレーションの Vite ミドルウェアが、`public/<章>/*.html` へのリクエストだけを横取りし、`</body>` の前にスクリプトを1行足して返す |
+| `npm run build` | `astro:build:done` で、`dist/` にコピーされた解説HTMLだけに同じ1行を足す |
+| `site-nav.js` | `.topbar .crumb` があれば先頭に `<a href="/">Knowledge</a> ›` を足す。無いページ（現在1件）は左下に小さなリンクを出す |
+| 単体利用 | 差し込みが起きないので、原本どおりに動く |
 
 ## 8. 対象外・今後の検討
 - 公開するときのホスティング先（GitHub Pages / Cloudflare Pages など）は未決定（要件 Q-1）。

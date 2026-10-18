@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import { extractGitHistory } from './scripts/extract-git-history.mjs';
+import explainerNav from './src/integrations/explainer-nav.ts';
 
 // Always refresh stub or full history before pages resolve.
 extractGitHistory({
@@ -8,4 +9,6 @@ extractGitHistory({
 });
 
 // https://astro.build/config
-export default defineConfig({});
+export default defineConfig({
+  integrations: [explainerNav()],
+});
