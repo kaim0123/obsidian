@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>フロントエンド設計の変遷 — 7つの設計思想を西暦順にたどる｜フロントエンド設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">フロントエンド設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › 設計の変遷</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>フロントエンド設計の変遷 — 7つの設計思想を西暦順にたどる</h1>
+      <p class="lead">jQuery で DOM を直接触っていた時代から、コンポーネント指向・UI = f(state)・Atomic Design・単方向データフロー・Single Source of Truth・Feature First（FSD）・Server State 管理へ。フロントエンドでよく語られる <strong>7つの設計思想</strong> を登場が早い順に並べ、それぞれ「どんな課題があったか → 何を提案したか → どう解決したか → 向いている場面と限界」の流れで整理します。</p>
+      <p class="meta">もとにしたノート：00_フロントエンド設計の変遷</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>フロントエンドの設計思想は、どれも <strong>「前の時代の痛み」への答え</strong> として生まれました。部品化（コンポーネント）→ 表示と状態の関係（UI = f(state)）→ 見た目の統一（Atomic Design）→ 変更の向き（単方向データフロー）→ 正本の一本化（SSOT）→ コードの置き場（Feature First / FSD）→ サーバーデータの扱い（Server State 管理）と、<strong>解決するレイヤーが少しずつ違う</strong> ので、置き換えではなく積み重ねとして理解します。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><strong>フロントエンド設計</strong> とは、ブラウザ上の UI を <strong>再利用可能な部品</strong> に分け、<strong>状態と表示の関係</strong>・<strong>データの流れ</strong>・<strong>フォルダ構成</strong> を決め、長期間メンテナンスできる形に整えることです。</p>
+    <p><a href="../42_ソフトウェア設計/10-2_設計の階層と基本用語.html">設計</a> の比喩で言えば、API 設計が「窓口の決め方」なら、フロントエンド設計は <strong>「画面の部屋割りと、情報の配管」</strong> に相当します。</p>
+    <p>このページでは、フロントエンドでよく語られる <strong>7つの設計思想</strong> を <strong>登場が早い順（おおよその西暦）</strong> に並べ、次の流れで整理します。</p>
+    <ol class="steps">
+      <li><strong>その前に、どんな課題があったか</strong></li>
+      <li><strong>何を提案したか</strong></li>
+      <li><strong>どう解決したか</strong></li>
+      <li><strong>向いている場面・限界</strong></li>
+    </ol>
+    <p>前提として <a href="../42_ソフトウェア設計/10-2_設計の階層と基本用語.html">設計の階層</a> の「ソフトウェア設計」層に位置づけられます。サーバーとの境界は <a href="../45_API設計/00-0_目次.html">API設計</a> も参照してください。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>全体の流れ（年表）</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>順番</th><th>考え方</th><th>登場時期</th><th>一言で言うと</th><th>主に解決した課題</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>コンポーネント指向</strong></td><td>1990年代〜（Web 本格化: 2010年代）</td><td>UI を独立した部品に分ける</td><td>HTML/JS のコピペ地獄</td></tr>
+        <tr><td>2</td><td><strong>State Driven UI</strong></td><td>2013年〜</td><td>状態が変われば UI が変わる</td><td>命令型 DOM 操作の複雑化</td></tr>
+        <tr><td>3</td><td><strong>Atomic Design</strong></td><td>2013年〜</td><td>デザインを原子→分子→生物と階層化</td><td>UI のバラつき・デザインシステム不在</td></tr>
+        <tr><td>4</td><td><strong>Unidirectional Data Flow</strong></td><td>2014年〜</td><td>データは一方向にだけ流す</td><td>双方向バインディングの予測不能さ</td></tr>
+        <tr><td>5</td><td><strong>Single Source of Truth</strong></td><td>2014〜2015年〜</td><td>真実のデータは1か所だけ</td><td>同じデータの多重コピーと不整合</td></tr>
+        <tr><td>6</td><td><strong>Feature First / FSD</strong></td><td>2018〜2020年〜</td><td>機能（ドメイン）単位でフォルダを切る</td><td>技術レイヤー分割のスケール限界</td></tr>
+        <tr><td>7</td><td><strong>Server State 管理</strong></td><td>2019年〜</td><td>サーバー由来の状態を専用に扱う</td><td>Redux に API データを詰め込む過剰設計</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">補足</p>
+      <p>年は「Web フロントエンドで名前が広まった時期」の目安です。コンポーネント指向はデスクトップ UI（Visual Basic、Swing など）から以前に存在します。ここでは <strong>ブラウザアプリ</strong> を主な文脈とします。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>その前：サーバー生成 HTML + jQuery 時代（〜2010年代初頭）</h2>
+    <p>React や Vue が主流になる前、多くの Web アプリは <strong>サーバーが HTML を生成</strong> し、ブラウザ側は <strong>jQuery</strong>（DOM 操作を簡単に書くための JavaScript ライブラリ）で <strong>DOM</strong>（ブラウザが HTML から作る、画面の部品のツリー）を直接触る構成が一般的でした。</p>
+    <h3 id="sec-3-1">3.1 よく起きていた課題</h3>
+    <ul>
+      <li>同じヘッダー・フォーム・モーダルを <strong>ページごとにコピペ</strong> し、修正漏れが頻発</li>
+      <li><code>$('#submit').click(...)</code> のような <strong>命令型 DOM 操作</strong> がファイル全体に散らばる</li>
+      <li>「今このボタンが有効か？」の判断が <strong>DOM の属性</strong> と <strong>JS の変数</strong> に二重に存在し、ズレる</li>
+      <li>画面が複雑になるほど <strong>どこを触ると何が変わるか</strong> が追えない（スパゲッティ化）</li>
+      <li>デザインの <strong>統一ルール</strong> がなく、開発者ごとに見た目がバラバラ</li>
+    </ul>
+    <h3 id="sec-3-2">3.2 次の時代への問い</h3>
+    <div class="callout key">
+      <p class="callout-title">問い</p>
+      <p><strong>「UI を部品として再利用し、状態と表示の関係を整理するには？」</strong></p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>コンポーネント指向（1990年代〜 / Web: 2010年代〜）</h2>
+    <p><strong>背景:</strong> デスクトップ UI フレームワーク（Swing、Qt など）→ Web Components 構想（2011）→ React（2013）、Vue（2014）<br><strong>一言:</strong> 画面を <strong>独立した UI 部品（コンポーネント）</strong> の組み合わせとして設計する</p>
+    <h3 id="sec-4-1">4.1 その前の課題 — モノリシック HTML とコピペ</h3>
+    <ul>
+      <li>ナビゲーション、カード、フォームが <strong>各ページの HTML に直書き</strong> され、1 箇所の変更が全ページに波及</li>
+      <li>「ボタンコンポーネント」を作りたくても、<strong>HTML 断片 + CSS + JS</strong> がバラバラに存在</li>
+      <li>グローバルな CSS セレクタ（<code>.btn</code>）が <strong>意図せず他の画面に効く</strong></li>
+      <li>テストしにくい — DOM 全体を読み込まないと部品単体を検証できない</li>
+    </ul>
+    <h3 id="sec-4-2">4.2 何を提案したか</h3>
+    <p>UI を <strong>カプセル化された部品</strong> に分割する。各部品は <strong>自分の見た目・振る舞い・（場合により）状態</strong> を持ち、親から <strong>props（入力）</strong> を受け取って描画する。</p>
+    <pre><code>// ボタンを部品として切り出す
+function PrimaryButton({ label, onClick, disabled }) {
+  return (
+    &lt;button className="btn-primary" onClick={onClick} disabled={disabled}&gt;
+      {label}
+    &lt;/button&gt;
+  );
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コンポーネント</strong></td><td>再利用可能な UI の最小単位（またはその組み合わせ単位）</td></tr>
+        <tr><td><strong>props</strong></td><td>親から子へ渡す設定・データ</td></tr>
+        <tr><td><strong>カプセル化</strong></td><td>内部実装を隠し、外部にはインタフェースだけ公開</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-4-3">4.3 どう解決したか</h3>
+    <ul>
+      <li><strong>再利用:</strong> 同じ <code>&lt;UserCard /&gt;</code> を一覧・詳細・ダッシュボードで使い回せる</li>
+      <li><strong>変更の局所化:</strong> カードのデザイン変更は <strong>1 コンポーネント</strong> だけ直せばよい</li>
+      <li><strong>分割統治:</strong> 大きな画面を <strong>小さな部品のツリー</strong> に分解し、チームで分担しやすくなる</li>
+      <li><strong>テスト:</strong> 部品単位で「この props ならこの HTML になる」を検証できる</li>
+    </ul>
+    <h3 id="sec-4-4">4.4 向いている場面・限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向く</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td>同じ UI が複数画面に現れる</td><td>1 回きりの静的ランディングページ</td></tr>
+        <tr><td>中〜大規模 SPA</td><td>部品分割しすぎて props が深く渡り続ける（prop drilling）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>限界:</strong> コンポーネント分割だけでは <strong>状態の置き場所</strong> や <strong>データの流れ</strong> は決まらない → 次の思想へ。（分け方の詳細は <a href="20-1_コンポーネントの分割粒度と境界.html">分割粒度と境界</a>）</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>State Driven UI（2013年〜）</h2>
+    <p><strong>背景:</strong> React（2013）、Elm（2012）など関数型 UI の潮流<br><strong>一言:</strong> <strong>UI = f(state)</strong> — 状態が決まれば表示が決まる。DOM を直接いじらない</p>
+    <h3 id="sec-5-1">5.1 その前の課題 — DOM が「真実」になっていた</h3>
+    <ul>
+      <li>「チェック済みか？」を <code>input.checked</code> で見る一方、JS 側にも <code>isChecked</code> 変数があり <strong>二重管理</strong></li>
+      <li>データ更新のたびに <code>document.getElementById(...).innerHTML = ...</code> を <strong>手動で書く</strong></li>
+      <li>更新漏れ・順序バグ（A を更新したが B を忘れた）が起きやすい</li>
+      <li>「今の画面の状態」を <strong>DOM ツリーを辿って</strong> 復元する必要がある</li>
+    </ul>
+    <h3 id="sec-5-2">5.2 何を提案したか</h3>
+    <p><strong>状態（state）を唯一の入力</strong> とし、UI はその <strong>純粋な関数（または宣言）</strong> として記述する。フレームワークが <strong>差分検知</strong>（Virtual DOM など。前回の描画結果と比べて変わった部分だけを実際の DOM に反映する仕組み）で DOM 更新を代行する。</p>
+    <pre><code>function Counter() {
+  const [count, setCount] = useState(0);
+
+  // UI は state から決まる — DOM を直接触らない
+  return (
+    &lt;div&gt;
+      &lt;p&gt;カウント: {count}&lt;/p&gt;
+      &lt;button onClick={() =&gt; setCount(count + 1)}&gt;+1&lt;/button&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+    <h3 id="sec-5-3">5.3 どう解決したか</h3>
+    <ul>
+      <li><strong>宣言的:</strong> 「こう見せたい」を書けば、<strong>どう DOM を更新するか</strong> はフレームワーク任せ</li>
+      <li><strong>再現性:</strong> 同じ state なら <strong>必ず同じ UI</strong> — デバッグで state を見ればよい</li>
+      <li><strong>更新漏れの削減:</strong> state を更新すれば、関連 UI が <strong>一括で</strong> 再描画される</li>
+      <li><strong>テスト:</strong> DOM 操作ではなく <strong>state → 出力</strong> を検証できる</li>
+    </ul>
+    <h3 id="sec-5-4">5.4 向いている場面・限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向く</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td>動的に変化する SPA</td><td>完全に静的な HTML ページ</td></tr>
+        <tr><td>フォーム・一覧・ダッシュボード</td><td>アニメーション DOM を細かく直接制御したい場面（例外はある）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>限界:</strong> state が <strong>コンポーネントごとにバラバラ</strong> だと、兄弟・親子間の共有が複雑になる → データフローの整理へ。（詳しくは <a href="10-2_UIは状態の関数と単方向データフロー.html">UI = f(state) と単方向データフロー</a>）</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>Atomic Design（2013年〜）</h2>
+    <p><strong>背景:</strong> Brad Frost による方法論（2013 年記事、2016 年書籍）<br><strong>一言:</strong> UI を <strong>原子 → 分子 → 生物 → テンプレート → ページ</strong> の階層で設計する</p>
+    <h3 id="sec-6-1">6.1 その前の課題 — デザインと実装の断絶</h3>
+    <ul>
+      <li>「ボタン」「入力欄」が <strong>開発者ごとに微妙に違う</strong> 色・余白・フォント</li>
+      <li>デザイナーの Figma と実装の React コンポーネントの <strong>対応関係が曖昧</strong></li>
+      <li><code>components/</code> フォルダに <strong>粒度のバラバラな部品</strong> が混在（アイコンとページ全体が同列）</li>
+      <li>デザイン変更時に <strong>どこまで直せばよいか</strong> の範囲が読めない</li>
+    </ul>
+    <h3 id="sec-6-2">6.2 何を提案したか</h3>
+    <p>UI を <strong>5 段階の階層</strong> で整理する。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>階層</th><th>例</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Atoms（原子）</strong></td><td>ボタン、ラベル、入力欄</td><td>これ以上分割しない最小 UI</td></tr>
+        <tr><td><strong>Molecules（分子）</strong></td><td>ラベル + 入力 + エラー文</td><td>原子の組み合わせ</td></tr>
+        <tr><td><strong>Organisms（生物）</strong></td><td>ヘッダー、商品カード</td><td>独立した UI ブロック</td></tr>
+        <tr><td><strong>Templates（テンプレート）</strong></td><td>一覧ページの骨組み</td><td>レイアウト・配置</td></tr>
+        <tr><td><strong>Pages（ページ）</strong></td><td>実データを当てはめた完成形</td><td>最終的な画面</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-6-3">6.3 どう解決したか</h3>
+    <ul>
+      <li><strong>共通言語:</strong> デザイナーとエンジニアが <strong>同じ粒度</strong> で会話できる</li>
+      <li><strong>デザインシステムの土台:</strong> Atoms / Molecules が <strong>Storybook</strong>（部品を単独で表示・確認できるカタログツール）などのカタログ化と相性がよい</li>
+      <li><strong>変更の波及範囲:</strong> ボタン色の変更は <strong>Atom 1 つ</strong> で全アプリに効かせられる</li>
+      <li><strong>一貫性:</strong> 「この画面だけ特別なボタン」を <strong>意図的に作らない限り</strong> 防げる</li>
+    </ul>
+    <h3 id="sec-6-4">6.4 向いている場面・限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向く</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td>デザインシステム・複数画面で UI を統一</td><td>プロトタイプ段階で細部まで階層化する必要がない</td></tr>
+        <tr><td>中〜大規模プロダクト</td><td>階層の厳密な分類に <strong>時間を取りすぎる</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>限界:</strong> Atomic Design は <strong>見た目・部品の粒度</strong> の話であり、<strong>アプリの状態管理やフォルダ構成</strong> は別問題 → データフロー・機能分割へ。（使いどころは <a href="20-4_AtomicDesign.html">Atomic Design</a>）</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>Unidirectional Data Flow（2014年〜）</h2>
+    <p><strong>背景:</strong> Facebook Flux（2014）、Redux（2015）、Vue の一方向フロー<br><strong>一言:</strong> データは <strong>Action → State → View</strong> の一方向にだけ流し、逆流させない</p>
+    <h3 id="sec-7-1">7.1 その前の課題 — 双方向バインディングのスケール限界</h3>
+    <ul>
+      <li>AngularJS（1.x）の <strong>two-way binding</strong>（双方向バインディング。画面の入力とデータが互いを自動で書き換える仕組み）は小規模では便利だが、大規模になると <strong>誰が誰を更新したか</strong> が追えない</li>
+      <li>子コンポーネントが <strong>親の state を直接書き換える</strong> と、変更経路が増えてデバッグ困難</li>
+      <li>「この値が変わったのは、入力？ API？ 親？」が <strong>調査に時間がかかる</strong></li>
+      <li>イベントと state 更新が <strong>循環</strong> し、無限ループや予期しない再描画が起きる</li>
+    </ul>
+    <h3 id="sec-7-2">7.2 何を提案したか</h3>
+    <p>データの流れを <strong>一方向</strong> に固定する。</p>
+    <ol class="steps">
+      <li><strong>User Action</strong>（ユーザーの操作）</li>
+      <li><strong>Action</strong>（「何が起きたか」の記述）</li>
+      <li><strong>State 更新</strong>（reducer / store）</li>
+      <li><strong>View 再描画</strong>（state から UI を計算）</li>
+      <li>（View から State へ直接書き込まない）</li>
+    </ol>
+    <p><strong>reducer</strong> は「今の state」と「Action」を受け取って「次の state」を返す関数、<strong>store</strong> は state をまとめて保持する入れ物です。</p>
+    <pre><code>// Redux 風のイメージ
+dispatch({ type: 'TODO_ADD', payload: { text: '買い物' } });
+// → reducer が state を更新 → コンポーネントが再描画</code></pre>
+    <h3 id="sec-7-3">7.3 どう解決したか</h3>
+    <ul>
+      <li><strong>変更経路の単純化:</strong> state が変わる入口は <strong>Action だけ</strong> — ログを見れば原因が分かる</li>
+      <li><strong>予測可能性:</strong> 同じ Action 列なら <strong>同じ state</strong> になる（再現しやすい）</li>
+      <li><strong>デバッグ:</strong> Redux DevTools のように <strong>Action 履歴を巻き戻し</strong> できる</li>
+      <li><strong>大規模チーム:</strong> 「state を触っていい場所」が <strong>ルールとして明確</strong></li>
+    </ul>
+    <h3 id="sec-7-4">7.4 向いている場面・限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向く</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td>複数画面で共有するクライアント state</td><td>単純なフォーム 1 画面だけの小アプリ</td></tr>
+        <tr><td>変更履歴・Undo が欲しい UI</td><td>ボイラープレート（毎回書く決まりきったコード）を嫌う小規模プロジェクト</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>限界:</strong> 一方向にすると <strong>記述量が増える</strong> ことがある。あわせて「state の置き場所」を決める SSOT とセットで語られる。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>Single Source of Truth（2014〜2015年〜）</h2>
+    <p><strong>背景:</strong> Flux / Redux の中核原則。React 公式ドキュメントでも「Single Source of Truth」として説明<br><strong>一言:</strong> 同じデータについて <strong>正本は1か所だけ</strong>。他はすべてそこから <strong>導出（derive）</strong> する</p>
+    <h3 id="sec-8-1">8.1 その前の課題 — 同じデータの多重コピー</h3>
+    <ul>
+      <li>ユーザー名が <strong>Profile コンポーネント</strong>・<strong>Header</strong>・<strong>Redux store</strong>・<strong>localStorage</strong> にそれぞれ存在</li>
+      <li>API 取得後に <strong>3 箇所を手動で同期</strong> し、1 箇所だけ古い値が残る</li>
+      <li>「一覧の件数」と「詳細の件数」が <strong>別 state</strong> で管理され、不整合</li>
+      <li>キャッシュと表示用データが <strong>別々に更新</strong> され、UI がちらつく</li>
+    </ul>
+    <h3 id="sec-8-2">8.2 何を提案したか</h3>
+    <p>アプリケーション state を <strong>1 つのツリー（store）</strong> に集約し、各画面は <strong>必要な部分を select（購読）</strong> する。派生値（フィルタ済み一覧、合計金額）は <strong>毎回計算</strong> するか <strong>メモ化</strong>（同じ入力なら前回の計算結果を使い回すこと）するが、<strong>別の正本にはしない</strong>。</p>
+    <pre><code>// 正本は store.user.name だけ
+const state = {
+  user: { id: '1', name: '田中' },
+  todos: [/* ... */],
+};
+
+// Header も Profile も同じ store を参照 — コピーを持たない
+const name = state.user.name;</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原則</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1 データ 1 正本</strong></td><td>同じ意味の値を複数 state に持たない</td></tr>
+        <tr><td><strong>派生は計算</strong></td><td><code>filteredTodos = todos.filter(...)</code> は正本ではなく導出</td></tr>
+        <tr><td><strong>同期ではなく参照</strong></td><td>更新は正本だけ。他は再描画で追従</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-8-3">8.3 どう解決したか</h3>
+    <ul>
+      <li><strong>不整合の削減:</strong> 更新箇所が <strong>1 か所</strong> なので「古い値が残る」バグが減る</li>
+      <li><strong>デバッグ:</strong> アプリ全体の state を <strong>1 スナップショット</strong> で見られる</li>
+      <li><strong>テスト:</strong> 初期 state + Action → 期待 state を <strong>純粋関数</strong> で検証できる</li>
+      <li><strong>Time-travel:</strong> 正本が 1 つなら履歴管理がしやすい</li>
+    </ul>
+    <h3 id="sec-8-4">8.4 向いている場面・限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向く</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td>複数画面で同じデータを参照</td><td>すべてを global store に入れ <strong>過剰に中央集権化</strong></td></tr>
+        <tr><td>複雑なクライアント state（ウィザード、エディタ）</td><td>サーバー由来データまで全部 Redux に入れる（→ Server State 管理へ）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>限界:</strong> 「正本を1つ」は <strong>クライアント側 UI state</strong> には有効だが、<strong>API から取ってくるデータ</strong> は性質が異なる — キャッシュ・再取得・鮮度の問題。（詳しくは <a href="30-2_SSOTと派生状態.html">SSOT と派生状態</a>）</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>Feature First / FSD（2018〜2020年〜）</h2>
+    <p><strong>背景:</strong> Feature-Sliced Design（FSD、Roman Remont ら、2018 年頃〜2020 年に方法論として整理）<br><strong>一言:</strong> フォルダを <strong>技術（components / hooks / utils）</strong> ではなく <strong>機能（feature）</strong> 単位で切る</p>
+    <h3 id="sec-9-1">9.1 その前の課題 — 技術レイヤー型フォルダの限界</h3>
+    <pre><code>src/
+  components/   ← 全機能の UI が混在
+  hooks/
+  utils/
+  services/</code></pre>
+    <ul>
+      <li>「注文キャンセル」機能を直すのに <strong>5 フォルダ</strong> を横断する</li>
+      <li>使われなくなったコードの <strong>削除範囲</strong> が分からない（どこからどこまでが1機能？）</li>
+      <li>共通 <code>components/</code> が <strong>巨大なゴミ箱</strong> になる</li>
+      <li>新メンバーが <strong>画面とファイルの対応</strong> を把握しにくい</li>
+      <li><strong>モジュール間の依存</strong> がルールなく増え、循環 import が発生</li>
+    </ul>
+    <h3 id="sec-9-2">9.2 何を提案したか</h3>
+    <p><strong>機能（スライス）</strong> を主軸に、各機能の中に UI・ロジック・API をまとめる。FSD では <strong>レイヤー × スライス</strong> のルールで依存方向を制限する。</p>
+    <pre><code>src/
+  app/           # ルーティング・プロバイダ
+  pages/         # ルート単位の画面
+  widgets/       # 独立した UI ブロック
+  features/      # ユーザー操作・ビジネス機能（例: add-to-cart）
+  entities/      # ドメインの核（例: user, product）
+  shared/        # 汎用 UI・lib</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>考え方</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Feature First</strong></td><td>「この機能に必要なもの」を <strong>1 か所に集約</strong></td></tr>
+        <tr><td><strong>FSD のスライス</strong></td><td><code>features/cart/add-item/</code> のように <strong>垂直分割</strong></td></tr>
+        <tr><td><strong>依存ルール</strong></td><td>下位レイヤー（shared）に上位（features）が依存しない</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-9-3">9.3 どう解決したか</h3>
+    <ul>
+      <li><strong>変更の局所化:</strong> 機能追加・削除が <strong>フォルダ単位</strong> で完結しやすい</li>
+      <li><strong>オンボーディング:</strong> 「注文機能 = このディレクトリ」と <strong>地図が作れる</strong></li>
+      <li><strong>スケール:</strong> チームを <strong>機能ごとに分担</strong> しやすい</li>
+      <li><strong>デッドコード削減:</strong> 機能フォルダごと削除できる</li>
+    </ul>
+    <h3 id="sec-9-4">9.4 向いている場面・限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向く</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td>中〜大規模 SPA・複数機能</td><td>画面 1〜2 枚の小アプリ</td></tr>
+        <tr><td>長期メンテ・複数人開発</td><td>ルール学習コストを払えない短期プロジェクト</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>限界:</strong> フォルダ構成は <strong>コードの置き場</strong> の話。API データの <strong>キャッシュ・再取得</strong> は Server State 管理の領域。（詳しくは <a href="40-2_FeatureSlicedDesign.html">Feature-Sliced Design</a>）</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>Server State 管理（2019年〜）</h2>
+    <p><strong>背景:</strong> TanStack Query（React Query, 2019）、SWR（2019）、Apollo Client（GraphQL, 2015〜）など<br><strong>一言:</strong> <strong>サーバーが正本のデータ</strong> は、クライアント global state とは <strong>別枠</strong> で取得・キャッシュ・同期する</p>
+    <h3 id="sec-10-1">10.1 その前の課題 — Redux に全部入れる時代</h3>
+    <ul>
+      <li>一覧 API の結果を <strong>Redux に <code>FETCH_SUCCESS</code> で保存</strong> — loading / error / cache の定番コードが毎回必要</li>
+      <li>画面を離れて戻ったとき <strong>再取得するか</strong>、<strong>キャッシュを使うか</strong> がプロジェクトごとにバラバラ</li>
+      <li><strong>同じ API を複数コンポーネント</strong> が呼び、重複リクエスト</li>
+      <li><strong>楽観的更新</strong>（サーバーの返事を待たずに、成功した前提で先に画面を更新すること）や <strong>バックグラウンド再検証</strong> を自前実装し、バグが出やすい</li>
+      <li>「UI state（モーダル開閉）」と「サーバー data（ユーザー一覧）」が <strong>同じ store</strong> に混在し、責務が曖昧</li>
+    </ul>
+    <h3 id="sec-10-2">10.2 何を提案したか</h3>
+    <p><strong>Client State</strong>（UI の一時的な状態）と <strong>Server State</strong>（API が正本のリモートデータ）を <strong>分離</strong> する。Server State は専用ライブラリが <strong>キャッシュ・再取得・無効化</strong> を担当する。</p>
+    <pre><code>// TanStack Query のイメージ
+function UserList() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+    staleTime: 60_000, // 1分は fresh とみなす
+  });
+
+  if (isLoading) return &lt;Spinner /&gt;;
+  if (error) return &lt;Error message={error.message} /&gt;;
+  return data.map(user =&gt; &lt;UserRow key={user.id} user={user} /&gt;);
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>queryKey</strong></td><td>キャッシュの識別子（同じ key は同じデータを共有）</td></tr>
+        <tr><td><strong>stale / fresh</strong></td><td>データの「古さ」と再取得タイミング</td></tr>
+        <tr><td><strong>invalidation</strong></td><td>mutation（データを変更する操作）後に関連 query を再取得</td></tr>
+        <tr><td><strong>Client State</strong></td><td>モーダル、タブ、フォーム入力中 — useState / Zustand など</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-10-3">10.3 どう解決したか</h3>
+    <ul>
+      <li><strong>ボイラープレート削減:</strong> loading / error / retry / dedupe（重複リクエストをまとめること）を <strong>ライブラリが標準提供</strong></li>
+      <li><strong>キャッシュ共有:</strong> 同じ <code>queryKey</code> なら <strong>1 回の取得で複数コンポーネント</strong> が使える</li>
+      <li><strong>鮮度管理:</strong> <code>staleTime</code>・ウィンドウフォーカス時の再取得など <strong>ポリシーを宣言的</strong> に</li>
+      <li><strong>責務分離:</strong> Redux は <strong>UI state だけ</strong>、API データは Query — <strong>SSOT の正本はサーバー</strong> と割り切れる</li>
+    </ul>
+    <h3 id="sec-10-4">10.4 向いている場面・限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向く</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td>REST / GraphQL でデータ取得が中心の SPA</td><td>オフライン専用・サーバー通信ほぼなし</td></tr>
+        <tr><td>一覧・詳細・ダッシュボードで同じ API を共有</td><td>極端にシンプルな CRUD 1 画面</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>限界:</strong> オフライン優先・複雑なローカル DB 同期には <strong>別のアプローチ</strong>（IndexedDB、CRDT など）が必要な場合がある。（状態の種類の分け方は <a href="30-1_状態の分類と置き場所.html">状態の分類と置き場所</a>）</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>7つの思想の関係</h2>
+    <p>7つの思想は、上から順に積み重なっていく関係です（Atomic Design は他と並行して適用することもできます）。</p>
+    <ol class="steps">
+      <li><strong>コンポーネント指向</strong> — UI を部品化</li>
+      <li><strong>State Driven UI</strong> — 表示 = f(state)</li>
+      <li><strong>Atomic Design</strong> — 部品の見た目・粒度を体系化（並行して適用も可）</li>
+      <li><strong>Unidirectional Flow</strong> — 変更の向きを一方向に</li>
+      <li><strong>Single Source of Truth</strong> — クライアント正本を1つに</li>
+      <li><strong>Feature First / FSD</strong> — コードの置き場を機能単位に</li>
+      <li><strong>Server State 管理</strong> — サーバー正本を専用レイヤーで</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>思想</th><th>主に解決するレイヤー</th></tr></thead>
+      <tbody>
+        <tr><td>コンポーネント指向</td><td>UI の <strong>構造・再利用</strong></td></tr>
+        <tr><td>State Driven UI</td><td><strong>表示と状態</strong> の関係</td></tr>
+        <tr><td>Atomic Design</td><td><strong>デザイン一貫性</strong></td></tr>
+        <tr><td>Unidirectional Data Flow</td><td><strong>変更の追跡可能性</strong></td></tr>
+        <tr><td>Single Source of Truth</td><td><strong>クライアント data の不整合</strong></td></tr>
+        <tr><td>Feature First / FSD</td><td><strong>コードベースのスケール</strong></td></tr>
+        <tr><td>Server State 管理</td><td><strong>API データのキャッシュ・同期</strong></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>学習・適用の順番（参考）</h2>
+    <p>歴史順と <strong>学びやすい順</strong> は一致しません。実務では次の順が理解しやすいことが多いです。</p>
+    <ol class="steps">
+      <li><strong>コンポーネント指向</strong> + <strong>State Driven UI</strong>（React / Vue の基本）</li>
+      <li><strong>Server State 管理</strong>（小〜中規模アプリで早めに導入してもよい）</li>
+      <li><strong>Unidirectional Flow</strong> + <strong>SSOT</strong>（共有 state が複雑になってから）</li>
+      <li><strong>Atomic Design</strong>（デザインシステムを作る段階）</li>
+      <li><strong>Feature First / FSD</strong>（フォルダが散らかってきたタイミング）</li>
+    </ol>
+
+    <h2 id="sec-13"><span class="num">13.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「新しい思想が出たら、古い思想は不要になる」</summary><div class="body"><p><strong>違います。</strong> 7つの思想は <strong>解決するレイヤーがそれぞれ違う</strong> ので、置き換えではなく積み重ねです。Server State 管理を入れても、部品の分け方（コンポーネント指向）や UI = f(state) はそのまま土台として使います。</p></div></details>
+    <details open><summary>誤解2：「Single Source of Truth なら、すべてを1つの global store に入れるべき」</summary><div class="body"><p><strong>過剰な中央集権化</strong> は SSOT の「向かない」場面です。<strong>サーバー由来のデータの正本はサーバー</strong> と割り切り、Server State 管理のライブラリに任せます。global store にはクライアントだけの UI state を置きます。</p></div></details>
+    <details open><summary>誤解3：「歴史の順に学ぶのがいちばんわかりやすい」</summary><div class="body"><p>歴史順と学びやすい順は一致しません。実務では <strong>コンポーネント指向 + State Driven UI</strong> から入り、早めに Server State 管理を覚え、SSOT・Atomic Design・FSD は <strong>痛みが出たタイミング</strong> で取り入れる方が理解しやすいことが多いです。</p></div></details>
+
+    <h2 id="sec-14"><span class="num">14.</span>まとめ</h2>
+    <ul>
+      <li>jQuery 時代の課題は、コピペ・命令型 DOM 操作・DOM と変数の二重管理・見た目のバラつき</li>
+      <li>コンポーネント指向で <strong>部品化</strong>、State Driven UI で <strong>UI = f(state)</strong></li>
+      <li>Atomic Design は <strong>見た目の粒度</strong>、単方向データフローは <strong>変更の向き</strong>、SSOT は <strong>正本の一本化</strong></li>
+      <li>Feature First / FSD は <strong>コードの置き場</strong>、Server State 管理は <strong>サーバー由来データのキャッシュ・同期</strong></li>
+      <li>各思想は前の思想の限界から生まれ、解決するレイヤーが違う。学ぶ順は歴史順でなくてよい</li>
+    </ul>
+    <p>次に進むページ：</p>
+    <ul>
+      <li><a href="10-1_フロントエンド設計とは.html">フロントエンド設計とは</a> — フロントエンドの責務と、設計で決めること</li>
+    </ul>
+    <p>関連ページ：</p>
+    <ul>
+      <li><a href="../42_ソフトウェア設計/10-2_設計の階層と基本用語.html">42章：設計の階層と基本用語</a> — 設計全体の階層</li>
+      <li><a href="../45_API設計/00-0_目次.html">45章：API設計</a> — フロントとサーバーの境界</li>
+      <li><a href="../44_クラス設計・デザインパターン/00-2_クラス設計の変遷.html">44章：クラス設計の変遷</a> — オブジェクト単位の設計（バックエンド寄りだが概念は共通）</li>
+      <li><a href="00-1_フロントエンド設計の全体像.html">フロントエンド設計の全体像</a> — この章の入口（テーマ別の置き場）</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：47_フロントエンド設計/00_全体像/00_フロントエンド設計の変遷</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_フロントエンド設計の全体像.html"><span class="lbl">← 前のページ</span>全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-1_フロントエンド設計とは.html"><span class="lbl">次のページ →</span>フロントエンド設計とは</a>
+    </nav>
+    <footer class="page-foot">47_フロントエンド設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

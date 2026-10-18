@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>モノレポとパッケージ分割 — apps と packages の切り方｜フロントエンド設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">フロントエンド設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 80 スケールと組織 › モノレポ</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">80 スケールと組織</span>
+      <h1>モノレポとパッケージ分割 — apps と packages の切り方</h1>
+      <p class="lead">アプリが複数になったり、チームが増えたりすると、「コードをどのリポジトリ・どのパッケージに分けるか」を決める必要が出てきます。このページでは、モノレポとポリレポの違い、pnpm workspaces・Turborepo・Nx の役割の違い、<code>apps/</code> と <code>packages/</code> の切り方、共有 UI パッケージの作り方、よくある失敗を学びます。</p>
+      <p class="meta">もとにしたノート：01_モノレポとパッケージ分割</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>モノレポは、複数のアプリと共有コードを <strong>1つのリポジトリ</strong> に置き、<strong>共有コードの変更を1つの PR で利用側まで直せる</strong> ようにする方式です。<code>apps/</code> は使う側、<code>packages/</code> は使われる側で、依存は <strong>apps → packages の一方向</strong> にします。代わりに、CI で影響範囲だけをビルドする工夫が必要です。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>アプリが複数になったり、チームが増えたりしたときに <strong>コードをどのリポジトリ・どのパッケージに分けるか</strong> を判断できるようになることが目標です。</p>
+    <ul>
+      <li>モノレポとは何か、ポリレポとの比較</li>
+      <li>pnpm workspaces・Turborepo・Nx の役割分担</li>
+      <li><code>apps/</code> と <code>packages/</code> の切り方と3つのルール</li>
+      <li>共有 UI パッケージの設計</li>
+      <li>よくある失敗と対策</li>
+    </ul>
+    <p>パッケージ分割の一般論（npm パッケージ・<code>exports</code>・バージョン管理）は <a href="../43_モジュール設計/50-4_npmパッケージとモノレポ.html">43章：npm パッケージとモノレポ</a> で詳しく扱っています。このページはフロントエンドの視点に絞ります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>モノレポとは — ポリレポとの比較</h2>
+    <p><strong>モノレポ（monorepo）</strong> は、複数のアプリ・ライブラリを <strong>1 つのリポジトリ</strong> で管理する方式です。対になるのが、1 リポジトリ 1 プロジェクトの <strong>ポリレポ（polyrepo）</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>モノレポ</th><th>ポリレポ</th></tr></thead>
+      <tbody>
+        <tr><td>共有コードの変更</td><td>1 つの PR で利用側まで直せる</td><td>パッケージを公開 → 各リポジトリで更新</td></tr>
+        <tr><td>バージョン管理</td><td>内部パッケージは常に最新を参照</td><td>リポジトリごとにバージョンがずれる</td></tr>
+        <tr><td>CI</td><td>影響範囲だけビルドする仕組みが必要</td><td>リポジトリ単位で単純</td></tr>
+        <tr><td>権限・独立性</td><td>全員が全コードを見られる</td><td>リポジトリ単位で分けやすい</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card good"><h4>モノレポが向く場面</h4><ul>
+        <li>共通 UI・型・設定を複数アプリで使う</li>
+        <li>同じチーム（または近いチーム）が複数アプリを持つ</li>
+        <li>フロントとバックエンドで型を共有したい</li>
+      </ul></div>
+      <div class="card bad"><h4>モノレポが向かない場面</h4><ul>
+        <li>アプリ同士がほとんど何も共有しない</li>
+        <li>組織・権限を厳密に分ける必要がある</li>
+        <li>ビルド時間の最適化に手をかけられない</li>
+      </ul></div>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>ツールの役割分担</h2>
+    <p>モノレポのツールは <strong>レイヤー（担当する層）が違う</strong> ので、組み合わせて使います。下の層が「パッケージ同士をつなぐ」、上の層が「どの順に、どこまでビルドするか」を受け持ちます。</p>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="2段の層の図。上の層はタスク実行・キャッシュで、Turborepo または Nx が担当し、どの順に、どこまでビルドするかを決める。下の層は依存のリンクで、pnpm、npm、yarn の workspaces が担当し、パッケージ同士をつなぐ。">
+      <rect x="40" y="30" width="400" height="60" rx="8" class="d-box-accent"/>
+      <text x="240" y="56" text-anchor="middle" class="d-text-bold">タスク実行・キャッシュ</text>
+      <text x="240" y="78" text-anchor="middle" class="d-text-sub">Turborepo / Nx</text>
+      <rect x="40" y="110" width="400" height="60" rx="8" class="d-box"/>
+      <text x="240" y="136" text-anchor="middle" class="d-text-bold">依存のリンク</text>
+      <text x="240" y="158" text-anchor="middle" class="d-text-sub">pnpm / npm / yarn workspaces</text>
+      <text x="460" y="66" class="d-text">← どの順に、どこまでビルドするか</text>
+      <text x="460" y="146" class="d-text">← パッケージ同士をつなぐ</text>
+    </svg>
+    <figcaption>図：モノレポのツールは2つの層に分かれ、組み合わせて使う</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ツール</th><th>役割</th><th>特徴</th></tr></thead>
+      <tbody>
+        <tr><td><strong>pnpm workspaces</strong></td><td>パッケージ管理</td><td><code>pnpm-workspace.yaml</code> で対象を列挙。<code>workspace:*</code> で内部パッケージを参照</td></tr>
+        <tr><td><strong>Turborepo</strong></td><td>タスクランナー</td><td><code>turbo.json</code> でタスクの依存関係を定義。変更のないタスクはキャッシュから復元</td></tr>
+        <tr><td><strong>Nx</strong></td><td>タスクランナー＋開発基盤</td><td>依存グラフの可視化、影響範囲（affected）だけの実行、コード生成、モジュール境界の lint ルール</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>タスクランナー</strong> とは、ビルド・テスト・lint などの作業（タスク）を、依存関係の順に実行してくれる道具です。小〜中規模なら <strong>pnpm workspaces + Turborepo</strong>、パッケージ数が多く境界の強制まで欲しいなら <strong>Nx</strong> がよく選ばれます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>apps と packages の切り方</h2>
+    <p>典型的な構成は次の通りです。</p>
+    <pre><code>repo/
+├── apps/                 # デプロイする単位（利用する側）
+│   ├── web/              # 顧客向け Next.js
+│   └── admin/            # 管理画面
+└── packages/             # 共有する単位（利用される側）
+    ├── ui/               # 共有 UI コンポーネント
+    ├── api-client/       # 型付き API クライアント
+    ├── config-eslint/    # 共有 ESLint 設定
+    └── config-ts/        # 共有 tsconfig</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 236" role="img" aria-label="上段に apps の web と admin、下段に packages の ui と api-client。web と admin からそれぞれ ui と api-client へ矢印が下向きに伸びている。web と admin の間の依存は禁止、packages から apps への上向きの依存も禁止。">
+      <defs>
+        <marker id="arw47-801a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="40" y="28" class="d-text-bold">apps/（使う側）</text>
+      <rect x="140" y="40" width="160" height="46" rx="6" class="d-box-accent"/>
+      <text x="220" y="68" text-anchor="middle" class="d-text">web</text>
+      <rect x="420" y="40" width="160" height="46" rx="6" class="d-box-accent"/>
+      <text x="500" y="68" text-anchor="middle" class="d-text">admin</text>
+      <path d="M300,63 L420,63" class="d-line-dash"/>
+      <text x="360" y="54" text-anchor="middle" class="d-text-sub">✕ 依存しない</text>
+      <text x="40" y="222" class="d-text-bold">packages/（使われる側）</text>
+      <rect x="140" y="150" width="160" height="46" rx="6" class="d-box"/>
+      <text x="220" y="178" text-anchor="middle" class="d-text">ui</text>
+      <rect x="420" y="150" width="160" height="46" rx="6" class="d-box"/>
+      <text x="500" y="178" text-anchor="middle" class="d-text">api-client</text>
+      <path d="M210,86 L210,148" class="d-line" marker-end="url(#arw47-801a)"/>
+      <path d="M240,86 L470,148" class="d-line" marker-end="url(#arw47-801a)"/>
+      <path d="M490,86 L250,148" class="d-line" marker-end="url(#arw47-801a)"/>
+      <path d="M520,86 L520,148" class="d-line" marker-end="url(#arw47-801a)"/>
+      <text x="640" y="122" text-anchor="middle" class="d-text-sub">↑ 逆向きは禁止</text>
+    </svg>
+    <figcaption>図：依存は apps → packages の一方向。apps 同士、packages → apps は依存しない</figcaption>
+    </figure>
+    <p>判断のルールは 3 つです。</p>
+    <ol class="steps">
+      <li><strong>apps は packages に依存してよいが、逆は禁止</strong>（依存は一方向）</li>
+      <li><strong>apps 同士は依存しない</strong>。共有したくなったら packages に切り出す</li>
+      <li><strong>2 つ以上のアプリが使うまで packages に切り出さない</strong>（YAGNI ＝「今必要でないものは作らない」という原則）</li>
+    </ol>
+    <p>パッケージを切る粒度は、<a href="../43_モジュール設計/00-0_目次.html">43章：モジュール設計</a> の凝集・結合の考え方（一緒に変わるものは一緒に置く）がそのまま使えます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>共有 UI パッケージの設計</h2>
+    <p><code>packages/ui</code> は <strong>デザインシステムの実装置き場</strong> になります（<a href="50-1_デザインシステムの構成要素.html">デザインシステムの構成要素</a>）。</p>
+    <pre><code>// packages/ui/src/Button.tsx
+export type ButtonProps = {
+  variant?: "primary" | "secondary";
+  children: React.ReactNode;
+} &amp; React.ButtonHTMLAttributes&lt;HTMLButtonElement&gt;;
+
+export function Button({ variant = "primary", ...rest }: ButtonProps) {
+  return &lt;button data-variant={variant} {...rest} /&gt;;
+}</code></pre>
+    <pre><code>// packages/ui/package.json（抜粋）
+{
+  "name": "@acme/ui",
+  "exports": { "./button": "./src/Button.tsx" }
+}</code></pre>
+    <ul>
+      <li><strong>業務ロジックを入れない</strong>（<code>OrderButton</code> ではなく <code>Button</code>）。業務知識はアプリ側の features に置く</li>
+      <li><code>exports</code>（package.json で外に公開するファイルを指定する欄）で <strong>公開する入口を絞る</strong>。内部ファイルへの直接 import を防げる</li>
+      <li>破壊的変更は利用側アプリが全部同じリポジトリにあるので、1 PR で直せる — これがモノレポ最大の利点</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>よくある失敗</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>失敗</th><th>症状</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><code>packages/shared</code> に何でも入れる</td><td>全アプリが巨大パッケージに依存し、変更の影響が読めない</td><td>目的別に分ける（ui / api-client / utils）</td></tr>
+        <tr><td>早すぎる切り出し</td><td>使うのは 1 アプリだけのパッケージが増える</td><td>2 つ目の利用者が現れてから</td></tr>
+        <tr><td>キャッシュ設定なし</td><td>CI が毎回全ビルドで遅い</td><td>Turborepo / Nx のキャッシュ・affected を使う</td></tr>
+        <tr><td>依存ルールが口約束</td><td>apps 同士の import が紛れ込む</td><td><a href="40-4_依存ルールの自動検査.html">依存ルールの自動検査</a> で機械的に止める</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「pnpm workspaces と Turborepo はどちらか一方を選ぶもの」</summary><div class="body"><p><strong>担当する層が違います。</strong> pnpm workspaces はパッケージ同士をつなぐ「依存のリンク」、Turborepo / Nx は「タスク実行・キャッシュ」を受け持ちます。ふつうは組み合わせて使います。</p></div></details>
+    <details open><summary>誤解2：「共通にできそうなものは早めに packages へ切り出すべき」</summary><div class="body"><p><strong>2 つ以上のアプリが使うまで切り出しません。</strong> 早すぎる切り出しは、使うのが 1 アプリだけのパッケージを増やすだけです。また、何でも入る <code>packages/shared</code> を作ると、変更の影響が読めなくなります。</p></div></details>
+    <details open><summary>誤解3：「モノレポにすればビルドや CI も自然に速くなる」</summary><div class="body"><p><strong>逆に、何もしないと遅くなります。</strong> 1 つのリポジトリにすべてが入るので、変更のたびに全部をビルドしがちです。Turborepo / Nx のキャッシュや affected（影響範囲だけの実行）を設定して初めて実用的になります。</p></div></details>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>モノレポは <strong>共有コードを 1 PR で変えられる</strong> のが最大の利点。代わりに CI の最適化が必要</li>
+      <li>パッケージ管理（pnpm workspaces）とタスク実行（Turborepo / Nx）は別レイヤー</li>
+      <li><code>apps/</code> は使う側、<code>packages/</code> は使われる側。依存は apps → packages の一方向</li>
+      <li>共有 UI パッケージには業務ロジックを入れず、<code>exports</code> で入口を絞る</li>
+    </ul>
+    <p>関連するページ：</p>
+    <ul>
+      <li><a href="../43_モジュール設計/00-0_目次.html">43章：モジュール設計</a> — パッケージ分割の一般論</li>
+      <li><a href="50-1_デザインシステムの構成要素.html">デザインシステムの構成要素</a> — 共有 UI パッケージの中身</li>
+      <li><a href="40-4_依存ルールの自動検査.html">依存ルールの自動検査</a> — 境界を機械で守る</li>
+      <li><a href="80-2_マイクロフロントエンドの判断.html">マイクロフロントエンドの判断</a> — さらにデプロイまで分けるとき（次のページ）</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：47_フロントエンド設計/80_スケールと組織/01_モノレポとパッケージ分割</li>
+      <li><a href="https://pnpm.io/workspaces">pnpm: Workspace</a>（https://pnpm.io/workspaces）</li>
+      <li><a href="https://turborepo.com/docs">Turborepo Docs</a>（https://turborepo.com/docs）</li>
+      <li><a href="https://nx.dev/">Nx</a>（https://nx.dev/）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="70-4_エラー境界とフォールバックUI.html"><span class="lbl">← 前のページ</span>エラー境界</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="80-2_マイクロフロントエンドの判断.html"><span class="lbl">次のページ →</span>マイクロフロントエンド</a>
+    </nav>
+    <footer class="page-foot">47_フロントエンド設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>
