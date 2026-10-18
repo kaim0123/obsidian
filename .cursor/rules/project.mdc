@@ -1,0 +1,18 @@
+---
+description: knowledge-app の基本・コミット・実装ルール
+alwaysApply: true
+---
+
+# knowledge-app（Astro 7 + docs/ の Obsidian ノートを閲覧するナレッジサイト）
+
+## 基本
+- 設計書（`design/`）と既存コードの流儀に合わせ、依頼範囲外のリファクタや無関係ファイルの変更はしない
+- `docs/` のノート本文と `public/` の解説HTMLは、明示依頼がない限り編集しない
+- 応答・コミット説明は日本語、コード識別子は英語
+
+## コミット
+- コミットメッセージは Conventional Commits（`type(scope): 説明`、typeはfeat/fix/docs/style/refactor/perf/test/chore、命令形・50文字以内・末尾ピリオドなし）でステージ済み差分を優先し、明示依頼がない限り git commit / push は実行しない
+
+## 実装
+- Astro / TypeScript を優先し、完了確認（`npm run dev` 等）ができる単位で進める
+- 秘密情報・`.env`・認証情報をコミット対象に含めない

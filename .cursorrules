@@ -1,0 +1,1 @@
+When generating a Git commit message for this repository: write in Japanese; use Conventional Commits as a single subject line (`type(scope): 説明`); type is one of feat/fix/docs/style/refactor/perf/test/chore; imperative mood; under 50 characters; no trailing period; no English body; do not restate the diff line by line.
