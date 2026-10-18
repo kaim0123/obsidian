@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ファイルインクルード｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -252,7 +252,7 @@ include('/var/www/templates/' . $file . '.php');</code></pre>
 ・テーマ切り替え: ?theme=dark → include("themes/dark.php")
 ・ページ部品の切り替え: ?page=about → include("pages/about.php")</code></pre>
     <p>便利に見えますが、パラメータをそのままパスに使うと攻撃対象になります。</p>
-    <p>「外部からの入力が、プログラムの動作（ここでは読み込むファイル）を決めてしまう」という構造は、インジェクション全般に共通する問題です。インジェクションの全体像は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">71 セキュリティ基礎「インジェクションと暗号化の不備」</a> を参照してください。</p>
+    <p>「外部からの入力が、プログラムの動作（ここでは読み込むファイル）を決めてしまう」という構造は、インジェクション全般に共通する問題です。インジェクションの全体像は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">71 セキュリティ基礎「インジェクションと暗号化の不備」</a> を参照してください。</p>
 
     <h2 id="sec-6"><span class="num">6.</span>ファイルインクルード攻撃の対策</h2>
     <p>対策の基本は次の2つです。</p>
@@ -384,7 +384,7 @@ allow_url_fopen  = Off    ← 可能なら Off（影響範囲を見て判断）<
     <p><code>allow_url_include</code> は <code>include</code> などで URL を読み込めるかどうか、<code>allow_url_fopen</code> は <code>file_get_contents()</code> などのファイル関数で URL を開けるかどうかを決める設定です。<code>allow_url_fopen</code> を Off にすると外部 API の取得などが動かなくなることがあるため、「影響範囲を見て判断」となっています。</p>
     <div class="callout tip">
       <p class="callout-title">補足：現在の PHP での状況</p>
-      <p><code>allow_url_include</code> は PHP 5.2 以降の既定値が Off で、PHP 7.4 で非推奨（将来削除予定）になっています。ただし RFI が封じられても、LFI はこの設定とは関係なく起こりうるため、<strong>許可リストによる対策が本筋</strong> である点は変わりません。こうした「危険な既定設定・設定ミス」の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html">71 セキュリティ基礎「安全でない設計・設定ミス・古い部品」</a> で扱っています。</p>
+      <p><code>allow_url_include</code> は PHP 5.2 以降の既定値が Off で、PHP 7.4 で非推奨（将来削除予定）になっています。ただし RFI が封じられても、LFI はこの設定とは関係なく起こりうるため、<strong>許可リストによる対策が本筋</strong> である点は変わりません。こうした「危険な既定設定・設定ミス」の考え方は <a href="../71_セキュリティ基礎/40-4_安全でない設計・設定ミス・古い部品.html">71 セキュリティ基礎「安全でない設計・設定ミス・古い部品」</a> で扱っています。</p>
     </div>
 
     <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
@@ -466,6 +466,6 @@ allow_url_fopen  = Off    ← 可能なら Off（影響範囲を見て判断）<
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

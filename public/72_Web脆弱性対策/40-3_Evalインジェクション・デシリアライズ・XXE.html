@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Evalインジェクション・デシリアライズ・XXE｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -72,7 +72,7 @@
 ・他サイトへの攻撃の踏み台にされる
 ・サーバーの CPU を使った暗号通貨の採掘</code></pre>
     <p><strong>踏み台</strong> とは、乗っ取ったサーバーを中継点にして別の相手を攻撃することです。<strong>暗号通貨の採掘</strong>（マイニング）は、ビットコインなどを得るために大量の計算をさせることで、他人のサーバーで勝手に行われると CPU が使い果たされます。</p>
-    <p>被害の種類は第14〜16章と似ています。違いは、入り口が「コマンド文字列」や「ファイル名」ではなく、<strong>データの読み込み・復元処理</strong> である点です。「データとコードが混ざる」というインジェクション共通の原因は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-2">71 セキュリティ基礎「インジェクションと暗号化の不備」</a> で扱っています。</p>
+    <p>被害の種類は第14〜16章と似ています。違いは、入り口が「コマンド文字列」や「ファイル名」ではなく、<strong>データの読み込み・復元処理</strong> である点です。「データとコードが混ざる」というインジェクション共通の原因は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html#sec-2">71 セキュリティ基礎「インジェクションと暗号化の不備」</a> で扱っています。</p>
 
     <h2 id="sec-2"><span class="num">2.</span>Evalインジェクションとは</h2>
     <p><strong>Evalインジェクション</strong> とは、<code>eval</code> のように <strong>文字列をプログラムとして実行する機能</strong> に、外部からの入力を渡してしまい、攻撃者が意図したコードまで動かされてしまう脆弱性です。<code>eval</code> は「evaluate（評価する）」の略で、渡された文字列をその場でプログラムとして実行する関数です。</p>
@@ -274,7 +274,7 @@ if (!preg_match('/\A[a-zA-Z0-9]+\z/', $expr)) {
       </table>
     </div>
     <p>PHP の <code>unserialize</code>、Java の <code>ObjectInputStream</code>、Python の <code>pickle</code>、.NET の BinaryFormatter などが代表例です。これらは「データ」だけでなく、<strong>オブジェクトの種類や、復元時に走る処理</strong> まで表現できることがあります。</p>
-    <p>この問題は OWASP Top 10 では「ソフトウェアとデータの整合性の不備（A08）」に含まれます。pickle や Java の例、ガジェットチェーン（アプリにもともとあるクラスを数珠つなぎに悪用する手法）といった言語ごとの話は <a href="../../71_セキュリティ基礎/00_全体像/40-5_サプライチェーンと整合性の不備.html#sec-7">71 セキュリティ基礎「サプライチェーンと整合性の不備」の「安全でないデシリアライゼーション」</a> で扱っています。ここでは徳丸本に沿って、PHP を例に見ていきます。</p>
+    <p>この問題は OWASP Top 10 では「ソフトウェアとデータの整合性の不備（A08）」に含まれます。pickle や Java の例、ガジェットチェーン（アプリにもともとあるクラスを数珠つなぎに悪用する手法）といった言語ごとの話は <a href="../71_セキュリティ基礎/40-5_サプライチェーンと整合性の不備.html#sec-7">71 セキュリティ基礎「サプライチェーンと整合性の不備」の「安全でないデシリアライゼーション」</a> で扱っています。ここでは徳丸本に沿って、PHP を例に見ていきます。</p>
     <div class="callout tip">
       <p class="callout-title">補足：BinaryFormatter の現状</p>
       <p>.NET の BinaryFormatter は危険性が広く知られた結果、.NET 5 以降で段階的に非推奨となり、.NET 9 では既定で使えなく（呼ぶと例外になるように）なっています。古い .NET Framework のアプリでは今も使われていることがあるので注意が必要です。</p>
@@ -574,7 +574,7 @@ $prefs = json_decode($payload, true);</code></pre>
         </tbody>
       </table>
     </div>
-    <p><strong>防御深度</strong>（多層防御）とは、1つの対策が破られても次の対策で止められるよう、守りを何重にも重ねる考え方です。詳しくは <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">71 セキュリティ基礎「深層防御」</a> を参照してください。</p>
+    <p><strong>防御深度</strong>（多層防御）とは、1つの対策が破られても次の対策で止められるよう、守りを何重にも重ねる考え方です。詳しくは <a href="../71_セキュリティ基礎/20-2_深層防御.html">71 セキュリティ基礎「深層防御」</a> を参照してください。</p>
 
     <h3 id="sec-10-1">10.1 XMLの代わりにJSONを用いる（最優先しやすい）</h3>
     <p>API や設定の受け渡しで XML である必要がなければ、<strong>JSON に置き換える</strong> のが分かりやすい対策です。</p>
@@ -699,6 +699,6 @@ dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);</c
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

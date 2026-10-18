@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>セッション管理の全体像｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -101,10 +101,10 @@
     <figcaption>Cookie は「運ぶ手段」、セッション ID は「目印」、サーバー側の保存が「本当の情報」</figcaption>
     </figure>
     <ol class="steps">
-      <li><strong>ログイン</strong>：本人確認そのもの（パスワード・MFA・パスキーなど）は 73 の範囲です（<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">ログイン方式と認証の概念</a>）。</li>
+      <li><strong>ログイン</strong>：本人確認そのもの（パスワード・MFA・パスキーなど）は 73 の範囲です（<a href="../73_認証認可/10-2_ログイン方式と認証の概念.html">ログイン方式と認証の概念</a>）。</li>
       <li><strong>目印の発行</strong>：推測できない十分ランダムな ID を作り、Cookie に入れて返します（<a href="20-2_セッションとCookieによるログイン.html">20-2</a>）。トークン方式なら署名つきの JWT を返します（<a href="30-2_JWTの構造と検証.html">30-2</a>）。</li>
       <li><strong>目印を運ぶ</strong>：Cookie の属性（Secure・HttpOnly・SameSite など）で、どこに・いつ送られるかが決まります（<a href="10-1_Cookieの仕組み.html">10-1</a>）。</li>
-      <li><strong>目印を確かめる</strong>：サーバーがセッションを照合するか、トークンの署名と期限を検証します。そのうえで「その操作をしてよいか」（認可）を判断します（<a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</li>
+      <li><strong>目印を確かめる</strong>：サーバーがセッションを照合するか、トークンの署名と期限を検証します。そのうえで「その操作をしてよいか」（認可）を判断します（<a href="../73_認証認可/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</li>
       <li><strong>目印を捨てる</strong>：ログアウトや期限切れで無効にします。トークンは一度発行すると取り消しにくいので工夫が必要です（<a href="30-3_アクセストークンとリフレッシュトークン.html">30-3</a>）。</li>
     </ol>
 
@@ -138,7 +138,7 @@
       <li><a href="40-1_セッション管理の不備.html">40-1 セッション管理の不備</a> — 推測・盗み出し・固定化と、認証後に ID を変える対策（徳丸本9章）</li>
       <li><a href="40-2_クッキー出力にまつわる脆弱性.html">40-2 クッキー出力にまつわる脆弱性</a> — Cookie に入れてはいけない情報と Secure 属性（徳丸本11章）</li>
     </ul>
-    <p>Cookie が自動で送られる性質を悪用する <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> と、スクリプトでトークンや Cookie を盗む <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS</a> は 72 で解説しています。</p>
+    <p>Cookie が自動で送られる性質を悪用する <a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a> と、スクリプトでトークンや Cookie を盗む <a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSS</a> は 72 で解説しています。</p>
 
     <h2 id="sec-5"><span class="num">5.</span>セッション方式とトークン方式のざっくり比較</h2>
     <p>詳しくは <a href="30-1_セッション方式とトークン方式.html">30-1</a> で扱います。ここでは位置づけだけ押さえます。</p>
@@ -157,11 +157,11 @@
     <div class="table-wrap"><table>
       <thead><tr><th>話題</th><th>本拠地</th></tr></thead>
       <tbody>
-        <tr><td>パスワード・MFA・パスキーなど本人確認の方法</td><td><a href="../../73_認証認可/00_全体像/00-0_目次.html">73_認証認可</a></td></tr>
-        <tr><td>OAuth 2.0 / OpenID Connect の仕組み</td><td><a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth 2.0の仕組み</a></td></tr>
+        <tr><td>パスワード・MFA・パスキーなど本人確認の方法</td><td><a href="../73_認証認可/00-0_目次.html">73_認証認可</a></td></tr>
+        <tr><td>OAuth 2.0 / OpenID Connect の仕組み</td><td><a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">73 OAuth 2.0の仕組み</a></td></tr>
         <tr><td>Cookie・セッション・トークンでログイン状態を保つ仕組み</td><td>74_セッション管理（このフォルダ）</td></tr>
-        <tr><td>CSRF・XSS・CORS など、Cookie やトークンを悪用する脆弱性</td><td><a href="../../72_Web脆弱性対策/00_全体像/00-0_目次.html">72_Web脆弱性対策</a></td></tr>
-        <tr><td>OWASP Top 10 での位置づけ（認証の失敗など）</td><td><a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a></td></tr>
+        <tr><td>CSRF・XSS・CORS など、Cookie やトークンを悪用する脆弱性</td><td><a href="../72_Web脆弱性対策/00-0_目次.html">72_Web脆弱性対策</a></td></tr>
+        <tr><td>OWASP Top 10 での位置づけ（認証の失敗など）</td><td><a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a></td></tr>
       </tbody>
     </table></div>
 
@@ -182,7 +182,7 @@
     <details><summary>Q2. Cookie・セッション・トークンの関係をひとことずつで説明してください。</summary><div class="body"><p>Cookie は目印を「運ぶ手段」、セッションは情報をサーバーに置いて番号だけ渡す「方式」、トークンは署名つきの通行証そのものを渡す「方式」です。セッション ID もトークンも、Cookie に入れて運ぶことができます。</p></div></details>
     <details><summary>Q3. セッション ID を攻撃者に知られると、何が起きますか？</summary><div class="body"><p>攻撃者がその ID を自分のブラウザの Cookie に入れるだけで、パスワードを知らなくても本人としてログインした状態になります（セッションハイジャック）。手口と対策は <a href="40-1_セッション管理の不備.html">40-1</a> で扱います。</p></div></details>
     <details><summary>Q4. 「盗まれたので今すぐログアウトさせたい」とき、セッション方式とトークン方式のどちらが簡単ですか？</summary><div class="body"><p>セッション方式です。サーバーに保存したセッションを消せば、その ID はすぐ使えなくなります。トークン方式は、署名が正しく期限内であれば有効と判断されるため、期限を短くする・リフレッシュトークンを無効にするなどの工夫が必要です（<a href="30-3_アクセストークンとリフレッシュトークン.html">30-3</a>）。</p></div></details>
-    <details><summary>Q5. パスワードの安全な保存方法と、CSRF の対策は、それぞれどのフォルダが本拠地ですか？</summary><div class="body"><p>パスワードの保存は 73_認証認可（<a href="../../73_認証認可/00_全体像/20-2_パスワードの安全な保存.html">20-2</a>）、CSRF は 72_Web脆弱性対策（<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">30-1</a>）です。74 はその間にある「ログイン状態の保ち方」を扱います。</p></div></details>
+    <details><summary>Q5. パスワードの安全な保存方法と、CSRF の対策は、それぞれどのフォルダが本拠地ですか？</summary><div class="body"><p>パスワードの保存は 73_認証認可（<a href="../73_認証認可/20-2_パスワードの安全な保存.html">20-2</a>）、CSRF は 72_Web脆弱性対策（<a href="../72_Web脆弱性対策/30-1_CSRF.html">30-1</a>）です。74 はその間にある「ログイン状態の保ち方」を扱います。</p></div></details>
 
     <h2 id="sources">参考資料</h2>
     <ul class="sources">
@@ -198,6 +198,6 @@
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

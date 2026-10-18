@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>JWTの構造と検証｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -181,12 +181,12 @@
         <tr><td><strong><code>alg: none</code></strong></td><td>ヘッダを <code>"alg":"none"</code> にして署名を消す。署名なしのトークンを受け付けるライブラリがあった</td><td>受け付ける方式を <strong>サーバー側で固定</strong> する。<code>noNE</code> のような大文字小文字違いにも注意</td></tr>
         <tr><td><strong>方式の取り違え</strong>（アルゴリズム混同）</td><td>RS256 の <strong>公開鍵</strong> を HMAC の秘密として使わせ、<code>HS256</code> のトークンを偽造する。公開鍵は誰でも手に入る</td><td>1 つの鍵は 1 つの方式でしか使わない。HMAC と公開鍵方式を同じ検証処理で混ぜない</td></tr>
         <tr><td><strong><code>kid</code> の悪用</strong></td><td>鍵を選ぶ <code>kid</code>（鍵の名札）に <code>../../dev/null</code> や SQL を入れ、空の鍵や攻撃者の鍵を選ばせる</td><td><code>kid</code> は決まった一覧から選ぶだけにする。ファイルパスや SQL に使わない</td></tr>
-        <tr><td><strong><code>jku</code>・<code>x5u</code> の悪用</strong></td><td>「この URL の鍵で検証して」と指定し、攻撃者の鍵を読ませる。SSRF（サーバーに好きな宛先へ通信させる攻撃）にもなる（<a href="../../72_Web脆弱性対策/00_全体像/30-3_SSRF.html">SSRF</a>）</td><td>鍵の取得先は <strong>サーバーの設定で固定</strong> する。トークンの指定は無視する</td></tr>
+        <tr><td><strong><code>jku</code>・<code>x5u</code> の悪用</strong></td><td>「この URL の鍵で検証して」と指定し、攻撃者の鍵を読ませる。SSRF（サーバーに好きな宛先へ通信させる攻撃）にもなる（<a href="../72_Web脆弱性対策/30-3_SSRF.html">SSRF</a>）</td><td>鍵の取得先は <strong>サーバーの設定で固定</strong> する。トークンの指定は無視する</td></tr>
         <tr><td><strong>トークンの使い回し</strong></td><td>別のサービス向けのトークンや ID トークンを、API のアクセストークンとして送る</td><td><code>aud</code>・<code>iss</code>・<code>typ</code> を確かめる</td></tr>
         <tr><td><strong>弱い HMAC の秘密</strong></td><td>漏れたトークンから、手元で秘密を総当たりする</td><td>長いランダムな秘密を使い、定期的に入れ替える</td></tr>
       </tbody>
     </table></div>
-    <p>ID トークンとアクセストークンの役割の違いは <a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a> の 6 章、OpenID Connect での使われ方は <a href="../../73_認証認可/00_全体像/30-2_SAML・OAuth・OIDCの違い.html">SAML・OAuth・OIDCの違い</a> を参照してください。</p>
+    <p>ID トークンとアクセストークンの役割の違いは <a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a> の 6 章、OpenID Connect での使われ方は <a href="../73_認証認可/30-2_SAML・OAuth・OIDCの違い.html">SAML・OAuth・OIDCの違い</a> を参照してください。</p>
 
     <h3 id="sec-4-2">4.2 実際の脆弱性の例</h3>
     <p>CVE は、公表された脆弱性に付く通し番号です。</p>
@@ -241,7 +241,7 @@ export async function verifyAccessToken(token) {
     </ul>
     <div class="callout tip">
       <p class="callout-title">検証できても「してよいか」は別の話</p>
-      <p>署名の検証で分かるのは「このトークンは本物で、誰のものか」までです。その人がその操作をしてよいかは、別に確かめます（<a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</p>
+      <p>署名の検証で分かるのは「このトークンは本物で、誰のものか」までです。その人がその操作をしてよいかは、別に確かめます（<a href="../73_認証認可/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</p>
     </div>
 
     <h2 id="sec-6"><span class="num">6.</span>鍵の入れ替え</h2>
@@ -340,7 +340,7 @@ export async function verifyAccessToken(token) {
       <li>RFC 8725: JWT Best Current Practices https://www.rfc-editor.org/rfc/rfc8725（改訂版 draft-ietf-oauth-rfc8725bis を策定中 https://datatracker.ietf.org/doc/html/draft-ietf-oauth-rfc8725bis-06）</li>
       <li>RFC 9068: アクセストークンの JWT プロファイル https://www.rfc-editor.org/rfc/rfc9068</li>
       <li>OWASP JSON Web Token Cheat Sheet（Java 向けだが考え方は共通） https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html</li>
-      <li>関連ページ：<a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a>、<a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-3_SSRF.html">72 SSRF</a>、<a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth2.0の仕組み</a></li>
+      <li>関連ページ：<a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a>、<a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、<a href="../72_Web脆弱性対策/30-3_SSRF.html">72 SSRF</a>、<a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">73 OAuth2.0の仕組み</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -350,6 +350,6 @@ export async function verifyAccessToken(token) {
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

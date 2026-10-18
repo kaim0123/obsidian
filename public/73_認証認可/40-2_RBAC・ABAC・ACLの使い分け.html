@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RBAC・ABAC・ACLの使い分け｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -332,7 +332,7 @@
     <ol class="steps">
       <li><strong>認証のあと</strong> に認可を必ず挟む（「ログインできた＝全部できる」にしない）</li>
       <li>まず <strong>RBAC</strong> で大枠を設計し、必要なら <strong>ABAC</strong> や <strong>ACL</strong> を足す</li>
-      <li>外部連携は <strong>OAuth 2.0</strong> でパスワード共有を避け、スコープを最小限にする（考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）</li>
+      <li>外部連携は <strong>OAuth 2.0</strong> でパスワード共有を避け、スコープを最小限にする（考え方は <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）</li>
       <li>API では <strong>短命アクセストークン</strong> ＋ サーバー側でのポリシー評価を組み合わせる</li>
       <li>拒否時は理由が追えるよう、ログ・監査（誰が・何に・なぜ拒否されたか）を残す</li>
     </ol>
@@ -388,7 +388,7 @@
       <li>関連ページ：<a href="30-1_OAuth2.0の仕組み.html">OAuth 2.0の仕組み</a>（認証認可解説）</li>
       <li>関連ページ：<a href="40-1_認可不備と認可の要件定義.html">認可不備と認可の要件定義</a>（認証認可解説）</li>
       <li>関連ページ：<a href="40-3_権限管理・ロール管理の実装.html">権限管理・ロール管理の実装</a>（認証認可解説）</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>（セキュリティ基礎）</li>
     </ul>
 
     <nav class="pager">
@@ -398,6 +398,6 @@
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

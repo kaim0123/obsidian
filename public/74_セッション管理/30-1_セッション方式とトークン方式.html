@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>セッション方式とトークン方式｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -389,7 +389,7 @@ app.get('/api/profile', authenticateToken, (req, res) =&gt; {
 });</code></pre>
     <div class="callout tip">
       <p class="callout-title">ミドルウェアとは</p>
-      <p><strong>ミドルウェア</strong> は、本来の処理の手前に差し込む共通処理です。<code>authenticateToken</code> を通ったリクエストだけが <code>/api/profile</code> の本体にたどり着きます。なお、無効なトークンに 403 を返している例ですが、「名乗れていない」ことを表す 401 を返す作りもよく使われます（401 と 403 の違いは <a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</p>
+      <p><strong>ミドルウェア</strong> は、本来の処理の手前に差し込む共通処理です。<code>authenticateToken</code> を通ったリクエストだけが <code>/api/profile</code> の本体にたどり着きます。なお、無効なトークンに 403 を返している例ですが、「名乗れていない」ことを表す 401 を返す作りもよく使われます（401 と 403 の違いは <a href="../73_認証認可/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</p>
     </div>
 
     <h3 id="sec-3-5">3.5 クライアント側でのトークン使用</h3>
@@ -542,7 +542,7 @@ app.post('/api/refresh', (req, res) =&gt; {
       <li><strong>用途</strong>：ユーザーの身元確認</li>
       <li><strong>有効期限</strong>：通常は短い（アクセストークンと同程度）</li>
       <li><strong>含まれる情報</strong>：ユーザー ID、名前、メールアドレス、認証時刻など</li>
-      <li><strong>使用場面</strong>：OAuth 2.0 や OpenID Connect（OAuth 2.0 にログインの仕組みを足した規格）。詳しくは <a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">OAuth2.0の仕組み</a></li>
+      <li><strong>使用場面</strong>：OAuth 2.0 や OpenID Connect（OAuth 2.0 にログインの仕組みを足した規格）。詳しくは <a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">OAuth2.0の仕組み</a></li>
       <li>長所：身元情報を含み、署名されているので改ざんを検出でき、複数のサービス間でユーザー情報を共有しやすい。短所：アクセストークンとは別物なので混同しやすい</li>
     </ul>
 <pre><code>// IDトークンからユーザー情報を取得
@@ -632,7 +632,7 @@ async function refreshTokens() {
 
   return data.accessToken;
 }</code></pre>
-    <p><code>credentials: 'include'</code> は「Cookie も一緒に送る」という指定です。別オリジン（別のドメインなど）の API に Cookie を送る場合の注意は <a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">CORSエラーの対処法とCookie</a> を参照してください。</p>
+    <p><code>credentials: 'include'</code> は「Cookie も一緒に送る」という指定です。別オリジン（別のドメインなど）の API に Cookie を送る場合の注意は <a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html">CORSエラーの対処法とCookie</a> を参照してください。</p>
 
     <h3 id="sec-7-4">7.4 ユーザー情報の取得</h3>
 <pre><code>// 4. IDトークンからユーザー情報を取得
@@ -839,7 +839,7 @@ app.post('/api/logout', async (req, res) =&gt; {
   // 本番環境ではRedisなどの外部ストアを使用
   store: new RedisStore({ client })
 }));</code></pre>
-    <p>秘密の値はコードに直接書かず、環境変数から読みます。<code>sameSite</code> が防ぐ CSRF（ログイン中の利用者に意図しない操作をさせる攻撃）については <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を参照してください。</p>
+    <p>秘密の値はコードに直接書かず、環境変数から読みます。<code>sameSite</code> が防ぐ CSRF（ログイン中の利用者に意図しない操作をさせる攻撃）については <a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a> を参照してください。</p>
 
     <h3 id="sec-8-3">8.3 トークンのセキュリティ</h3>
     <span class="code-label good">推奨設定：強い秘密・短い期限・発行者と受信者の確認</span>
@@ -881,7 +881,7 @@ jwt.verify(token, process.env.JWT_SECRET, {
 let token = null; // グローバル変数に保存</code></pre>
       </div>
     </div>
-    <p>XSS 自体の仕組みは <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSSの基本</a>、保存場所ごとの長所と短所の比較は <a href="30-4_トークンの保存場所.html">トークンの保存場所</a> で解説します。</p>
+    <p>XSS 自体の仕組みは <a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSSの基本</a>、保存場所ごとの長所と短所の比較は <a href="30-4_トークンの保存場所.html">トークンの保存場所</a> で解説します。</p>
 
     <h3 id="sec-8-5">8.5 セキュリティのベストプラクティス</h3>
     <ul>
@@ -988,7 +988,7 @@ function authenticate(req, res, next) {
       <li>OAuth 2.0 https://oauth.net/2/</li>
       <li>OpenID Connect https://openid.net/connect/</li>
       <li>JWT (JSON Web Token) https://jwt.io/</li>
-      <li>関連ページ：<a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>、<a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、<a href="30-4_トークンの保存場所.html">トークンの保存場所</a>、<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a>、<a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth2.0の仕組み</a></li>
+      <li>関連ページ：<a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>、<a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、<a href="30-4_トークンの保存場所.html">トークンの保存場所</a>、<a href="../73_認証認可/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a>、<a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">73 OAuth2.0の仕組み</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -998,6 +998,6 @@ function authenticate(req, res, next) {
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>セキュリティヘッダ｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -28,7 +28,7 @@
 
     <div class="callout key">
       <p class="callout-title">ひとことで言うと</p>
-      <p>セキュリティヘッダは、サーバーがレスポンスに付ける <strong>「ブラウザへの指示書」</strong> です。アプリの脆弱性そのものは直せませんが、XSS・クリックジャッキング・通信の盗聴などが <strong>起きても被害を小さくする</strong> 多層防御の層になります（→ <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a>）。</p>
+      <p>セキュリティヘッダは、サーバーがレスポンスに付ける <strong>「ブラウザへの指示書」</strong> です。アプリの脆弱性そのものは直せませんが、XSS・クリックジャッキング・通信の盗聴などが <strong>起きても被害を小さくする</strong> 多層防御の層になります（→ <a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a>）。</p>
     </div>
 
     <h2 id="sec-1"><span class="num">1.</span>セキュリティヘッダの全体像</h2>
@@ -240,7 +240,7 @@ Content-Security-Policy: frame-ancestors 'none'</code></pre>
         <tr><td><code>X-XSS-Protection</code></td><td>古いブラウザの XSS フィルタ用。フィルタ自体が情報漏えいの原因になったため廃止。付けるなら <code>0</code>（無効化）。XSS 対策は CSP で行う</td></tr>
         <tr><td><code>Public-Key-Pins</code>（HPKP）</td><td>設定ミスでサイトに永久に入れなくなる危険があり廃止</td></tr>
         <tr><td><code>Expect-CT</code></td><td>証明書の透明性（CT：発行された証明書をすべて公開ログに記録する仕組み）が必須になったため不要</td></tr>
-        <tr><td><code>X-Powered-By</code>・<code>Server</code> のバージョン</td><td><code>Express</code>・<code>PHP/8.1.2</code> などを教えると、攻撃者が既知の脆弱性を探しやすくなる（→ <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html">セキュリティの設定ミス</a>）</td></tr>
+        <tr><td><code>X-Powered-By</code>・<code>Server</code> のバージョン</td><td><code>Express</code>・<code>PHP/8.1.2</code> などを教えると、攻撃者が既知の脆弱性を探しやすくなる（→ <a href="../71_セキュリティ基礎/40-4_安全でない設計・設定ミス・古い部品.html">セキュリティの設定ミス</a>）</td></tr>
       </tbody>
     </table></div>
     <span class="code-label bad">✕ 危険：古いヘッダとバージョン情報が残っている</span>
@@ -255,7 +255,7 @@ X-XSS-Protection: 0
 Content-Security-Policy: default-src 'self'</code></pre>
 
     <h2 id="sec-10"><span class="num">10.</span>設定例</h2>
-    <p>ここでは Express・Next.js・nginx の 3 通りを示します。71 では helmet を既定値のまま使う最小例を紹介しています（→ <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a>）。ここでは値を指定する例です。</p>
+    <p>ここでは Express・Next.js・nginx の 3 通りを示します。71 では helmet を既定値のまま使う最小例を紹介しています（→ <a href="../71_セキュリティ基礎/40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a>）。ここでは値を指定する例です。</p>
 
     <h3 id="sec-10-1">10.1 Express（helmet）</h3>
     <p><strong>helmet</strong> は、Express（Node.js の Web フレームワーク）向けのミドルウェア（リクエスト処理の途中に差し込む部品）で、主要なセキュリティヘッダをまとめて付けます。</p>
@@ -437,6 +437,6 @@ referrer-policy: strict-origin-when-cross-origin</code></pre>
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

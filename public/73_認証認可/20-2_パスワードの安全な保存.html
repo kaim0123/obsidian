@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>パスワードの安全な保存｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -197,7 +197,7 @@ hash = H(hash)
       <p class="callout-title">ポイント</p>
       <p>パスワード用ハッシュは <strong>わざと遅く、メモリを多く使う</strong> ように作られています。正規の利用者は 1 回計算するだけですが、攻撃者は何十億回も計算する必要があるので、その差で守ります。</p>
     </div>
-    <p>平文・MD5・bcrypt のコード比較は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a>（セキュリティ基礎）にもあります。</p>
+    <p>平文・MD5・bcrypt のコード比較は <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a>（セキュリティ基礎）にもあります。</p>
 
     <h2 id="sec-7"><span class="num">7.</span>ソルト・ペッパー・ストレッチングの役割</h2>
     <div class="table-wrap"><table>
@@ -324,7 +324,7 @@ export async function verifyPassword(user, password) {
     </figure>
 
     <h2 id="sec-10"><span class="num">10.</span>パスワードの受け付け方（NIST SP 800-63B）</h2>
-    <p>保存方法とあわせて、<strong>どんなパスワードを受け付けるか</strong> も決めます。NIST（米国国立標準技術研究所）の最新の指針（SP 800-63B Rev.4）の要点です。「定期変更や複雑さの強制がなぜ逆効果か」という背景は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-9">パスワードポリシーの最新推奨</a>（セキュリティ基礎）を参照してください。</p>
+    <p>保存方法とあわせて、<strong>どんなパスワードを受け付けるか</strong> も決めます。NIST（米国国立標準技術研究所）の最新の指針（SP 800-63B Rev.4）の要点です。「定期変更や複雑さの強制がなぜ逆効果か」という背景は <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-9">パスワードポリシーの最新推奨</a>（セキュリティ基礎）を参照してください。</p>
     <div class="table-wrap"><table>
       <thead><tr><th>項目</th><th>指針</th></tr></thead>
       <tbody>
@@ -397,8 +397,8 @@ export async function verifyPassword(user, password) {
       <li><a href="https://pages.nist.gov/800-63-4/sp800-63b.html">NIST SP 800-63B</a></li>
       <li>関連ページ：<a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a>（認証認可解説）</li>
       <li>関連ページ：<a href="20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>（認証認可解説）</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">アクセス制御と認証の失敗</a>（セキュリティ基礎）</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-10">暗号化：脆弱なコードと安全なコード</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html">アクセス制御と認証の失敗</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html#sec-10">暗号化：脆弱なコードと安全なコード</a>（セキュリティ基礎）</li>
     </ul>
 
     <nav class="pager">
@@ -408,6 +408,6 @@ export async function verifyPassword(user, password) {
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

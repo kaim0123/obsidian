@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>JavaScriptの脆弱性｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -136,7 +136,7 @@ el.textContent = name;
 const p = document.createElement('p');
 p.textContent = name;
 el.appendChild(p);</code></pre>
-    <p><code>textContent</code> は中身を HTML として解釈せず、ただの文字として表示します（<a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-5">インジェクションと暗号化の不備「XSS：脆弱なコードと安全なコード」</a> でも同じ比較をしています）。</p>
+    <p><code>textContent</code> は中身を HTML として解釈せず、ただの文字として表示します（<a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html#sec-5">インジェクションと暗号化の不備「XSS：脆弱なコードと安全なコード」</a> でも同じ比較をしています）。</p>
     <p>どうしても HTML を入れる必要がある（リッチテキストなど）場合は、<strong>DOMPurify などのサニタイザ</strong> を通します。<strong>サニタイザ</strong> とは、HTML から <code>script</code> 要素や <code>onerror</code> などの危険な部分を取り除き、安全な部分だけを残す道具です。</p>
     <span class="code-label good">安全な例：サニタイザを通してから入れる</span>
 <pre><code>import DOMPurify from 'dompurify';
@@ -388,7 +388,7 @@ function safeRedirect(next) {
       <li>使っているライブラリを把握し、<code>npm audit</code>（npm のパッケージに既知の脆弱性がないか調べるコマンド）や Dependabot（GitHub が依存ライブラリの更新を自動で提案する機能）で更新を追う。</li>
       <li>CDN（スクリプトなどを配信する外部サーバー）から読むスクリプトには <strong>SRI</strong>（<code>integrity</code> 属性）を付け、改ざんされたファイルを実行しない。</li>
     </ul>
-    <p>詳しくは <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html#sec-4">安全でない設計・設定ミス・古い部品「脆弱で古いコンポーネント」</a>、SRI の書き方は <a href="../../71_セキュリティ基礎/00_全体像/40-5_サプライチェーンと整合性の不備.html#sec-8-2">サプライチェーンと整合性の不備「CDN の JavaScript には SRI を付ける」</a> を参照してください。</p>
+    <p>詳しくは <a href="../71_セキュリティ基礎/40-4_安全でない設計・設定ミス・古い部品.html#sec-4">安全でない設計・設定ミス・古い部品「脆弱で古いコンポーネント」</a>、SRI の書き方は <a href="../71_セキュリティ基礎/40-5_サプライチェーンと整合性の不備.html#sec-8-2">サプライチェーンと整合性の不備「CDN の JavaScript には SRI を付ける」</a> を参照してください。</p>
 
     <h2 id="sec-7"><span class="num">7.</span>対策の優先順位</h2>
     <ol class="steps">
@@ -480,6 +480,6 @@ function safeRedirect(next) {
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

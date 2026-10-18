@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WebAPIの脆弱性｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -228,7 +228,7 @@ echo json_encode(['name' =&gt; $name]);   // " は \" に、制御文字も正�
 <pre><code>・古いブラウザや特殊な環境が残っている場合がある
 ・防御の多層化（Defense in Depth）として有効
 ・MIME タイプや nosniff は、他の攻撃の緩和にも役立つ</code></pre>
-    <p>防御の多層化（深層防御）の考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">71 セキュリティ基礎「深層防御」</a> で解説しています。</p>
+    <p>防御の多層化（深層防御）の考え方は <a href="../71_セキュリティ基礎/20-2_深層防御.html">71 セキュリティ基礎「深層防御」</a> で解説しています。</p>
     <div class="callout warn">
       <p class="callout-title">補足：IE のサポートは終了しています</p>
       <p>Internet Explorer 11 は 2022年6月にサポートが終了し、その後 Windows 上でも無効化されました。現在の Chrome・Edge・Firefox・Safari は、<code>application/json</code> で返された JSON を HTML として実行しません。したがってこの攻撃が現実に起きる場面はかなり限られます。それでも、正しい <code>Content-Type</code> と <code>nosniff</code> は他の攻撃の緩和にも効くため、ノートのとおり「付けておくのが当たり前」の設定です。</p>
@@ -465,7 +465,7 @@ if (リクエストヘッダに X-Requested-With: XMLHttpRequest がない) {
   エラーを返す
 }</code></pre>
     <p>自前の JavaScript からはヘッダを付けられますが、他サイトの <code>&lt;script src="..."&gt;</code> では付けられません。その差を利用して、「正規のクライアントだけ」に絞ります。なお、<code>fetch</code> はこのヘッダを自動では付けないので、自前のコードで明示的に付ける必要があります。</p>
-    <p>認証（本人確認）と認可（その人に許された操作かの確認）の違いは <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-1">71 セキュリティ基礎「アクセス制御と認証の失敗」</a> を参照してください。</p>
+    <p>認証（本人確認）と認可（その人に許された操作かの確認）の違いは <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-1">71 セキュリティ基礎「アクセス制御と認証の失敗」</a> を参照してください。</p>
 
     <h2 id="sec-9"><span class="num">9.</span>JSONPの不適切な利用</h2>
     <p><strong>JSONPの不適切な利用</strong> とは、JSONP の性質（別オリジンの <code>&lt;script&gt;</code> からも読める）を理解せず、<strong>秘密情報を JSONP で返してしまう</strong> ことです。</p>
@@ -650,8 +650,8 @@ app.use((req, res, next) =&gt; {
     <p>ヘッダだけで全ての脆弱性が消えるわけではありません。<strong>正しい JSON 生成・CSRF 対策・CORS の許可リスト</strong> が本筋で、ヘッダはそれを補強する防御層です。</p>
 
     <h2 id="sec-12"><span class="num">12.</span>APIからの大量取得（2026年の事例から・追記）</h2>
-    <p>徳丸本の第19章の範囲外ですが、2026年の国内の情報漏洩で問題になった論点です（全体は <a href="../../71_セキュリティ基礎/00_全体像/50-5_サプライチェーン攻撃と2026年の事例.html">71 セキュリティ基礎「サプライチェーン攻撃と2026年の事例」</a>）。</p>
-    <p>アフラック生命の事例（約440万人分）では、攻撃は <strong>通常の利用と同じ形式のアクセス</strong> で行われ、<strong>短時間の大量照会を監視・制御する機能が不足</strong> していたとされました。API が 1 件ずつ正しく認可していても、<strong>何件でも取れる</strong> と大量漏洩につながります。OWASP API Security Top 10（API に特化した重大リスクのランキング）の <strong>API4:2023 Unrestricted Resource Consumption</strong>（リソース消費の制限なし）や、<strong>API1:2023 BOLA</strong>（Broken Object Level Authorization：オブジェクト単位の認可の不備）に当たります。BOLA は、Web アプリで IDOR（安全でない直接オブジェクト参照）と呼ばれる問題の API 版です（<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-3-1">71「アクセス制御と認証の失敗」3.1</a>）。</p>
+    <p>徳丸本の第19章の範囲外ですが、2026年の国内の情報漏洩で問題になった論点です（全体は <a href="../71_セキュリティ基礎/50-5_サプライチェーン攻撃と2026年の事例.html">71 セキュリティ基礎「サプライチェーン攻撃と2026年の事例」</a>）。</p>
+    <p>アフラック生命の事例（約440万人分）では、攻撃は <strong>通常の利用と同じ形式のアクセス</strong> で行われ、<strong>短時間の大量照会を監視・制御する機能が不足</strong> していたとされました。API が 1 件ずつ正しく認可していても、<strong>何件でも取れる</strong> と大量漏洩につながります。OWASP API Security Top 10（API に特化した重大リスクのランキング）の <strong>API4:2023 Unrestricted Resource Consumption</strong>（リソース消費の制限なし）や、<strong>API1:2023 BOLA</strong>（Broken Object Level Authorization：オブジェクト単位の認可の不備）に当たります。BOLA は、Web アプリで IDOR（安全でない直接オブジェクト参照）と呼ばれる問題の API 版です（<a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-3-1">71「アクセス制御と認証の失敗」3.1</a>）。</p>
 
     <figure>
     <svg viewBox="0 0 720 300" role="img" aria-label="APIからの大量取得の比較。対策なしでは、攻撃者が正規と同じ形式でIDを1から順に照会し、APIは1件ずつの認可は通すが件数の制限がないため、全件が取得される。対策ありでは、APIが所有者チェック、limitの最大値、時間あたりの取得件数の集計を行い、上限を超えると429または403を返してアラートを出す">
@@ -697,7 +697,7 @@ app.use((req, res, next) =&gt; {
         <tbody>
           <tr><td>ページサイズの上限</td><td><code>?limit=100000</code> を受け付けない。サーバー側で最大値を決める</td></tr>
           <tr><td>レート制限</td><td>ユーザー・トークン・IP ごとに、時間あたりのリクエスト数を制限する</td></tr>
-          <tr><td>取得件数の上限</td><td>一定時間に取得できる <strong>レコード数の合計</strong> を制限し、超えたら止めてアラートを出す（<a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html#sec-2-7">71「ログ不足・SSRF・例外処理」2.7</a>）</td></tr>
+          <tr><td>取得件数の上限</td><td>一定時間に取得できる <strong>レコード数の合計</strong> を制限し、超えたら止めてアラートを出す（<a href="../71_セキュリティ基礎/40-6_ログ不足・SSRF・例外処理.html#sec-2-7">71「ログ不足・SSRF・例外処理」2.7</a>）</td></tr>
           <tr><td>ID を推測させない</td><td>連番 ID だと 1 から順に取得される。UUID などにし、<strong>毎回、所有者かどうかをチェック</strong> する</td></tr>
           <tr><td>一括エクスポートは別扱い</td><td>CSV 出力などは権限を分け、実行を記録・通知する</td></tr>
         </tbody>
@@ -803,6 +803,6 @@ app.use((req, res, next) =&gt; {
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>メールヘッダインジェクション｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -65,7 +65,7 @@
     </ul>
 
     <h2 id="sec-2"><span class="num">2.</span>メールヘッダインジェクション</h2>
-    <p><strong>メールヘッダインジェクション（Email Header Injection）</strong> とは、フォームなどの <strong>外部入力</strong> に改行やヘッダ用の文字列を混ぜ込み、メールのヘッダを勝手に追加・改変する攻撃です。「インジェクション（注入）」という名前のとおり、<a href="20-3_SQLインジェクション.html">SQLインジェクション</a> や <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> と同じく、<strong>データのつもりの入力が「命令・構造」として解釈されてしまう</strong> のが原因です（インジェクション全般の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-2">インジェクションと暗号化の不備</a> を参照してください）。</p>
+    <p><strong>メールヘッダインジェクション（Email Header Injection）</strong> とは、フォームなどの <strong>外部入力</strong> に改行やヘッダ用の文字列を混ぜ込み、メールのヘッダを勝手に追加・改変する攻撃です。「インジェクション（注入）」という名前のとおり、<a href="20-3_SQLインジェクション.html">SQLインジェクション</a> や <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> と同じく、<strong>データのつもりの入力が「命令・構造」として解釈されてしまう</strong> のが原因です（インジェクション全般の考え方は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html#sec-2">インジェクションと暗号化の不備</a> を参照してください）。</p>
 
     <h3 id="sec-2-1">2.1 メールの構造（ざっくり）</h3>
     <p>メールは大きく <strong>ヘッダ</strong> と <strong>本文</strong> に分かれます。ヘッダは「誰から・誰へ・件名は何か」を表します。ヘッダと本文の間は空行1つで区切られます。</p>
@@ -386,7 +386,7 @@ $to = $deptMap[$dept] ?? $deptMap['support'];</code></pre>
       <li>可能なら SendGrid / SES 等の外部メールサービスを使う</li>
     </ul>
     <p>Webアプリ側では「ヘッダインジェクション対策」と「宛先のサーバー側固定」を行い、メールサーバー側では「第三者中継を閉じる」ことがセットです。</p>
-    <p>なお、他人が自社ドメインを名乗って送る「なりすましメール」を受信側で見抜く仕組み（SPF・DKIM・DMARC）は、<a href="../../71_セキュリティ基礎/00_全体像/50-1_ネットワークと端末の防御.html#sec-8">ネットワークと端末の防御「メールのなりすまし対策 — SPF・DKIM・DMARC」</a> で解説しています。</p>
+    <p>なお、他人が自社ドメインを名乗って送る「なりすましメール」を受信側で見抜く仕組み（SPF・DKIM・DMARC）は、<a href="../71_セキュリティ基礎/50-1_ネットワークと端末の防御.html#sec-8">ネットワークと端末の防御「メールのなりすまし対策 — SPF・DKIM・DMARC」</a> で解説しています。</p>
 
     <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
     <div class="table-wrap"><table>
@@ -466,6 +466,6 @@ $to = $deptMap[$dept] ?? $deptMap['support'];</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

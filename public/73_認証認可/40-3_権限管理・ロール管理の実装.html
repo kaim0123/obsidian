@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>権限管理・ロール管理の実装｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -193,7 +193,7 @@ const checkPermission = (requiredPermission) =&gt; {
     <p>ログインしていなければ <strong>401</strong>（誰か分からない）、ログインしていても権限がなければ <strong>403</strong>（権限がない）を返します。<code>req.user</code> は、その前に動く認証の仕組み（セッションや JWT の検証）が入れておく前提です。</p>
     <div class="callout warn">
       <p class="callout-title">エラー応答に渡す情報は最小限に</p>
-      <p>このコードは 403 の応答に <code>userPermissions</code>（そのユーザーが持つ権限の一覧）まで含めています。開発中の確認には便利ですが、本番では攻撃者に手がかりを与えるため、エラー内容だけを返すのが安全です（71 の <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-2-3">エラー処理 — 攻撃者にヒントを与えない</a> を参照）。</p>
+      <p>このコードは 403 の応答に <code>userPermissions</code>（そのユーザーが持つ権限の一覧）まで含めています。開発中の確認には便利ですが、本番では攻撃者に手がかりを与えるため、エラー内容だけを返すのが安全です（71 の <a href="../71_セキュリティ基礎/50-3_セキュアな運用とログ出力.html#sec-2-3">エラー処理 — 攻撃者にヒントを与えない</a> を参照）。</p>
     </div>
 
     <h3 id="sec-3-2">3.2 ユーザーの権限取得</h3>
@@ -1087,7 +1087,7 @@ const createDefaultRoles = async () =&gt; {
         <tr><td><strong>moderator</strong></td><td>コンテンツの管理（モデレーション）</td><td>投稿の閲覧・更新・削除、ユーザーの閲覧</td></tr>
       </tbody>
     </table></div>
-    <p>一般ユーザーには投稿の削除権限を、モデレーターにはロール管理の権限を渡していない点が「最小化」です。最小権限の原則そのものは 71 の <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照してください。</p>
+    <p>一般ユーザーには投稿の削除権限を、モデレーターにはロール管理の権限を渡していない点が「最小化」です。最小権限の原則そのものは 71 の <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照してください。</p>
     <div class="callout warn">
       <p class="callout-title"><code>*</code> は自動では効かない</p>
       <p>3 章の <code>checkPermission</code> は <code>includes(requiredPermission)</code> で完全一致を見るだけなので、<code>'*'</code> を「全権限」として扱うには、チェック側に <code>'*'</code> を特別扱いする処理を足す必要があります。</p>
@@ -1119,7 +1119,7 @@ app.post('/api/roles', checkPermission('roles:create'), async (req, res) =&gt; {
   
   res.json({ success: true, role });
 });</code></pre>
-    <p>操作の種類・内容・時刻・IP アドレス・ブラウザ情報（User-Agent）と、誰が作成したか（<code>createdBy</code>）を残しています。なお、この例の <code>auditLog</code> は中で <code>req</code> を使っていますが引数で受け取っていないため、実際には <code>req</code> も渡す形にします。何を記録しどう守るかは 71 の <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-4">何を記録するか — ログの種類・イベント・項目</a> を参照してください。</p>
+    <p>操作の種類・内容・時刻・IP アドレス・ブラウザ情報（User-Agent）と、誰が作成したか（<code>createdBy</code>）を残しています。なお、この例の <code>auditLog</code> は中で <code>req</code> を使っていますが引数で受け取っていないため、実際には <code>req</code> も渡す形にします。何を記録しどう守るかは 71 の <a href="../71_セキュリティ基礎/50-3_セキュアな運用とログ出力.html#sec-4">何を記録するか — ログの種類・イベント・項目</a> を参照してください。</p>
 
     <h2 id="sec-10"><span class="num">10.</span>実装の選択指針</h2>
     <div class="table-wrap"><table>
@@ -1207,6 +1207,6 @@ app.post('/api/roles', checkPermission('roles:create'), async (req, res) =&gt; {
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

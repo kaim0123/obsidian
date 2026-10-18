@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>クッキー出力にまつわる脆弱性｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -42,7 +42,7 @@
       <p><strong>Cookie にはセッションID だけを入れ、中身はサーバー側のセッション変数に置きます。</strong>そのセッションID の Cookie には <strong>Secure・HttpOnly・SameSite</strong> を必ず付け、Domain は広げず、有効期限は短めにします。どうしても Secure を付けられない混在サイトでは、Secure 付きの <strong>トークン Cookie</strong> を足して二重に確かめます。</p>
     </div>
 
-    <p>Cookie の属性そのものの意味は <a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a>、セッションID の奪われ方（推測・盗み出し・固定化）は <a href="40-1_セッション管理の不備.html">セッション管理の不備</a> で扱いました。Cookie の出力に関わるもう 1 つの脆弱性である、<code>Set-Cookie</code> などのヘッダに改行を混ぜ込まれる攻撃は <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-6">HTTPヘッダ・インジェクション</a>（Web脆弱性対策解説）を参照してください。</p>
+    <p>Cookie の属性そのものの意味は <a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a>、セッションID の奪われ方（推測・盗み出し・固定化）は <a href="40-1_セッション管理の不備.html">セッション管理の不備</a> で扱いました。Cookie の出力に関わるもう 1 つの脆弱性である、<code>Set-Cookie</code> などのヘッダに改行を混ぜ込まれる攻撃は <a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-6">HTTPヘッダ・インジェクション</a>（Web脆弱性対策解説）を参照してください。</p>
 
     <h2 id="sec-1"><span class="num">1.</span>クッキーに保存すべきでない情報</h2>
     <p>機密情報や重要な状態は <strong>セッション変数</strong>（サーバー側に保存する、利用者ごとのデータ）に保存し、Cookie には <strong>セッションID など最小限</strong> だけを載せるのが原則です。判断のために、Cookie とセッション変数の違いを比べます。</p>
@@ -78,8 +78,8 @@
       <thead><tr><th>不備</th><th>リスク</th></tr></thead>
       <tbody>
         <tr><td><strong>Secure なし</strong></td><td>HTTP 通信でも Cookie が送られ、<strong>盗聴</strong> される</td></tr>
-        <tr><td><strong>HttpOnly なし</strong></td><td>XSS で <code>document.cookie</code> から <strong>窃取</strong> される（<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html#sec-3">XSS によるクッキー値の盗み出し</a>）</td></tr>
-        <tr><td><strong>SameSite なし</strong></td><td>クロスサイトのリクエストにも Cookie が送られ、<strong>CSRF</strong> のリスク（<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>）</td></tr>
+        <tr><td><strong>HttpOnly なし</strong></td><td>XSS で <code>document.cookie</code> から <strong>窃取</strong> される（<a href="../72_Web脆弱性対策/20-1_XSSの基本.html#sec-3">XSS によるクッキー値の盗み出し</a>）</td></tr>
+        <tr><td><strong>SameSite なし</strong></td><td>クロスサイトのリクエストにも Cookie が送られ、<strong>CSRF</strong> のリスク（<a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>）</td></tr>
         <tr><td><strong>Expires が長すぎる</strong></td><td>盗まれた Cookie が <strong>長期間</strong> 有効になる</td></tr>
         <tr><td><strong>Domain が広すぎる</strong></td><td>サブドメイン全体に Cookie が <strong>共有</strong> され、漏洩しやすい</td></tr>
       </tbody>
@@ -358,7 +358,7 @@ Set-Cookie: sessionId=abc123; Max-Age=3600</code></pre>
 // ← sessionId は含まれない</code></pre>
       </div>
     </div>
-    <p>HttpOnly が XSS に対してどこまで効くか（保険的対策であること）は <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html#sec-14">XSS：クッキーに HttpOnly 属性を付与</a> を参照してください。</p>
+    <p>HttpOnly が XSS に対してどこまで効くか（保険的対策であること）は <a href="../72_Web脆弱性対策/20-1_XSSの基本.html#sec-14">XSS：クッキーに HttpOnly 属性を付与</a> を参照してください。</p>
 
     <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
     <div class="table-wrap"><table>
@@ -383,7 +383,7 @@ Set-Cookie: sessionId=abc123; Max-Age=3600</code></pre>
   SameSite=Strict;
   Path=/;
   Max-Age=3600</code></pre>
-    <p>徳丸本の次の章では、メール送信機能や OS コマンド呼び出しにまつわる脆弱性を扱います。これらは <a href="../../72_Web脆弱性対策/00_全体像/20-5_メールヘッダインジェクション.html">メールヘッダインジェクション</a> と <a href="../../72_Web脆弱性対策/00_全体像/20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a>（Web脆弱性対策解説）で解説しています。</p>
+    <p>徳丸本の次の章では、メール送信機能や OS コマンド呼び出しにまつわる脆弱性を扱います。これらは <a href="../72_Web脆弱性対策/20-5_メールヘッダインジェクション.html">メールヘッダインジェクション</a> と <a href="../72_Web脆弱性対策/20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a>（Web脆弱性対策解説）で解説しています。</p>
 
     <h2 id="sec-8"><span class="num">8.</span>理解度チェック</h2>
     <details><summary>Q1. 「会員ランク」や「カートの合計金額」を Cookie に保存してはいけないのはなぜですか？</summary><div class="body"><p>Cookie は <strong>利用者が開発者ツールなどで簡単に書き換えられる</strong> からです（HttpOnly でも改変はできます）。漏洩したときに値そのものが漏れる点も問題です。重要な状態は <strong>セッション変数</strong>（サーバー側）に置き、Cookie にはセッションID だけを入れます。</p></div></details>
@@ -399,10 +399,10 @@ Set-Cookie: sessionId=abc123; Max-Age=3600</code></pre>
       <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方』第11章（クッキー出力にまつわる脆弱性）</li>
       <li>関連ページ：<a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a>（セッション管理解説）</li>
       <li>関連ページ：<a href="40-1_セッション管理の不備.html">セッション管理の不備</a>（セッション管理解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSSの基本</a>（Web脆弱性対策解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（Web脆弱性対策解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトとHTTPヘッダインジェクション</a>（Web脆弱性対策解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">CORSエラーの対処法とCookie</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSSの基本</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトとHTTPヘッダインジェクション</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html">CORSエラーの対処法とCookie</a>（Web脆弱性対策解説）</li>
     </ul>
 
     <nav class="pager">
@@ -412,6 +412,6 @@ Set-Cookie: sessionId=abc123; Max-Age=3600</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

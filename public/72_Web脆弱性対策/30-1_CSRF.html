@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CSRF（クロスサイトリクエストフォージェリ）｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -406,7 +406,7 @@ CSRF 対策が不要（または優先度低）:
     <p><strong>カスタムヘッダ</strong> 方式は、「独自のリクエストヘッダが付いたリクエストだけ受け付ける」方法です。フォームや img タグでは独自ヘッダを付けられず、JavaScript で別オリジンから独自ヘッダを付けようとすると <a href="10-2_CORSの仕組み.html#sec-7">プリフライトリクエスト</a>（本番の前にサーバーへ許可を問い合わせる事前確認）が発生し、サーバーが許可しない限り送られません。そのため、CORS で別オリジンを広く許可していないことが前提です。</p>
 
     <h3 id="sec-9-2">9.2 多層防御</h3>
-    <p>1つの対策に頼らず、複数を重ねます（考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> を参照）。</p>
+    <p>1つの対策に頼らず、複数を重ねます（考え方は <a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a> を参照）。</p>
 <pre><code>SameSite Cookie（第1の防御線）
     +
 CSRF トークン（第2の防御線）
@@ -570,7 +570,7 @@ if (!password_verify($_POST['password'], $user['password_hash'])) {
     die('パスワードが正しくありません');
 }
 // 削除処理...</code></pre>
-    <p><code>password_verify</code> は、入力されたパスワードと、保存してある <strong>パスワードハッシュ</strong>（パスワードを元に戻せない形に変換した値）が対応しているかを確かめる PHP の関数です。パスワードの保存方法は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> を参照してください。</p>
+    <p><code>password_verify</code> は、入力されたパスワードと、保存してある <strong>パスワードハッシュ</strong>（パスワードを元に戻せない形に変換した値）が対応しているかを確かめる PHP の関数です。パスワードの保存方法は <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> を参照してください。</p>
 
     <h3 id="sec-11-4">11.4 適用場面</h3>
     <div class="table-wrap"><table>
@@ -732,6 +732,6 @@ CSRF トークン    = 根本対策（必須）</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

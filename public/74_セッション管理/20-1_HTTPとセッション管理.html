@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HTTPとセッション管理｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -161,7 +161,7 @@ Set-Cookie: sessionId=abc123; HttpOnly
         <tr><td>503</td><td>Service Unavailable</td><td>一時的にサービス停止</td></tr>
       </tbody>
     </table></div>
-    <p>401 と 403 の使い分けは、73 の <a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">認証と認可の違い</a> で詳しく解説しています。</p>
+    <p>401 と 403 の使い分けは、73 の <a href="../73_認証認可/10-1_認証と認可の違い.html">認証と認可の違い</a> で詳しく解説しています。</p>
 
     <h2 id="sec-4"><span class="num">4.</span>レスポンスヘッダと MIME タイプ</h2>
     <h3 id="sec-4-1">4.1 レスポンスヘッダ</h3>
@@ -177,7 +177,7 @@ Set-Cookie: sessionId=abc123; HttpOnly
         <tr><td><code>Strict-Transport-Security</code></td><td>HTTPS 強制（HSTS）</td></tr>
       </tbody>
     </table></div>
-    <p><code>Location</code> や <code>Set-Cookie</code> に外から来た値を入れるときの落とし穴は 72 の <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトと HTTP ヘッダインジェクション</a>、HSTS などセキュリティ用のヘッダは <a href="../../72_Web脆弱性対策/00_全体像/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a> を参照してください。</p>
+    <p><code>Location</code> や <code>Set-Cookie</code> に外から来た値を入れるときの落とし穴は 72 の <a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトと HTTP ヘッダインジェクション</a>、HSTS などセキュリティ用のヘッダは <a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a> を参照してください。</p>
 
     <h3 id="sec-4-2">4.2 MIME タイプ</h3>
     <p><strong>MIME タイプ</strong> は、データの種類を表す識別子です。<code>Content-Type</code> ヘッダで指定します。</p>
@@ -279,7 +279,7 @@ decodeURIComponent('%E3%81%93');  // "こ"</code></pre>
     <h3 id="sec-7-1">7.1 用途</h3>
     <ul>
       <li><strong>アクセス解析</strong>：どのサイト・ページから流入したか</li>
-      <li><strong>CSRF 対策</strong>：リクエスト元を検証する（CSRF は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を参照）</li>
+      <li><strong>CSRF 対策</strong>：リクエスト元を検証する（CSRF は <a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a> を参照）</li>
       <li><strong>ホットリンク防止</strong>：画像の直リンクを制限する</li>
     </ul>
     <h3 id="sec-7-2">7.2 セキュリティ上の注意と対策</h3>
@@ -404,11 +404,11 @@ Authorization: Basic eWFtYWRhOnBhc3N3b3JkMTIz</code></pre>
       <p class="callout-title">セキュリティ上の注意</p>
       <ul>
         <li><strong>必ず HTTPS で使う</strong>（HTTP では盗聴される）</li>
-        <li>本番のユーザー認証には <strong>セッション＋フォームログイン</strong> や <strong>OAuth</strong> を推奨（OAuth は 73 の <a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">OAuth 2.0 の仕組み</a>）</li>
+        <li>本番のユーザー認証には <strong>セッション＋フォームログイン</strong> や <strong>OAuth</strong> を推奨（OAuth は 73 の <a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">OAuth 2.0 の仕組み</a>）</li>
         <li>管理画面の簡易保護や、開発環境での利用に限定するのが現実的</li>
       </ul>
     </div>
-    <p>Digest 認証との比較やほかのログイン方式は、73 の <a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html#sec-4">HTTP の古典的な方式：Basic 認証と Digest 認証</a> を参照してください。</p>
+    <p>Digest 認証との比較やほかのログイン方式は、73 の <a href="../73_認証認可/10-2_ログイン方式と認証の概念.html#sec-4">HTTP の古典的な方式：Basic 認証と Digest 認証</a> を参照してください。</p>
 
     <h2 id="sec-11"><span class="num">11.</span>クッキーによるセッション管理</h2>
     <p>HTTP は <strong>ステートレス</strong>（状態を保持しない）なので、ログイン状態などを維持するには別の仕組みが必要です。<strong>クッキーによるセッション管理</strong> が最も一般的な方法です。<strong>クッキー（Cookie）</strong> はサーバーの指示でブラウザが保存し、次から自動で送り返す小さなデータ、<strong>セッション</strong> は複数のリクエストにまたがって状態を管理する仕組みです（クッキー自体の仕組みは <a href="10-1_Cookieの仕組み.html">Cookie の仕組み</a>）。</p>
@@ -509,7 +509,7 @@ app.post('/login', (req, res) =&gt; {
         <tr><td><strong>物理アクセス</strong></td><td>PC を離席中に Cookie をコピーされる</td><td>タイムアウト、再認証</td></tr>
       </tbody>
     </table></div>
-    <p><strong>XSS（クロスサイトスクリプティング）</strong> は、攻撃者の JavaScript をページに紛れ込ませて被害者のブラウザで動かす攻撃です（<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS の基本</a>）。</p>
+    <p><strong>XSS（クロスサイトスクリプティング）</strong> は、攻撃者の JavaScript をページに紛れ込ませて被害者のブラウザで動かす攻撃です（<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSS の基本</a>）。</p>
 
     <h3 id="sec-12-2">12.2 セッション固定攻撃の例</h3>
     <ol class="steps">
@@ -627,7 +627,7 @@ document.cookie; // "" （sessionIdは含まれない）</code></pre>
     <ul class="sources">
       <li>ノート：74_セッション管理/20_セッション/01_HTTPセッション管理（徳丸本1章）</li>
       <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ（第 1 章）</li>
-      <li>関連ページ：<a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">73 認証と認可の違い</a>、<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a>、<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">72 XSS の基本</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">72 CSRF</a></li>
+      <li>関連ページ：<a href="../73_認証認可/10-1_認証と認可の違い.html">73 認証と認可の違い</a>、<a href="../73_認証認可/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a>、<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">72 XSS の基本</a>、<a href="../72_Web脆弱性対策/30-1_CSRF.html">72 CSRF</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -637,6 +637,6 @@ document.cookie; // "" （sessionIdは含まれない）</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

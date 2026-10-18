@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ファイルアクセスとディレクトリトラバーサル｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -218,7 +218,7 @@ if (!$row) {
 }
 
 readfile($row['path']);</code></pre>
-    <p><code>(int)</code> は値を整数に変換する書き方、<code>?? 0</code> は値がなければ 0 を使うという意味です。SQL の <code>?</code> は <a href="20-3_SQLインジェクション.html">SQLインジェクション</a> 対策のプレースホルダです。<code>AND user_id = ?</code> で「ログイン中のユーザー自身のファイルか」も同時に確かめている点が大切です。ID を書き換えて他人のファイルを取られる問題（IDOR）は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-3-1">71 セキュリティ基礎「アクセス制御と認証の失敗」</a> で扱っています。</p>
+    <p><code>(int)</code> は値を整数に変換する書き方、<code>?? 0</code> は値がなければ 0 を使うという意味です。SQL の <code>?</code> は <a href="20-3_SQLインジェクション.html">SQLインジェクション</a> 対策のプレースホルダです。<code>AND user_id = ?</code> で「ログイン中のユーザー自身のファイルか」も同時に確かめている点が大切です。ID を書き換えて他人のファイルを取られる問題（IDOR）は <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-3-1">71 セキュリティ基礎「アクセス制御と認証の失敗」</a> で扱っています。</p>
 
     <h3 id="sec-3-2">3.2 ファイル名にディレクトリが含まれないようにする</h3>
     <p>どうしてもファイル名を受け取る場合は、<strong>ディレクトリ区切り文字（<code>/</code> や <code>\</code>）を除去・拒否</strong> します。</p>
@@ -378,7 +378,7 @@ $path = '/var/www/uploads/' . $file;</code></pre>
   backup_20260101.sql
   backup_20260201.sql
   users.csv</code></pre>
-    <p>一覧が出るだけで、攻撃者は欲しいファイルの URL をそのまま知ることができます。こうした「サーバー設定の初期値のまま・設定ミス」の問題全般は <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html#sec-3">71 セキュリティ基礎「安全でない設計・設定ミス・古い部品」</a> で扱っています。</p>
+    <p>一覧が出るだけで、攻撃者は欲しいファイルの URL をそのまま知ることができます。こうした「サーバー設定の初期値のまま・設定ミス」の問題全般は <a href="../71_セキュリティ基礎/40-4_安全でない設計・設定ミス・古い部品.html#sec-3">71 セキュリティ基礎「安全でない設計・設定ミス・古い部品」</a> で扱っています。</p>
 
     <h4>類推可能なファイル名</h4>
     <div class="grid c2">
@@ -622,6 +622,6 @@ $id = (int)($_GET['id'] ?? 0);
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

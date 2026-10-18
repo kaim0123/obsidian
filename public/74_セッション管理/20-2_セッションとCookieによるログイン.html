@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>セッションとCookieによるログイン｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -235,7 +235,7 @@ app.post('/logout', (req, res) =&gt; {
     <p>ログアウトで <code>req.session.destroy()</code> を呼ぶと、サーバー側のセッションが消えます。<a href="#sec-2-2">2.2</a> のとおり、ブラウザに Cookie が残っていてもログイン済みとは扱われなくなります。</p>
     <div class="callout warn">
       <p class="callout-title">この例は「簡略化」です</p>
-      <p>パスワードをコードに直接書いて比べるのは説明用です。実際には保存したハッシュと照合し（<a href="../../73_認証認可/00_全体像/20-2_パスワードの安全な保存.html">パスワードの安全な保存</a>）、<code>secret</code> も推測されにくい値を環境変数などから読み込みます。</p>
+      <p>パスワードをコードに直接書いて比べるのは説明用です。実際には保存したハッシュと照合し（<a href="../73_認証認可/20-2_パスワードの安全な保存.html">パスワードの安全な保存</a>）、<code>secret</code> も推測されにくい値を環境変数などから読み込みます。</p>
     </div>
 
     <h2 id="sec-5"><span class="num">5.</span>クッキーとセッションの違い</h2>
@@ -304,7 +304,7 @@ app.post('/api/logout', (req, res) =&gt; {
       <li>セッション ID やトークンをクッキーやローカルストレージ（ブラウザに用意された保存領域）に保存する</li>
       <li>以降のリクエストでクッキーを使い、認証状態を維持する</li>
     </ol>
-    <p>ログイン画面そのものへの攻撃（パスワードの総当たりなど）は 73 の <a href="../../73_認証認可/00_全体像/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a> を参照してください。</p>
+    <p>ログイン画面そのものへの攻撃（パスワードの総当たりなど）は 73 の <a href="../73_認証認可/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a> を参照してください。</p>
 
     <h3 id="sec-7-2">7.2 クッキーとログインの関係</h3>
     <ul>
@@ -330,7 +330,7 @@ app.post('/api/logout', (req, res) =&gt; {
 res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'lax' });</code></pre>
     <span class="code-label good">クライアントサイド：fetch でクッキーを送信</span>
 <pre><code>fetch('/api/user', { credentials: 'include' });</code></pre>
-    <p><code>credentials: 'include'</code> は「このリクエストに Cookie を付けて送る」という指定です。フロントエンドと API のオリジンが違う構成では、サーバー側の CORS 設定とあわせて必要になります（<a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">CORS エラーの対処法と Cookie</a>）。</p>
+    <p><code>credentials: 'include'</code> は「このリクエストに Cookie を付けて送る」という指定です。フロントエンドと API のオリジンが違う構成では、サーバー側の CORS 設定とあわせて必要になります（<a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html">CORS エラーの対処法と Cookie</a>）。</p>
 
     <h2 id="sec-8"><span class="num">8.</span>サーバー・インフラから見たセッション管理</h2>
     <h3 id="sec-8-1">8.1 セッションストア</h3>
@@ -401,9 +401,9 @@ app.use(session({
     <div class="table-wrap"><table>
       <thead><tr><th>設定・対策</th><th>目的</th></tr></thead>
       <tbody>
-        <tr><td><strong>HttpOnly 属性</strong></td><td>JavaScript からアクセス不可にする（XSS 対策。<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS の基本</a>）</td></tr>
+        <tr><td><strong>HttpOnly 属性</strong></td><td>JavaScript からアクセス不可にする（XSS 対策。<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSS の基本</a>）</td></tr>
         <tr><td><strong>Secure 属性</strong></td><td>HTTPS 通信時のみ送信する</td></tr>
-        <tr><td><strong>SameSite 属性</strong></td><td>同一サイトからのみ送信するなどして CSRF を防ぐ（Strict／Lax／None。<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>）</td></tr>
+        <tr><td><strong>SameSite 属性</strong></td><td>同一サイトからのみ送信するなどして CSRF を防ぐ（Strict／Lax／None。<a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>）</td></tr>
         <tr><td><strong>有効期限（Expires／Max-Age）</strong></td><td>適切な有効期限を設定する</td></tr>
         <tr><td><strong>ドメイン／パスの制限</strong></td><td>Cookie が送られる範囲を必要最小限にする</td></tr>
         <tr><td><strong>セッション固定攻撃・ハイジャック対策</strong></td><td>ログイン時の ID 再生成、推測されにくい ID、タイムアウトなど（<a href="40-1_セッション管理の不備.html">セッション管理の不備</a>）</td></tr>
@@ -474,7 +474,7 @@ app.use(session({
       <li>ノート：74_セッション管理/20_セッション/04_クッキーとログイン</li>
       <li>ノート：74_セッション管理/20_セッション/05_クッキーとセッション管理（旧サーバー教材）</li>
       <li>つるチャンネル「セッションとは？ Cookieの番号だけでサーバーが『あなた』だと分かる仕組み」 https://www.youtube.com/shorts/W3xC233k83o</li>
-      <li>関連ページ：<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html#sec-6">73 ログイン方式と認証の概念：セッション認証</a>、<a href="../../73_認証認可/00_全体像/20-2_パスワードの安全な保存.html">73 パスワードの安全な保存</a>、<a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">72 CORS エラーの対処法と Cookie</a></li>
+      <li>関連ページ：<a href="../73_認証認可/10-2_ログイン方式と認証の概念.html#sec-6">73 ログイン方式と認証の概念：セッション認証</a>、<a href="../73_認証認可/20-2_パスワードの安全な保存.html">73 パスワードの安全な保存</a>、<a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html">72 CORS エラーの対処法と Cookie</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -484,6 +484,6 @@ app.use(session({
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

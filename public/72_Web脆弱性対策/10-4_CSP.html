@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CSP（コンテンツセキュリティポリシー）｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -90,7 +90,7 @@
 
     <div class="callout warn">
       <p class="callout-title">補足：CSP は「XSS対策の本体」ではありません</p>
-      <p>ノートでは「XSS 攻撃を防ぐためのポリシー」と説明していますが、XSS の根本対策はあくまで <strong>出力時のエスケープ</strong>（HTML として意味を持つ記号を無害な文字に置き換えること）です。CSP は、エスケープ漏れがあっても被害を抑える <strong>多層防御の1層</strong> と考えてください（→ <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a>、インジェクションの基本は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a>）。</p>
+      <p>ノートでは「XSS 攻撃を防ぐためのポリシー」と説明していますが、XSS の根本対策はあくまで <strong>出力時のエスケープ</strong>（HTML として意味を持つ記号を無害な文字に置き換えること）です。CSP は、エスケープ漏れがあっても被害を抑える <strong>多層防御の1層</strong> と考えてください（→ <a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a>、インジェクションの基本は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a>）。</p>
     </div>
 
     <h2 id="sec-2"><span class="num">2.</span>CSP の設定方法</h2>
@@ -640,6 +640,6 @@ async function handleCallback() {
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

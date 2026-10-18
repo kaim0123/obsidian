@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>パスキーとWebAuthn｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -65,7 +65,7 @@
     <p>人が考えて覚える文字列ではなく、端末の中で作られる <strong>暗号鍵のペア（秘密鍵＋公開鍵）</strong> を使います。名前は「鍵」ですが、物理の鍵に近いイメージです。<strong>鍵の本体（秘密鍵）は自分のポケット＝端末に入れたまま</strong>、相手には <strong>本物か試せる片方（公開鍵）だけ</strong> を預けます。</p>
 
     <h3 id="sec-2-1">2.1 秘密鍵と公開鍵（超ざっくり）</h3>
-    <p>数学の細部は省き、<strong>役割</strong> だけ押さえます。公開鍵暗号とデジタル署名の基礎は <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-7-2">デジタル署名</a>（パスワード・MFA・暗号化の基礎）や <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#signature">電子署名</a>（セキュリティ基礎）で解説しています。</p>
+    <p>数学の細部は省き、<strong>役割</strong> だけ押さえます。公開鍵暗号とデジタル署名の基礎は <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-7-2">デジタル署名</a>（パスワード・MFA・暗号化の基礎）や <a href="../71_セキュリティ基礎/10-3_セキュリティの専門用語.html#signature">電子署名</a>（セキュリティ基礎）で解説しています。</p>
     <div class="table-wrap"><table>
       <thead><tr><th></th><th>秘密鍵（Private Key）</th><th>公開鍵（Public Key）</th></tr></thead>
       <tbody>
@@ -216,7 +216,7 @@
       <li><strong>偽サイトが独自のチャレンジを送った場合</strong>：本物のサービスが出したチャレンジではないので、その答えは本物のサイトにとって無意味です。</li>
       <li><strong>中継攻撃（本物のチャレンジを横流しする）の場合</strong>：パスキーはドメインごとに別の鍵です。偽ドメインでは本物用の鍵が選ばれず、署名には偽ドメインが含まれるため、本物では使えません。攻撃者が「そのまま横流ししてログイン完了」とはいきにくい、と理解するとよいでしょう（※さらに高度な中継攻撃の話は別レイヤーの議論になります）。</li>
     </ul>
-    <p>フィッシングそのものの手口は <a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#human">人を狙う攻撃 — フィッシングとソーシャルエンジニアリング</a>（セキュリティ基礎）を参照してください。</p>
+    <p>フィッシングそのものの手口は <a href="../71_セキュリティ基礎/10-2_さまざまな脅威と対策の基本.html#human">人を狙う攻撃 — フィッシングとソーシャルエンジニアリング</a>（セキュリティ基礎）を参照してください。</p>
 
     <h2 id="sec-7"><span class="num">7.</span>なぜ強いのか：性質の整理</h2>
     <div class="table-wrap"><table>
@@ -264,7 +264,7 @@
     <p>結論として、人の賢さに頼る啓蒙ではなく、誰が使っても失敗しないフールプルーフな技術だからこそパスキーは強く、証券会社などは早めにパスキーへ切り替えるべき、というのがラジオの主張です。</p>
 
     <h2 id="sec-10"><span class="num">10.</span>実装の流れ（SimpleWebAuthn を使う例）</h2>
-    <p>WebAuthn は検証の手順が多いので、<strong>自作せず実績のあるライブラリ</strong> を使います（「自前実装しない」の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a> も参照）。Node.js なら <code>@simplewebauthn/server</code> と <code>@simplewebauthn/browser</code> がよく使われます。</p>
+    <p>WebAuthn は検証の手順が多いので、<strong>自作せず実績のあるライブラリ</strong> を使います（「自前実装しない」の考え方は <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a> も参照）。Node.js なら <code>@simplewebauthn/server</code> と <code>@simplewebauthn/browser</code> がよく使われます。</p>
 
     <h3 id="sec-10-1">10.1 サーバー：登録</h3>
 <pre><code>import {
@@ -394,8 +394,8 @@ startAuthentication({ optionsJSON: authOptions, useBrowserAutofill: true });</co
       <li>FIDO Alliance「World Passkey Day 2025」<a href="https://fidoalliance.org/fido-alliance-champions-widespread-passkey-adoption-and-a-passwordless-future-on-world-passkey-day-2025/">https://fidoalliance.org/fido-alliance-champions-widespread-passkey-adoption-and-a-passwordless-future-on-world-passkey-day-2025/</a></li>
       <li>関連ページ：<a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a>（認証認可解説）</li>
       <li>関連ページ：<a href="20-3_MFAの方式比較.html">MFAの方式比較</a>（認証認可解説）</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#crypto">暗号技術の用語</a>（セキュリティ基礎）</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/10-3_セキュリティの専門用語.html#crypto">暗号技術の用語</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a>（セキュリティ基礎）</li>
     </ul>
 
     <nav class="pager">
@@ -405,6 +405,6 @@ startAuthentication({ optionsJSON: authOptions, useBrowserAutofill: true });</co
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

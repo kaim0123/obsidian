@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SQLインジェクション｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -31,7 +31,7 @@
       <p>SQLインジェクションは、<strong>データのつもりで入れた文字が、データベースに「命令」として読まれてしまう</strong> 穴です。対策の基本は、SQL の命令部分と値を <strong>そもそも混ぜない</strong> こと。値は <strong>プレースホルダ</strong> を使って命令とは「別の便」で渡します。「記号を消す」より「混ぜない」が基本です。</p>
     </div>
 
-    <p>この章（徳丸本 第7章）の前に、第4章（00_全体像/02_Webアプリの機能と脆弱性）ではインジェクション系脆弱性の概要を、第5章・第6章では XSS を学びました（→ <a href="20-1_XSSの基本.html">XSSの基本</a>、<a href="20-2_XSS発展編.html">XSS発展編</a>）。このページでは <strong>SQL 呼び出しに伴う脆弱性</strong>、とくに <strong>SQLインジェクション</strong> の攻撃手法と対策を扱います。インジェクション全体の考え方（データとコードの混在）は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> にまとめてあるので、ここでは SQL に特有の話を中心に進めます。</p>
+    <p>この章（徳丸本 第7章）の前に、第4章（00_全体像/02_Webアプリの機能と脆弱性）ではインジェクション系脆弱性の概要を、第5章・第6章では XSS を学びました（→ <a href="20-1_XSSの基本.html">XSSの基本</a>、<a href="20-2_XSS発展編.html">XSS発展編</a>）。このページでは <strong>SQL 呼び出しに伴う脆弱性</strong>、とくに <strong>SQLインジェクション</strong> の攻撃手法と対策を扱います。インジェクション全体の考え方（データとコードの混在）は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> にまとめてあるので、ここでは SQL に特有の話を中心に進めます。</p>
 
     <h2 id="sec-1"><span class="num">1.</span>SQLインジェクションとは</h2>
     <p><strong>SQLインジェクション（SQL Injection）</strong> は、Webアプリケーションが生成する SQL 文に <strong>悪意ある入力を混入</strong> させ、データベースを不正操作する攻撃です。<strong>SQL</strong> とは、データベースに「このデータを探せ」「この行を書き換えろ」と指示するための言語です。</p>
@@ -123,7 +123,7 @@ WHERE username = 'alice'
       <li>エラー詳細は <strong>サーバーログ</strong> に記録</li>
       <li>ユーザーには汎用メッセージのみ表示</li>
     </ul>
-    <p>具体的なコードは 8.2 と 11.2 で扱います。エラー処理全般の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a> を参照してください。</p>
+    <p>具体的なコードは 8.2 と 11.2 で扱います。エラー処理全般の考え方は <a href="../71_セキュリティ基礎/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a> を参照してください。</p>
 
     <h3 id="sec-3-2">3.2 UNION SELECT を用いた情報漏洩</h3>
     <p><strong>UNION SELECT</strong> を悪用すると、本来アクセスできない <strong>他テーブルのデータ</strong> を取得できます。</p>
@@ -175,7 +175,7 @@ AND password = '...'
     <h4>対策</h4>
     <ul>
       <li><strong>プレースホルダ</strong> で SQL とデータを分離（7章）</li>
-      <li>パスワードは <strong>ハッシュ比較</strong>（平文保存は別問題として避ける。→ <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> の「パスワードを平文で保存しない」）</li>
+      <li>パスワードは <strong>ハッシュ比較</strong>（平文保存は別問題として避ける。→ <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> の「パスワードを平文で保存しない」）</li>
     </ul>
 
     <h3 id="sec-4-2">4.2 SQLインジェクション攻撃によるデータ改ざん</h3>
@@ -261,7 +261,7 @@ INTO OUTFILE '/var/www/html/shell.php' --</code></pre>
     <p>アプリ自身のファイル読み書きにまつわる脆弱性は、<a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">ファイルアクセスとディレクトリトラバーサル</a> で扱います。</p>
 
     <h3 id="sec-5-3">5.3 HTTP リクエストにより他のサーバーを攻撃</h3>
-    <p>SQLインジェクションを踏み台に、<strong>他のサーバーへ HTTP リクエスト</strong> を送る攻撃（SSRF に近い）もあります。<strong>SSRF</strong>（サーバーサイドリクエストフォージェリ）は、サーバーに攻撃者の望む宛先へ通信させる攻撃で、<a href="30-3_SSRF.html">SSRF</a> のページで扱います（概要は <a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a>）。</p>
+    <p>SQLインジェクションを踏み台に、<strong>他のサーバーへ HTTP リクエスト</strong> を送る攻撃（SSRF に近い）もあります。<strong>SSRF</strong>（サーバーサイドリクエストフォージェリ）は、サーバーに攻撃者の望む宛先へ通信させる攻撃で、<a href="30-3_SSRF.html">SSRF</a> のページで扱います（概要は <a href="../71_セキュリティ基礎/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a>）。</p>
 <pre><code>-- MySQL の LOAD DATA INFILE や UDF 経由
 -- SQL Server の OLE Automation 等
 
@@ -427,7 +427,7 @@ $stmt-&gt;execute(['name' =&gt; $username]);</code></pre>
 プレースホルダ使用時:
   → 文字列「admin' OR '1'='1' --」というユーザー名を検索するだけ
   → SQL 命令として解釈されない ✅</code></pre>
-    <p>ほかの言語（Node.js など）での書き方や、ORM（データベース操作をオブジェクトとして書ける仕組み）の注意点は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> の「SQL インジェクション：脆弱なコードと安全なコード」を参照してください。</p>
+    <p>ほかの言語（Node.js など）での書き方や、ORM（データベース操作をオブジェクトとして書ける仕組み）の注意点は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> の「SQL インジェクション：脆弱なコードと安全なコード」を参照してください。</p>
 
     <h2 id="sec-8"><span class="num">8.</span>PDO の安全な使い方</h2>
     <h3 id="sec-8-1">8.1 PDO のオプション</h3>
@@ -693,7 +693,7 @@ $sql = "SELECT * FROM products ORDER BY $column $dir";</code></pre>
     <p><strong>プレースホルダ</strong> が根本対策ですが、万が一の被害を <strong>軽減する保険</strong> も重要です。</p>
 <pre><code>根本対策:  プレースホルダ（Prepared Statement）
 保険的対策: エラー抑止、入力検証、DB 権限設定</code></pre>
-    <p>複数の守りを重ねる考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> で詳しく扱っています。</p>
+    <p>複数の守りを重ねる考え方は <a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a> で詳しく扱っています。</p>
 
     <h3 id="sec-11-2">11.2 詳細なエラーメッセージの抑止</h3>
     <p>本番環境では DB エラーの <strong>詳細をユーザーに見せない</strong> ようにします。</p>
@@ -740,7 +740,7 @@ if ($id === false || $id &lt; 1) {
     </div>
 
     <h3 id="sec-11-4">11.4 データベースの権限設定</h3>
-    <p>DB ユーザーには <strong>必要最小限の権限</strong> のみを付与します。万が一 SQLインジェクションが成功しても <strong>被害を限定</strong> できます。最小権限の原則そのものは <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>（「データベースのアカウント」の項）を参照してください。</p>
+    <p>DB ユーザーには <strong>必要最小限の権限</strong> のみを付与します。万が一 SQLインジェクションが成功しても <strong>被害を限定</strong> できます。最小権限の原則そのものは <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>（「データベースのアカウント」の項）を参照してください。</p>
     <div class="table-wrap"><table>
       <thead><tr><th>権限</th><th>Web アプリ用 DB ユーザー</th></tr></thead>
       <tbody>
@@ -908,6 +908,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON myapp.* TO 'webapp'@'localhost';
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

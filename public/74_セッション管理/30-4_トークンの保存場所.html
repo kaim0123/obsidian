@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>トークンの保存場所｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -31,7 +31,7 @@
       <p>結論は <strong>「できればブラウザにトークンを置かない」</strong> です。トークンは自分のサーバー（BFF）に置き、ブラウザには <code>HttpOnly</code> のセッション Cookie だけを渡します。どうしてもブラウザに置くなら、メモリや Web Worker に置き、<strong>localStorage は避けます</strong>。</p>
     </div>
 
-    <p>アクセストークンとリフレッシュトークンの役割は <a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、トークンを発行する OAuth の流れは <a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">OAuth 2.0 の仕組み（73 認証認可）</a> を見てください。</p>
+    <p>アクセストークンとリフレッシュトークンの役割は <a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、トークンを発行する OAuth の流れは <a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">OAuth 2.0 の仕組み（73 認証認可）</a> を見てください。</p>
 
     <h2 id="sec-1"><span class="num">1.</span>結論：3 つの方式と優先順位</h2>
     <div class="table-wrap"><table>
@@ -56,11 +56,11 @@
     <div class="table-wrap"><table>
       <thead><tr><th>攻撃</th><th>何が起きるか</th><th>関係する置き場所</th></tr></thead>
       <tbody>
-        <tr><td><strong>XSS</strong>（<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSSの基本</a>）</td><td>攻撃者のスクリプトが、同じオリジンの JavaScript として動く</td><td>JavaScript から読める場所（localStorage・sessionStorage・メモリ）</td></tr>
-        <tr><td><strong>CSRF</strong>（<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>）</td><td>別サイトから、利用者のブラウザにリクエストを送らせる</td><td>自動で送られる場所（Cookie）</td></tr>
+        <tr><td><strong>XSS</strong>（<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSSの基本</a>）</td><td>攻撃者のスクリプトが、同じオリジンの JavaScript として動く</td><td>JavaScript から読める場所（localStorage・sessionStorage・メモリ）</td></tr>
+        <tr><td><strong>CSRF</strong>（<a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>）</td><td>別サイトから、利用者のブラウザにリクエストを送らせる</td><td>自動で送られる場所（Cookie）</td></tr>
       </tbody>
     </table></div>
-    <p>オリジン（スキーム・ホスト・ポートの組み合わせ）については <a href="../../72_Web脆弱性対策/00_全体像/10-1_受動的攻撃と同一オリジンポリシー.html">受動的攻撃と同一オリジンポリシー</a> を見てください。</p>
+    <p>オリジン（スキーム・ホスト・ポートの組み合わせ）については <a href="../72_Web脆弱性対策/10-1_受動的攻撃と同一オリジンポリシー.html">受動的攻撃と同一オリジンポリシー</a> を見てください。</p>
 
     <div class="callout key">
       <p class="callout-title">大事な前提</p>
@@ -191,7 +191,7 @@
         <tr><td><strong>リフレッシュトークンは Web Worker の中</strong></td><td>ページのスクリプトから直接読めないようにする</td></tr>
         <tr><td><strong>短い期限 ＋ ローテーション</strong></td><td>持ち出されても使える時間を短くし、再利用を検知する</td></tr>
         <tr><td><strong>DPoP</strong></td><td>取り出せない鍵（non-extractable）でトークンを端末に結び付ける</td></tr>
-        <tr><td><strong>XSS 対策を厚くする</strong></td><td>CSP・Trusted Types・依存ライブラリの管理（<a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html">CSP</a>、<a href="../../72_Web脆弱性対策/00_全体像/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>）</td></tr>
+        <tr><td><strong>XSS 対策を厚くする</strong></td><td>CSP・Trusted Types・依存ライブラリの管理（<a href="../72_Web脆弱性対策/10-4_CSP.html">CSP</a>、<a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>）</td></tr>
       </tbody>
     </table></div>
     <p>ローテーションと DPoP の仕組みは <a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a> の 4 章・8 章で説明しています。</p>
@@ -215,7 +215,7 @@
       <tbody>
         <tr><td><strong>セッションを端末に結び付ける</strong></td><td>Chrome の <strong>DBSC</strong>（Device Bound Session Credentials）は、端末の TPM（鍵を守る専用チップ）で守った鍵とセッションを結び付け、盗まれた Cookie を別の端末で使えなくする。2026 年 4 月から Windows の Chrome で正式に提供。サイト側の対応が必要</td></tr>
         <tr><td><strong>異常の検知</strong></td><td>IP・国・端末が急に変わったら再認証を求める</td></tr>
-        <tr><td><strong>短いセッション</strong></td><td>重要な操作の前に再認証（ステップアップ）する（<a href="../../73_認証認可/00_全体像/20-3_MFAの方式比較.html">MFAの方式比較</a>）</td></tr>
+        <tr><td><strong>短いセッション</strong></td><td>重要な操作の前に再認証（ステップアップ）する（<a href="../73_認証認可/20-3_MFAの方式比較.html">MFAの方式比較</a>）</td></tr>
       </tbody>
     </table></div>
 
@@ -280,7 +280,7 @@
       <li>OWASP HTML5 Security Cheat Sheet（Local Storage） https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html</li>
       <li>Google Chrome の DBSC（The Hacker News, 2026-04） https://thehackernews.com/2026/04/google-rolls-out-dbsc-in-chrome-146-to.html</li>
       <li>Privacy Sandbox の終了（Engadget） https://engadget.com/cybersecurity/google-has-killed-privacy-sandbox-130029899.html</li>
-      <li>関連ページ：<a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth 2.0 の仕組み</a>、<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">72 XSSの基本</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">72 CSRF</a>、<a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a></li>
+      <li>関連ページ：<a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">73 OAuth 2.0 の仕組み</a>、<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">72 XSSの基本</a>、<a href="../72_Web脆弱性対策/30-1_CSRF.html">72 CSRF</a>、<a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -290,6 +290,6 @@
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

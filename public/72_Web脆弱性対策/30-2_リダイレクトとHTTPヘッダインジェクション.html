@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>リダイレクトとHTTPヘッダインジェクション｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -61,7 +61,7 @@ exit;</code></pre>
     <p>リンクの先頭は本物の <code>example.com</code> なので、URL を見ただけでは怪しいと気づきにくいのが問題です。</p>
 
     <h3 id="sec-1-3">1.3 攻撃の流れ</h3>
-    <p><strong>フィッシング</strong>（本物を装って偽サイトへ誘導し、パスワードなどをだまし取る詐欺）の概要は <a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#phishing-intro">さまざまな脅威と対策の基本「フィッシング」</a> を参照してください。オープンリダイレクトは、その誘導役に使われます。</p>
+    <p><strong>フィッシング</strong>（本物を装って偽サイトへ誘導し、パスワードなどをだまし取る詐欺）の概要は <a href="../71_セキュリティ基礎/10-2_さまざまな脅威と対策の基本.html#phishing-intro">さまざまな脅威と対策の基本「フィッシング」</a> を参照してください。オープンリダイレクトは、その誘導役に使われます。</p>
     <ol class="steps">
       <li>攻撃者が悪意ある URL を作成<br><code>https://bank.com/redirect?url=https://evil-bank.com/login</code></li>
       <li>被害者にメール・SNS で送る（「銀行からのお知らせ」等）</li>
@@ -371,7 +371,7 @@ if (str_starts_with($url, '//')) {
         <tr><td><strong>対象</strong></td><td>Location、Set-Cookie、Content-Type 等のレスポンスヘッダ</td></tr>
       </tbody>
     </table></div>
-    <p>「データのつもりの入力が、構造（ここではヘッダの区切り）として解釈される」という、インジェクション共通の原因については <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-2">インジェクションと暗号化の不備「データとコードの混在」</a> を参照してください。</p>
+    <p>「データのつもりの入力が、構造（ここではヘッダの区切り）として解釈される」という、インジェクション共通の原因については <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html#sec-2">インジェクションと暗号化の不備「データとコードの混在」</a> を参照してください。</p>
 
     <h3 id="sec-6-1">6.1 日常生活での例え</h3>
     <div class="grid c2">
@@ -673,6 +673,6 @@ if (containsHeaderInjectionChars($url)) {
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>セッション管理の不備｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -42,7 +42,7 @@
       <p><strong>セッションID は「本人の代わりになる鍵」です。</strong>だから <strong>予測できない乱数で作り</strong>、<strong>URL に載せず Cookie だけで運び</strong>、<strong>ログインに成功したら必ず作り直す</strong>（<code>session_regenerate_id(true)</code> など）。この 3 つで、推測・盗み出し・強制のほとんどを防げます。</p>
     </div>
 
-    <p>セッションと Cookie の基礎は <a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a>（徳丸本 1 章）と <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>、CSRF は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（徳丸本 8 章、Web脆弱性対策解説）で扱いました。このページは 9 章の「セッション管理の不備」による攻撃と対策です。</p>
+    <p>セッションと Cookie の基礎は <a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a>（徳丸本 1 章）と <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>、CSRF は <a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>（徳丸本 8 章、Web脆弱性対策解説）で扱いました。このページは 9 章の「セッション管理の不備」による攻撃と対策です。</p>
 
     <h2 id="sec-1"><span class="num">1.</span>セッションハイジャックとは</h2>
     <p><strong>セッションハイジャック（Session Hijacking）</strong> とは、他人の <strong>セッションID</strong>（ログイン状態をサーバーが見分けるための番号）を入手し、そのユーザーになりすます攻撃です。サーバーは「正しいセッションID を持っている人＝本人」と判断するので、ID さえ手に入れば本人として振る舞えます。</p>
@@ -83,7 +83,7 @@
     <div class="table-wrap"><table>
       <thead><tr><th>手法</th><th>説明</th></tr></thead>
       <tbody>
-        <tr><td><strong>XSS</strong></td><td><code>document.cookie</code> で Cookie を読み取る（詳しくは <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html#sec-3">XSS によるクッキー値の盗み出し</a>）</td></tr>
+        <tr><td><strong>XSS</strong></td><td><code>document.cookie</code> で Cookie を読み取る（詳しくは <a href="../72_Web脆弱性対策/20-1_XSSの基本.html#sec-3">XSS によるクッキー値の盗み出し</a>）</td></tr>
         <tr><td><strong>盗聴</strong></td><td>HTTP 通信を傍受する（HTTPS 未使用時）</td></tr>
         <tr><td><strong>Referer 漏洩</strong></td><td>URL に埋め込んだ ID が Referer で外部に送られる（<a href="#sec-6">6 章</a>）</td></tr>
         <tr><td><strong>物理アクセス</strong></td><td>離席中の PC から Cookie をコピーする</td></tr>
@@ -154,7 +154,7 @@ session_start();</code></pre>
       <thead><tr><th>対策</th><th>効果</th></tr></thead>
       <tbody>
         <tr><td><strong>十分なランダム性</strong></td><td>総当たりを非現実的にする</td></tr>
-        <tr><td><strong>ログイン試行制限</strong></td><td>ブルートフォースの速度を下げる（<a href="../../73_認証認可/00_全体像/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>）</td></tr>
+        <tr><td><strong>ログイン試行制限</strong></td><td>ブルートフォースの速度を下げる（<a href="../73_認証認可/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>）</td></tr>
         <tr><td><strong>セッション有効期限</strong></td><td>盗んでも使える時間を短くする</td></tr>
         <tr><td><strong>異常検知</strong></td><td>IP 変更時などに再認証を求める</td></tr>
       </tbody>
@@ -244,7 +244,7 @@ session.use_trans_sid = 0   // URL への自動付加を無効</code></pre>
       </tbody>
     </table></div>
 <pre><code>Referrer-Policy: strict-origin-when-cross-origin</code></pre>
-    <p>Referrer-Policy の値の意味は <a href="../../72_Web脆弱性対策/00_全体像/10-5_セキュリティヘッダ.html#sec-5">セキュリティヘッダ：Referrer-Policy</a>（Web脆弱性対策解説）で説明しています。</p>
+    <p>Referrer-Policy の値の意味は <a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html#sec-5">セキュリティヘッダ：Referrer-Policy</a>（Web脆弱性対策解説）で説明しています。</p>
 
     <h2 id="sec-7"><span class="num">7.</span>セッションIDの固定化</h2>
     <p><strong>セッション固定化（Session Fixation）</strong> は、攻撃者が <strong>あらかじめ用意したセッションID</strong> を被害者に使わせ、被害者がログインしたあとも同じ ID でアクセスする攻撃です。</p>
@@ -443,9 +443,9 @@ function requireAuth() {
     <div class="table-wrap"><table>
       <thead><tr><th>属性</th><th>効果</th></tr></thead>
       <tbody>
-        <tr><td><strong>HttpOnly</strong></td><td>XSS による Cookie 窃取を防ぐ（<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html#sec-14">XSS：クッキーに HttpOnly 属性を付与</a>）</td></tr>
+        <tr><td><strong>HttpOnly</strong></td><td>XSS による Cookie 窃取を防ぐ（<a href="../72_Web脆弱性対策/20-1_XSSの基本.html#sec-14">XSS：クッキーに HttpOnly 属性を付与</a>）</td></tr>
         <tr><td><strong>Secure</strong></td><td>HTTPS のときだけ送信する</td></tr>
-        <tr><td><strong>SameSite</strong></td><td>CSRF・クロスサイト送信を制限する（<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>）</td></tr>
+        <tr><td><strong>SameSite</strong></td><td>CSRF・クロスサイト送信を制限する（<a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>）</td></tr>
       </tbody>
     </table></div>
     <p>属性ごとの細かな注意点は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> と <a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a> で扱います。</p>
@@ -478,7 +478,7 @@ function requireAuth() {
 □ XSS 対策（HttpOnly だけでは不十分な操作がある）</code></pre>
     <div class="callout tip">
       <p class="callout-title">次に読むもの</p>
-      <p>徳丸本の次の章では、HTTP ヘッダインジェクションなど、ヘッダや Cookie の出力にまつわる脆弱性を扱います。ヘッダインジェクションは <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-6">リダイレクトとHTTPヘッダインジェクション</a>、Cookie の出力は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> へ進んでください。</p>
+      <p>徳丸本の次の章では、HTTP ヘッダインジェクションなど、ヘッダや Cookie の出力にまつわる脆弱性を扱います。ヘッダインジェクションは <a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-6">リダイレクトとHTTPヘッダインジェクション</a>、Cookie の出力は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> へ進んでください。</p>
     </div>
 
     <h2 id="sec-14"><span class="num">14.</span>理解度チェック</h2>
@@ -495,10 +495,10 @@ function requireAuth() {
       <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方』第9章（セッション管理の不備）</li>
       <li>関連ページ：<a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a>（セッション管理解説）</li>
       <li>関連ページ：<a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a>（セッション管理解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSSの基本</a>（Web脆弱性対策解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（Web脆弱性対策解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>（Web脆弱性対策解説）</li>
-      <li>関連ページ：<a href="../../73_認証認可/00_全体像/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSSの基本</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../73_認証認可/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>（認証認可解説）</li>
     </ul>
 
     <nav class="pager">
@@ -508,6 +508,6 @@ function requireAuth() {
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

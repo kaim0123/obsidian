@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SSRF（サーバーサイドリクエストフォージェリ）｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -31,7 +31,7 @@
       <p>SSRF の根本原因は、<strong>サーバーが社内ネットワークの「内側」にいる</strong> ことです。対策の中心は、<strong>そもそも任意の URL を受け付けない</strong> こと。どうしても必要なら、URL の文字列ではなく <strong>「実際に接続する IP アドレス」を接続の直前に検査し、リダイレクトのたびに検査し直す</strong> ことです。</p>
     </div>
 
-    <p>SSRF は徳丸本には独立した章がない脆弱性です。SSRF の概要と、実際に起きた Capital One 事件については <a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html#sec-3">ログ不足・SSRF・例外処理（OWASP Top 10 の A10）</a> にまとめてあるので、先に読んでおくと理解しやすくなります。このページでは <strong>実装でどう防ぐか</strong> を中心に整理します。</p>
+    <p>SSRF は徳丸本には独立した章がない脆弱性です。SSRF の概要と、実際に起きた Capital One 事件については <a href="../71_セキュリティ基礎/40-6_ログ不足・SSRF・例外処理.html#sec-3">ログ不足・SSRF・例外処理（OWASP Top 10 の A10）</a> にまとめてあるので、先に読んでおくと理解しやすくなります。このページでは <strong>実装でどう防ぐか</strong> を中心に整理します。</p>
 
     <h2 id="sec-1"><span class="num">1.</span>SSRF とは：CSRF との違い</h2>
     <p><strong>SSRF（Server-Side Request Forgery／サーバーサイドリクエストフォージェリ）</strong> は「サーバー側でのリクエスト偽造」という意味です。名前は <a href="30-1_CSRF.html">CSRF（クロスサイトリクエストフォージェリ）</a> と似ていますが、<strong>誰に</strong> リクエストを送らせるかが違います。</p>
@@ -306,14 +306,14 @@ export function safeGet(input) {
     <h2 id="sec-6"><span class="num">6.</span>対策3・4：ネットワークで止め、応答を絞る</h2>
 
     <h3 id="sec-6-1">6.1 対策3：ネットワーク側でも止める（多層防御）</h3>
-    <p>アプリの検査は、どこかで抜けるものとして設計します。何重にも守る考え方（多層防御）は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> を参照してください。</p>
+    <p>アプリの検査は、どこかで抜けるものとして設計します。何重にも守る考え方（多層防御）は <a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a> を参照してください。</p>
     <div class="table-wrap"><table>
       <thead><tr><th>対策</th><th>内容</th></tr></thead>
       <tbody>
         <tr><td><strong>外向き通信をプロキシ経由にする</strong></td><td>URL を取りに行く処理を専用のプロキシやワーカーに分け、そこで許可リストを適用する。アプリ本体は社内ネットワークに置いたままでよい</td></tr>
         <tr><td><strong>ファイアウォール・セキュリティグループ</strong></td><td>取りに行くサーバーから、社内 DB や管理画面に届かないようにする</td></tr>
         <tr><td><strong>IMDSv2 を必須にする</strong>（AWS）</td><td>メタデータの取得に、<code>PUT</code> で発行するトークンが必要になる。単純な <code>GET</code> だけの SSRF では認証情報を取れない。コンテナからの到達を防ぐため、応答のホップ数上限は <code>1</code> にする</td></tr>
-        <tr><td><strong>最小権限の IAM ロール</strong></td><td>認証情報を盗まれても、できることを小さくする（<a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html#sec-3-3">最小権限の原則</a>）</td></tr>
+        <tr><td><strong>最小権限の IAM ロール</strong></td><td>認証情報を盗まれても、できることを小さくする（<a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html#sec-3-3">最小権限の原則</a>）</td></tr>
         <tr><td><strong>内部サービスにも認証を付ける</strong></td><td>「社内からなら誰でも使える」Redis や管理画面をなくす</td></tr>
       </tbody>
     </table></div>
@@ -417,7 +417,7 @@ await fetch(url); // http://127.1/ や http://[::1]/ はすり抜ける</code></
       <li>ノート：72_Web脆弱性対策/30_リクエスト偽造・リダイレクト/03_SSRF</li>
       <li>OWASP「Server Side Request Forgery Prevention Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html</li>
       <li>AWS「IMDSv2 の使用」 https://docs.aws.amazon.com/ja_jp/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html#sec-3">ログ不足・SSRF・例外処理（SSRF の概要と Capital One 事件）</a></li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/40-6_ログ不足・SSRF・例外処理.html#sec-3">ログ不足・SSRF・例外処理（SSRF の概要と Capital One 事件）</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -427,6 +427,6 @@ await fetch(url); // http://127.1/ や http://[::1]/ はすり抜ける</code></
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

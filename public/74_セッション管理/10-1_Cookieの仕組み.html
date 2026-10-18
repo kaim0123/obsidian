@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cookieの仕組み｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -198,7 +198,7 @@ res.cookie('username', 'yamada', {
 <pre><code>res.cookie('sessionId', 'abc123', {
   httpOnly: true // JavaScriptからアクセス不可（XSS攻撃対策）
 });</code></pre>
-    <p><strong>XSS（クロスサイトスクリプティング）</strong> とは、攻撃者のスクリプトをページに紛れ込ませる攻撃です。HttpOnly がないと、紛れ込んだスクリプトが <code>document.cookie</code> でセッション ID を読み取り、外へ送れてしまいます。HttpOnly を付けても、Cookie はブラウザが通常どおりサーバーへ送ります（読めなくなるのは JavaScript だけ）。盗み出しの流れは <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">72 XSSの基本</a> にあります。</p>
+    <p><strong>XSS（クロスサイトスクリプティング）</strong> とは、攻撃者のスクリプトをページに紛れ込ませる攻撃です。HttpOnly がないと、紛れ込んだスクリプトが <code>document.cookie</code> でセッション ID を読み取り、外へ送れてしまいます。HttpOnly を付けても、Cookie はブラウザが通常どおりサーバーへ送ります（読めなくなるのは JavaScript だけ）。盗み出しの流れは <a href="../72_Web脆弱性対策/20-1_XSSの基本.html">72 XSSの基本</a> にあります。</p>
 
     <h3 id="sec-4-6">4.6 Secure（HTTPS のみ）</h3>
     <p>HTTPS 接続でのみ送信されるようにします。<strong>HTTPS</strong> は通信を暗号化した HTTP です。Secure がないと、暗号化されていない HTTP の通信でも Cookie が送られ、途中で盗聴されて抜かれるおそれがあります。</p>
@@ -221,7 +221,7 @@ res.cookie('username', 'yamada', {
         <tr><td><code>None</code></td><td>すべて送る</td><td><code>Secure</code> が必須。別サイトに埋め込む用途などに限ります。</td></tr>
       </tbody>
     </table></div>
-    <p>CSRF の攻撃の流れと、SameSite 以外の対策（トークンの埋め込みなど）は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">72 CSRF</a>、画面と API を別オリジンに分けたときの Cookie の付き方は <a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a> を参照してください。</p>
+    <p>CSRF の攻撃の流れと、SameSite 以外の対策（トークンの埋め込みなど）は <a href="../72_Web脆弱性対策/30-1_CSRF.html">72 CSRF</a>、画面と API を別オリジンに分けたときの Cookie の付き方は <a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a> を参照してください。</p>
 
     <h3 id="sec-4-8">4.8 ログイン用 Cookie の基本形</h3>
     <p>ログインに使う Cookie は、4 つの属性をそろえて付けるのが基本です。</p>
@@ -371,7 +371,7 @@ app.get('/api/profile', (req, res) =&gt; {
   const user = getUserById(req.session.userId);
   res.json(user);
 });</code></pre>
-    <p>この仕組みの詳しい流れは <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>、ログイン方式全体は <a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a> を参照してください。</p>
+    <p>この仕組みの詳しい流れは <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>、ログイン方式全体は <a href="../73_認証認可/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a> を参照してください。</p>
 
     <h3 id="sec-6-2">6.2 ユーザー設定の保存</h3>
     <p>言語設定のように画面側でも読みたい値は、<code>httpOnly: false</code> にします（秘密ではない値に限ります）。</p>
@@ -574,7 +574,7 @@ res.cookie('creditCard', cardNumber);</code></pre>
   secure: true,
   sameSite: 'strict' // CSRF攻撃対策
 });</code></pre>
-    <p>Cookie を出力するサーバー側のコードに潜む脆弱性（ヘッダインジェクションや属性の付け忘れなど）は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> と <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">72 リダイレクトとHTTPヘッダインジェクション</a> を参照してください。</p>
+    <p>Cookie を出力するサーバー側のコードに潜む脆弱性（ヘッダインジェクションや属性の付け忘れなど）は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> と <a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html">72 リダイレクトとHTTPヘッダインジェクション</a> を参照してください。</p>
 
     <h2 id="sec-10"><span class="num">10.</span>セッション・LocalStorage との違い</h2>
 
@@ -673,7 +673,7 @@ res.cookie('creditCard', cardNumber);</code></pre>
       <li>toamoku「🍪【超わかりやすい】Cookieとは？図解で理解するWebの仕組み！」（Qiita） https://qiita.com/toamoku-20220418/items/bb9b1b9f7c37551934cb</li>
       <li>つるチャンネル「Cookieとは？ なぜログイン状態を覚えていられるのか」 https://www.youtube.com/shorts/EIPZY4wlvsI</li>
       <li>ぴちゃ「機械オンチに「Cookie」を説明する動画#148」 https://www.youtube.com/watch?v=QOb1SWOvbu4</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">72 XSSの基本</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">72 CSRF</a>、<a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">72 リダイレクトとHTTPヘッダインジェクション</a>、<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a></li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">72 XSSの基本</a>、<a href="../72_Web脆弱性対策/30-1_CSRF.html">72 CSRF</a>、<a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a>、<a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html">72 リダイレクトとHTTPヘッダインジェクション</a>、<a href="../73_認証認可/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -683,6 +683,6 @@ res.cookie('creditCard', cardNumber);</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

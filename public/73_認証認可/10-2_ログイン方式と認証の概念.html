@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ログイン方式と認証の概念｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -86,7 +86,7 @@
       </div>
     </div>
     <p><strong>適用例</strong>：一般的な Web アプリケーション、企業内システム、会員制サイト。</p>
-    <p>パスワードの安全な保存方法（ハッシュ化）やパスワードポリシーは、次のページ <a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a> と、71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> で扱います。</p>
+    <p>パスワードの安全な保存方法（ハッシュ化）やパスワードポリシーは、次のページ <a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a> と、71 の <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> で扱います。</p>
 
     <h2 id="sec-4"><span class="num">4.</span>HTTP の古典的な方式：Basic 認証と Digest 認証</h2>
     <p>ここからは、HTTP リクエストで「誰か」を伝える具体的な方式を見ていきます。まずは昔からある2つです。</p>
@@ -115,7 +115,7 @@ user:pass</code></pre>
     </div>
 
     <h3 id="sec-4-2">4.2 Digest 認証</h3>
-    <p>Basic 認証と似た流れ（まず 401 → 資格情報を付けて再リクエスト → 成功なら 200、失敗なら 401）ですが、パスワードを平文で送らず、<strong>MD5 ハッシュ</strong> にした値を送る点でやや改善されています。<strong>ハッシュ</strong> とは、データから元に戻せない固定長の値を計算することです（詳しくは 71 の <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#crypto">暗号技術の用語</a> を参照）。</p>
+    <p>Basic 認証と似た流れ（まず 401 → 資格情報を付けて再リクエスト → 成功なら 200、失敗なら 401）ですが、パスワードを平文で送らず、<strong>MD5 ハッシュ</strong> にした値を送る点でやや改善されています。<strong>ハッシュ</strong> とは、データから元に戻せない固定長の値を計算することです（詳しくは 71 の <a href="../71_セキュリティ基礎/10-3_セキュリティの専門用語.html#crypto">暗号技術の用語</a> を参照）。</p>
     <p>ただし MD5 は古いハッシュ関数で、後で紹介するセッションや JWT などの現代的な選択肢と比べると <strong>レガシー（時代遅れ）</strong> とみなされることが多く、今はほとんど使われません。</p>
 
     <h2 id="sec-5"><span class="num">5.</span>API キー認証</h2>
@@ -161,7 +161,7 @@ X-API-Key: 8f3a9c1e7b2d4f60a5e1c9d7b3f2a8e4</code></pre>
       <p class="callout-title">セッション認証の特徴：ステートフル</p>
       <p>セッション認証は <strong>ステートフル</strong>、つまりサーバーがセッションを「覚えている」必要があります。従来の Web アプリには向いていますが、サーバーを何台にも分けた API や <strong>マイクロサービス</strong>（機能ごとに小さなサービスへ分けた構成）では、ストアを共有する必要があるためスケールが難しくなりがちです。</p>
     </div>
-    <p>セッション ID の発行・Cookie の属性・セッション固定攻撃などの詳しい話は 74_セッション管理 で扱います。Cookie の <code>HttpOnly</code>・<code>Secure</code>・<code>SameSite</code> 属性は 72 の <a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html#sec-6">Cookie はどう付いていくのか</a>、Cookie が自動送信されることを悪用する攻撃は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を参照してください。</p>
+    <p>セッション ID の発行・Cookie の属性・セッション固定攻撃などの詳しい話は 74_セッション管理 で扱います。Cookie の <code>HttpOnly</code>・<code>Secure</code>・<code>SameSite</code> 属性は 72 の <a href="../72_Web脆弱性対策/10-3_CORSエラーの対処法とCookie.html#sec-6">Cookie はどう付いていくのか</a>、Cookie が自動送信されることを悪用する攻撃は <a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a> を参照してください。</p>
 
     <h2 id="sec-7"><span class="num">7.</span>トークンベース認証：Bearer と JWT</h2>
     <p>セッションの代わりに、現代のアプリでは <strong>トークン</strong>（ログイン済みであることを示す文字列）を使うことが多くなっています。認証後に発行されたトークンを、クライアントがリクエストのたびに送る方式です。</p>
@@ -288,7 +288,7 @@ X-API-Key: 8f3a9c1e7b2d4f60a5e1c9d7b3f2a8e4</code></pre>
 localStorage.setItem('refresh_token', data.refreshToken);</code></pre>
     <span class="code-label good">安全な例：サーバーが HttpOnly Cookie で渡す</span>
 <pre><code>Set-Cookie: refresh_token=...; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh</code></pre>
-    <p><strong>localStorage</strong> はブラウザにデータを保存する仕組みで、ページ上の JavaScript から読み書きできます。そのため <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS</a>（攻撃者のスクリプトをページで実行させる攻撃）があると盗まれやすくなります。<strong>HttpOnly</strong> を付けた Cookie は JavaScript から読めないので、こうした保存方法が推奨されます。</p>
+    <p><strong>localStorage</strong> はブラウザにデータを保存する仕組みで、ページ上の JavaScript から読み書きできます。そのため <a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSS</a>（攻撃者のスクリプトをページで実行させる攻撃）があると盗まれやすくなります。<strong>HttpOnly</strong> を付けた Cookie は JavaScript から読めないので、こうした保存方法が推奨されます。</p>
 
     <h2 id="sec-9"><span class="num">9.</span>OAuth 2.0 と OpenID Connect（ソーシャルログイン）</h2>
     <p>「Google でログイン」「GitHub でログイン」のように、Google・Facebook・Twitter・GitHub などの外部サービス（<strong>アイデンティティプロバイダー（IdP）</strong>＝本人確認を引き受けるサービス）のアカウントを使ってログインする方式を <strong>ソーシャルログイン</strong> と呼びます。その裏側で使われているのが OAuth 2.0 と OpenID Connect です。ノートの言葉でまとめると、<strong>OAuth 2.0 は認可のための仕組み、OpenID Connect は認証のための仕組み</strong> です。</p>
@@ -531,7 +531,7 @@ localStorage.setItem('refresh_token', data.refreshToken);</code></pre>
         </ul>
       </div>
     </div>
-    <p><strong>適用例</strong>：金融機関のシステム、企業の機密情報システム、クラウドサービス（AWS、Azure など）、医療情報システム。MFA とパスキーの位置づけは 71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a> も参考になります。</p>
+    <p><strong>適用例</strong>：金融機関のシステム、企業の機密情報システム、クラウドサービス（AWS、Azure など）、医療情報システム。MFA とパスキーの位置づけは 71 の <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a> も参考になります。</p>
 
     <h3 id="sec-12-2">12.2 パスワードレス認証</h3>
     <p>パスワードを使わず、メールや SMS に送られた <strong>ワンタイムコード</strong>（一度だけ使える使い捨てのコード）や、<strong>マジックリンク</strong>（クリックするだけでログインできる URL）で認証する方式です。</p>
@@ -781,6 +781,6 @@ localStorage.setItem('refresh_token', data.refreshToken);</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

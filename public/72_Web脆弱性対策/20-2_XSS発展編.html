@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>XSS発展編：属性・JavaScript内のXSS｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -514,7 +514,7 @@ echo '&lt;script type="application/json" id="app-data"&gt;' . $json . '&lt;/scri
     </table></div>
 
     <h2 id="sec-10"><span class="num">10.</span>エラーメッセージからの情報漏洩</h2>
-    <p>XSS 対策と並んで、<strong>エラーメッセージの出力</strong> も表示処理の重要な問題です。詳細すぎるエラーは <strong>情報漏洩</strong> につながり、攻撃の手がかりを与えます。例外処理の考え方そのものは <a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a>、ログの残し方は <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html">セキュアな運用とログ出力</a> で扱っています。ここでは表示処理（XSS）とのつながりを中心に見ます。</p>
+    <p>XSS 対策と並んで、<strong>エラーメッセージの出力</strong> も表示処理の重要な問題です。詳細すぎるエラーは <strong>情報漏洩</strong> につながり、攻撃の手がかりを与えます。例外処理の考え方そのものは <a href="../71_セキュリティ基礎/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a>、ログの残し方は <a href="../71_セキュリティ基礎/50-3_セキュアな運用とログ出力.html">セキュアな運用とログ出力</a> で扱っています。ここでは表示処理（XSS）とのつながりを中心に見ます。</p>
 
     <h3 id="sec-10-1">10.1 漏洩しやすい情報</h3>
     <div class="table-wrap"><table>
@@ -680,6 +680,6 @@ echo '「' . $name . '」は見つかりませんでした';</code></pre>
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

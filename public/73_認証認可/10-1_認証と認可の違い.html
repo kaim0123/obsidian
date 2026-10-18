@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>認証と認可の違い｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -66,7 +66,7 @@
       <p class="callout-title">「ログインしているのに 403」はなぜ？</p>
       <p>401 は「誰か分からない」、403 は「誰かは分かったけれどダメ」です。ちゃんとログインしているのに 403 と言われたなら、<strong>認証は通っていて、認可で断られた</strong> ということです。</p>
     </div>
-    <p>認証・認可の用語全体の整理は、71 の <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html">セキュリティの専門用語</a> と <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-1">アクセス制御と認証の失敗：認証と認可の違い</a> も参照してください。</p>
+    <p>認証・認可の用語全体の整理は、71 の <a href="../71_セキュリティ基礎/10-3_セキュリティの専門用語.html">セキュリティの専門用語</a> と <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-1">アクセス制御と認証の失敗：認証と認可の違い</a> も参照してください。</p>
 
     <h2 id="sec-2"><span class="num">2.</span>2 つの関門</h2>
     <p>依頼（リクエスト）は、<strong>「誰ですか」の関門 → 「してよいか」の関門</strong> の順に通ります。受付と入館の確認が順番に並んでいるイメージです。</p>
@@ -137,7 +137,7 @@
       <li>A さんが URL の番号を 102 に書き換える。札は本物なので 1 つ目の関門は通る（A さんだと分かる）。</li>
       <li>2 つ目の関門がないので素通りし、B さんの注文（住所・電話番号・購入品）が全部返ってくる。</li>
     </ol>
-    <p>A さんは何も悪い道具を使っていません。番号を 1 つ変えただけなので、<strong>見つかりやすく起きやすい</strong> 事故です。このように、URL などに含まれる ID を書き換えるだけで他人のデータに届いてしまう脆弱性は <strong>IDOR</strong>（Insecure Direct Object Reference／安全でない直接オブジェクト参照）とも呼ばれます。OWASP Top 10 の「アクセス制御の不備」の代表例です（<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-3">A01 のよくある攻撃パターン</a> を参照）。</p>
+    <p>A さんは何も悪い道具を使っていません。番号を 1 つ変えただけなので、<strong>見つかりやすく起きやすい</strong> 事故です。このように、URL などに含まれる ID を書き換えるだけで他人のデータに届いてしまう脆弱性は <strong>IDOR</strong>（Insecure Direct Object Reference／安全でない直接オブジェクト参照）とも呼ばれます。OWASP Top 10 の「アクセス制御の不備」の代表例です（<a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-3">A01 のよくある攻撃パターン</a> を参照）。</p>
     <div class="callout bad">
       <p class="callout-title">この事故の本質</p>
       <p><strong>認証が通ったことで安心してしまう</strong> ことです。「A さんだと分かった」で止まっていて、「A さんが 102 を見てよいか」は誰も聞いていません。<strong>認証が通っても認可は済んでいない</strong>——ここがこのページで一番大事なところです。</p>
@@ -254,7 +254,7 @@
         <tr><td><strong>4. 誰が・どれに・何をするかの 3 つで決める</strong></td><td>番号だけでも、人だけでも決められない</td><td>A さんが注文 102 を見る（4 章）</td></tr>
       </tbody>
     </table></div>
-    <p>3 つ目の「決まっていなければ断る」について補足します。新しい画面を足したとき、確かめをかけ忘れることがあります。そのとき「何もしなければ通る」作りだとデータが漏れます。「何もしなければ断る」作りなら、困るのは作った人が試したときだけです。お客さんのデータが漏れるよりずっとよい、という考え方です（デフォルト拒否。71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-5">A01 の防御の原則</a> も参照）。必要な権限だけを与える考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> で解説しています。</p>
+    <p>3 つ目の「決まっていなければ断る」について補足します。新しい画面を足したとき、確かめをかけ忘れることがあります。そのとき「何もしなければ通る」作りだとデータが漏れます。「何もしなければ断る」作りなら、困るのは作った人が試したときだけです。お客さんのデータが漏れるよりずっとよい、という考え方です（デフォルト拒否。71 の <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-5">A01 の防御の原則</a> も参照）。必要な権限だけを与える考え方は <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> で解説しています。</p>
 
     <h2 id="sec-9"><span class="num">9.</span>認証の方法</h2>
     <p>ここからは、認証と認可を実際にコードでどう書くかを見ていきます（Node.js の Express というフレームワークの例です）。まず認証の代表的な方法を 3 つ紹介します。それぞれの詳細は、パスワードは 73 の 20 系（パスワード・MFA・パスキー）、OAuth は 30 系（フェデレーション）で扱う予定です。</p>
@@ -566,7 +566,7 @@ app.delete('/api/users/:id', authenticateToken, requireRole('admin'), async (req
     <span class="code-label good">正しい：ハッシュ化して保存</span>
 <pre><code>const hashedPassword = await bcrypt.hash('password123', 10);
 const user = { username: 'yamada', password: hashedPassword };</code></pre>
-    <p>なぜ MD5 ではなく bcrypt なのかなどの詳細は、71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> を参照してください。</p>
+    <p>なぜ MD5 ではなく bcrypt なのかなどの詳細は、71 の <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> を参照してください。</p>
 
     <h3 id="sec-13-2">13.2 トークンの有効期限</h3>
     <p>適切な有効期限を設定します。</p>
@@ -585,7 +585,7 @@ const loginLimiter = rateLimit({
 });
 
 app.post('/api/login', loginLimiter, loginHandler);</code></pre>
-    <p>ログイン試行の制限やセッション管理の考え方は、71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-10">セッション管理とログイン試行の制限</a> も参照してください。</p>
+    <p>ログイン試行の制限やセッション管理の考え方は、71 の <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-10">セッション管理とログイン試行の制限</a> も参照してください。</p>
 
     <h2 id="sec-14"><span class="num">14.</span>AI にコードを書かせたときに見るところ</h2>
     <p>AI はログインの確認（1 つ目の関門）はほぼ必ず書いてくれます。よく知られているからです。しかし 2 つ目の関門は、<strong>仕様に書いていないと抜けやすい</strong> です。次の 4 点を確認します。</p>
@@ -655,7 +655,7 @@ app.post('/api/login', loginLimiter, loginHandler);</code></pre>
       <li>直也テック「API認証の仕組み」 https://www.youtube.com/shorts/LnpbqJlORTE</li>
       <li>OWASP「Authorization Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html</li>
       <li>MDN「401 Unauthorized」「403 Forbidden」 https://developer.mozilla.org/ja/docs/Web/HTTP/Status</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a>、<a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">71 最小権限とデータ最小化</a></li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a>、<a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">71 最小権限とデータ最小化</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -665,6 +665,6 @@ app.post('/api/login', loginLimiter, loginHandler);</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

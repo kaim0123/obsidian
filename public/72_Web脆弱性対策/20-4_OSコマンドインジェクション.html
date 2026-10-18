@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OSコマンドインジェクション｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -33,7 +33,7 @@
 
     <h2 id="sec-1"><span class="num">1.</span>OSコマンド・インジェクションの概要</h2>
     <p><strong>OSコマンド・インジェクション（OS Command Injection）</strong> とは、外部から渡された文字列をそのまま OS のコマンドとして実行してしまい、<strong>攻撃者が意図した別のコマンドまで動かされてしまう</strong> 脆弱性です。<strong>OS コマンド</strong> とは、<code>ping</code>・<code>cp</code>・<code>convert</code> など、サーバーの OS 上で動くプログラムをコマンドラインから起動する命令のことです。</p>
-    <p><a href="20-3_SQLインジェクション.html">SQLインジェクション</a> が「データベースへの命令」を注入するのに対し、こちらは <strong>「OS（サーバー本体）への命令」</strong> を注入する攻撃です。影響範囲がサーバー全体に及ぶため、非常に危険です。インジェクション全般の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> も参照してください。</p>
+    <p><a href="20-3_SQLインジェクション.html">SQLインジェクション</a> が「データベースへの命令」を注入するのに対し、こちらは <strong>「OS（サーバー本体）への命令」</strong> を注入する攻撃です。影響範囲がサーバー全体に及ぶため、非常に危険です。インジェクション全般の考え方は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> も参照してください。</p>
     <div class="table-wrap"><table>
       <thead><tr><th>項目</th><th>内容</th></tr></thead>
       <tbody>
@@ -397,10 +397,10 @@ if (strlen($host) &gt; 253) {
     <p>許可リスト（「A か B か C だけ」）が使えるなら、それが最も分かりやすく安全です。</p>
 
     <h3 id="sec-5-6">5.6 被害を抑える対策（多層防御）</h3>
-    <p>インジェクション自体を防ぐのが本筋ですが、万一突破されたときの被害を小さくする対策も重要です。複数の守りを重ねる考え方（<strong>多層防御</strong>）は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> で詳しく扱っています。</p>
+    <p>インジェクション自体を防ぐのが本筋ですが、万一突破されたときの被害を小さくする対策も重要です。複数の守りを重ねる考え方（<strong>多層防御</strong>）は <a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a> で詳しく扱っています。</p>
 
     <h4>アプリケーションの稼働するユーザー権限を最小限にする</h4>
-    <p>Webアプリは、<strong>必要最小限の権限の OS ユーザー</strong> で動かします（考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）。</p>
+    <p>Webアプリは、<strong>必要最小限の権限の OS ユーザー</strong> で動かします（考え方は <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）。</p>
 <pre><code>❌ 悪い例
   root（管理者）権限で Web アプリを動かす
   → 侵入された瞬間にサーバー全体を掌握される
@@ -518,6 +518,6 @@ if (strlen($host) &gt; 253) {
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>XSSの基本｜Web脆弱性対策解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -44,7 +44,7 @@
         <tr><td><strong>インターフェース</strong></td><td>HTML</td></tr>
       </tbody>
     </table></div>
-    <p>インジェクション全体の考え方は、71 セキュリティ基礎の <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> でまとめています。</p>
+    <p>インジェクション全体の考え方は、71 セキュリティ基礎の <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> でまとめています。</p>
 
     <h3 id="sec-1-1">1.1 日常生活での例え</h3>
     <div class="grid c2">
@@ -98,7 +98,7 @@
       </li>
       <li>安全な書き方：<code>textContent</code> は文字として入れる。React では波括弧で出せば十分</li>
     </ul>
-    <p><code>innerHTML</code> と <code>textContent</code>、React の書き方を並べたコード例は、<a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-5">71 セキュリティ基礎「XSS：脆弱なコードと安全なコード」</a> にあります。</p>
+    <p><code>innerHTML</code> と <code>textContent</code>、React の書き方を並べたコード例は、<a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html#sec-5">71 セキュリティ基礎「XSS：脆弱なコードと安全なコード」</a> にあります。</p>
 
     <h2 id="sec-3"><span class="num">3.</span>XSS によるクッキー値の盗み出し</h2>
     <p>XSS で最も恐れられる被害のひとつが、<strong>Cookie（セッションID）の盗み出し</strong> です。Cookie は、サイトがブラウザに保存させる小さなデータで、ログイン状態の目印として使われます。</p>
@@ -311,7 +311,7 @@ DBに保存される
         <tr><td><strong>ワーム化</strong></td><td>しにくい</td><td>しやすい</td></tr>
       </tbody>
     </table></div>
-    <p>このほか、サーバーを経由せずブラウザ側の JavaScript の処理だけで起きる <strong>DOM ベース XSS</strong> もあります（<a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-5">71 セキュリティ基礎</a> の表を参照）。</p>
+    <p>このほか、サーバーを経由せずブラウザ側の JavaScript の処理だけで起きる <strong>DOM ベース XSS</strong> もあります（<a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html#sec-5">71 セキュリティ基礎</a> の表を参照）。</p>
 
     <h2 id="sec-6"><span class="num">6.</span>HTML エスケープの概念</h2>
     <p><strong>HTMLエスケープ</strong> は、XSS を防ぐ <strong>最も基本的で重要な対策</strong> です。特殊文字を HTML として解釈されない形式（<strong>文字参照</strong>：<code>&amp;lt;</code> のように <code>&amp;</code> で始まり <code>;</code> で終わる、文字を表す書き方）に変換します。</p>
@@ -534,7 +534,7 @@ app.use((req, res, next) =&gt; {
     </ul>
 
     <h2 id="sec-11"><span class="num">11.</span>XSS に対する保険的対策</h2>
-    <p>HTMLエスケープが <strong>根本対策</strong> である一方、万が一 XSS が起きた場合の被害を <strong>軽減する保険</strong> も存在します。これらだけでは XSS を防げません。複数の守りを重ねる考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> を参照してください。</p>
+    <p>HTMLエスケープが <strong>根本対策</strong> である一方、万が一 XSS が起きた場合の被害を <strong>軽減する保険</strong> も存在します。これらだけでは XSS を防げません。複数の守りを重ねる考え方は <a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a> を参照してください。</p>
     <pre><code>根本対策:  HTMLエスケープ、CSP
 保険的対策: HttpOnly、X-XSS-Protection 等</code></pre>
     <div class="callout warn">
@@ -751,6 +751,6 @@ document.cookie;  // ""  ← sessionId は含まれない</code></pre>
   </main>
 </div>
 
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

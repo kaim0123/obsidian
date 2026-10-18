@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>社内システム向け認証方式の選び方｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -65,7 +65,7 @@
     </ul>
     <div class="callout tip">
       <p class="callout-title">VPN は「認証の代わり」にはならない</p>
-      <p>「社内ネットワークの中なら安全」という考え方の限界は、71 の <a href="../../71_セキュリティ基礎/00_全体像/20-3_ゼロトラスト.html">ゼロトラスト</a> で解説しています。VPN はあくまでネットワーク層での補強であり、アプリ側でも必ず認証します。</p>
+      <p>「社内ネットワークの中なら安全」という考え方の限界は、71 の <a href="../71_セキュリティ基礎/20-3_ゼロトラスト.html">ゼロトラスト</a> で解説しています。VPN はあくまでネットワーク層での補強であり、アプリ側でも必ず認証します。</p>
     </div>
 
     <h2 id="sec-2"><span class="num">2.</span>概念の整理（一覧）</h2>
@@ -154,7 +154,7 @@
       <li><strong>社内 Web 1 本</strong> … OIDC + <strong>セッション + HttpOnly Cookie</strong>（CSRF 対策込み）が扱いやすいことが多いです。</li>
       <li><strong>SPA / モバイル / 複数 API</strong> … OIDC のあと <strong>短命 Access + Refresh</strong> が一般的です。</li>
     </ul>
-    <p><strong>HttpOnly</strong> は JavaScript から読めない Cookie にする属性、<strong>SPA</strong>（Single Page Application）は画面遷移を JavaScript で行う Web アプリです。Cookie を使う場合の CSRF 対策は 72 の <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を、セッションそのものの安全な扱い方は 74_セッション管理 を参照してください。</p>
+    <p><strong>HttpOnly</strong> は JavaScript から読めない Cookie にする属性、<strong>SPA</strong>（Single Page Application）は画面遷移を JavaScript で行う Web アプリです。Cookie を使う場合の CSRF 対策は 72 の <a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a> を、セッションそのものの安全な扱い方は 74_セッション管理 を参照してください。</p>
     <p>Microsoft 365 を利用しているなら Entra ID の OIDC、Google Workspace なら Google の OIDC、という形が多いです。</p>
 
     <h2 id="sec-5"><span class="num">5.</span>OIDC 以外に使えるもの</h2>
@@ -257,7 +257,7 @@
       <li>Authorization Code / PKCE / トークン署名・失効</li>
       <li>MFA・レート制限・監査ログ</li>
     </ul>
-    <p><strong>タイミング攻撃</strong> は処理時間の差から秘密の値を推測する攻撃、<strong>セッション固定</strong> は攻撃者が用意したセッション ID を被害者に使わせる攻撃、<strong>PKCE</strong> は認可コードを横取りされても使えないようにする OAuth の追加の仕組みです。オープンリダイレクトについては 72 の <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトとHTTPヘッダインジェクション</a> を参照してください。</p>
+    <p><strong>タイミング攻撃</strong> は処理時間の差から秘密の値を推測する攻撃、<strong>セッション固定</strong> は攻撃者が用意したセッション ID を被害者に使わせる攻撃、<strong>PKCE</strong> は認可コードを横取りされても使えないようにする OAuth の追加の仕組みです。オープンリダイレクトについては 72 の <a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトとHTTPヘッダインジェクション</a> を参照してください。</p>
     <div class="callout key">
       <p class="callout-title">Better Auth を使う ＝ 自社運用の認証基盤</p>
       <p>Better Auth を使うことは、上記をライブラリと標準プロトコルに委ねる <strong>「自社運用の認証基盤」</strong> を作ることであり、Entra ID のような <strong>マネージド SaaS IdP</strong>（運用まで事業者が担うクラウドの IdP）とは別物です。自社で書くのは、自社固有の部分（部署マスタ・業務権限・入退社 UI）だけです。</p>
@@ -457,7 +457,7 @@ export const auth = betterAuth({
         <tr><td>案件の担当者か等</td><td>各業務アプリ DB</td></tr>
       </tbody>
     </table></div>
-    <p>権限は必要最小限にとどめるのが原則です（71 の <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）。</p>
+    <p>権限は必要最小限にとどめるのが原則です（71 の <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）。</p>
 
     <h3 id="sec-7-10">7.10 SAML が必要な場合</h3>
     <p><strong>SSO プラグイン（<code>@better-auth/sso</code>）</strong> は、アプリを <strong>SAML SP</strong>（SAML でログインを頼む側＝サービスプロバイダ）として外部 IdP に繋ぐ用途です。自社認証基盤が IdP となって複数アプリに SSO する本構成では、まず <strong>OIDC Provider</strong> で足ります。将来 Entra 連携が必要になったら SSO プラグインを追加します。</p>
@@ -820,6 +820,6 @@ CORP_AUTH_ISSUER=https://auth.corp.example.com</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

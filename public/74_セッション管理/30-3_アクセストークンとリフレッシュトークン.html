@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>アクセストークンとリフレッシュトークン｜セッション管理解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -31,7 +31,7 @@
       <p><strong>アクセストークンは短命にして、漏れたときの被害を抑える。リフレッシュトークンは使う場所を限定しながら、ログイン状態を続ける。</strong>この役割分担が 2 種類に分ける理由です。リフレッシュトークンは <strong>長く使える強い鍵</strong> なので、盗まれたときにどうするかまで設計します。</p>
     </div>
 
-    <p>トークン（ログインした証として渡される文字列）とセッションの基本は <a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a>、トークンの形式としてよく使われる JWT は <a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>、これらのトークンを発行する OAuth の全体の流れは <a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">OAuth 2.0 の仕組み（73 認証認可）</a> を見てください。</p>
+    <p>トークン（ログインした証として渡される文字列）とセッションの基本は <a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a>、トークンの形式としてよく使われる JWT は <a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>、これらのトークンを発行する OAuth の全体の流れは <a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">OAuth 2.0 の仕組み（73 認証認可）</a> を見てください。</p>
 
     <h2 id="sec-1"><span class="num">1.</span>トークンが 1 種類だと何が困るのか</h2>
     <p>まず <strong>アクセストークン</strong> です。ログインするとサーバーから発行され、アプリは <strong>API を呼ぶたびにこれを送ります</strong>。サーバーはそれを見て、許可されたアクセスかどうかを確認します。</p>
@@ -245,7 +245,7 @@ RT2 で更新 ──▶ 新しい AT ＋ RT3（RT2 は無効）</code></pre>
   revoked_at
   device_info   -- 端末一覧の表示用（ブラウザ・OS・おおよその場所）</code></pre>
     <ul>
-      <li>リフレッシュトークンは <strong>ハッシュで保存</strong> します（ハッシュ＝元に戻せない形に変換した値）。DB が漏れても、そのまま使えないようにするためです。ランダムな長い値なので、パスワードのような遅いハッシュは不要で、SHA-256 で十分です（パスワードの場合は <a href="../../73_認証認可/00_全体像/20-2_パスワードの安全な保存.html">パスワードの安全な保存（73）</a>）。</li>
+      <li>リフレッシュトークンは <strong>ハッシュで保存</strong> します（ハッシュ＝元に戻せない形に変換した値）。DB が漏れても、そのまま使えないようにするためです。ランダムな長い値なので、パスワードのような遅いハッシュは不要で、SHA-256 で十分です（パスワードの場合は <a href="../73_認証認可/20-2_パスワードの安全な保存.html">パスワードの安全な保存（73）</a>）。</li>
       <li>推測されないよう、<strong>暗号学的に安全な乱数で 32 バイト以上</strong> 作ります。</li>
     </ul>
 
@@ -259,7 +259,7 @@ RT2 で更新 ──▶ 新しい AT ＋ RT3（RT2 は無効）</code></pre>
         <tr><td><strong>DBSC</strong>（Device Bound Session Credentials）</td><td>ブラウザが端末の TPM（鍵を守るための専用チップ）などで鍵を守り、セッションの Cookie をその端末に結び付ける。Chrome 146（2026 年 4 月）から Windows で正式に提供。サイト側の対応が必要</td></tr>
       </tbody>
     </table></div>
-    <p>ブラウザで DPoP を使う場合、秘密鍵は WebCrypto（ブラウザ標準の暗号機能）の <strong>取り出せない鍵</strong>（non-extractable）にして IndexedDB（ブラウザ内のデータベース）に置きます。XSS で鍵そのものは盗まれませんが、XSS が動いている間はその鍵で署名させられる点は残ります（XSS は <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSSの基本（72）</a>）。</p>
+    <p>ブラウザで DPoP を使う場合、秘密鍵は WebCrypto（ブラウザ標準の暗号機能）の <strong>取り出せない鍵</strong>（non-extractable）にして IndexedDB（ブラウザ内のデータベース）に置きます。XSS で鍵そのものは盗まれませんが、XSS が動いている間はその鍵で署名させられる点は残ります（XSS は <a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSSの基本（72）</a>）。</p>
 
     <h2 id="sec-9"><span class="num">9.</span>クライアント別の考え方</h2>
     <div class="table-wrap"><table>
@@ -337,7 +337,7 @@ RT2 で更新 ──▶ 新しい AT ＋ RT3（RT2 は無効）</code></pre>
       <li>RFC 9449: DPoP https://www.rfc-editor.org/rfc/rfc9449</li>
       <li>RFC 7009: Token Revocation https://www.rfc-editor.org/rfc/rfc7009</li>
       <li>Chrome の DBSC 正式提供（Help Net Security, 2026-04） https://www.helpnetsecurity.com/2026/04/10/google-chrome-device-bound-session-credentials/</li>
-      <li>関連ページ：<a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth 2.0 の仕組み</a>、<a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>、<a href="30-4_トークンの保存場所.html">トークンの保存場所</a></li>
+      <li>関連ページ：<a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">73 OAuth 2.0 の仕組み</a>、<a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>、<a href="30-4_トークンの保存場所.html">トークンの保存場所</a></li>
     </ul>
 
     <nav class="pager" aria-label="ページ移動">
@@ -347,6 +347,6 @@ RT2 で更新 ──▶ 新しい AT ＋ RT3（RT2 は無効）</code></pre>
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>

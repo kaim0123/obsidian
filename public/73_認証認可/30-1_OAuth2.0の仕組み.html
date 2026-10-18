@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OAuth 2.0の仕組み｜認証認可解説</title>
-<link rel="stylesheet" href="../../_解説HTML/style.css">
+<link rel="stylesheet" href="../_解説HTML/style.css">
 </head>
 <body>
 <header class="topbar">
@@ -105,7 +105,7 @@
 - 写真アプリ: 写真へのアクセスのみ
 - カレンダーアプリ: カレンダーへのアクセスのみ
 - メールアプリ: メールへのアクセスのみ</code></pre>
-    <p>そして <strong>パスワードはフロントにだけ見せ、アプリには見せません</strong>。このフロントにあたるのが、写真サービスの <strong>受付</strong> です。このページでは、この係をずっと「受付」と呼びます。必要な権限だけを与える考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html#sec-2">最小権限の原則</a>（セキュリティ基礎）とつながっています。</p>
+    <p>そして <strong>パスワードはフロントにだけ見せ、アプリには見せません</strong>。このフロントにあたるのが、写真サービスの <strong>受付</strong> です。このページでは、この係をずっと「受付」と呼びます。必要な権限だけを与える考え方は <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html#sec-2">最小権限の原則</a>（セキュリティ基礎）とつながっています。</p>
 
     <h2 id="sec-4"><span class="num">4.</span>登場人物：誰が何を持っているか</h2>
     <p>本物の流れには 4 者が登場します。OAuth 2.0 の正式な役割名と、たとえ話の呼び方を対応させておきます。</p>
@@ -248,7 +248,7 @@
       <p class="callout-title">いちばん持ち帰ってほしい考え方</p>
       <p><strong>見られうる道には、見られても困らないものを流す。</strong></p>
     </div>
-    <p>戻り先（<code>redirect_uri</code>）が勝手な URL に書き換えられて引換券が外部へ流れる危険は、<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">オープンリダイレクト</a>（Web脆弱性対策）で扱っています。</p>
+    <p>戻り先（<code>redirect_uri</code>）が勝手な URL に書き換えられて引換券が外部へ流れる危険は、<a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">オープンリダイレクト</a>（Web脆弱性対策）で扱っています。</p>
 
     <h2 id="sec-8"><span class="num">8.</span>通行証の中身：範囲・期限・取り消し</h2>
     <h3 id="sec-8-1">8.1 範囲</h3>
@@ -293,7 +293,7 @@ async function refreshAccessToken(refreshToken) {
       <li>なりすましは引換券を拾っても答えを持っていないので、受付は替えてくれません。</li>
     </ol>
     <p>写しは見られても平気で、答えは本物の手元から出ません。これも <strong>「見られうる道には、見られても困らないものを流す」</strong> と同じ考え方です。今は <strong>スマホに限らず、どのアプリでも PKCE を使うことが勧められています</strong>。</p>
-    <p>code_verifier・code_challenge の作り方（SHA-256 によるハッシュ化）や実装コードは <a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8">PKCE について</a>（Web脆弱性対策の CSP のページ）で詳しく解説しています。一方向の計算（ハッシュ関数）そのものは <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#hash">ハッシュ関数</a>（セキュリティ基礎）を参照してください。</p>
+    <p>code_verifier・code_challenge の作り方（SHA-256 によるハッシュ化）や実装コードは <a href="../72_Web脆弱性対策/10-4_CSP.html#sec-8">PKCE について</a>（Web脆弱性対策の CSP のページ）で詳しく解説しています。一方向の計算（ハッシュ関数）そのものは <a href="../71_セキュリティ基礎/10-3_セキュリティの専門用語.html#hash">ハッシュ関数</a>（セキュリティ基礎）を参照してください。</p>
 
     <h2 id="sec-10"><span class="num">10.</span>許可の仕組みと、ログインの仕組み（OpenID Connect）</h2>
     <p>ところで、最初のボタンは「ログイン」でした。今までの話は写真を読む <strong>許可</strong> の話です。ログインとは違うのでしょうか。</p>
@@ -336,7 +336,7 @@ if (returnedState !== storedState) {
       <p class="callout-title">補足：state は推測できない乱数で</p>
       <p><code>Math.random()</code> は暗号用の乱数ではないため、本番では <code>crypto.randomBytes</code>（Node.js）や <code>crypto.getRandomValues</code>（ブラウザ）などで作るのが安全です。</p>
     </div>
-    <p>CSRF の仕組みと、推測できないトークンを埋め込んで照合する対策の考え方は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html#sec-10">秘密情報（トークン）の埋め込み</a>（CSRF のページ）で解説しています。state はこの考え方を OAuth の戻りに当てはめたものです。</p>
+    <p>CSRF の仕組みと、推測できないトークンを埋め込んで照合する対策の考え方は <a href="../72_Web脆弱性対策/30-1_CSRF.html#sec-10">秘密情報（トークン）の埋め込み</a>（CSRF のページ）で解説しています。state はこの考え方を OAuth の戻りに当てはめたものです。</p>
 
     <h3 id="sec-11-2">11.2 裏の道で引換券を通行証に替える：アプリの鍵は環境の設定から</h3>
     <p>次に、裏の道で引換券を通行証に替えます。<strong>割符の答えとアプリの鍵も一緒に</strong> 出します。アプリの鍵（クライアントシークレット）は <strong>コードに直接書かず、環境の設定から読みます</strong>。</p>
@@ -344,10 +344,10 @@ if (returnedState !== storedState) {
 <pre><code>const clientSecret = 'secret-key-12345'; // 危険！</code></pre>
     <span class="code-label good">正しい：サーバー側で管理（環境変数や設定ファイル）</span>
 <pre><code>const clientSecret = process.env.CLIENT_SECRET;</code></pre>
-    <p>鍵をコードに書かない理由は <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-2-4">シークレット管理</a>（セキュリティ基礎）も参照してください。</p>
+    <p>鍵をコードに書かない理由は <a href="../71_セキュリティ基礎/50-3_セキュアな運用とログ出力.html#sec-2-4">シークレット管理</a>（セキュリティ基礎）も参照してください。</p>
 
     <h3 id="sec-11-3">11.3 通行証をログに出さない</h3>
-    <p>通行証は <strong>持っている人なら誰でも使えます</strong>。ログに出せば、ログを読める人全員が「あなた」になれてしまいます。<a href="#sec-1-1">1.1</a> の「トークンという文字がログに出ている」と指摘された場面は、まさにこれです。ログに書いてはいけないものの全体は <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-4-4">ログに書いてはいけないもの</a>（セキュリティ基礎）にまとまっています。</p>
+    <p>通行証は <strong>持っている人なら誰でも使えます</strong>。ログに出せば、ログを読める人全員が「あなた」になれてしまいます。<a href="#sec-1-1">1.1</a> の「トークンという文字がログに出ている」と指摘された場面は、まさにこれです。ログに書いてはいけないものの全体は <a href="../71_セキュリティ基礎/50-3_セキュアな運用とログ出力.html#sec-4-4">ログに書いてはいけないもの</a>（セキュリティ基礎）にまとまっています。</p>
 
     <h3 id="sec-11-4">11.4 更新券は暗号化して保存する</h3>
     <p>更新券は長く使えるので、<strong>暗号化して保存</strong> します。そして <strong>URL にも、ブラウザの保存場所にも置かない</strong> のが基本です。</p>
@@ -370,7 +370,7 @@ if (returnedState !== storedState) {
     </ol>
     <div class="callout tip">
       <p class="callout-title">決まった部品に任せる</p>
-      <p>証明書の確認などは、自分で書くより <strong>決まった部品（ライブラリ）に任せる</strong> のが安全です。AI には、<strong>どの部品を使い、何を確かめるか</strong> をはっきり頼みましょう。認証を自前で実装しない考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11-2">認証を自前実装しない</a>（セキュリティ基礎）でも扱っています。</p>
+      <p>証明書の確認などは、自分で書くより <strong>決まった部品（ライブラリ）に任せる</strong> のが安全です。AI には、<strong>どの部品を使い、何を確かめるか</strong> をはっきり頼みましょう。認証を自前で実装しない考え方は <a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-11-2">認証を自前実装しない</a>（セキュリティ基礎）でも扱っています。</p>
     </div>
 
     <h2 id="sec-13"><span class="num">13.</span>各ステップの詳細：リクエストとパラメータ</h2>
@@ -398,7 +398,7 @@ window.location.href = authUrl;</code></pre>
     </table></div>
     <div class="callout warn">
       <p class="callout-title">補足：コード中の URL の改行</p>
-      <p>ノートのコードは読みやすさのために URL を途中で改行していますが、実際には改行や空白が URL に入ってしまいます。本番では 1 行で書くか、<code>URLSearchParams</code> で組み立てます。また、PKCE を使う場合はここに <code>code_challenge</code> と <code>code_challenge_method=S256</code> を加えます（<a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8-5">実装例</a>）。</p>
+      <p>ノートのコードは読みやすさのために URL を途中で改行していますが、実際には改行や空白が URL に入ってしまいます。本番では 1 行で書くか、<code>URLSearchParams</code> で組み立てます。また、PKCE を使う場合はここに <code>code_challenge</code> と <code>code_challenge_method=S256</code> を加えます（<a href="../72_Web脆弱性対策/10-4_CSP.html#sec-8-5">実装例</a>）。</p>
     </div>
 
     <h3 id="sec-13-2">13.2 ステップ2：ユーザーが認証・許可</h3>
@@ -677,8 +677,8 @@ app.listen(3000, () =&gt; {
       <p class="callout-title">このコードを使うときの注意</p>
       <ul>
         <li>セッションの <code>secret</code> も環境変数から読みます。セッション管理の詳細は 74_セッション管理 フォルダで扱う予定です。</li>
-        <li><code>/dashboard</code> はユーザー名をそのまま HTML に埋め込んでいるので、エスケープしないと <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS</a> の原因になります。</li>
-        <li>この例は PKCE を使っていません。今はどのアプリでも PKCE が勧められているので、<a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8-5">PKCE を使った実装例</a> のように加えます。</li>
+        <li><code>/dashboard</code> はユーザー名をそのまま HTML に埋め込んでいるので、エスケープしないと <a href="../72_Web脆弱性対策/20-1_XSSの基本.html">XSS</a> の原因になります。</li>
+        <li>この例は PKCE を使っていません。今はどのアプリでも PKCE が勧められているので、<a href="../72_Web脆弱性対策/10-4_CSP.html#sec-8-5">PKCE を使った実装例</a> のように加えます。</li>
       </ul>
     </div>
 
@@ -794,10 +794,10 @@ const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?
       <li>OpenID Connect Core 1.0 <a href="https://openid.net/specs/openid-connect-core-1_0.html">https://openid.net/specs/openid-connect-core-1_0.html</a></li>
       <li>関連ページ：<a href="10-2_ログイン方式と認証の概念.html#sec-9">OAuth 2.0 と OpenID Connect（ソーシャルログイン）</a>（認証認可解説）</li>
       <li>関連ページ：<a href="30-2_SAML・OAuth・OIDCの違い.html">SAML・OAuth・OIDCの違い</a>（認証認可解説）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8">PKCE について</a>（Web脆弱性対策）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（Web脆弱性対策）</li>
-      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">オープンリダイレクト</a>（Web脆弱性対策）</li>
-      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11-2">認証を自前実装しない</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/10-4_CSP.html#sec-8">PKCE について</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/30-1_CSRF.html">CSRF</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../72_Web脆弱性対策/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">オープンリダイレクト</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../71_セキュリティ基礎/40-2_アクセス制御と認証の失敗.html#sec-11-2">認証を自前実装しない</a>（セキュリティ基礎）</li>
     </ul>
 
     <nav class="pager">
@@ -807,6 +807,6 @@ const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?
     </nav>
   </main>
 </div>
-<script src="../../_解説HTML/script.js"></script>
+<script src="../_解説HTML/script.js"></script>
 </body>
 </html>
