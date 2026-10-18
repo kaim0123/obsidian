@@ -1,11 +1,13 @@
 ---
 import { getCollection } from 'astro:content';
 import { getExplainers } from '../lib/explainers';
+import { getNoteIndex } from '../lib/notes';
 
 // 仮トップ：全ノートをトップフォルダごとに折りたたんで表示＋解説HTMLの一覧（Step 3 で本実装に置き換える）
 const notes = (await getCollection('notes')).sort((a, b) =>
   a.id.localeCompare(b.id, 'ja', { numeric: true }),
 );
+const index = getNoteIndex();
 
 const groups = new Map<string, typeof notes>();
 for (const entry of notes) {
@@ -13,8 +15,7 @@ for (const entry of notes) {
   groups.set(top, [...(groups.get(top) ?? []), entry]);
 }
 
-// ファイル名の ? # % が URL の区切りとして解釈されないよう、各パス要素をエンコードする（Step 2 で idToUrl に置き換える）
-const noteUrl = (id: string) => `/notes/${id.split('/').map(encodeURIComponent).join('/')}`;
+const noteUrl = (id: string) => index.byId.get(id)?.url ?? `/notes/${id}/`;
 
 const explainers = getExplainers();
 const explainerCount = explainers.reduce((n, f) => n + f.pages.length, 0);

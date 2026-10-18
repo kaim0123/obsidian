@@ -1,13 +1,19 @@
 ---
 import { getCollection, render } from 'astro:content';
+import { getNoteIndex, urlPathOf } from '../../lib/note-index';
 
-// Step 1：ノートを表示するだけの最小構成。URL は id をそのまま使う（Step 2 で idToUrl に置き換える）
+// Step 2：idToUrl で ? # % 空白を変換したパスを使う
 export async function getStaticPaths() {
   const notes = await getCollection('notes');
-  return notes.map((entry) => ({
-    params: { path: entry.id },
-    props: { entry },
-  }));
+  const index = getNoteIndex();
+  return notes.map((entry) => {
+    const ref = index.byId.get(entry.id);
+    const path = ref ? urlPathOf(ref.url) : entry.id;
+    return {
+      params: { path },
+      props: { entry },
+    };
+  });
 }
 
 const { entry } = Astro.props;
