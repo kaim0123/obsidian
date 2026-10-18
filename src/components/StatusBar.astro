@@ -1,0 +1,28 @@
+---
+interface Props {
+  /** 左から並べる項目 */
+  items: string[];
+  /** 右端に寄せる項目 */
+  right?: string;
+}
+const { items, right } = Astro.props;
+---
+<footer class="statusbar">
+  {items.map((item) => <span>{item}</span>)}
+  {right && <span class="right">{right}</span>}
+</footer>
+
+<style>
+  .statusbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 16px;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 12px;
+    font-size: 11px;
+  }
+  .right {
+    margin-left: auto;
+  }
+</style>

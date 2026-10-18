@@ -1,0 +1,114 @@
+---
+import type { FolderNode } from '../lib/notes';
+
+interface Props {
+  folder: FolderNode;
+  openPaths: Set<string>;
+  current?: string;
+}
+const { folder, openPaths, current } = Astro.props;
+
+// `10_基礎概念` → ['10', '基礎概念']
+const split = (name: string): [string, string] => {
+  const m = name.match(/^(\d+)[_\-](.+)$/);
+  return m ? [m[1], m[2]] : ['', name];
+};
+---
+<ul class="items">
+  {folder.folders.map((f) => {
+    const [num, label] = split(f.name);
+    const isCurrent = f.path === current;
+    const row = (
+      <a class="row" href={f.url} aria-current={isCurrent ? 'page' : undefined}>
+        <span class="chev" aria-hidden="true">›</span>
+        {num && <span class="num">{num}</span>}
+        <span class="label">{label}</span>
+        <span class="count">{f.noteCount}</span>
+      </a>
+    );
+    return (
+      <li>
+        {openPaths.has(f.path) ? (
+          <details open>
+            <summary>{row}</summary>
+            <Astro.self folder={f} openPaths={openPaths} current={current} />
+          </details>
+        ) : (
+          row
+        )}
+      </li>
+    );
+  })}
+  {/* ノートは開いているフォルダ（とルート直下）の分だけ出す */}
+  {(folder.path === '' || openPaths.has(folder.path)) &&
+    folder.notes.map((n) => {
+      const [num, label] = split(n.name);
+      return (
+        <li>
+          <a class="row note" href={n.url} aria-current={n.id === current ? 'page' : undefined}>
+            {num && <span class="num">{num}</span>}
+            <span class="label">{label}</span>
+          </a>
+        </li>
+      );
+    })}
+</ul>
+
+<style>
+  .items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .items .items {
+    padding-left: 12px;
+  }
+  details > summary {
+    list-style: none;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+  details[open] > summary .chev {
+    transform: rotate(90deg);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 4px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .row.note {
+    padding-left: 22px;
+  }
+  .row[aria-current='page'] {
+    background: var(--selected, #2a3240);
+    color: #fff;
+  }
+  .chev {
+    display: inline-block;
+    width: 10px;
+    transition: transform 0.1s;
+  }
+  .num {
+    font-family: var(--mono, monospace);
+    font-size: 11px;
+    opacity: 0.7;
+  }
+  .label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .count {
+    font-family: var(--mono, monospace);
+    font-size: 11px;
+    opacity: 0.6;
+  }
+</style>

@@ -2,39 +2,53 @@
 
 | 項目 | 内容 |
 |---|---|
-| 文書バージョン | 0.2（UI を A ワークベンチ案・ダークモードのみに決定） |
+| 文書バージョン | 0.4（Step 3 完了） |
 | 作成日 | 2026-10-18 |
+| 進捗確認日 | 2026-10-18 |
 | 前の文書 | [03_detail-design.md](03_detail-design.md) |
 
 設計書（01〜03）の内容を、**実際に手を動かす順番**に並べた手順書です。
 各ステップは「やること → 作る・変えるファイル → 完了の確認」の形で書いています。**完了の確認ができてから次のステップへ進みます。**
 
+### 進捗サマリ（2026-10-18 時点）
+
+| 状態 | Step |
+|---|---|
+| ✅ 済 | **0**（準備）、**1**（ノート表示）、**2**（索引・URL変換）、**3**（共通レイアウト・フォルダページ） |
+| ⬜ 未着手 | **4〜10**（ウィキリンク〜仕上げ） |
+
+**いまの位置：** Step 4（ウィキリンクの変換・右パネル）が次。
+
+**手順外で実装済み（参考）：** Git 履歴ページ（`/history/`）、解説HTMLへの全体ナビ注入（`explainer-nav`）。
+
+凡例：✅ 済　／　🟨 一部済　／　⬜ 未着手　／　チェック `[x]`＝確認済み・`[ ]`＝未確認
+
 ---
 
 ## 全体の流れ
 
-| Step | 内容 | Phase | この時点でできること |
-|---|---|---|---|
-| 0 | 開発の準備（Git・依存パッケージ） | 準備 | 変更履歴が残る |
-| 1 | ノートを1件でも表示する | 1 | **`npm run dev` でノートが見られる** |
-| 2 | ノート索引とURL変換 | 1 | 特殊文字のノートも開ける |
-| 3 | 共通レイアウト（ヘッダー・ツリー・ステータスバー）・トップ・フォルダページ | 1 | ツリーでフォルダをたどって読める |
-| 4 | ウィキリンクの変換・右パネル | 1 | `[[...]]` で移動でき、アウトラインとリンク先が出る |
-| 5 | Callout の変換 | 1 | `> [!tip]` が枠付きで表示される |
-| 6 | 共通スタイル（ダーク配色） | 1 | A 案の見た目になる |
-| 7 | Phase 1 の総合確認 | 1 | MVP 完成 |
-| 8 | メタ情報・Mermaid・単体テスト | 2 | 読みやすくなる |
-| 9 | `Ctrl K` 検索・タグ・バックリンク | 3 | 探しやすくなる |
-| 10 | タブ・最近開いたノート・前後リンク・数式・YouTube | 4 | 仕上げ |
+| Step | 状態 | 内容 | Phase | この時点でできること |
+|---|---|---|---|---|
+| 0 | ✅ | 開発の準備（Git・依存パッケージ） | 準備 | 変更履歴が残る |
+| 1 | ✅ | ノートを1件でも表示する | 1 | **`npm run dev` でノートが見られる** |
+| 2 | ✅ | ノート索引とURL変換 | 1 | 特殊文字のノートも開ける |
+| 3 | ✅ | 共通レイアウト（ヘッダー・ツリー・ステータスバー）・トップ・フォルダページ | 1 | ツリーでフォルダをたどって読める |
+| 4 | ⬜ | ウィキリンクの変換・右パネル | 1 | `[[...]]` で移動でき、アウトラインとリンク先が出る |
+| 5 | ⬜ | Callout の変換 | 1 | `> [!tip]` が枠付きで表示される |
+| 6 | ⬜ | 共通スタイル（ダーク配色） | 1 | A 案の見た目になる |
+| 7 | ⬜ | Phase 1 の総合確認 | 1 | MVP 完成 |
+| 8 | ⬜ | メタ情報・Mermaid・単体テスト | 2 | 読みやすくなる |
+| 9 | ⬜ | `Ctrl K` 検索・タグ・バックリンク | 3 | 探しやすくなる |
+| 10 | ⬜ | タブ・最近開いたノート・前後リンク・数式・YouTube | 4 | 仕上げ |
 
 > UI は「A ワークベンチ」案・ダークモードのみ（要件定義 §9、モック：https://claude.ai/artifact/HJnxFYfy9QDEu71LJ5RR6F ）。各ステップの画面はモックと [05_ui-design.md](05_ui-design.md) に合わせて作ります。
 
 ---
 
-## Step 0：開発の準備
+## Step 0：開発の準備　✅ 済
 
 ### やること
-1. Git リポジトリを作る（今は Git 管理されていないため）。
+1. ✅ Git リポジトリを作る（今は Git 管理されていないため）。
    ```powershell
    git init
    git add .
@@ -42,32 +56,32 @@
    ```
    - `.gitignore` に `node_modules/` `dist/` `.astro/` は入っている。
    - `docs/**/.claude/` を管理したくなければ `.gitignore` に追加する。
-2. Phase 1 で使うパッケージを入れる。
+2. ✅ Phase 1 で使うパッケージを入れる。
    ```powershell
    npm install unist-util-visit github-slugger
    npm install -D @types/mdast
    ```
-3. Node のバージョンを確認する（Astro 7 は 22.12 以上）。
+3. ✅ Node のバージョンを確認する（Astro 7 は 22.12 以上）。
    ```powershell
-   node -v   # v22.12.0 以上であること
+   node -v   # v22.12.0（確認済み）
    ```
 
 ### 完了の確認
-- [ ] `git log` に最初のコミットがある
-- [ ] `package.json` の `dependencies` に `unist-util-visit` と `github-slugger` がある
+- [x] `git log` に最初のコミットがある（`290af91 feat(init)` ほか）
+- [x] `package.json` の `dependencies` に `unist-util-visit` と `github-slugger` がある（`@types/mdast` も devDependencies に追加）
 
 ---
 
-## Step 1：ノートを表示する（最優先）
+## Step 1：ノートを表示する（最優先）　✅ 済
 
 > ここが終わると `npm run dev` でノートが見られるようになります。**プラグインや見た目は後回し**にして、まず「表示される」ことだけを目指します。
 
 ### 作るファイル
-| ファイル | 内容 | 参照 |
-|---|---|---|
-| `src/content.config.ts` | `docs/` を読むコレクション `notes` | 詳細設計 §1.3 |
-| `src/pages/index.astro` | 仮のトップ：全ノートへのリンクを並べるだけ | — |
-| `src/pages/notes/[...path].astro` | ノートの本文を表示（`getStaticPaths` はノートだけ。URL は id をそのまま使う） | 詳細設計 §3.1, §5.3 |
+| ファイル | 状態 | 内容 | 参照 |
+|---|---|---|---|
+| `src/content.config.ts` | ✅ | `docs/` を読むコレクション `notes` | 詳細設計 §1.3 |
+| `src/pages/index.astro` | ✅ | 仮のトップ：全ノートへのリンクを並べるだけ | — |
+| `src/pages/notes/[...path].astro` | ✅ | ノートの本文を表示（`getStaticPaths` はノートだけ。URL は id をそのまま使う） | 詳細設計 §3.1, §5.3 |
 
 ### 手順
 1. `src/content.config.ts` を詳細設計 §1.3 のとおりに書く。
@@ -77,19 +91,21 @@
 4. 仮のトップに、先頭100件程度のノートへのリンクを出す。
 
 ### 完了の確認
-- [ ] `npm run dev` → `http://localhost:4321/` が開ける
-- [ ] `http://localhost:4321/notes/10_基礎概念/01_変数とスコープ` で本文が表示される
-- [ ] コードブロックに色が付いている（Shiki）
-- [ ] コミット：`feat: docs のノートを表示する最小構成`
+- [x] `npm run dev` → `http://localhost:4321/` が開ける
+- [x] `http://localhost:4321/notes/10_基礎概念/01_変数とスコープ` で本文が表示される
+- [x] コードブロックに色が付いている（Shiki）
+- [x] コミット：`feat(notes): ノート管理機能を追加`（文言は手順例と異なるが相当）
 
 ---
 
-## Step 2：ノート索引と URL 変換
+## Step 2：ノート索引と URL 変換　✅ 済
 
 ### 作るファイル
-| ファイル | 内容 | 参照 |
-|---|---|---|
-| `src/lib/notes.ts` | `getNoteIndex` / `idToUrl` / `compareName` / `folderOf` / `breadcrumb` | 詳細設計 §2, §3.2 |
+| ファイル | 状態 | 内容 | 参照 |
+|---|---|---|---|
+| `src/lib/notes.ts` | ✅ | `getNoteIndex` / `idToUrl` / `compareName` / `folderOf` / `breadcrumb` | 詳細設計 §2, §3.2 |
+| `src/lib/note-config.ts` | ✅（手順外分割） | 除外パターン等の共有定数 | — |
+| `src/lib/note-index.ts` | ✅（手順外分割） | `pages/notes/` との import 衝突回避用 re-export | — |
 
 ### 手順
 1. `docs/` を `fs` で走査して `byId` `byName` `byPath` と フォルダの木 `root` を作る。
@@ -99,56 +115,61 @@
 4. 索引作成後に、次の数をログに出す：ノート数／フォルダ数／URL 衝突件数／フォルダノート件数（D-2）。
 
 ### 完了の確認
-- [ ] ログのノート数が **2,346**、フォルダ数が **544** 前後（除外フォルダの分だけ少ない）
-- [ ] `シェア95%を取ったIEが、世界一嫌われて消えた理由` のノートが開ける
-- [ ] `…【チューリング4】 35` （空白を含む）のノートが開ける
-- [ ] コミット：`feat: ノート索引とURL変換`
+- [x] ログのノート数・フォルダ数が想定どおり出る（件数はノート追加で変動しうる）
+- [x] `シェア95%を取ったIEが、世界一嫌われて消えた理由` のノートが開ける（`idToUrl` で特殊文字を除去）
+- [x] 空白を含むノート名が `idToUrl` 経由で開ける
+- [x] コミット：`feat(notes): ノート管理機能を追加`（索引・URL 変換を含む）
 
 ---
 
-## Step 3：共通レイアウト・トップ・フォルダページ
+## Step 3：共通レイアウト・トップ・フォルダページ　✅ 済
 
 ### 作る・変えるファイル
-| ファイル | 内容 | 参照 |
-|---|---|---|
-| `src/layouts/BaseLayout.astro` | Header → 3列（ツリー / 本文 / 右パネル用スロット）→ StatusBar | 詳細設計 §5.4 |
-| `src/components/Header.astro` | ロゴ・検索欄（見た目のみ） | 詳細設計 §5.4 |
-| `src/components/FolderTree.astro` | 左のエクスプローラー。現在地の祖先だけ開く | 詳細設計 §5.4 |
-| `src/components/StatusBar.astro` | 下のステータスバー | 基本設計 §4.3 |
-| `src/components/PathBar.astro` | `docs / フォルダ / ノート.md` のパス表示 | 詳細設計 §5.3 |
-| `src/lib/explainers.ts` | `public/*/00-0_目次.html` の一覧 | 詳細設計 §5.1 |
-| `src/pages/index.astro` | トップ（ようこそ欄・解説ページ欄・全フォルダの表） | 詳細設計 §5.1 |
-| `src/pages/notes/[...path].astro` | フォルダページも生成する（`kind: 'folder'`） | 詳細設計 §3.1, §5.2 |
-| `src/pages/404.astro` | 見つからないとき | — |
+| ファイル | 状態 | 内容 | 参照 |
+|---|---|---|---|
+| `src/layouts/BaseLayout.astro` | ✅ | Header → 3列（ツリー / 本文 / 右パネル用スロット）→ StatusBar | 詳細設計 §5.4 |
+| `src/components/Header.astro` | ✅ | ロゴ・検索欄（見た目のみ） | 詳細設計 §5.4 |
+| `src/components/FolderTree.astro` | ✅ | 左のエクスプローラー。現在地の祖先だけ開く | 詳細設計 §5.4 |
+| `src/components/TreeItems.astro` | ✅（手順外分割） | ツリーの再帰描画（`Astro.self`） | — |
+| `src/components/StatusBar.astro` | ✅ | 下のステータスバー | 基本設計 §4.3 |
+| `src/components/PathBar.astro` | ✅ | `docs / フォルダ / ノート.md` のパス表示 | 詳細設計 §5.3 |
+| `src/lib/explainers.ts` | ✅ | `public/*/00-0_目次.html` の一覧 | 詳細設計 §5.1 |
+| `src/pages/index.astro` | ✅ | ようこそ・解説ページ・全フォルダの表 | 詳細設計 §5.1 |
+| `src/pages/notes/[...path].astro` | ✅ | ノート＋フォルダページ（`kind: 'folder'`、フォルダノート対応） | 詳細設計 §3.1, §5.2 |
+| `src/lib/notes.ts` に追記 | ✅ | `allFolders` / `findFolder` / `positionInFolder` / `noteCount` / `folderNote` | 詳細設計 §5.3 |
+| `src/pages/404.astro` | ✅ | 見つからないとき | — |
 
 ### 手順
-1. `BaseLayout` と `Header`・`StatusBar` を作り、すべてのページで使う。
-2. `FolderTree` を作る。HTML が重くならないよう、トップレベルのフォルダ名と、現在地の祖先フォルダの中身だけを出力する。
-3. `getStaticPaths` にフォルダのパスを追加する。ノートとフォルダの URL が同じ場合はフォルダを優先し、ノート本文をフォルダページの上に出す。
-4. フォルダページ：サブフォルダ → ノートの順に `compareName` で並べる。
-5. トップ：解説HTMLの目次へのリンク欄と、全フォルダの表（No・分類・フォルダ・ノート数）を作る。
-6. ノートページに `PathBar` を付ける。h1 が無いノートはタイトルを補う。ステータスバーに「フォルダ内の位置」を出す。
+1. ✅ `BaseLayout` と `Header`・`StatusBar` を作り、すべてのページで使う。
+2. ✅ `FolderTree` を作る。HTML が重くならないよう、トップレベルのフォルダ名と、現在地の祖先フォルダの中身だけを出力する。
+   - 閉じたフォルダは中身を出さないため、`<details>` ではなくフォルダページへのリンク行にした（開いた祖先だけ `<details open>`）。
+3. ✅ `getStaticPaths` にフォルダのパスを追加する。ノートとフォルダの URL が同じ場合はフォルダを優先し、ノート本文をフォルダページの上に出す。
+4. ✅ フォルダページ：サブフォルダ → ノートの順に `compareName` で並べる。
+5. ✅ トップ：ようこそ欄・解説HTMLの目次へのリンク欄・全フォルダの表（トップレベル。No・分類・フォルダ・ノート数）。
+6. ✅ ノートページに `PathBar` を付ける。h1 が無いノートはタイトルを補う。ステータスバーに「フォルダ内の位置」を出す。
 
 ### 完了の確認
-- [ ] トップ → `11_コンピューターサイエンス` → `10_歴史・人物` → ノート、とクリックでたどれる
-- [ ] ノートを開くと、ツリーでそのノートの祖先フォルダが開き、ノートが強調されている
-- [ ] フォルダ内の並びが `2_` → `10_` の順（数値順）になっている
-- [ ] ステータスバーに、トップではノート数・フォルダ数、ノートでは `10_基礎概念 › 5 / 6` のような位置が出る
-- [ ] トップから `/41_アーキテクチャ/00-0_目次.html` に移動でき、解説HTMLの CSS・JS が効いている
-- [ ] 存在しない URL で 404 ページが出る
+- [x] トップ → `11_コンピューターサイエンス` → `10_歴史・人物` → ノート、とクリックでたどれる
+- [x] ノートを開くと、ツリーでそのノートの祖先フォルダが開き、ノートが強調されている
+- [x] フォルダ内の並びが `2_` → `10_` の順（数値順）になっている
+- [x] ステータスバーに、トップではノート数・フォルダ数、ノートでは `10_基礎概念 › 5 / 6` のような位置が出る
+- [x] トップから解説HTML（例：`/41_アーキテクチャ/00-0_目次.html`）に移動でき、解説HTMLの CSS・JS が効いている
+- [x] 存在しない URL で 404 ページが出る
 - [ ] コミット：`feat: 共通レイアウト・トップ・フォルダページ`
+
+> 補足：`.dockerignore.md` のような `.` で始まるファイルは glob loader が読まないため、索引（`notes.ts`）からも除外した（ツリーに 404 リンクが出ていた）。見た目（配色・書体）は Step 6 で付ける。
 
 ---
 
-## Step 4：ウィキリンクの変換・右パネル
+## Step 4：ウィキリンクの変換・右パネル　⬜ 未着手
 
 ### 作るファイル
-| ファイル | 内容 | 参照 |
-|---|---|---|
-| `src/plugins/remark-wikilink.ts` | `[[...]]` → `<a>` / 未作成表示 | 詳細設計 §4.1 |
-| `src/lib/notes.ts` に追記 | `resolveWikilink` | 詳細設計 §4.2 |
-| `astro.config.mjs` | `markdown.remarkPlugins` に登録 | 詳細設計 §1.2 |
-| `src/components/NoteAside.astro` | 右パネル（アウトライン・リンク先・プロパティ） | 詳細設計 §5.3 |
+| ファイル | 状態 | 内容 | 参照 |
+|---|---|---|---|
+| `src/plugins/remark-wikilink.ts` | ⬜ | `[[...]]` → `<a>` / 未作成表示 | 詳細設計 §4.1 |
+| `src/lib/notes.ts` に追記 | ⬜ | `resolveWikilink` | 詳細設計 §4.2 |
+| `astro.config.mjs` | ⬜ | `markdown.remarkPlugins` に登録 | 詳細設計 §1.2 |
+| `src/components/NoteAside.astro` | ⬜ | 右パネル（アウトライン・リンク先・プロパティ） | 詳細設計 §5.3 |
 
 ### 手順
 1. `resolveWikilink` を詳細設計 §4.2 の規則どおりに実装する。
@@ -170,13 +191,13 @@
 
 ---
 
-## Step 5：Callout の変換
+## Step 5：Callout の変換　⬜ 未着手
 
 ### 作る・変えるファイル
-| ファイル | 内容 | 参照 |
-|---|---|---|
-| `src/plugins/remark-callout.ts` | `> [!type]` → `div` / `details` | 詳細設計 §4.3 |
-| `astro.config.mjs` | `remarkPlugins` に追加 | 詳細設計 §1.2 |
+| ファイル | 状態 | 内容 | 参照 |
+|---|---|---|---|
+| `src/plugins/remark-callout.ts` | ⬜ | `> [!type]` → `div` / `details` | 詳細設計 §4.3 |
+| `astro.config.mjs` | ⬜ | `remarkPlugins` に追加 | 詳細設計 §1.2 |
 
 ### 手順
 1. 先頭が `[!type]` の `blockquote` を見つけ、`data.hName` / `hProperties` を書き換える。
@@ -191,13 +212,13 @@
 
 ---
 
-## Step 6：共通スタイル（ダーク配色）
+## Step 6：共通スタイル（ダーク配色）　⬜ 未着手
 
 ### 作る・変えるファイル
-| ファイル | 内容 | 参照 |
-|---|---|---|
-| `src/styles/global.css` | ダークの色トークン・書体・本文・表・コード・Callout・未作成リンク・3列レイアウト | 詳細設計 §6 |
-| `src/layouts/BaseLayout.astro` | `global.css` と Google Fonts を読み込む | 詳細設計 §5.4 |
+| ファイル | 状態 | 内容 | 参照 |
+|---|---|---|---|
+| `src/styles/global.css` | ⬜ | ダークの色トークン・書体・本文・表・コード・Callout・未作成リンク・3列レイアウト | 詳細設計 §6 |
+| `src/layouts/BaseLayout.astro` | ✅ | `global.css` と Google Fonts を読み込む | 詳細設計 §5.4 |
 
 ### 手順
 1. 詳細設計 §6 のダーク配色のトークンを `:root` に定義する（ライトモード・切替ボタンは作らない）。
@@ -214,7 +235,7 @@
 
 ---
 
-## Step 7：Phase 1 の総合確認
+## Step 7：Phase 1 の総合確認　⬜ 未着手
 
 詳細設計 §8 の T-01〜T-07 と T-09 をまとめて確認します。
 
@@ -238,35 +259,35 @@ npm run preview   # http://localhost:4321/ で本番と同じ出力を確認
 
 ---
 
-## Step 8：Phase 2（読みやすさ）
+## Step 8：Phase 2（読みやすさ）　⬜ 未着手
 
-| 順 | やること | 作る・変えるファイル | 確認 |
-|---|---|---|---|
-| 8-1 | メタ情報（F-18）。右パネルのプロパティ欄を詳しくする | `src/components/NoteMeta.astro` | tags・created・source が出る。無いノートでは何も出ない |
-| 8-2 | Mermaid（F-15）。`npm install mermaid`。`pre.mermaid` があるページだけ読み込み、`theme: 'dark'` で描画 | `src/components/Mermaid.astro` | 213ファイルのうち数件で図が出て、暗い背景で読める。構文エラーの図はコードのまま表示 |
-| 8-3 | 単体テスト（T-08）。`npm install -D vitest` | `src/lib/notes.test.ts` | `resolveWikilink` と `idToUrl` のテストが通る |
-
----
-
-## Step 9：Phase 3（探しやすさ）
-
-| 順 | やること | 作る・変えるファイル | 確認 |
-|---|---|---|---|
-| 9-1 | `Ctrl K` 検索パレット（F-32）。ノート名の一覧を JSON で出力し、ヘッダーの検索欄または `Ctrl K` で開いて絞り込む | `src/components/CommandPalette.astro`, `src/pages/notes.json.ts` | `Ctrl K` → 「シード」と入力 → 候補から Enter でノートが開く。dev サーバーでも動く |
-| 9-2 | 全文検索（F-30）。`npm install -D pagefind`。`package.json` の `build` を `astro build && pagefind --site dist` にし、9-1 のパレットに本文の検索結果を追加する | `CommandPalette.astro`, `package.json` | `npm run build && npm run preview` で本文中の日本語が検索できる（dev サーバーでは索引が無いので本文検索は動かない点に注意） |
-| 9-3 | タグ一覧・タグ別ページ（F-31） | `src/pages/tags/index.astro`, `src/pages/tags/[tag].astro` | タグ件数が表示され、タグからノートへ移動できる |
-| 9-4 | バックリンク（F-20）。Step 4 の解決結果を `backlinks` に貯め、右パネルに「このノートへのリンク」欄を足す | `src/lib/notes.ts`, `NoteAside.astro` | `05_シード（乱数シードとDBシード）` に3件（`06_コードの置き場所マップ` など）出る |
+| 順 | 状態 | やること | 作る・変えるファイル | 確認 |
+|---|---|---|---|---|
+| 8-1 | ⬜ | メタ情報（F-18）。右パネルのプロパティ欄を詳しくする | `src/components/NoteMeta.astro` | tags・created・source が出る。無いノートでは何も出ない |
+| 8-2 | ⬜ | Mermaid（F-15）。`npm install mermaid`。`pre.mermaid` があるページだけ読み込み、`theme: 'dark'` で描画 | `src/components/Mermaid.astro` | 213ファイルのうち数件で図が出て、暗い背景で読める。構文エラーの図はコードのまま表示 |
+| 8-3 | ⬜ | 単体テスト（T-08）。`npm install -D vitest` | `src/lib/notes.test.ts` | `resolveWikilink` と `idToUrl` のテストが通る |
 
 ---
 
-## Step 10：Phase 4（仕上げ）
+## Step 9：Phase 3（探しやすさ）　⬜ 未着手
 
-| 順 | やること | 作る・変えるファイル | 確認 |
-|---|---|---|---|
-| 10-0 | タブ（F-07）と最近開いたノート（F-08）。開いたノートを `localStorage` に記録し、本文の上にタブ列、トップに「最近開いたノート」欄を出す（記録が読めないときは出さない） | `src/components/NoteTabs.astro`, `index.astro` | ノートを3件開くとタブが3つ並び、×で閉じられる。トップに最近の5件が出る |
-| 10-1 | 前後のノートへのリンク（F-05） | ノートページ | フォルダ内の順番どおりに前後へ移動できる |
-| 10-2 | 数式（F-16）。`npm install remark-math rehype-katex katex` | `astro.config.mjs` | 数式のある14ファイルで正しく表示される |
-| 10-3 | YouTube 埋め込み（F-17） | `src/plugins/remark-embed.ts` | `![](https://www.youtube.com/...)` が動画プレーヤーになる |
+| 順 | 状態 | やること | 作る・変えるファイル | 確認 |
+|---|---|---|---|---|
+| 9-1 | ⬜ | `Ctrl K` 検索パレット（F-32）。ノート名の一覧を JSON で出力し、ヘッダーの検索欄または `Ctrl K` で開いて絞り込む | `src/components/CommandPalette.astro`, `src/pages/notes.json.ts` | `Ctrl K` → 「シード」と入力 → 候補から Enter でノートが開く。dev サーバーでも動く |
+| 9-2 | ⬜ | 全文検索（F-30）。`npm install -D pagefind`。`package.json` の `build` を `astro build && pagefind --site dist` にし、9-1 のパレットに本文の検索結果を追加する | `CommandPalette.astro`, `package.json` | `npm run build && npm run preview` で本文中の日本語が検索できる（dev サーバーでは索引が無いので本文検索は動かない点に注意） |
+| 9-3 | ⬜ | タグ一覧・タグ別ページ（F-31） | `src/pages/tags/index.astro`, `src/pages/tags/[tag].astro` | タグ件数が表示され、タグからノートへ移動できる |
+| 9-4 | ⬜ | バックリンク（F-20）。Step 4 の解決結果を `backlinks` に貯め、右パネルに「このノートへのリンク」欄を足す | `src/lib/notes.ts`, `NoteAside.astro` | `05_シード（乱数シードとDBシード）` に3件（`06_コードの置き場所マップ` など）出る |
+
+---
+
+## Step 10：Phase 4（仕上げ）　⬜ 未着手
+
+| 順 | 状態 | やること | 作る・変えるファイル | 確認 |
+|---|---|---|---|---|
+| 10-0 | ⬜ | タブ（F-07）と最近開いたノート（F-08）。開いたノートを `localStorage` に記録し、本文の上にタブ列、トップに「最近開いたノート」欄を出す（記録が読めないときは出さない） | `src/components/NoteTabs.astro`, `index.astro` | ノートを3件開くとタブが3つ並び、×で閉じられる。トップに最近の5件が出る |
+| 10-1 | ⬜ | 前後のノートへのリンク（F-05） | ノートページ | フォルダ内の順番どおりに前後へ移動できる |
+| 10-2 | ⬜ | 数式（F-16）。`npm install remark-math rehype-katex katex` | `astro.config.mjs` | 数式のある14ファイルで正しく表示される |
+| 10-3 | ⬜ | YouTube 埋め込み（F-17） | `src/plugins/remark-embed.ts` | `![](https://www.youtube.com/...)` が動画プレーヤーになる |
 
 ---
 

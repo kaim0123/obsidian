@@ -1,0 +1,57 @@
+---
+// Phase 1〜2 は見た目のみ（Phase 3 で CommandPalette に置き換える）
+---
+<header class="header">
+  <a class="logo" href="/">
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+      <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
+      <path d="M14 3v5h5" />
+    </svg>
+    <span>Knowledge</span>
+  </a>
+  <form class="search" role="search" onsubmit="return false">
+    <input type="search" name="q" placeholder="ノート・フォルダ・コマンドを検索" aria-label="検索" />
+    <kbd>Ctrl K</kbd>
+  </form>
+</header>
+
+<style>
+  .header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 24px;
+    min-height: 56px;
+    padding: 8px 16px;
+    box-sizing: border-box;
+  }
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    color: inherit;
+    text-decoration: none;
+  }
+  .search {
+    position: relative;
+    flex: 1 1 280px;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+  .search input {
+    width: 100%;
+    height: 36px;
+    box-sizing: border-box;
+    padding: 0 72px 0 12px;
+    border-radius: 6px;
+  }
+  .search kbd {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    pointer-events: none;
+  }
+</style>

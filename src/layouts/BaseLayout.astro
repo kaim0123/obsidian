@@ -1,0 +1,93 @@
+---
+import FolderTree from '../components/FolderTree.astro';
+import Header from '../components/Header.astro';
+import StatusBar from '../components/StatusBar.astro';
+
+interface Props {
+  title: string;
+  /** ツリーで開いておく場所（ノートの id またはフォルダのパス） */
+  current?: string;
+  kind?: 'note' | 'folder';
+  /** ステータスバーに出す項目 */
+  status: string[];
+  statusRight?: string;
+}
+const { title, current, kind, status, statusRight } = Astro.props;
+const hasAside = Astro.slots.has('aside');
+---
+<html lang="ja" style="color-scheme: dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}｜Knowledge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <Header />
+    <!-- DOM 順は 本文 → 右パネル → ツリー（スマホ幅で本文を先に読むため）。PC 幅は order で並べ替える -->
+    <div class="workbench">
+      <main class="content">
+        <slot />
+      </main>
+      {hasAside && (
+        <aside class="aside">
+          <slot name="aside" />
+        </aside>
+      )}
+      <div class="sidebar">
+        <FolderTree current={current} kind={kind} />
+      </div>
+    </div>
+    <StatusBar items={status} right={statusRight} />
+  </body>
+</html>
+
+<style is:global>
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    font-family: "IBM Plex Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+  }
+  .workbench {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .content {
+    flex: 999 1 560px;
+    min-width: 0;
+    padding: 20px 40px;
+    box-sizing: border-box;
+  }
+  .content > * {
+    max-width: 72ch;
+  }
+  .aside {
+    flex: 1 1 220px;
+    max-width: 260px;
+    padding: 20px 16px;
+    box-sizing: border-box;
+  }
+  .sidebar {
+    flex: 1 1 240px;
+    max-width: 280px;
+    box-sizing: border-box;
+  }
+  @media (min-width: 768px) {
+    .sidebar { order: 1; align-self: stretch; }
+    .content { order: 2; }
+    .aside { order: 3; }
+  }
+  @media (max-width: 767px) {
+    .content { padding: 20px 16px; }
+    .aside, .sidebar { max-width: none; }
+  }
+</style>

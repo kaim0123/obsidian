@@ -1,2 +1,12 @@
 /** pages/notes/ からの import 用（ディレクトリ名 notes との衝突回避） */
-export { getNoteIndex, urlPathOf, idToUrl, type NoteRef, type NoteIndex } from './notes';
+export {
+  getNoteIndex,
+  urlPathOf,
+  idToUrl,
+  allFolders,
+  findFolder,
+  positionInFolder,
+  type NoteRef,
+  type NoteIndex,
+  type FolderNode,
+} from './notes';

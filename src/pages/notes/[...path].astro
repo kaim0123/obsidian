@@ -1,33 +1,185 @@
 ---
-import { getCollection, render } from 'astro:content';
-import { getNoteIndex, urlPathOf } from '../../lib/note-index';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PathBar from '../../components/PathBar.astro';
+import {
+  allFolders,
+  findFolder,
+  getNoteIndex,
+  positionInFolder,
+  urlPathOf,
+  type FolderNode,
+} from '../../lib/note-index';
 
-// Step 2：idToUrl で ? # % 空白を変換したパスを使う
+type Props =
+  | { kind: 'note'; entry: CollectionEntry<'notes'> }
+  | {
+      kind: 'folder';
+      folder: FolderNode;
+      folderNote?: CollectionEntry<'notes'>;
+      descriptions: Record<string, string>;
+    };
+
 export async function getStaticPaths() {
   const notes = await getCollection('notes');
   const index = getNoteIndex();
-  return notes.map((entry) => {
-    const ref = index.byId.get(entry.id);
-    const path = ref ? urlPathOf(ref.url) : entry.id;
+  const entryById = new Map(notes.map((e) => [e.id, e]));
+  const folders = [index.root, ...allFolders(index.root)];
+  // フォルダノートはフォルダページ側で表示する（URL が同じためフォルダを優先）
+  const folderNoteIds = new Set(folders.flatMap((f) => (f.folderNote ? [f.folderNote.id] : [])));
+
+  const notePaths = notes
+    .filter((entry) => !folderNoteIds.has(entry.id))
+    .map((entry) => {
+      const ref = index.byId.get(entry.id);
+      return {
+        params: { path: ref ? urlPathOf(ref.url) : entry.id },
+        props: { kind: 'note' as const, entry },
+      };
+    });
+
+  const folderPaths = folders.map((folder) => {
+    const descriptions: Record<string, string> = {};
+    for (const n of folder.notes) {
+      const d = entryById.get(n.id)?.data.description;
+      if (d) descriptions[n.id] = d;
+    }
     return {
-      params: { path },
-      props: { entry },
+      params: { path: urlPathOf(folder.url) },
+      props: {
+        kind: 'folder' as const,
+        folder,
+        folderNote: folder.folderNote ? entryById.get(folder.folderNote.id) : undefined,
+        descriptions,
+      },
     };
   });
+
+  return [...notePaths, ...folderPaths];
 }
 
-const { entry } = Astro.props;
-const { Content, headings } = await render(entry);
-const title = entry.data.title ?? headings.find((h) => h.depth === 1)?.text ?? entry.id.split('/').pop();
+const props = Astro.props;
+
+// --- ノートページ ---
+let note: { title: string; hasH1: boolean; Content: any; id: string } | null = null;
+if (props.kind === 'note') {
+  const { entry } = props;
+  const { Content, headings } = await render(entry);
+  const name = entry.id.split('/').pop() ?? entry.id;
+  const title = entry.data.title ?? headings.find((h) => h.depth === 1)?.text ?? name;
+  note = { title, hasH1: headings.some((h) => h.depth === 1), Content, id: entry.id };
+}
+
+// --- フォルダページ ---
+const FolderNoteContent =
+  props.kind === 'folder' && props.folderNote ? (await render(props.folderNote)).Content : null;
+const folderCrumbs =
+  props.kind === 'folder'
+    ? props.folder.path
+        .split('/')
+        .filter(Boolean)
+        .map((name, i, parts) => ({
+          name,
+          path: parts.slice(0, i + 1).join('/'),
+        }))
+    : [];
+const folderUrlOf = (p: string) => findFolder(p)?.url ?? '/notes/';
 ---
-<html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title}｜Knowledge</title>
-  </head>
-  <body>
-    <p><a href="/">← トップ</a> ／ {entry.id}</p>
-    <Content />
-  </body>
-</html>
+{note ? (
+  <BaseLayout
+    title={note.title}
+    current={note.id}
+    kind="note"
+    status={[positionInFolder(note.id)]}
+    statusRight="Markdown"
+  >
+    <PathBar id={note.id} />
+    {!note.hasH1 && <h1>{note.title}</h1>}
+    <article class="note-body">
+      <note.Content />
+    </article>
+  </BaseLayout>
+) : props.kind === 'folder' && (
+  <BaseLayout
+    title={props.folder.path ? props.folder.label : 'docs'}
+    current={props.folder.path}
+    kind="folder"
+    status={[
+      `${props.folder.name || 'docs'} › サブフォルダ ${props.folder.folders.length}・ノート ${props.folder.notes.length}`,
+    ]}
+  >
+    <nav class="breadcrumb" aria-label="パンくず">
+      <a href="/notes/">docs</a>
+      {folderCrumbs.map((c, i) => (
+        <>
+          <span class="sep">/</span>
+          {i === folderCrumbs.length - 1 ? (
+            <span aria-current="page">{c.name}</span>
+          ) : (
+            <a href={folderUrlOf(c.path)}>{c.name}</a>
+          )}
+        </>
+      ))}
+    </nav>
+    <h1>{props.folder.path ? props.folder.label : 'docs'}</h1>
+
+    {FolderNoteContent && (
+      <article class="note-body folder-note">
+        <FolderNoteContent />
+      </article>
+    )}
+
+    {props.folder.folders.length > 0 && (
+      <section>
+        <h2>サブフォルダ（{props.folder.folders.length}）</h2>
+        <ul class="folder-list">
+          {props.folder.folders.map((f) => (
+            <li>
+              <a href={f.url}>{f.name}</a>
+              <span class="count">{f.noteCount} ノート</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    {props.folder.notes.length > 0 && (
+      <section>
+        <h2>ノート（{props.folder.notes.length}）</h2>
+        <ul class="note-list">
+          {props.folder.notes.map((n) => (
+            <li>
+              <a href={n.url}>{n.name}</a>
+              {props.descriptions[n.id] && <p class="desc">{props.descriptions[n.id]}</p>}
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+  </BaseLayout>
+)}
+
+<style>
+  .breadcrumb {
+    font-size: 12px;
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+  }
+  .sep {
+    margin: 0 6px;
+  }
+  .folder-list,
+  .note-list {
+    padding-left: 1.2em;
+  }
+  .count {
+    margin-left: 8px;
+    font-size: 12px;
+    opacity: 0.7;
+  }
+  .desc {
+    margin: 2px 0 6px;
+    font-size: 13px;
+    opacity: 0.8;
+  }
+</style>

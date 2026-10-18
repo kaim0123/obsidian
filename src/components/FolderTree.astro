@@ -1,0 +1,40 @@
+---
+import { folderOf, getNoteIndex } from '../lib/notes';
+import TreeItems from './TreeItems.astro';
+
+interface Props {
+  /** 現在地：ノートの id、またはフォルダのパス（トップでは省略） */
+  current?: string;
+  kind?: 'note' | 'folder';
+}
+const { current, kind = 'note' } = Astro.props;
+const index = getNoteIndex();
+
+// 開いておく祖先フォルダ（フォルダページではそのフォルダ自身も開く）
+const base = current == null ? '' : kind === 'folder' ? current : folderOf(current);
+const openPaths = new Set<string>();
+if (base) {
+  let acc = '';
+  for (const part of base.split('/')) {
+    acc = acc ? `${acc}/${part}` : part;
+    openPaths.add(acc);
+  }
+}
+---
+<nav class="tree" aria-label="エクスプローラー">
+  <div class="tree-heading">エクスプローラー</div>
+  <TreeItems folder={index.root} openPaths={openPaths} current={current} />
+</nav>
+
+<style>
+  .tree {
+    padding: 12px 8px;
+    font-size: 13px;
+  }
+  .tree-heading {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 0 8px 8px;
+  }
+</style>

@@ -1,0 +1,35 @@
+---
+import { breadcrumb } from '../lib/notes';
+
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+// 先頭の docs と各フォルダはリンク、最後のノートは `.md` 付きの文字だけ
+const crumbs = breadcrumb(id);
+const folders = crumbs.slice(1, -1);
+const parts = id.split('/');
+const fileName = `${parts[parts.length - 1]}.md`;
+---
+<nav class="pathbar" aria-label="パス">
+  <a href="/notes/">docs</a>
+  {folders.map((c, i) => (
+    <>
+      <span class="sep">/</span>
+      <a href={c.url}>{parts[i]}</a>
+    </>
+  ))}
+  <span class="sep">/</span>
+  <span aria-current="page">{fileName}</span>
+</nav>
+
+<style>
+  .pathbar {
+    font-size: 12px;
+    margin-bottom: 16px;
+    overflow-wrap: anywhere;
+  }
+  .sep {
+    margin: 0 6px;
+  }
+</style>

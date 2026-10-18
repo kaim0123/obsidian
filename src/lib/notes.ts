@@ -18,6 +18,10 @@ export interface FolderNode {
   url: string;
   folders: FolderNode[];
   notes: NoteRef[];
+  /** 配下すべてのノート数 */
+  noteCount: number;
+  /** フォルダと同名のノート（`foo.md` と `foo/`）。フォルダページの上部に本文を出す */
+  folderNote?: NoteRef;
 }
 
 export interface NoteIndex {
@@ -84,7 +88,8 @@ function walkMarkdownFiles(dir: string, rel: string, depth: number, out: string[
     if (ent.isDirectory()) {
       if (isExcludedDir(ent.name, depth)) continue;
       walkMarkdownFiles(path.join(dir, ent.name), rel ? `${rel}/${ent.name}` : ent.name, depth + 1, out);
-    } else if (ent.isFile() && /\.md$/i.test(ent.name)) {
+    } else if (ent.isFile() && !ent.name.startsWith('.') && /\.md$/i.test(ent.name)) {
+      // glob loader と同じく . で始まるファイルは対象外（ツリーから 404 へのリンクを出さない）
       out.push(rel ? `${rel}/${ent.name}` : ent.name);
     }
   }
@@ -106,6 +111,7 @@ function ensureFolder(root: FolderNode, folderPath: string, urlOf: (id: string) 
         url: urlOf(acc),
         folders: [],
         notes: [],
+        noteCount: 0,
       };
       node.folders.push(child);
     }
@@ -118,6 +124,30 @@ function sortTree(node: FolderNode): void {
   node.folders.sort((a, b) => compareName(a.name, b.name));
   node.notes.sort((a, b) => compareName(a.name, b.name));
   for (const f of node.folders) sortTree(f);
+}
+
+/** 同名ノートをフォルダノートとして親の一覧から外し、URL をフォルダに合わせる（詳細設計 §3.1） */
+function attachFolderNotes(node: FolderNode): number {
+  let count = 0;
+  for (const f of node.folders) {
+    const i = node.notes.findIndex((n) => n.name === f.name);
+    if (i !== -1) {
+      const [ref] = node.notes.splice(i, 1);
+      ref.url = f.url;
+      f.folderNote = ref;
+      count++;
+    }
+    count += attachFolderNotes(f);
+  }
+  return count;
+}
+
+function fillNoteCounts(node: FolderNode): number {
+  node.noteCount =
+    node.notes.length +
+    (node.folderNote ? 1 : 0) +
+    node.folders.reduce((n, f) => n + fillNoteCounts(f), 0);
+  return node.noteCount;
 }
 
 let cached: { mtimeMs: number; index: NoteIndex } | null = null;
@@ -170,6 +200,7 @@ export function getNoteIndex(): NoteIndex {
     url: '/notes/',
     folders: [],
     notes: [],
+    noteCount: 0,
   };
 
   for (const file of files) {
@@ -192,6 +223,8 @@ export function getNoteIndex(): NoteIndex {
   }
 
   sortTree(root);
+  const folderNoteCount = attachFolderNotes(root);
+  fillNoteCounts(root);
 
   const index: NoteIndex = { byId, byName, byPath, root };
   cached = { mtimeMs, index };
@@ -199,14 +232,40 @@ export function getNoteIndex(): NoteIndex {
   const folderCount = countFolders(root);
   const collisionCount = [...usedCounts.values()].filter((n) => n > 1).length;
   console.log(
-    `[notes] indexed: notes=${byId.size} folders=${folderCount} url-collisions=${collisionCount}`,
+    `[notes] indexed: notes=${byId.size} folders=${folderCount} url-collisions=${collisionCount} folder-notes=${folderNoteCount}`,
   );
 
   return index;
 }
 
-function countFolders(node: FolderNode): number {
+export function countFolders(node: FolderNode): number {
   return node.folders.reduce((n, f) => n + 1 + countFolders(f), 0);
+}
+
+/** ルートを除くすべてのフォルダ（深さ優先・名前順） */
+export function allFolders(node: FolderNode): FolderNode[] {
+  return node.folders.flatMap((f) => [f, ...allFolders(f)]);
+}
+
+/** フォルダのパス（`''` はルート）から FolderNode を探す */
+export function findFolder(folderPath: string): FolderNode | undefined {
+  let node: FolderNode | undefined = getNoteIndex().root;
+  if (!folderPath) return node;
+  for (const part of folderPath.split('/')) {
+    node = node.folders.find((f) => f.name === part);
+    if (!node) return undefined;
+  }
+  return node;
+}
+
+/** ステータスバー用：`10_基礎概念 › 5 / 6`（フォルダ内のノートの位置） */
+export function positionInFolder(id: string): string {
+  const folderPath = folderOf(id);
+  const folder = findFolder(folderPath);
+  const label = folderPath ? folderPath.slice(folderPath.lastIndexOf('/') + 1) : 'docs';
+  if (!folder) return label;
+  const i = folder.notes.findIndex((n) => n.id === id);
+  return i === -1 ? label : `${label} › ${i + 1} / ${folder.notes.length}`;
 }
 
 export function breadcrumb(id: string): { label: string; url: string }[] {

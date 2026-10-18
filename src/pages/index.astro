@@ -1,55 +1,97 @@
 ---
-import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
 import { getExplainers } from '../lib/explainers';
-import { getNoteIndex } from '../lib/notes';
+import { countFolders, getNoteIndex } from '../lib/notes';
 
-// 仮トップ：全ノートをトップフォルダごとに折りたたんで表示＋解説HTMLの一覧（Step 3 で本実装に置き換える）
-const notes = (await getCollection('notes')).sort((a, b) =>
-  a.id.localeCompare(b.id, 'ja', { numeric: true }),
-);
 const index = getNoteIndex();
-
-const groups = new Map<string, typeof notes>();
-for (const entry of notes) {
-  const top = entry.id.includes('/') ? entry.id.split('/')[0] : '（ルート）';
-  groups.set(top, [...(groups.get(top) ?? []), entry]);
-}
-
-const noteUrl = (id: string) => index.byId.get(id)?.url ?? `/notes/${id}/`;
-
 const explainers = getExplainers();
 const explainerCount = explainers.reduce((n, f) => n + f.pages.length, 0);
+
+// 分類は番号の十の位で決める（詳細設計 §5.1）
+const CATEGORIES = ['', '基礎', '言語', 'フレームワーク', '設計', 'ツール', 'インフラ', 'セキュリティ', 'テスト', 'その他'];
+const rows = index.root.folders.map((f) => {
+  const num = f.name.match(/^(\d+)[_\-]/)?.[1] ?? '';
+  const tens = num.length >= 2 ? Number(num[0]) : NaN;
+  return { folder: f, num, category: CATEGORIES[tens] ?? '—' };
+});
+
+const fmt = (n: number) => n.toLocaleString('en-US');
 ---
-<html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Knowledge</title>
-  </head>
-  <body>
-    <h1>Knowledge</h1>
+<BaseLayout
+  title="トップ"
+  status={[`${fmt(index.byId.size)} notes`, `${fmt(countFolders(index.root))} folders`, `${fmt(explainerCount)} explainers`]}
+>
+  <h1>Knowledge</h1>
+
+  <section>
+    <h2>ようこそ</h2>
+    <p>
+      プログラミング学習ノートの置き場です。左のエクスプローラーか下のフォルダ表からノートをたどれます。
+      図解つきで学びたいときは「解説ページ」から読み始めてください。
+    </p>
     <p><a href="/history/">Git 履歴（ローカル専用）</a></p>
+  </section>
 
-    <h2>解説ページ（{explainerCount} 件）</h2>
-    {explainers.map((f) => (
-      <details>
-        <summary>{f.folder}（{f.pages.length}）</summary>
-        <ul>
-          {f.pages.map((p) => <li><a href={p.url}>{p.name}</a></li>)}
-        </ul>
-      </details>
-    ))}
+  <section>
+    <h2>解説ページ（HTML）</h2>
+    <ul class="explainers">
+      {explainers.map((f) => {
+        const toc = f.pages.find((p) => p.name === '00-0_目次') ?? f.pages[0];
+        return (
+          <li>
+            <a href={toc.url}>{f.folder}</a>
+            <span class="count">{f.pages.length} ページ</span>
+          </li>
+        );
+      })}
+    </ul>
+  </section>
 
-    <h2>ノート（{notes.length} 件）</h2>
-    {[...groups].map(([top, entries]) => (
-      <details>
-        <summary>{top}（{entries.length}）</summary>
-        <ul>
-          {entries.map((entry) => (
-            <li><a href={noteUrl(entry.id)}>{entry.id.slice(top.length + 1) || entry.id}</a></li>
+  <section>
+    <h2>すべてのフォルダ</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>No</th><th>分類</th><th>フォルダ</th><th>ノート数</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr>
+              <td class="num">{r.num}</td>
+              <td>{r.category}</td>
+              <td><a href={r.folder.url}>{r.folder.label}</a></td>
+              <td class="num">{fmt(r.folder.noteCount)}</td>
+            </tr>
           ))}
-        </ul>
-      </details>
-    ))}
-  </body>
-</html>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .explainers {
+    padding-left: 1.2em;
+  }
+  .count {
+    margin-left: 8px;
+    font-size: 12px;
+    opacity: 0.7;
+  }
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table {
+    border-collapse: collapse;
+    white-space: nowrap;
+  }
+  th,
+  td {
+    padding: 6px 12px;
+    text-align: left;
+  }
+  .num {
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    text-align: right;
+  }
+</style>
