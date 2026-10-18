@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>目次｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb">目次</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>Web脆弱性対策解説 — 目次</h1>
+      <p class="lead">Obsidian の「72_Web脆弱性対策」ノートをもとにした、初心者向け解説ページの入口です。ブラウザが備える守りの仕組みから、XSS・SQLインジェクションなどの代表的な脆弱性（ソフトウェアの弱点）、リクエスト偽造、ファイル処理、Web API まで、Web アプリ固有の弱点と対策を順に解説します。</p>
+      <p class="meta">もとにしたノート：MOC_Web脆弱性対策 と、10〜50 の各フォルダのノート</p>
+    </div>
+
+    <h2><span class="num">1.</span>このサイトの読み方</h2>
+    <p>ページは下の順番に並んでいて、各ページ下部の「前のページ／次のページ」で順に読み進められます。上部の「Web脆弱性対策解説」からいつでもこの目次に戻れます。各ページの最後には「まとめ」と「理解度チェック」があります。</p>
+    <p>CIA三原則・脅威・リスクといった分野共通の基礎や、OWASP Top 10 の全体像は <a href="../../71_セキュリティ基礎/00_全体像/00-0_目次.html">セキュリティ基礎解説</a>（71）で扱っています。用語に不安があれば先にそちらを読むと、このサイトがぐっと読みやすくなります。</p>
+    <h3>おすすめの読む順</h3>
+    <ol class="steps">
+      <li><strong>00 全体像</strong> — <a href="00-1_Web脆弱性の全体像.html">Web脆弱性の全体像</a> で地図を手に入れます。</li>
+      <li><strong>10 ブラウザのセキュリティモデル</strong> — 同一オリジンポリシーと CORS を先に押さえます。XSS や CSRF が「なぜ危ないのか」を理解する土台になります。</li>
+      <li><strong>20 インジェクション</strong> — XSS と SQLインジェクションを中心に、「データがコードとして解釈される」脆弱性を学びます。</li>
+      <li><strong>30 リクエスト偽造・リダイレクト</strong> — CSRF など、利用者のブラウザを悪用する攻撃です。</li>
+      <li><strong>40 ファイル・データ処理</strong>、<strong>50 API・JavaScript</strong> — 機能を作るときに必要になったものから読めば大丈夫です。</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">作成状況</p>
+      <p>10〜50 の全ページを公開しています。</p>
+    </div>
+
+    <h2><span class="num">2.</span>00 全体像</h2>
+    <p>Web アプリのどこで脆弱性が生まれるかの地図。最初にここを読むと、残りのページの位置づけがわかります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="00-1_Web脆弱性の全体像.html">00-1 Web脆弱性の全体像</a></td><td>入力→処理→出力のどこで脆弱性が生まれるか、徳丸本の章立てと各ページの対応、全アプリ必須の対策と機能ごとの対策</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">3.</span>10 ブラウザのセキュリティモデル</h2>
+    <p>同一オリジンポリシー・CORS・CSP など、ブラウザの側で効く守りの仕組み。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="10-1_受動的攻撃と同一オリジンポリシー.html">10-1 受動的攻撃と同一オリジンポリシー</a></td><td>能動的攻撃と受動的攻撃、サンドボックス、オリジンと同一オリジンポリシー、iframe、クロスドメインアクセス</td></tr>
+        <tr><td><a href="10-2_CORSの仕組み.html">10-2 CORSの仕組み</a></td><td>CORS が必要な理由、シンプルリクエストとプリフライト、各 CORS ヘッダの役割、よくある誤解</td></tr>
+        <tr><td><a href="10-3_CORSエラーの対処法とCookie.html">10-3 CORSエラーの対処法とCookie</a></td><td>エラーメッセージ別の直し方、言語・フレームワーク別の設定、認証情報（Cookie）付きリクエストの注意点</td></tr>
+        <tr><td><a href="10-4_CSP.html">10-4 CSP（コンテンツセキュリティポリシー）</a></td><td>読み込んでよいスクリプトをブラウザに伝える CSP の設定方法・ディレクティブ・nonce とハッシュ・デバッグ</td></tr>
+        <tr><td><a href="10-5_セキュリティヘッダ.html">10-5 セキュリティヘッダ</a></td><td>HSTS・クリックジャッキング対策・nosniff・Referrer-Policy など、付けておくべきヘッダと設定例</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">4.</span>20 インジェクション</h2>
+    <p>入力がプログラムの一部として解釈されてしまう脆弱性。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="20-1_XSSの基本.html">20-1 XSSの基本</a></td><td>XSS の仕組みと被害（Cookie 盗難・ワーム）、反射型と持続型、HTML エスケープと保険的対策</td></tr>
+        <tr><td><a href="20-2_XSS発展編.html">20-2 XSS発展編：属性・JavaScript内のXSS</a></td><td>href/src 属性・イベントハンドラ・script 要素など、出力する場所ごとのエスケープと安全な書き方</td></tr>
+        <tr><td><a href="20-3_SQLインジェクション.html">20-3 SQLインジェクション</a></td><td>情報漏洩・認証回避・改ざんの手口と、プレースホルダによる根本対策、動的な検索条件・ソートの扱い</td></tr>
+        <tr><td><a href="20-4_OSコマンドインジェクション.html">20-4 OSコマンドインジェクション</a></td><td>シェルを経由したコマンド呼び出しの危険と、シェルを使わない呼び出し方</td></tr>
+        <tr><td><a href="20-5_メールヘッダインジェクション.html">20-5 メールヘッダインジェクション</a></td><td>改行の混入で宛先や本文を書き換えられる問題と、宛先を hidden で持つ危険・第三者中継</td></tr>
+        <tr><td><a href="20-6_ファイルインクルード.html">20-6 ファイルインクルード</a></td><td>読み込むファイル名を外部から指定させる危険と、情報漏洩・任意スクリプト実行への対策</td></tr>
+        <tr><td><a href="20-7_プロンプトインジェクション.html">20-7 プロンプトインジェクション</a></td><td>LLM を組み込んだアプリで、指示を乗っ取られる攻撃と対策の優先順位、2026年の事例</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">5.</span>30 リクエスト偽造・リダイレクト</h2>
+    <p>利用者やサーバーに意図しないリクエストを送らせる攻撃。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="30-1_CSRF.html">30-1 CSRF（クロスサイトリクエストフォージェリ）</a></td><td>ログイン中の利用者に意図しない操作をさせる攻撃と、トークン・パスワード再入力・Referer チェックによる対策</td></tr>
+        <tr><td><a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">30-2 リダイレクトとHTTPヘッダインジェクション</a></td><td>任意のサイトへ飛ばせてしまうオープンリダイレクトと、改行の混入でレスポンスヘッダを追加される問題</td></tr>
+        <tr><td><a href="30-3_SSRF.html">30-3 SSRF（サーバーサイドリクエストフォージェリ）</a></td><td>サーバーに内部ネットワークへ通信させる攻撃の実装面の防ぎ方（接続先 IP の検査・DNS リバインディング・リダイレクト）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">6.</span>40 ファイル・データ処理</h2>
+    <p>ファイルや構造化データの扱いで生まれる脆弱性。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">40-1 ファイルアクセスとディレクトリトラバーサル</a></td><td><code>../</code> で公開外のファイルを読まれる問題と、意図しないファイル公開の防ぎ方</td></tr>
+        <tr><td><a href="40-2_ファイルアップロード.html">40-2 ファイルアップロード</a></td><td>アップロード機能への DoS・スクリプト実行・ダウンロード時の XSS と、安全な保存と配信の方法</td></tr>
+        <tr><td><a href="40-3_Evalインジェクション・デシリアライズ・XXE.html">40-3 Evalインジェクション・デシリアライズ・XXE</a></td><td>構造化データを読み込むときに、データがコードやファイル参照として実行されてしまう問題と対策</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">7.</span>50 API・JavaScript</h2>
+    <p>共有資源・キャッシュ・Web API・クライアント側 JavaScript にまつわる問題。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="50-1_競合状態とキャッシュ.html">50-1 競合状態とキャッシュからの情報漏洩</a></td><td>同時アクセスで他人の情報が混ざる競合状態と、キャッシュ経由で個人情報が他人に見える問題の防ぎ方</td></tr>
+        <tr><td><a href="50-2_WebAPIの脆弱性.html">50-2 WebAPIの脆弱性</a></td><td>JSON / JSONP にまつわる XSS・CSRF・JSON ハイジャック、CORS の検証不備、API からの大量取得</td></tr>
+        <tr><td><a href="50-3_JavaScriptの脆弱性.html">50-3 JavaScriptの脆弱性</a></td><td>DOM Based XSS、Web ストレージの使い方、postMessage の検証、JavaScript 版オープンリダイレクト、ライブラリの更新</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">8.</span>関連するフォルダ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="../../71_セキュリティ基礎/00_全体像/00-0_目次.html">71_セキュリティ基礎</a></td><td>CIA三原則・設計原則・脅威モデリング・OWASP Top 10・運用など分野共通の基礎</td></tr>
+        <tr><td><a href="../../73_認証認可/00_全体像/00-0_目次.html">73_認証認可</a></td><td>パスワード・MFA・パスキー、OAuth / OIDC、認可モデル</td></tr>
+        <tr><td>74_セッション管理</td><td>Cookie・セッション・トークン（JWT）と、その攻撃と対策</td></tr>
+      </tbody>
+    </table></div>
+
+    <nav class="pager">
+      <span class="empty"></span>
+      <span class="idx">目次</span>
+      <a class="next" href="00-1_Web脆弱性の全体像.html"><span class="lbl">次のページ →</span>Web脆弱性の全体像</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

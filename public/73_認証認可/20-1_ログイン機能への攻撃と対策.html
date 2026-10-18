@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ログイン機能への攻撃と対策｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 パスワード・MFA・パスキー › ログイン機能への攻撃と対策</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 パスワード・MFA・パスキー</span>
+      <h1>ログイン機能への攻撃と対策</h1>
+      <p class="lead">Webアプリの多くは、「この人は誰か」を確かめてから機能を使わせます。その仕組みが <strong>認証（Authentication）</strong> です。このページでは徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）第21章をもとに、最も一般的な <strong>パスワード認証</strong> を中心として、ログイン機能への攻撃と対策、アカウントロックとそれをすり抜ける攻撃、自動ログイン、ログインフォーム・エラーメッセージ・ログアウトの設計を解説します。</p>
+      <p class="meta">もとにしたノート：20_パスワード・MFA・パスキー/01_認証（徳丸本21章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>テーマ</th><th>概要</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ログイン機能への攻撃</strong></td><td>SQLインジェクション、パスワード試行、ソーシャルエンジニアリング、フィッシング</td></tr>
+          <tr><td><strong>パスワード認証の対策</strong></td><td>予測困難なパスワード、アカウントロック、二段階認証など</td></tr>
+          <tr><td><strong>パスワードの保存方法</strong></td><td>平文保存の危険、暗号化の課題、ハッシュ＋ソルト＋ストレッチング（<a href="20-2_パスワードの安全な保存.html">次のページ</a>で解説）</td></tr>
+          <tr><td><strong>自動ログイン</strong></td><td>セッション延長・トークン・チケットの安全な実装</td></tr>
+          <tr><td><strong>フォーム・エラー・ログアウト</strong></td><td>マスク表示、HTTPS、曖昧なエラー、POST でのログアウト</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <p>徳丸本の第1章（HTTPセッション管理）や第9章（セッション管理の不備）は「ログイン後の状態をどう保つか」が中心でした（74_セッション管理 で扱います）。本章は、<strong>本人確認そのもの</strong> と、<strong>パスワードという秘密情報の扱い</strong> がポイントです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>認証とログイン機能の概要</h2>
+    <p><strong>認証</strong> とは、「今アクセスしている人が、主張どおりの本人である」ことを確かめる処理です。Webアプリでは、多くの場合 <strong>ユーザーID（またはメールアドレス）とパスワード</strong> の組み合わせで行います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証（Authentication）</strong></td><td>「誰か」を確かめること（本人確認）</td></tr>
+        <tr><td><strong>認可（Authorization）</strong></td><td>「何をしてよいか」を決めること（権限）</td></tr>
+        <tr><td><strong>ログイン</strong></td><td>認証に成功し、以降のリクエストで本人として扱われる状態になること</td></tr>
+        <tr><td><strong>ログアウト</strong></td><td>ログイン状態を終わらせること</td></tr>
+      </tbody>
+    </table></div>
+    <p>認証と認可はセットで語られますが、別物です。「ログインできた」＝認証成功、「管理者メニューを開ける」＝認可の結果、というイメージです。違いの詳細は <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> を参照してください。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <ul>
+      <li><strong>認証</strong>：ホテルのフロントで身分証を見せ、「予約した本人です」と確認してもらう</li>
+      <li><strong>認可</strong>：確認後、自分の部屋の鍵だけをもらう（他の部屋には入れない）</li>
+      <li><strong>ログイン状態</strong>：リストバンドを付けている間は、館内サービスを本人として使える</li>
+      <li><strong>ログアウト</strong>：リストバンドを返却し、本人扱いをやめる</li>
+    </ul>
+
+    <h3 id="sec-1-2">1.2 本章で扱う主な機能</h3>
+    <ul>
+      <li>ログイン機能（ID とパスワードの確認）</li>
+      <li>パスワードの安全な保存</li>
+      <li>自動ログイン（「ログイン状態を保持する」）</li>
+      <li>ログインフォームとエラーメッセージ</li>
+      <li>ログアウト機能</li>
+    </ul>
+    <p>これらは一見当たり前の機能ですが、実装を誤ると <strong>なりすまし</strong>（他人のふりをして操作されること）や <strong>パスワード漏洩</strong> につながります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>ログイン機能に対する攻撃</h2>
+    <p>ログイン画面は、攻撃者にとって「他人になりすます入口」です。代表的な攻撃を整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃</th><th>概要</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SQLインジェクションによるバイパス</strong></td><td>ログイン判定の SQL を改ざんし、パスワードなしで通る</td></tr>
+        <tr><td><strong>SQLインジェクションによるパスワード入手</strong></td><td>DB からパスワード（やハッシュ）を抜き出す</td></tr>
+        <tr><td><strong>ログイン画面でのパスワード試行</strong></td><td>何度もログインを試し、パスワードを当てる</td></tr>
+        <tr><td><strong>ソーシャルエンジニアリング</strong></td><td>人をだましてパスワードを聞き出す</td></tr>
+        <tr><td><strong>フィッシング</strong></td><td>偽サイトに誘導し、本物だと思わせて入力させる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-1">2.1 SQLインジェクション攻撃によるログイン機能のバイパス</h3>
+    <p>ログイン処理が、入力をそのまま SQL に埋め込んでいると、<strong>パスワードを知らなくてもログインできてしまう</strong> ことがあります。</p>
+    <p class="code-label bad">✕ 危険なイメージ</p>
+<pre><code>入力: ID = admin' --
+SQL: SELECT * FROM users WHERE id='admin' --' AND password='...'
+→ パスワード条件がコメントアウトされ、admin で通る</code></pre>
+    <p><code>--</code> は SQL で「ここから後ろはコメント（無視される）」という記号です。「パスワードが正しいか」を見る前に、SQL の意味が壊れてしまいます。詳細は <a href="../../72_Web脆弱性対策/00_全体像/20-3_SQLインジェクション.html#sec-4-1">SQLインジェクションによる認証回避</a> を参照してください。</p>
+
+    <h3 id="sec-2-2">2.2 SQLインジェクション攻撃によるパスワードの入手</h3>
+    <p>バイパスだけでなく、SQLインジェクションで <strong>ユーザーテーブル全体を読み出す</strong> 攻撃もあります（<a href="../../72_Web脆弱性対策/00_全体像/20-3_SQLインジェクション.html#sec-3">情報を盗む攻撃</a>）。平文や弱いハッシュで保存されていると、そのまま悪用されます。</p>
+
+    <h3 id="sec-2-3">2.3 ログイン画面に対するパスワード試行</h3>
+    <p>攻撃者が、ログイン画面から何度もパスワードを試す方法です。よくあるパスワード（<code>password</code>、<code>123456</code> など）や、辞書に載っている単語を順に試します。後述の辞書攻撃・パスワードスプレーなどがここに含まれます。</p>
+
+    <h3 id="sec-2-4">2.4 ソーシャルエンジニアリングによるパスワード入手</h3>
+    <p>技術的な脆弱性ではなく、<strong>人をだます</strong> 手法です。「サポートです。パスワードを教えてください」といった電話やメールで、本人から聞き出すイメージです。代表的な手口と対策は <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-9">ソーシャルエンジニアリング：「人間の隙」を突く攻撃</a> を参照してください。</p>
+
+    <h3 id="sec-2-5">2.5 フィッシングによるパスワード入手</h3>
+    <p>本物そっくりの偽ログイン画面を用意し、メールや SNS のリンクから誘導します。利用者が本物だと思って入力すると、攻撃者にパスワードが渡ります。</p>
+    <ol class="steps">
+      <li>攻撃者が偽のログインページを用意する</li>
+      <li>「アカウント確認が必要です」などのメールでリンクを送る</li>
+      <li>利用者が偽サイトで ID・パスワードを入力する</li>
+      <li>攻撃者がその情報で本物のサイトにログインする</li>
+    </ol>
+    <p>フィッシング全般については <a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#human">人を狙う攻撃 — フィッシングとソーシャルエンジニアリング</a> も参照してください。</p>
+
+    <h3 id="sec-2-6">2.6 なぜ危険か</h3>
+    <p>ログインを突破されると、攻撃者は <strong>その利用者本人として</strong> 操作できます。</p>
+    <ul>
+      <li>個人情報の閲覧・変更</li>
+      <li>金銭やポイントの不正利用</li>
+      <li>投稿・削除などの操作</li>
+      <li>管理者アカウントなら、サービス全体の乗っ取り</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>ログイン機能の基本対策</h2>
+    <p>攻撃の入口は多様ですが、アプリ側でまず押さえるべき対策は次のとおりです。</p>
+
+    <h3 id="sec-3-1">3.1 SQLインジェクションなどセキュリティバグをなくす</h3>
+    <p>ログイン処理そのものに脆弱性があると、パスワードの強さとは無関係に突破されます。特に次は、ログイン周辺でよく問題になります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>脆弱性</th><th>ログインとの関係</th></tr></thead>
+      <tbody>
+        <tr><td><strong><a href="../../72_Web脆弱性対策/00_全体像/20-3_SQLインジェクション.html">SQLインジェクション</a></strong></td><td>認証バイパスやパスワード漏洩</td></tr>
+        <tr><td><strong>セッションIDの固定化</strong></td><td>ログイン後に攻撃者の用意したセッションを使わされる</td></tr>
+        <tr><td><strong><a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html#sec-6">クッキーのSecure属性不備</a></strong></td><td>HTTPS でない通信でセッションIDが盗まれる</td></tr>
+        <tr><td><strong><a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">オープンリダイレクト</a></strong></td><td>ログイン後の遷移先を偽サイトにし、フィッシングに悪用</td></tr>
+        <tr><td><strong><a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-6">HTTPヘッダ・インジェクション</a></strong></td><td>応答ヘッダの改ざん、意図しない Cookie 設定など</td></tr>
+      </tbody>
+    </table></div>
+    <p>「パスワードを強くする」以前に、<strong>認証まわりの実装バグをなくす</strong> ことが前提です。セッション固定化は徳丸本第9章（74_セッション管理 で扱います）、オープンリダイレクト（第10章）と Cookie（第11章）は上の表のリンク先を参照してください。</p>
+
+    <h3 id="sec-3-2">3.2 パスワードを予測困難なものにする</h3>
+    <p>パスワード試行や漏洩後の悪用を難しくするため、<strong>推測されにくいパスワード</strong> を使わせます。</p>
+
+    <h4>パスワードの文字種と桁数の要件</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要件の例</th><th>意図</th></tr></thead>
+      <tbody>
+        <tr><td><strong>十分な桁数</strong>（例：8 文字以上、できればそれ以上）</td><td>総当たりの組み合わせ数を増やす</td></tr>
+        <tr><td><strong>文字種の混在</strong>（英大文字・小文字・数字・記号など）</td><td>単純な単語だけのパスワードを減らす</td></tr>
+      </tbody>
+    </table></div>
+    <p>ただし、「記号を必ず 1 つ」などのルールだけでは、<code>Password1!</code> のような <strong>パターン化された弱いパスワード</strong> は防げません。桁数を長くする方が、効果が高いことが多いです。最新の推奨については <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-9">パスワードポリシーの最新推奨</a> も参照してください。</p>
+
+    <h4>積極的なパスワードポリシーのチェック</h4>
+    <p>登録・変更時に、次のようなチェックを行う考え方です。</p>
+    <ul>
+      <li>短すぎるパスワードを拒否する</li>
+      <li>よくあるパスワード（<code>password</code>、<code>123456</code> など）を拒否する</li>
+      <li>漏洩パスワードリストに載っているものを拒否する</li>
+      <li>ユーザーIDと同じ・似すぎるものを拒否する</li>
+    </ul>
+    <p>「最低 8 文字で英数字混在」だけだと不十分なことがあるため、<strong>既知の弱いパスワードを弾く</strong> 積極的なチェックが有効です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>基本的なアカウントロック</h2>
+    <p>パスワードが正しくても、<strong>何度も試せる</strong> と突破される可能性があります。試行を制限する仕組みが必要です。その基本が <strong>アカウントロック</strong> で、同じアカウントに対して、短時間にログイン失敗が続いたら、一時的にログインを拒否する方式です。</p>
+    <ol class="steps">
+      <li>ユーザーA のパスワードを連続で間違える</li>
+      <li>失敗が N 回に達する</li>
+      <li>一定時間、ユーザーA へのログインをロックする</li>
+      <li>時間経過後、または管理者が解除して再開</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メリット</th><th>注意点</th></tr></thead>
+      <tbody>
+        <tr><td>特定アカウントへの総当たりを止めやすい</td><td>攻撃者がわざと失敗させ、正規ユーザーをロックアウトできる（DoS：サービスを使えなくする妨害）</td></tr>
+        <tr><td>実装が比較的わかりやすい</td><td>ロック条件・解除方法の設計が必要</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>パスワード認証に対する攻撃のバリエーション</h2>
+    <p>アカウントロックだけでは防ぎきれない攻撃パターンがあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃名</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>辞書攻撃</strong></td><td>よく使われるパスワードのリストを順に試す</td></tr>
+        <tr><td><strong>ジョーアカウント探索</strong></td><td><code>admin</code> / <code>admin</code> のように、ID とパスワードが同じ・単純なアカウントを探す</td></tr>
+        <tr><td><strong>リバースブルートフォース攻撃</strong></td><td>1 つのパスワードを、多数の ID に対して試す</td></tr>
+        <tr><td><strong>パスワードスプレー攻撃</strong></td><td>よくある少数のパスワードを、多数のアカウントに少しずつ試す（ロックを避ける）</td></tr>
+        <tr><td><strong>パスワードリスト攻撃</strong></td><td>別サイトから漏洩した「ID とパスワードの組」を、そのまま試す（credential stuffing）</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="通常のブルートフォースは1アカウントに多数のパスワード、リバースブルートフォースは1つのパスワードを多数のアカウントに、パスワードスプレーは少数のよくあるパスワードを多数のアカウントにゆっくり、パスワードリスト攻撃は漏洩したIDとパスワードの組をそのまま試すことを比べた図">
+      <defs>
+        <marker id="arw2011a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <!-- 1: ブルートフォース -->
+      <text x="90" y="20" text-anchor="middle" class="d-text-bold">ブルートフォース</text>
+      <text x="90" y="38" text-anchor="middle" class="d-text-sub">（通常）</text>
+      <rect x="15" y="62" width="44" height="30" rx="6" class="d-box-bad"/>
+      <text x="37" y="82" text-anchor="middle" class="d-text-sub">pw1</text>
+      <rect x="68" y="62" width="44" height="30" rx="6" class="d-box-bad"/>
+      <text x="90" y="82" text-anchor="middle" class="d-text-sub">pw2</text>
+      <rect x="121" y="62" width="44" height="30" rx="6" class="d-box-bad"/>
+      <text x="143" y="82" text-anchor="middle" class="d-text-sub">pw3</text>
+      <path d="M37,92 L74,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <path d="M90,92 L90,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <path d="M143,92 L106,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <rect x="50" y="176" width="80" height="30" rx="6" class="d-box-accent"/>
+      <text x="90" y="196" text-anchor="middle" class="d-text-sub">A</text>
+      <text x="90" y="232" text-anchor="middle" class="d-text-sub">1 アカウントに</text>
+      <text x="90" y="250" text-anchor="middle" class="d-text-sub">多数のパスワード</text>
+
+      <!-- 2: リバースブルートフォース -->
+      <text x="270" y="20" text-anchor="middle" class="d-text-bold">リバース</text>
+      <text x="270" y="38" text-anchor="middle" class="d-text-bold">ブルートフォース</text>
+      <rect x="230" y="62" width="80" height="30" rx="6" class="d-box-bad"/>
+      <text x="270" y="82" text-anchor="middle" class="d-text-sub">123456</text>
+      <path d="M270,92 L219,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <path d="M270,92 L270,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <path d="M270,92 L321,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <rect x="195" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="217" y="196" text-anchor="middle" class="d-text-sub">A</text>
+      <rect x="248" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="270" y="196" text-anchor="middle" class="d-text-sub">B</text>
+      <rect x="301" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="323" y="196" text-anchor="middle" class="d-text-sub">C</text>
+      <text x="270" y="232" text-anchor="middle" class="d-text-sub">1 つのパスワードを</text>
+      <text x="270" y="250" text-anchor="middle" class="d-text-sub">多数のアカウントに</text>
+
+      <!-- 3: パスワードスプレー -->
+      <text x="450" y="20" text-anchor="middle" class="d-text-bold">パスワード</text>
+      <text x="450" y="38" text-anchor="middle" class="d-text-bold">スプレー</text>
+      <rect x="377" y="62" width="70" height="30" rx="6" class="d-box-bad"/>
+      <text x="412" y="82" text-anchor="middle" class="d-text-sub">Welcome1</text>
+      <rect x="453" y="62" width="70" height="30" rx="6" class="d-box-bad"/>
+      <text x="488" y="82" text-anchor="middle" class="d-text-sub">Password1</text>
+      <path d="M412,92 L399,174" class="d-line-dash"/>
+      <path d="M412,92 L450,174" class="d-line-dash"/>
+      <path d="M412,92 L501,174" class="d-line-dash"/>
+      <path d="M488,92 L399,174" class="d-line-dash"/>
+      <path d="M488,92 L450,174" class="d-line-dash"/>
+      <path d="M488,92 L501,174" class="d-line-dash"/>
+      <rect x="375" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="397" y="196" text-anchor="middle" class="d-text-sub">A</text>
+      <rect x="428" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="450" y="196" text-anchor="middle" class="d-text-sub">B</text>
+      <rect x="481" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="503" y="196" text-anchor="middle" class="d-text-sub">C</text>
+      <text x="450" y="232" text-anchor="middle" class="d-text-sub">よくあるパスワードを</text>
+      <text x="450" y="250" text-anchor="middle" class="d-text-sub">少しずつ・ゆっくり</text>
+
+      <!-- 4: パスワードリスト攻撃 -->
+      <text x="630" y="20" text-anchor="middle" class="d-text-bold">パスワード</text>
+      <text x="630" y="38" text-anchor="middle" class="d-text-bold">リスト攻撃</text>
+      <rect x="555" y="62" width="44" height="30" rx="6" class="d-box-warn"/>
+      <text x="577" y="82" text-anchor="middle" class="d-text-sub">A の組</text>
+      <rect x="608" y="62" width="44" height="30" rx="6" class="d-box-warn"/>
+      <text x="630" y="82" text-anchor="middle" class="d-text-sub">B の組</text>
+      <rect x="661" y="62" width="44" height="30" rx="6" class="d-box-warn"/>
+      <text x="683" y="82" text-anchor="middle" class="d-text-sub">C の組</text>
+      <path d="M577,92 L577,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <path d="M630,92 L630,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <path d="M683,92 L683,174" class="d-line-bad" marker-end="url(#arw2011a)"/>
+      <rect x="555" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="577" y="196" text-anchor="middle" class="d-text-sub">A</text>
+      <rect x="608" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="630" y="196" text-anchor="middle" class="d-text-sub">B</text>
+      <rect x="661" y="176" width="44" height="30" rx="6" class="d-box-accent"/>
+      <text x="683" y="196" text-anchor="middle" class="d-text-sub">C</text>
+      <text x="630" y="232" text-anchor="middle" class="d-text-sub">漏洩した ID・PW の組を</text>
+      <text x="630" y="250" text-anchor="middle" class="d-text-sub">そのまま試す</text>
+    </svg>
+    <figcaption>上段が試すパスワード、下段が狙われるアカウント。通常のブルートフォース以外は、1 アカウントあたりの失敗回数が少なく、アカウント単位のロックにかかりにくい</figcaption>
+    </figure>
+
+    <h3 id="sec-5-1">5.1 辞書攻撃</h3>
+    <p><code>password</code>、<code>qwerty</code>、<code>iloveyou</code> など、人間が選びがちなパスワードをまとめた辞書を使い、総当たり（ブルートフォース：あらゆる組み合わせを順に試す方法）より効率よく当てます。</p>
+
+    <h3 id="sec-5-2">5.2 ジョーアカウント探索</h3>
+    <p>ID とパスワードが同じ、または <code>test</code> / <code>test</code> のような雑なアカウントを探す攻撃です。開発用・検証用アカウントが本番に残っていると狙われます。</p>
+
+    <h3 id="sec-5-3">5.3 リバースブルートフォース攻撃</h3>
+    <p>通常のブルートフォースは「1 アカウントに対して多数のパスワード」です。リバースは逆で、<strong>1 つのパスワードを多数のアカウントに試す</strong> 方式です。アカウントロックが「アカウント単位」だと、ロックされにくいことがあります。</p>
+
+    <h3 id="sec-5-4">5.4 パスワードスプレー攻撃</h3>
+    <p><code>Welcome1</code> や <code>Password1</code> など、よくあるパスワードを少数用意し、多くのアカウントに <strong>ゆっくり</strong> 試します。失敗回数が分散するため、単純なアカウントロックをすり抜けやすいです。</p>
+
+    <h3 id="sec-5-5">5.5 パスワードリスト攻撃</h3>
+    <p>別サービスから漏洩した「メールアドレスとパスワード」のリストを使い、同じ組み合わせでログインを試みます。利用者が <strong>パスワードを使い回している</strong> と成功します。近年特に多い攻撃です。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>パスワードを狙った攻撃への対策</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><strong>二段階認証（多要素認証）</strong></td><td>パスワードが漏れても、もう一つの要素がないとログインできない</td></tr>
+        <tr><td><strong>積極的なパスワードチェック</strong></td><td>弱い・漏洩済みパスワードの登録を防ぐ</td></tr>
+        <tr><td><strong>ログイン失敗率の監視</strong></td><td>スプレー攻撃やリスト攻撃の兆候を検知し、追加対策やアラートにつなげる</td></tr>
+        <tr><td><strong>アカウントロック（適切に設計）</strong></td><td>単一アカウントへの高速総当たりを抑止</td></tr>
+        <tr><td><strong>パスワードの使い回し防止の啓発</strong></td><td>リスト攻撃の成功率を下げる</td></tr>
+      </tbody>
+    </table></div>
+    <p>対策は 1 つに頼らず、次のように重ねます。</p>
+    <ol class="steps">
+      <li>実装バグ（SQLi など）をなくす</li>
+      <li>強いパスワードを促し、弱いものを拒否する</li>
+      <li>試行を制限・監視する</li>
+      <li>二段階認証で「パスワードだけ」に依存しない</li>
+    </ol>
+    <p>二段階認証は、パスワードに加えて <strong>スマホアプリのワンタイムコード</strong> や <strong>SMS</strong>、<strong>ハードウェアトークン</strong> などを求める方式です。「知っているもの（パスワード）」に「持っているもの」を足すイメージです。各方式の違いは <a href="20-3_MFAの方式比較.html">MFAの方式比較</a> で解説します。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>パスワードの保存方法</h2>
+    <p>サーバーは、ログイン時にパスワードを照合するため、何らかの形でパスワード情報を保持します。<strong>平文のまま保存してはいけません。</strong> DB が漏洩すると、パスワードリスト攻撃への悪用や、本人の権限での投稿・更新・削除につながるからです。暗号化（復号できてしまう）ではなく、パスワード専用のハッシュ（bcrypt・Argon2 など）にソルトとストレッチングを組み合わせて保存するのが定石です。詳しくは次のページ <a href="20-2_パスワードの安全な保存.html">パスワードの安全な保存</a> で解説します。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>自動ログイン</h2>
+    <p>「ログイン状態を保持する」にチェックを入れると、ブラウザを閉じてもログインしたままになる機能です。便利な一方、<strong>端末を他人に使われたときのリスク</strong> や、<strong>トークン漏洩時のなりすまし</strong> に注意が必要です。</p>
+
+    <h3 id="sec-8-1">8.1 自動ログインの安全な実装方法</h3>
+    <p>代表的な方式は次の 3 つです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>概要</th></tr></thead>
+      <tbody>
+        <tr><td><strong>セッションの寿命を伸ばす</strong></td><td>通常より長いセッションタイムアウトにする</td></tr>
+        <tr><td><strong>トークンを使う</strong></td><td>ログイン状態を示すトークンを Cookie などに持ち、サーバー側で検証する</td></tr>
+        <tr><td><strong>チケットを使う</strong></td><td>認証チケットを発行し、それで自動ログインする</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-2">8.2 セッションの寿命を伸ばす方式</h3>
+    <p>通常のセッションはブラウザ終了や短時間で切れますが、自動ログインでは寿命を延ばします。PHP の例では、<code>session_set_cookie_params</code> でセッションID クッキーの <strong>Expires</strong>（Cookie の有効期限）を設定します。</p>
+    <p class="code-label">実装のポイント（イメージ）</p>
+    <ul>
+      <li>セッションタイムアウトを 1 週間などに伸ばす</li>
+      <li>セッションID クッキーの Expires 属性を 1 週間後に設定する</li>
+      <li>タイムアウト時間はセッション変数 <code>Timeout</code> に保持する</li>
+      <li>タイムアウト時刻はセッション変数 <code>Expires</code> に保持する</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Timeout</strong></td><td>「何秒（何日）で切るか」という長さ</td></tr>
+        <tr><td><strong>Expires</strong></td><td>「いつ切れるか」という時刻</td></tr>
+      </tbody>
+    </table></div>
+    <p>単純でわかりやすい一方、<strong>セッションID が長い間有効</strong> になるため、盗まれたときの被害期間が長くなります。また、サーバー側のセッション保存が増えることもあります。</p>
+
+    <h3 id="sec-8-3">8.3 トークンによる自動ログイン</h3>
+    <p>セッションとは別に、<strong>自動ログイン用トークン</strong>（ログイン済みであることを示すランダムな文字列）を発行する方式です。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 320" role="img" aria-label="ログイン時、ブラウザがIDとパスワードでログインし、サーバーがランダムなトークンを生成してハッシュをDBに保存し、トークンをCookieにセットする。次回アクセス時、ブラウザがトークンCookieを送り、サーバーがDBのハッシュと照合し、一致すれば本人としてセッションを開始する流れ">
+      <defs>
+        <marker id="arw2012a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="75" y="16" width="150" height="40" rx="8" class="d-box-accent"/>
+      <text x="150" y="41" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <rect x="325" y="16" width="150" height="40" rx="8" class="d-box"/>
+      <text x="400" y="41" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <rect x="555" y="16" width="150" height="40" rx="8" class="d-box-good"/>
+      <text x="630" y="41" text-anchor="middle" class="d-text-bold">DB</text>
+
+      <path d="M150,56 L150,308" class="d-line-dash"/>
+      <path d="M400,56 L400,308" class="d-line-dash"/>
+      <path d="M630,56 L630,308" class="d-line-dash"/>
+
+      <text x="10" y="80" class="d-text-bold">ログイン時</text>
+      <text x="275" y="92" text-anchor="middle" class="d-text-sub">① ID・パスワードでログイン</text>
+      <path d="M150,100 L398,100" class="d-line" marker-end="url(#arw2012a)"/>
+      <text x="515" y="127" text-anchor="middle" class="d-text-sub">② トークンのハッシュを保存</text>
+      <path d="M400,135 L628,135" class="d-line" marker-end="url(#arw2012a)"/>
+      <text x="275" y="162" text-anchor="middle" class="d-text-sub">③ トークンを Cookie にセット</text>
+      <path d="M400,170 L152,170" class="d-line" marker-end="url(#arw2012a)"/>
+
+      <text x="10" y="205" class="d-text-bold">次回アクセス</text>
+      <text x="275" y="222" text-anchor="middle" class="d-text-sub">④ トークン Cookie を送る</text>
+      <path d="M150,230 L398,230" class="d-line" marker-end="url(#arw2012a)"/>
+      <text x="515" y="257" text-anchor="middle" class="d-text-sub">⑤ DB のハッシュと照合</text>
+      <path d="M400,265 L628,265" class="d-line" marker-end="url(#arw2012a)"/>
+      <text x="275" y="292" text-anchor="middle" class="d-text-sub">⑥ 一致すれば本人としてセッション開始</text>
+      <path d="M400,300 L152,300" class="d-line" marker-end="url(#arw2012a)"/>
+    </svg>
+    <figcaption>トークン方式の自動ログイン。セッションが切れていても、トークン Cookie をサーバー側で照合して本人として扱う</figcaption>
+    </figure>
+
+    <h4>ログイン時</h4>
+    <ol class="steps">
+      <li>通常どおり認証する</li>
+      <li>十分な長さのランダムなトークンを生成する</li>
+      <li>トークン（のハッシュ）をサーバー側 DB に保存する</li>
+      <li>トークンを Cookie などにセットする（Secure、HttpOnly など適切な属性）</li>
+    </ol>
+    <h4>次回アクセス時</h4>
+    <ol class="steps">
+      <li>セッションが切れていても、トークン Cookie があれば読む</li>
+      <li>DB 上のトークンと照合する</li>
+      <li>正しければ、その利用者としてセッションを開始する（自動ログイン）</li>
+    </ol>
+    <h4>ログアウト時</h4>
+    <ol class="steps">
+      <li>通常のセッションを破棄する</li>
+      <li>自動ログイン用トークンも DB から削除（または無効化）する</li>
+      <li>クライアント側のトークン Cookie も削除する</li>
+    </ol>
+    <p>トークンは <strong>推測困難なランダム値</strong> にし、可能なら DB にはハッシュだけを保存します。漏洩時に備え、トークンの定期的な再発行や、端末ごとの管理も有効です。Cookie の属性（Secure・HttpOnly）は <a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html#sec-6">Cookie はどう付いていくのか</a> を参照してください。</p>
+
+    <h3 id="sec-8-4">8.4 認証チケットによる自動ログイン</h3>
+    <p>認証チケットは、トークンと同様に「この人は以前ログイン済み」と示す証明書のようなデータです。署名付きのデータをクライアントに持たせる方式など、実装には幅があります。本書の文脈では、<strong>サーバー側で検証可能なチケット／トークンを用いる自動ログイン</strong> として理解するとよいです。</p>
+    <div class="callout warn">
+      <p>クライアントだけで完結する「改ざん可能な覚え書き」だけに頼ると危険です。<strong>サーバー側で正当性を検証できる</strong> ことが重要です。</p>
+    </div>
+
+    <h3 id="sec-8-5">8.5 トークン方式のメリット</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メリット</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>自動ログインを選ばない利用者に影響しない</strong></td><td>通常セッションの寿命を全体で延ばさなくてよい</td></tr>
+        <tr><td><strong>複数端末から一斉ログアウトできる</strong></td><td>サーバー側のトークンをまとめて無効化すればよい</td></tr>
+        <tr><td><strong>管理者が特定利用者のログインをキャンセルできる</strong></td><td>DB 上のトークンを消す・無効にする</td></tr>
+        <tr><td><strong>クライアント側に秘密情報が渡らない設計にできる</strong></td><td>パスワード自体は送らず、トークンだけを持つ。解析されてもパスワードは出ない</td></tr>
+      </tbody>
+    </table></div>
+    <p>セッション寿命を全体で延ばす方式より、<strong>制御しやすく、影響範囲を限定しやすい</strong> のがトークン方式の利点です。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>ログインフォーム</h2>
+    <p>ログイン画面の作り方にも、基本的な注意点があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要件</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>パスワード入力欄はマスク表示</strong></td><td>肩越しに読まれる（ショルダーハッキング）を防ぐ。HTML では <code>type="password"</code></td></tr>
+        <tr><td><strong>HTTPS を利用</strong></td><td>通信経路での盗聴・改ざんを防ぐ。パスワードやセッションID の平文送信を避ける</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label good">◯ 良い例のイメージ（ページ全体を HTTPS で提供する）</p>
+<pre><code>&lt;form method="post" action="/login"&gt;
+  &lt;input type="text" name="id"&gt;
+  &lt;input type="password" name="password"&gt;
+  &lt;button type="submit"&gt;ログイン&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+    <p>マスク表示は「画面上で見えない」だけなので、端末にキーロガー（キー入力を盗み記録するソフト）がある場合などは防げません。あくまで基本的な保護です。HTTPS は、ログインページだけでなく、<strong>ログイン後の全ページ</strong> でも使うのが安全です（セッションID の保護）。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>エラーメッセージの要件</h2>
+    <p>ログイン失敗時のメッセージは、<strong>攻撃者にヒントを与えすぎない</strong> ことが重要です。</p>
+
+    <h3 id="sec-10-1">10.1 ID とパスワードのどちらが間違いか分かるとまずい理由</h3>
+    <p class="code-label bad">✕ 悪い例</p>
+<pre><code>「ユーザーIDが存在しません」
+「パスワードが違います」</code></pre>
+    <p class="code-label good">◯ 良い例</p>
+<pre><code>「ユーザーIDまたはパスワードが正しくありません」</code></pre>
+    <p>悪い例だと、攻撃者は次のように情報を得られます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分かること</th><th>悪用</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ID が存在するかどうか</strong></td><td>登録済みメールアドレスの洗い出し、ジョーアカウント探索の効率化</td></tr>
+        <tr><td><strong>パスワードだけが違うこと</strong></td><td>その ID に対するパスワード試行に集中できる</td></tr>
+      </tbody>
+    </table></div>
+    <p>エラーメッセージは、正規利用者には少し不便でも、<strong>ID とパスワードのどちらが原因か分からない</strong> 表現に統一します。パスワード再設定の有無などで ID の存在が分かる場合もあるため、そちらの設計もあわせて検討します。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>ログアウト機能</h2>
+    <p>ログアウトは、「もう本人として扱わない」ための処理です。実装が中途半端だと、<strong>なりすましが続く</strong> ことがあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要件</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>POST メソッドでリクエストする</strong></td><td>ログアウトはサーバー状態を変える副作用のある操作だから。<code>&lt;a href="/logout"&gt;</code> のような GET は、画像埋め込みや prefetch（ブラウザによるリンク先の先読み）で意図せず実行されうる</td></tr>
+        <tr><td><strong>セッションを破棄する</strong></td><td>サーバー側のログイン状態を消す。Cookie を消すだけでは不十分な場合がある</td></tr>
+        <tr><td><strong>必要な場合は CSRF 対策の対象とする</strong></td><td>罠ページからログアウトさせ、利用者を妨害する（または再ログインを誘う）攻撃を防ぐ</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label">ログアウト処理のイメージ</p>
+    <ol class="steps">
+      <li>POST でログアウトを受け付ける（CSRF トークンを検証）</li>
+      <li>サーバー側セッションを破棄する</li>
+      <li>自動ログイン用トークンがあれば無効化する</li>
+      <li>クライアント側のセッション Cookie・トークン Cookie を削除する</li>
+      <li>ログイン画面などへ誘導する</li>
+    </ol>
+    <p>「画面上はログイン前に戻ったように見えるが、セッションID はまだ有効」という状態は危険です。<strong>サーバー側でセッションを確実に破棄する</strong> ことが本質です。CSRF の詳細は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を参照してください。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本質</th><th>対策の要点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ログインへの攻撃</strong></td><td>なりすましの入口になる</td><td>SQLi 等のバグ除去、試行制限、二段階認証</td></tr>
+        <tr><td><strong>パスワードポリシー</strong></td><td>弱いパスワードは当てられる</td><td>十分な長さ、弱い・漏洩済みパスワードの拒否</td></tr>
+        <tr><td><strong>パスワード保存</strong></td><td>DB 漏洩時に悪用される</td><td>パスワード用ハッシュ＋ソルト＋ストレッチング（暗号化は非推奨）</td></tr>
+        <tr><td><strong>自動ログイン</strong></td><td>長期のなりすましリスク</td><td>トークン方式が制御しやすい。ログアウトで無効化</td></tr>
+        <tr><td><strong>フォーム・エラー</strong></td><td>漏洩と情報収集を助ける</td><td>マスク、HTTPS、曖昧なエラーメッセージ</td></tr>
+        <tr><td><strong>ログアウト</strong></td><td>ログイン状態の終了</td><td>POST、セッション破棄、必要なら CSRF 対策</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">認証安全の基本</p>
+      <ol>
+        <li>ログイン処理の脆弱性（SQLi、セッション固定化など）をなくす</li>
+        <li>予測困難なパスワードを促し、弱いものを拒否する</li>
+        <li>試行の制限・監視と、可能なら二段階認証を入れる</li>
+        <li>パスワードは専用ハッシュ（ソルト＋コスト）で保存し、平文や単純な暗号化は使わない</li>
+        <li>自動ログインはトークン等で制御し、ログアウトで確実に無効化する</li>
+        <li>フォームは HTTPS とマスク表示、エラーは ID／パスワードを区別しない</li>
+        <li>ログアウトは POST で行い、サーバー側セッションを破棄する</li>
+      </ol>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>理解度チェック</h2>
+    <details><summary>Q1. ID 欄に <code>admin' --</code> と入力するとパスワードなしでログインできてしまうのはなぜですか？</summary><div class="body"><p>入力がそのまま SQL に埋め込まれ、<code>--</code> 以降がコメントとして無視されるため、<code>AND password='...'</code> の条件が消えてしまうからです。根本対策はプレースホルダで SQL を組み立てることです。</p></div></details>
+    <details><summary>Q2. アカウントロックの注意点を 2 つ挙げてください。</summary><div class="body"><p>① 攻撃者がわざと失敗させて正規ユーザーをロックアウトできる（DoS）こと、② ロック条件・解除方法の設計が必要なことです。また、アカウント単位のロックはリバースブルートフォースやパスワードスプレーをすり抜けられます。</p></div></details>
+    <details><summary>Q3. パスワードスプレー攻撃が単純なアカウントロックをすり抜けやすいのはなぜですか？</summary><div class="body"><p>よくある少数のパスワードを多数のアカウントにゆっくり試すため、1 アカウントあたりの失敗回数が少なく、ロックの閾値に達しにくいからです。ログイン失敗率の監視や二段階認証で補います。</p></div></details>
+    <details><summary>Q4. パスワードリスト攻撃が成功するのはどんなときですか？ 有効な対策は？</summary><div class="body"><p>利用者が別サービスと同じ ID・パスワードを <strong>使い回している</strong> ときです。二段階認証、漏洩済みパスワードの登録拒否、失敗率の監視、使い回し防止の啓発が有効です。</p></div></details>
+    <details><summary>Q5. 自動ログインで、セッション寿命を延ばす方式よりトークン方式が優れている点は？</summary><div class="body"><p>自動ログインを選ばない利用者に影響しない、複数端末から一斉ログアウトできる、管理者が特定利用者のログインをキャンセルできる、クライアント側にパスワードなどの秘密情報が渡らない、といった点です。制御しやすく影響範囲を限定できます。</p></div></details>
+    <details><summary>Q6. ログイン失敗時に「パスワードが違います」と表示するのはなぜよくないのですか？</summary><div class="body"><p>その ID が存在することが攻撃者に分かり、登録済みアドレスの洗い出しや、その ID へのパスワード試行の集中に使われるからです。「ユーザーIDまたはパスワードが正しくありません」に統一します。</p></div></details>
+    <details><summary>Q7. ログアウトを <code>&lt;a href="/logout"&gt;</code>（GET）で実装すると何が問題ですか？</summary><div class="body"><p>ログアウトはサーバーの状態を変える操作なので、GET だと画像埋め込みや prefetch で意図せず実行されうるからです。POST で受け付け、必要に応じて CSRF 対策をし、サーバー側のセッションと自動ログイン用トークンを確実に破棄します。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：73_認証認可/20_パスワード・MFA・パスキー/01_認証（徳丸本21章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』第21章（SBクリエイティブ）</li>
+      <li>関連ページ：<a href="20-2_パスワードの安全な保存.html">パスワードの安全な保存</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/20-3_SQLインジェクション.html">SQLインジェクション</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトとHTTPヘッダインジェクション</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">アクセス制御と認証の失敗</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="10-4_社内システム向け認証方式の選び方.html"><span class="lbl">← 前のページ</span>社内システム向け認証方式の選び方</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-2_パスワードの安全な保存.html"><span class="lbl">次のページ →</span>パスワードの安全な保存</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>なぜ早く意識するか・アーキテクトの役割と思考｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">10 基礎 › 11 アーキテクチャ思考 › なぜ早く意識するか・アーキテクトの役割と思考</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎 ／ 11 アーキテクチャ思考</span>
+      <h1>なぜ早く意識するか・アーキテクトの役割と思考</h1>
+      <p class="lead">「動くコードを書く方が先では？」という疑問に対して、アーキテクチャを早く意識すると得をする理由を、変更コスト・チーム・長期保守の3つの観点から説明します。後半では視点を「人」に移し、アーキテクトに期待される8つのこと、技術の幅と深さ、トレードオフを軸にしたアーキテクチャ思考、陥りがちなアンチパターンを『ソフトウェアアーキテクチャの基礎』に沿って整理します。</p>
+      <p class="meta">もとにしたノート：03_なぜ今ここで扱うか_変更コストとチームと長期保守／04_アーキテクトの役割と思考（＋ 10_基礎/00_解説_アーキテクチャの基礎）</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>「アーキテクチャは大事」と頭では分かっても、<strong>なぜ今わざわざ立ち止まって扱うのか</strong>は、学び始めの段階では実感しにくいものです。また、アーキテクチャを決める「アーキテクト」が何をする人なのかも、肩書きのイメージだけでは分かりにくいでしょう。このページは前半と後半の2部構成です。</p>
+    <div class="grid c2">
+      <div class="card accent"><h4>前半：なぜ早く意識するのか</h4>
+        <ul>
+          <li>早く意識するほど<strong>得をする</strong>理由</li>
+          <li><strong>変更コスト・チーム・長期保守</strong>の3つの観点</li>
+          <li>意識しないと起きる典型的なトラブル</li>
+          <li>「動くものを早く作る」との折り合い方</li>
+          <li><strong>今日から</strong>できる小さな一歩</li>
+        </ul></div>
+      <div class="card purple"><h4>後半：アーキテクトの役割と思考</h4>
+        <ul>
+          <li>アーキテクトに期待される<strong>8つのこと</strong></li>
+          <li>技術の<strong>幅と深さ</strong>（知識のピラミッド）</li>
+          <li>開発者との考え方の違い、<strong>アーキテクチャの法則</strong></li>
+          <li>アーキテクトが陥りがちな<strong>アンチパターン</strong></li>
+          <li>「誰がアーキテクトなのか」という問い</li>
+        </ul></div>
+    </div>
+    <p>前提として <a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a> を先に読むと理解が深まります。後半は Mark Richards・Neal Ford『ソフトウェアアーキテクチャの基礎』を軸にしています。なお、肩書きとしての「アーキテクト」でなくても、<strong>チームで構造の判断をする人は誰でもこの役割を部分的に担っている</strong>、という前提で読んでください。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>結論：早く意識するほど安く済む</h2>
+    <p>ソフトウェア開発で最もコストがかかるのは、コードを書くことではなく、<strong>書いたコードを書き直すこと</strong>です。そして書き直しの規模は、原因のレベルによって次の順に大きくなります（<a href="11-1_アーキテクチャとは・設計との違い.html">前のページ</a>の「後戻りコスト」を参照）。</p>
+    <blockquote><p><strong>アーキテクチャ起因の修正 ＞＞ 詳細設計起因の修正 ＞ コードレベルの修正</strong></p></blockquote>
+    <p>つまり、<strong>アーキテクチャを早めに少しでも意識するだけで、後の書き直しコストが大きく減る</strong>ということです。</p>
+    <div class="callout key">
+      <p class="callout-title">「早く意識する」＝最初から完璧を目指す、ではない</p>
+      <p>「<strong>何が部品で、どうつながり、どんなルールにするか</strong>」を、コードを書きながら少しずつ言語化するだけでも効果があります。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>変更コストの観点</h2>
+    <h3>3.1 変更コストは時間とともに大きく増える</h3>
+    <p>ソフトウェア開発では、<strong>バグや設計の問題は早く見つけるほど安く直る</strong>という経験則が広く知られています。よく引用される目安は次のようなものです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>修正タイミング</th><th>相対コスト（目安）</th></tr></thead>
+      <tbody>
+        <tr><td>要件定義時に発見</td><td>1</td></tr>
+        <tr><td>設計時に発見</td><td>5〜10</td></tr>
+        <tr><td>実装時に発見</td><td>10〜50</td></tr>
+        <tr><td>テスト時に発見</td><td>50〜200</td></tr>
+        <tr><td>本番運用後に発見</td><td>500〜1,000</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 700 290" role="img" aria-label="発見が遅れるほど修正コストが増える概念図">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <line x1="70" y1="240" x2="670" y2="240" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="70" y1="240" x2="70" y2="20" class="d-line" marker-end="url(#arw1)"/>
+      <text x="80" y="34" class="d-text-sub">修正コスト</text>
+      <text x="660" y="230" text-anchor="end" class="d-text-sub">発見のタイミング</text>
+      <path d="M90,232 C300,228 430,210 520,160 C580,125 620,80 650,40" class="d-line-accent"/>
+      <circle cx="100" cy="232" r="5" class="d-box-accent"/>
+      <circle cx="220" cy="229" r="5" class="d-box-accent"/>
+      <circle cx="340" cy="222" r="5" class="d-box-accent"/>
+      <circle cx="470" cy="190" r="5" class="d-box-accent"/>
+      <circle cx="640" cy="55" r="5" class="d-box-bad"/>
+      <text x="100" y="264" text-anchor="middle" class="d-text-sub">要件定義</text>
+      <text x="220" y="264" text-anchor="middle" class="d-text-sub">設計</text>
+      <text x="340" y="264" text-anchor="middle" class="d-text-sub">実装</text>
+      <text x="470" y="264" text-anchor="middle" class="d-text-sub">テスト</text>
+      <text x="630" y="264" text-anchor="middle" class="d-text-sub">本番運用後</text>
+      <text x="560" y="60" text-anchor="end" class="d-text">桁が増えていく</text>
+    </svg>
+    <figcaption>図：発見が遅れるほど修正コストが急激に増える（形は概念図で、数値の目盛りはない）</figcaption>
+    </figure>
+    <div class="callout warn">
+      <p class="callout-title">数字の扱いに注意</p>
+      <p>表の数値は研究や資料によってばらつきがあり、出典がはっきりしない形で引用され続けているものも多い、という指摘もあります。そのため、<strong>具体的な倍率を覚えるより</strong>、「<strong>遅く見つかるほど桁が増えていく</strong>」という傾向をつかむのが大切です。「早く気づくほど安い」は、ソフトウェア開発で広く共有されている経験則です。</p>
+    </div>
+
+    <h3>3.2 アーキテクチャ起因の修正は特に高い</h3>
+    <p>アーキテクチャに起因する問題は<strong>多くの部品をまたぐ</strong>ため、修正範囲が広くなります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>症状</th><th>必要になる修正</th></tr></thead>
+      <tbody>
+        <tr><td>DB アクセスがあちこちのコードに散らばっている</td><td>全モジュールに手を入れる</td></tr>
+        <tr><td>ビジネスロジックが UI に書かれている</td><td>全画面で書き直し</td></tr>
+        <tr><td>マイクロサービスの分け方が業務の単位と合っていない</td><td>サービスの再分割</td></tr>
+      </tbody>
+    </table></div>
+    <p>これらは<strong>1日で直る</strong>ものではありません。</p>
+
+    <h3>3.3 早めの「骨組み判断」が後の自由度を生む</h3>
+    <p>逆に、最初に<strong>骨組み（部品の分け方・依存の向き・置き場所のルール）</strong>を決めておくだけで、</p>
+    <ul>
+      <li>機能追加のときに<strong>「どこに書けばいいか」が一意に決まる</strong></li>
+      <li>仕様変更のときに<strong>影響範囲が限定される</strong></li>
+      <li>リファクタリングのときに<strong>安全に動かせる範囲が分かる</strong></li>
+    </ul>
+    <p>という<strong>変更しやすさ</strong>が手に入ります。これは <a href="11-1_アーキテクチャとは・設計との違い.html">前のページ</a>で挙げた「保守性・拡張性」のメリットそのものです。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>チームの観点</h2>
+    <h3>4.1 認識の共有がチーム開発の前提</h3>
+    <p>ひとりで書いていれば、<strong>頭の中の地図</strong>でも何とかなります。しかし2人以上で開発するとき、</p>
+    <ul>
+      <li>「この機能は<strong>どのファイルに書く？</strong>」</li>
+      <li>「このロジックは <strong>UI に書いていい？ 業務層？</strong>」</li>
+      <li>「この処理は<strong>新しいモジュールにする？ 既存のどこかに足す？</strong>」</li>
+    </ul>
+    <p>という判断が<strong>毎日のように発生</strong>します。これが人によってバラバラだと、コードベースは数週間でカオスになります。アーキテクチャは<strong>チーム共通のルール</strong>として、こうした判断を<strong>そろえる</strong>働きをします。</p>
+
+    <h3>4.2 分業の単位を決めるのもアーキテクチャ</h3>
+    <p>「A さんはユーザー機能、B さんは決済機能を担当」のような分業は、機能を<strong>サービス・モジュール</strong>にどう分けるか、それぞれの<strong>境界（インターフェース）</strong>をどう決めるか、というアーキテクチャ判断の上に成り立っています。境界が曖昧なまま分業すると、次のような問題が起きます。</p>
+    <ul>
+      <li>同じ処理を<strong>2人が別々に実装</strong>してしまう</li>
+      <li>一方の変更が<strong>他方の動作を壊す</strong></li>
+      <li>レビューで<strong>どこを誰が見ればいいか</strong>が分からない</li>
+    </ul>
+    <p>組織の構造とシステムの構造の関係は、<a href="70-3_コンウェイの法則とTeamTopologies.html">コンウェイの法則と Team Topologies</a> でさらに詳しく扱います。</p>
+
+    <h3>4.3 オンボーディング（新メンバー）への影響</h3>
+    <p>アーキテクチャが<strong>図やドキュメント</strong>として残っていると、</p>
+    <ul>
+      <li>新メンバーが<strong>全体像を素早く把握</strong>できる</li>
+      <li>「この機能はどこを見ればいい？」に<strong>すぐ答えられる</strong></li>
+      <li>レビューの観点が<strong>チームでそろう</strong></li>
+    </ul>
+    <p>という効果があります。逆に、アーキテクチャが個々人の<strong>暗黙知</strong>にとどまっていると、新メンバーは「<strong>コードを全部読む</strong>」という非現実的な学習を強いられます（図と文書化については <a href="60-2_C4モデルとarc42.html">図と文書化（C4 モデル・arc42）</a>）。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>長期保守の観点</h2>
+    <h3>5.1 ソフトウェアは「書いた瞬間から劣化する」</h3>
+    <p>書き上がったコードは、<strong>書いた時点の前提知識</strong>で固定されます。しかし周囲は刻々と変わります。</p>
+    <ul>
+      <li>ライブラリ・フレームワークが<strong>バージョンアップ</strong>する</li>
+      <li>ビジネス要件が<strong>変化</strong>する</li>
+      <li>チームメンバーが<strong>入れ替わる</strong></li>
+      <li>自分自身が<strong>書いたときの意図を忘れる</strong>（半年後の自分は他人）</li>
+    </ul>
+    <p>このとき、<strong>全体の構造を後から把握する</strong>のは想像以上に難しい作業です。</p>
+
+    <h3>5.2 アーキテクチャは「読み手のための地図」</h3>
+    <p>アーキテクチャを意図的に決めて文書化しておくと、</p>
+    <ul>
+      <li><strong>数年後の自分</strong>が「なぜこう作ったか」を思い出せる</li>
+      <li><strong>新しいメンバー</strong>が短時間で全体像をつかめる</li>
+      <li><strong>保守担当</strong>が変更の影響範囲を予測できる</li>
+    </ul>
+    <p>つまりアーキテクチャは、<strong>未来の読み手への手紙</strong>でもあります。</p>
+
+    <h3>5.3 「動いているから大丈夫」が崩れる瞬間</h3>
+    <p>コードが<strong>いま動いている</strong>ことと、<strong>今後も変更し続けられる</strong>ことは別の話です。</p>
+    <ol class="steps">
+      <li>いま動いていても、<strong>1年後に直せない</strong>コードは多い</li>
+      <li>直せないと、機能追加もバグ修正も<strong>できない</strong></li>
+      <li>結果として<strong>書き直し（リプレース）</strong>が必要になり、莫大なコストがかかる</li>
+    </ol>
+    <p>アーキテクチャを意識した設計は、<strong>この書き直しを遅らせる、あるいは小さくする</strong>ための投資です。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>「意識しない」と何が起きるか</h2>
+    <p>逆の側からも見てみます。アーキテクチャを意識せずに開発を進めると、典型的に次の症状が現れます。</p>
+    <div class="grid c2">
+      <div class="card bad"><h4>ビッグボール・オブ・マッド（大泥団子）</h4>
+        <ul><li>機能ごとの境界がなく、すべてのコードが<strong>密に絡み合う</strong></li><li>1か所を直すと<strong>思わぬ場所が壊れる</strong></li><li>新メンバーは「<strong>怖くて触れない</strong>」状態に陥る</li></ul></div>
+      <div class="card bad"><h4>散弾銃手術（Shotgun Surgery）</h4>
+        <ul><li>1つの機能変更のために、<strong>多数のファイル</strong>を同時に編集する必要がある</li><li>修正漏れが起きやすく、<strong>バグの温床</strong>になる</li></ul></div>
+      <div class="card bad"><h4>神クラス（God Class）</h4>
+        <ul><li>何でもやる<strong>巨大なクラス</strong>が出現する</li><li>そのクラスを変えると<strong>システム全体に影響</strong>する</li><li>単体テストが<strong>事実上書けない</strong></li></ul></div>
+      <div class="card bad"><h4>技術的負債</h4>
+        <ul><li>「あとで直す」と先送りされた問題が<strong>積み上がる</strong></li><li>やがて新機能の追加よりも、<strong>負債の利払い（バグ対応・回避策）</strong>に時間を取られる（→ <a href="70-1_技術的負債.html">技術的負債と意図的な暫定案</a>）</li></ul></div>
+    </div>
+    <p>これらはいずれも、<strong>意識的な設計判断の欠落</strong>から生まれるパターンです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>「動くものを早く作る」との折り合い</h2>
+    <p>ここまで読むと「動くコードより設計が大事」と聞こえるかもしれません。しかし現代の開発では、<strong>動くものを早く作って学ぶ</strong>ことも同じくらい重要です。両立のカギは、<strong>全部を最初に決めない</strong>ことです。</p>
+    <h3>7.1 「最初に決めるべき」と「あとで決めていい」を分ける</h3>
+    <div class="grid c2">
+      <div class="card accent"><h4>最初に決めるべき（後戻りコストが大きい）</h4>
+        <ul>
+          <li>大きな部品の分け方（モノリスか、マイクロサービスか）</li>
+          <li>依存の向き（UI が業務に依存するのか、業務が DB に依存するのか）</li>
+          <li>データの所有権（どのサービスが正本データを持つか）</li>
+        </ul></div>
+      <div class="card good"><h4>あとで決めていい（後戻りしやすい）</h4>
+        <ul>
+          <li>クラスの細かい分け方</li>
+          <li>メソッドのシグネチャ</li>
+          <li>命名</li>
+        </ul></div>
+    </div>
+    <p>「<strong>少し先まで耐える骨組みを最初に、詳細は走りながら</strong>」が現実的なバランスです。</p>
+    <h3>7.2 プロトタイプとプロダクションを区別する</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>作っているもの</th><th>アーキテクチャの考え方</th></tr></thead>
+      <tbody>
+        <tr><td>プロトタイプ（試作・学習目的）</td><td>アーキテクチャは<strong>最小限</strong>でよい</td></tr>
+        <tr><td>プロダクション（本番運用）</td><td><strong>長期保守</strong>を意識した骨組みが必要</td></tr>
+      </tbody>
+    </table></div>
+    <p>「いまどちらを作っているか」を自分で意識するだけでも、判断がぶれにくくなります。ただし、プロトタイプのつもりで作ったものがそのまま本番になるのはよくある話です。その場合は「意図的な暫定案」として記録し、見直す時期を決めておきましょう（→ <a href="70-1_技術的負債.html">技術的負債と意図的な暫定案</a>）。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>今日からできる3つの一歩</h2>
+    <ol class="steps">
+      <li><strong>ファイル・フォルダの分け方を意識する</strong><br>「この処理はどこに置くか」を、置く前に<strong>1秒だけ考える</strong>。たとえば「これは UI 表示の話か、業務ロジックか、DB アクセスか」を分けてフォルダに置く。これだけで最も基本的なアーキテクチャ感覚が身につきます。</li>
+      <li><strong>依存の向きを意識する</strong><br>「このファイルは何をインポートしているか」を観察する。業務ロジックが UI フレームワークをインポートしていたら、向きが<strong>逆</strong>かもしれません。合言葉は「<strong>外側の都合（UI・DB）が、中心（業務ロジック）に流れ込まないようにする</strong>」。詳しくは <a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a> で扱います。</li>
+      <li><strong>図を1枚描いてみる</strong><br>自分のプロジェクトの全体構造を、A4 1枚に手描きで描く。「部品」「つながり」「データの流れ」を矢印で表現します。描けない部分や、描くと矛盾する部分があれば、それが<strong>設計の弱点</strong>です。最初は粗くて構いません。<strong>描くこと自体</strong>がアーキテクチャを意識する訓練になります。</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>アーキテクトに期待される8つのこと</h2>
+    <p>ここから後半です。『ソフトウェアアーキテクチャの基礎』は、肩書きや組織に関係なく、アーキテクトに共通して期待されることを8つ挙げています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>期待</th><th>中身</th><th>関連ページ</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>アーキテクチャ上の決定を下す</strong></td><td>技術を「指定」するより、<strong>判断の指針</strong>を示す（例：「React を使え」ではなく「リアクティブなフロントエンドのフレームワークを選べ」）</td><td><a href="12-3_トレードオフと原則.html">トレードオフと原則</a></td></tr>
+        <tr><td>2</td><td><strong>アーキテクチャを継続的に分析する</strong></td><td>3年前に決めた構造が、今のビジネスと技術に合っているかを見直し続ける</td><td><a href="70-1_技術的負債.html">技術的負債と意図的な暫定案</a></td></tr>
+        <tr><td>3</td><td><strong>最新のトレンドを把握する</strong></td><td>技術・業界の変化を追う。アーキテクトの決定は長く残るため</td><td>—</td></tr>
+        <tr><td>4</td><td><strong>決定が守られているか確認する</strong></td><td>決めたルール（例：UI 層から DB を直接呼ばない）が実際に守られているかを検証する</td><td><a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a></td></tr>
+        <tr><td>5</td><td><strong>多様な技術に触れ、経験する</strong></td><td>1つの言語・フレームワークに閉じず、複数の技術の特徴を知る</td><td>本ページ §10</td></tr>
+        <tr><td>6</td><td><strong>ビジネスドメインの知識を持つ</strong></td><td>業務を理解していないと、適切な品質特性を選べない</td><td><a href="12-1_品質特性と非機能要件.html">特性の見つけ方</a></td></tr>
+        <tr><td>7</td><td><strong>対人スキルを持つ</strong></td><td>チームを導き、意見の対立をまとめ、決定を説明する</td><td>—</td></tr>
+        <tr><td>8</td><td><strong>政治を理解し、乗りこなす</strong></td><td>ほぼすべての決定は誰かの反対に遭う。交渉して合意を得る</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <p>ポイントは、<strong>8つのうち技術そのものの話は半分程度</strong>だということです。残りは「分析し続ける」「守らせる」「説明する」「合意を得る」という、<strong>判断を現実に根付かせるための仕事</strong>です。</p>
+
+    <h3>9.1 「決める」と「指定する」の違い</h3>
+    <p>1つ目の「決定を下す」は誤解されがちです。</p>
+    <div class="grid c2">
+      <div class="card bad"><h4>✕ 細かく指定する</h4><p>アーキテクトがライブラリやクラス構成まで細かく指定する → 開発チームの裁量を奪い、アーキテクト自身がボトルネックになる。</p></div>
+      <div class="card good"><h4>○ 制約と方針を決める</h4><p>アーキテクトは<strong>制約と方針</strong>（境界・依存の向き・品質目標）を決め、その範囲内の具体的な選択はチームに任せる。</p></div>
+    </div>
+    <p>『基礎』ではこれを、アーキテクトと開発チームの協働の度合いとして説明しています。制約が細かすぎると「<strong>コントロールフリーク</strong>」、緩すぎると「<strong>アームチェア・アーキテクト</strong>（口だけ出して手を動かさない）」になります。<strong>チームの経験・規模・プロジェクトの複雑さ</strong>に応じて関わり方を調整するのが現実的です。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>技術の「幅」と「深さ」</h2>
+    <h3>10.1 知識のピラミッド</h3>
+    <p>『基礎』では、技術知識を3層のピラミッドで説明しています（Neal Ford の「Knowledge Breadth versus Depth」が元になっています）。</p>
+    <figure>
+    <svg viewBox="0 0 740 340" role="img" aria-label="知識のピラミッド">
+      <polygon points="230,30 290,110 170,110" class="d-box-good"/>
+      <polygon points="170,110 290,110 370,215 90,215" class="d-box-accent"/>
+      <polygon points="90,215 370,215 450,320 10,320" class="d-box"/>
+      <text x="230" y="95" text-anchor="middle" class="d-text-bold">①</text>
+      <text x="230" y="170" text-anchor="middle" class="d-text-bold">②</text>
+      <text x="230" y="275" text-anchor="middle" class="d-text-bold">③</text>
+      <line x1="280" y1="80" x2="470" y2="70" class="d-line-dash"/>
+      <line x1="340" y1="165" x2="470" y2="165" class="d-line-dash"/>
+      <line x1="420" y1="270" x2="470" y2="265" class="d-line-dash"/>
+      <text x="480" y="56" class="d-text-bold">① 知っていること</text>
+      <text x="480" y="76" class="d-text-sub">Stuff you know</text>
+      <text x="480" y="94" class="d-text-sub">日常的に使う技術 ＝ 深さ</text>
+      <text x="480" y="150" class="d-text-bold">② 知らないと知っていること</text>
+      <text x="480" y="170" class="d-text-sub">Stuff you know you don't know</text>
+      <text x="480" y="188" class="d-text-sub">名前と概要は知っている ＝ 幅</text>
+      <text x="480" y="250" class="d-text-bold">③ 知らないことすら</text>
+      <text x="480" y="270" class="d-text-bold">　 知らないこと</text>
+      <text x="480" y="290" class="d-text-sub">Stuff you don't know you don't know</text>
+      <text x="480" y="308" class="d-text-sub">存在自体を知らない技術・解決策</text>
+    </svg>
+    <figcaption>図：開発者は①を深くし、アーキテクトは②を広くする。③が大きいほど「もっと良い方法を知らなかった」失敗が起きる</figcaption>
+    </figure>
+    <div class="grid c2">
+      <div class="card"><h4>開発者</h4><p>ピラミッドの頂点（知っていること）を<strong>深く</strong>することでキャリアを築きます。</p></div>
+      <div class="card purple"><h4>アーキテクト</h4><p>価値があるのは、真ん中の層（知らないと知っていること）を<strong>広く</strong>することです。</p></div>
+    </div>
+    <p>理由は、アーキテクトの仕事が「課題に対して、どんな選択肢があるかを並べ、トレードオフを比べること」だからです。<strong>選択肢を知らなければ、比較の土俵にすら載りません</strong>。一番下の層（存在すら知らない解決策）が大きいと、「もっと良い方法があったのに知らなかった」という失敗が起きます。</p>
+
+    <h3>10.2 幅を広げるときの注意</h3>
+    <ul>
+      <li>深い知識を<strong>全部維持しようとしない</strong>。深い知識は維持コストが高く、技術が古くなると価値も下がる</li>
+      <li>代わりに「<strong>何が得意で、何が苦手か</strong>」を言えるレベルの知識を広く持つ</li>
+      <li>情報源の例：Thoughtworks Technology Radar、技術カンファレンス、他チームのアーキテクチャ事例、社内勉強会</li>
+    </ul>
+
+    <h3>10.3 手を動かし続ける</h3>
+    <p>幅を優先するとはいえ、<strong>コードから完全に離れると判断が現実から浮きます</strong>。『基礎』では次のような方法を勧めています。</p>
+    <ul>
+      <li><strong>クリティカルパス</strong>（遅れると全体が遅れる部分）のコードは書かない。アーキテクトがボトルネックになるため</li>
+      <li>代わりに <strong>PoC（概念実証）</strong>を書く、<strong>技術的負債の解消</strong>やバグ修正を担当する、<strong>自動化ツール</strong>（アーキテクチャルールの検査など）を書く</li>
+      <li>コードレビューに参加して、決定が守られているかを確かめる（期待4にもつながる）</li>
+    </ul>
+
+    <h2 id="sec-11"><span class="num">11.</span>アーキテクチャ思考 ― 開発者との考え方の違い</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>開発者の問い</th><th>アーキテクトの問い</th></tr></thead>
+      <tbody>
+        <tr><td>正解</td><td>「どれが正しい実装か？」</td><td>「何を得て、何を失うか？」</td></tr>
+        <tr><td>時間軸</td><td>今のスプリント</td><td>数年後の変更・運用</td></tr>
+        <tr><td>範囲</td><td>自分のモジュール</td><td>システム全体・他チーム・組織</td></tr>
+        <tr><td>根拠</td><td>技術的な美しさ</td><td>ビジネス上の成功に効くか</td></tr>
+        <tr><td>成果物</td><td>動くコード</td><td>判断と、その理由の記録</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>11.1 トレードオフを分析する</h3>
+    <p>アーキテクチャ思考の中心は<strong>トレードオフ分析</strong>です（→ <a href="12-3_トレードオフと原則.html">トレードオフとアーキテクチャに効く原則</a>）。『基礎』の有名な例で考えてみます。</p>
+    <p>例：「注文情報を他のサービスに伝えるのに、<strong>キュー</strong>（1対1）を使うか、<strong>トピック</strong>（1対多の Pub/Sub）を使うか」</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>トピック</th><th>キュー</th></tr></thead>
+      <tbody>
+        <tr><td>拡張性（新しい受け手の追加）</td><td>◎ 受け手を足すだけ</td><td>△ 送り手に新しいキューを追加する必要がある</td></tr>
+        <tr><td>セキュリティ</td><td>△ 誰でも購読できてしまう</td><td>◎ 宛先が限定される</td></tr>
+        <tr><td>受け手ごとのスケール・監視</td><td>△ 一括でしか見えない</td><td>◎ キューごとに監視・調整できる</td></tr>
+        <tr><td>データ契約</td><td>△ 全受け手に同じ形式</td><td>◎ 受け手ごとに形式を変えられる</td></tr>
+      </tbody>
+    </table></div>
+    <p>どちらも「正しい」選択です。<strong>どの特性を優先するか</strong>で答えが変わる、というのがこの表の意味です（メッセージングの詳細は <a href="40-3_同期API・メッセージ・イベント駆動.html">同期 API・メッセージ・イベント駆動</a>）。</p>
+
+    <h3>11.2 アーキテクチャの法則</h3>
+    <p>『基礎』は、この考え方を「法則」として示しています。</p>
+    <div class="grid c3">
+      <div class="card accent"><h4>第1法則</h4><p>ソフトウェアアーキテクチャのすべては<strong>トレードオフ</strong>である。</p><p class="small muted">系：トレードオフがないと思ったなら、まだトレードオフを見つけていないだけだ。</p></div>
+      <div class="card accent"><h4>第2法則</h4><p>「どうやって（How）」より「<strong>なぜ（Why）</strong>」の方が重要である。</p></div>
+      <div class="card accent"><h4>第3法則（第2版で追加）</h4><p>アーキテクチャ上の決定のほとんどは二択ではなく、両極端の間の<strong>スペクトラム</strong>上にある。</p></div>
+    </div>
+    <p>第3法則は、「モノリスかマイクロサービスか」ではなく「<strong>どの程度分けるか</strong>」、「同期か非同期か」ではなく「<strong>どこまで非同期にするか</strong>」と考えよ、という意味です。第2法則は、決定の理由を記録する ADR の考え方（→ <a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a>）につながります。</p>
+
+    <h3>11.3 「最高」ではなく「最も悪くない」を選ぶ</h3>
+    <p>すべての品質特性を同時に最大化することはできないため、アーキテクトが目指すのは<strong>「最も悪くないアーキテクチャ（least worst architecture）」</strong>です。完璧を求めて決定を先延ばしにするより、<strong>今わかっている情報で最も悪くない選択をし、変更しやすくしておく</strong>方が現実的です。</p>
+
+    <h3>11.4 ビジネスの言葉を技術の言葉に翻訳する</h3>
+    <p>ステークホルダーは「品質特性」という言葉では話しません。「競合より早く新機能を出したい」「年末セールで落ちたら困る」のように話します。これを次のように翻訳するのがアーキテクトの仕事です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ステークホルダーの言葉</th><th>アーキテクチャ特性</th></tr></thead>
+      <tbody>
+        <tr><td>競合より早く新機能を出したい</td><td>デプロイ容易性・テスト容易性</td></tr>
+        <tr><td>年末セールで落ちたら困る</td><td>弾力性・可用性</td></tr>
+      </tbody>
+    </table></div>
+    <p>詳しくは <a href="12-1_品質特性と非機能要件.html">品質特性と非機能要件・特性の見つけ方</a> で扱います。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>アーキテクトが陥りがちなアンチパターン</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アンチパターン</th><th>症状</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>凍った原始人</strong>（Frozen Caveman）</td><td>過去に痛い目を見た特定のリスク（例：「昔データセンターが落ちた」）にこだわり、どのプロジェクトでも同じ対策を強要する</td><td>「そのリスクは<strong>今回の</strong>システムで現実的か？」を毎回問う</td></tr>
+        <tr><td><strong>象牙の塔のアーキテクト</strong></td><td>現場から離れた場所で図だけを描き、実装の現実を知らない</td><td>手を動かし続ける（§10.3）、レビューに参加する</td></tr>
+        <tr><td><strong>コントロールフリーク</strong></td><td>クラス設計やライブラリまで細かく指定する</td><td>制約と方針だけを決め、具体はチームに任せる（§9.1）</td></tr>
+        <tr><td><strong>アームチェア・アーキテクト</strong></td><td>方針だけを言って、その後の検証や支援をしない</td><td>決定が守られているか確認する（期待4）</td></tr>
+        <tr><td><strong>過去の成功体験の押しつけ</strong></td><td>「前の会社ではマイクロサービスで成功した」をそのまま持ち込む</td><td>規模・チーム・品質特性が違えば正解も違う（第1法則）</td></tr>
+        <tr><td><strong>決定の記録をしない</strong></td><td>同じ議論が何度も蒸し返される</td><td>ADR に理由を残す（第2法則）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-13"><span class="num">13.</span>誰がアーキテクトなのか</h2>
+    <p>近年は、「アーキテクトという肩書きの人が全部決める」形から、<strong>チーム全体でアーキテクチャに責任を持つ</strong>形が広がっています。</p>
+    <div class="grid c2">
+      <div class="card accent"><h4>アーキテクチャ・アドバイス・プロセス</h4><p>誰でもアーキテクチャ上の決定をしてよい。ただし、影響を受ける人と専門知識を持つ人に<strong>必ず助言を求め</strong>、決定を記録する。Thoughtworks Technology Radar でも紹介されている分散型の進め方です。</p></div>
+      <div class="card accent"><h4>適応度関数</h4><p>「決定が守られているか確認する」（期待4）を、人の目ではなく<strong>自動テスト</strong>で行う（→ <a href="70-2_進化的アーキテクチャと適応度関数.html">進化的アーキテクチャと適応度関数</a>）。</p></div>
+    </div>
+    <p>つまり、アーキテクトの8つの期待は<strong>役職ではなく役割</strong>です。開発者であっても、構造の判断に関わる場面ではこの考え方が求められます。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>よくある誤解</h2>
+    <h3>14.1 「動くコードを書く方が先で、アーキテクチャは後でいい」</h3>
+    <div class="callout warn">
+      <p class="callout-title">半分だけ正しいです</p>
+      <p>動くものを早く作って学ぶことは大切です。ただし、<strong>後戻りコストの大きい判断（部品の大きな分け方・依存の向き・データの所有権）</strong>だけは先に意識しておかないと、後で大きな書き直しが必要になります（§7）。</p>
+    </div>
+    <h3>14.2 「アーキテクトは一番技術に詳しい人がなるもの」</h3>
+    <div class="callout warn">
+      <p class="callout-title">半分だけ正しいです</p>
+      <p>深さより<strong>幅</strong>が重要で、さらに技術以外の4つ（ビジネス理解・対人スキル・政治・継続的な分析）が同じくらい重要です。</p>
+    </div>
+    <h3>14.3 「アーキテクトはコードを書かなくてよい」</h3>
+    <div class="callout bad">
+      <p class="callout-title">誤りです</p>
+      <p>クリティカルパスのコードは避けるべきですが、PoC・自動化・負債の解消などで<strong>手を動かし続けないと判断が古くなります</strong>。</p>
+    </div>
+    <h3>14.4 「アーキテクトの仕事は最初に正しい構造を決めること」</h3>
+    <div class="callout bad">
+      <p class="callout-title">誤りです</p>
+      <p>「継続的に分析する」「決定が守られているか確認する」が期待に含まれているとおり、<strong>決めた後の仕事の方が長い</strong>のです。</p>
+    </div>
+
+    <h2 id="sec-15"><span class="num">15.</span>まとめ</h2>
+    <h3>前半：なぜ早く意識するのか</h3>
+    <ul>
+      <li><strong>アーキテクチャを早く意識するほど、後の書き直しコストは安く済みます</strong>。問題の発見が遅れるほど、修正コストは桁違いに増えていきます。</li>
+      <li>意識する価値は3つの観点で説明できます。
+        <ul>
+          <li><strong>変更コスト</strong>：早く骨組みを決めると、後の自由度が増える</li>
+          <li><strong>チーム</strong>：判断のぶれを減らし、分業とオンボーディングを支える</li>
+          <li><strong>長期保守</strong>：未来の読み手への地図になり、書き直しを遅らせる投資になる</li>
+        </ul></li>
+      <li>意識しないと、<strong>大泥団子・散弾銃手術・神クラス・技術的負債</strong>といった典型症状が現れます。</li>
+      <li>ただし「最初に全部決める」必要はなく、<strong>後戻りコストの大きいものだけ先に、詳細は走りながら</strong>が現実的なバランスです。</li>
+      <li>まずは「<strong>ファイル配置の意識</strong>」「<strong>依存の向きの観察</strong>」「<strong>図を1枚描く</strong>」の3つから始められます。</li>
+    </ul>
+    <h3>後半：アーキテクトの役割と思考</h3>
+    <ul>
+      <li>アーキテクトには<strong>8つの期待</strong>（決定・継続的分析・トレンド把握・遵守の確認・多様な経験・ドメイン知識・対人スキル・政治）があり、技術そのものの話は半分程度です。</li>
+      <li>アーキテクトにとって重要なのは技術の<strong>深さより幅</strong>。選択肢を知らなければ比較できません。</li>
+      <li>アーキテクチャ思考の中心は<strong>トレードオフ分析</strong>。「正解」ではなく「最も悪くない選択」を探します。</li>
+      <li><strong>第1法則：すべてはトレードオフ／第2法則：How より Why／第3法則：決定はスペクトラム</strong>。</li>
+      <li>凍った原始人・象牙の塔・コントロールフリークなどの<strong>アンチパターン</strong>に注意します。</li>
+      <li>アーキテクトは<strong>役職ではなく役割</strong>。チームで構造を判断する人は誰でもこの考え方を使います。</li>
+    </ul>
+    <p>次のページでは、アーキテクトが判断のものさしにする「<strong>品質</strong>」― 非機能要件・品質特性と、その見つけ方 ― を学びます。</p>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』第1章・第2章（原著 <em>Fundamentals of Software Architecture</em>, 2nd Edition, O'Reilly, 2025）</li>
+      <li><a href="https://www.workingsoftware.dev/what-makes-a-good-software-architect/">8 Essential Expectations of a Software Architect（workingsoftware.dev）</a></li>
+      <li><a href="https://nealford.com/memeagora/2015/09/08/knowledge-breadth-versus-depth.html">Neal Ford — Knowledge Breadth versus Depth</a></li>
+      <li><a href="https://kevinhakanson.com/2017-08-08-the-frozen-caveman-antipattern/">The Frozen Caveman Antipattern（Kevin Hakanson）</a></li>
+      <li><a href="https://www.oreilly.com/library/view/fundamentals-of-software/9781098175504/ch27.html">Fundamentals of Software Architecture 2nd Ed. 第27章 The Laws of Software Architecture, Revisited</a></li>
+      <li><a href="https://www.thoughtworks.com/en-us/radar/techniques/architecture-advice-process">Thoughtworks Technology Radar — Architecture advice process</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="11-1_アーキテクチャとは・設計との違い.html"><span class="lbl">← 前のページ</span>アーキテクチャとは・設計との違い</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="12-1_品質特性と非機能要件.html"><span class="lbl">次のページ →</span>品質特性と非機能要件・特性の見つけ方</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

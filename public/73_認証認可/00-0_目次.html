@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>目次｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb">目次</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>認証認可解説 — 目次</h1>
+      <p class="lead">Obsidian の「73_認証認可」ノートをもとにした、初心者向け解説ページの入口です。「あなたは誰か」を確かめる <strong>認証</strong> と、「何をしてよいか」を決める <strong>認可</strong> について、基礎概念からパスワード・MFA・パスキー、OAuth / OpenID Connect などのフェデレーション（外部サービスとの認証連携）、権限の設計、実装の方法までを順に解説します。</p>
+      <p class="meta">もとにしたノート：MOC_認証認可 と、10〜50 の各フォルダのノート</p>
+    </div>
+
+    <h2><span class="num">1.</span>このサイトの読み方</h2>
+    <p>ページは下の順番に並んでいて、各ページ下部の「前のページ／次のページ」で順に読み進められます。上部の「認証認可解説」からいつでもこの目次に戻れます。各ページの最後には「まとめ」と「理解度チェック」があります。</p>
+    <p>CIA三原則・最小権限などの分野共通の基礎は <a href="../../71_セキュリティ基礎/00_全体像/00-0_目次.html">セキュリティ基礎解説</a>（71）、CSRF・CORS などブラウザまわりの脆弱性は <a href="../../72_Web脆弱性対策/00_全体像/00-0_目次.html">Web脆弱性対策解説</a>（72）で扱っています。</p>
+    <h3>おすすめの読む順</h3>
+    <ol class="steps">
+      <li><strong>00 全体像</strong> — <a href="00-1_認証認可の全体像.html">認証認可の全体像</a> で地図を手に入れます。</li>
+      <li><strong>10 基礎概念</strong> — 認証と認可の違いと、ログイン方式の種類を押さえます。残りのすべてのページの土台です。</li>
+      <li><strong>20 パスワード・MFA・パスキー</strong> — 本人確認の手段そのものを学びます。</li>
+      <li><strong>30 フェデレーション</strong> — 「Googleでログイン」の裏側にある OAuth 2.0 / OpenID Connect / SAML を学びます。</li>
+      <li><strong>40 認可モデル</strong>、<strong>50 実装</strong> — 権限設計やログイン機能を実際に作るときに読めば大丈夫です。</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">作成状況</p>
+      <p>現在は 00〜40 を公開しています。50 実装は順次追加します。</p>
+    </div>
+
+    <h2><span class="num">2.</span>00 全体像</h2>
+    <p>認証・認可の地図。最初にここを読むと、残りのページの位置づけがわかります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="00-1_認証認可の全体像.html">00-1 認証認可の全体像</a></td><td>認証から認可までの流れ、各フォルダの役割、セッション管理（74）など隣の分野との境界</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">3.</span>10 基礎概念</h2>
+    <p>認証と認可の違い、ログイン方式の全体像、方式の選び方。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="10-1_認証と認可の違い.html">10-1 認証と認可の違い</a></td><td>2つの関門としての認証と認可、サーバー側で確かめる理由、API 認証の4つの方式</td></tr>
+        <tr><td><a href="10-2_ログイン方式と認証の概念.html">10-2 ログイン方式と認証の概念</a></td><td>パスワード・ソーシャルログイン・MFA・SSO・パスワードレス、Basic 認証から JWT・OAuth・OIDC・SAML までの一覧</td></tr>
+        <tr><td><a href="10-3_パスワード・MFA・暗号化の基礎.html">10-3 パスワード・MFA・暗号化の基礎</a></td><td>ハッシュとソルト、TOTP と MFA 疲労攻撃、SSO、暗号化・デジタル署名・PKI、ソーシャルエンジニアリング</td></tr>
+        <tr><td><a href="10-4_社内システム向け認証方式の選び方.html">10-4 社内システム向け認証方式の選び方</a></td><td>社内ログインに OIDC + 社内 IdP を選ぶ理由、方式ごとの向き不向き、Better Auth による社内 SSO 設計</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">4.</span>20 パスワード・MFA・パスキー</h2>
+    <p>「あなたは誰？」を確かめる手段そのもの。ログイン機能への攻撃から、パスワードの保存、MFA、パスキーまで。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="20-1_ログイン機能への攻撃と対策.html">20-1 ログイン機能への攻撃と対策</a></td><td>ログイン画面を狙う攻撃（総当たり・パスワードスプレー・リスト型攻撃・フィッシング）と、アカウントロックなどの対策、自動ログインの安全な作り方</td></tr>
+        <tr><td><a href="20-2_パスワードの安全な保存.html">20-2 パスワードの安全な保存</a></td><td>暗号化ではなくハッシュで保存する理由、ソルト・ペッパー・ストレッチング、Argon2id などの選び方と設定、古い方式からの移行、NIST の指針</td></tr>
+        <tr><td><a href="20-3_MFAの方式比較.html">20-3 MFAの方式比較</a></td><td>SMS・TOTP・プッシュ・セキュリティキーなどのフィッシング耐性の比較、MFA を突破する攻撃、回復手段とステップアップ認証</td></tr>
+        <tr><td><a href="20-4_パスキーとWebAuthn.html">20-4 パスキーとWebAuthn</a></td><td>パスワードがつらい理由とパスキーの仕組み（チャレンジと署名）、フィッシングに強い理由、SimpleWebAuthn での実装</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">5.</span>30 フェデレーション</h2>
+    <p>本人確認を Google や社内の ID 基盤など別のサービスに任せる仕組み。「Googleでログイン」や SSO の裏側です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="30-1_OAuth2.0の仕組み.html">30-1 OAuth 2.0の仕組み</a></td><td>パスワードを預けずに期限つきの通行証を渡す仕組み、4つの登場人物、認可コードフローと PKCE、フローの種類、リフレッシュトークン、実装例</td></tr>
+        <tr><td><a href="30-2_SAML・OAuth・OIDCの違い.html">30-2 SAML・OAuth・OIDCの違い</a></td><td>3つのプロトコルそれぞれの仕組み・メリット・デメリットと、認証と認可のどちらを担うか、使い分け</td></tr>
+        <tr><td><a href="30-3_IDプロバイダとSSOプロバイダ.html">30-3 IDプロバイダとSSOプロバイダ</a></td><td>IdP と SSO プロバイダの役割と違い、代表的なサービス、用途別の選び方</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">6.</span>40 認可モデル</h2>
+    <p>「誰が・何に・何をしてよいか」の決め方と、その強制のしかた。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="40-1_認可不備と認可の要件定義.html">40-1 認可不備と認可の要件定義</a></td><td>URL 直打ち・ID の書き換え・メニュー非表示だけの制御・hidden や Cookie の権限情報といった認可不備の典型例と、権限マトリクスを使った要件定義</td></tr>
+        <tr><td><a href="40-2_RBAC・ABAC・ACLの使い分け.html">40-2 RBAC・ABAC・ACLの使い分け</a></td><td>役割・属性・リストで決める3つの認可モデルの特徴と選び方、OAuth やトークンによる認可の強制</td></tr>
+        <tr><td><a href="40-3_権限管理・ロール管理の実装.html">40-3 権限管理・ロール管理の実装</a></td><td>RBAC の DB 設計とミドルウェア・画面の実装、リソースベース権限・動的権限、最小権限と監査ログ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">7.</span>50 実装（準備中）</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>50 実装</td><td>ログイン・登録・パスワードリセット・2FA・SSO・アカウント管理の作り方</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2><span class="num">8.</span>関連するフォルダ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="../../71_セキュリティ基礎/00_全体像/00-0_目次.html">71_セキュリティ基礎</a></td><td>CIA三原則・設計原則・脅威モデリング・OWASP Top 10・運用など分野共通の基礎</td></tr>
+        <tr><td><a href="../../72_Web脆弱性対策/00_全体像/00-0_目次.html">72_Web脆弱性対策</a></td><td>同一オリジンポリシー・CORS・XSS・CSRF など Web アプリ固有の脆弱性</td></tr>
+        <tr><td>74_セッション管理</td><td>Cookie・セッション・トークン（JWT）と、その攻撃と対策</td></tr>
+      </tbody>
+    </table></div>
+
+    <nav class="pager">
+      <span class="empty"></span>
+      <span class="idx">目次</span>
+      <a class="next" href="00-1_認証認可の全体像.html"><span class="lbl">次のページ →</span>認証認可の全体像</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

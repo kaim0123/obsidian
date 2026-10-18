@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セッション管理の全体像｜セッション管理解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セッション管理解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › セッション管理の全体像</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>セッション管理の全体像</h1>
+      <p class="lead">一度ログインすれば、ページを移動してもログインしたままでいられます。当たり前に見えますが、HTTP そのものには「さっきの人と同じ人だ」と覚える機能がありません。このページでは、Cookie・セッション・トークンがどう組み合わさって「ログイン状態」を作っているのか、そしてこのフォルダの各ページがどこを扱うのかを、地図として解説します。</p>
+      <p class="meta">もとにしたノート：00_全体像/MOC_セッション管理（あわせて 74_セッション管理 の各フォルダのノート）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>HTTP は毎回「はじめまして」です。そこで、ログインした人に <strong>目印（セッション ID やトークン）</strong> を渡し、ブラウザが毎回それを見せることで「同じ人」と分かるようにします。<strong>セッション管理とは、この目印を安全に発行し、運び、確かめ、捨てる仕組み</strong> のことです。目印を盗まれると、パスワードを知らなくてもその人になりすませてしまいます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このシリーズの地図</h2>
+    <p>74_セッション管理 は、<strong>ステートレス</strong>（状態を持たない＝前のやりとりを覚えていない）な HTTP で「ログイン状態」を保つ仕組みと、その攻撃・対策を扱うフォルダです。ノートは次の 4 つのフォルダに分かれています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>役割</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>10_クッキー</td><td>Cookie のしくみと属性</td><td><a href="10-1_Cookieの仕組み.html">10-1</a></td></tr>
+        <tr><td>20_セッション</td><td>サーバー側セッションと、Cookie を使ったログイン状態の保持</td><td><a href="20-1_HTTPとセッション管理.html">20-1</a>・<a href="20-2_セッションとCookieによるログイン.html">20-2</a></td></tr>
+        <tr><td>30_トークン</td><td>トークン方式（JWT など）と、セッション方式との比較</td><td><a href="30-1_セッション方式とトークン方式.html">30-1</a>〜<a href="30-4_トークンの保存場所.html">30-4</a></td></tr>
+        <tr><td>40_攻撃と対策</td><td>セッション固定化・ハイジャック・Cookie 属性の不備</td><td><a href="40-1_セッション管理の不備.html">40-1</a>・<a href="40-2_クッキー出力にまつわる脆弱性.html">40-2</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>ノートのファイル名は「フォルダ内の通し番号_タイトル（出典）」の形です。徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方』の章は（徳丸本N章）、動画・記事のクリップは（作者名）を末尾に付けています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜセッション管理が必要なのか</h2>
+    <p>HTTP は、ブラウザが「リクエスト（お願い）」を送り、サーバーが「レスポンス（返事）」を返す、という 1 往復で完結するやりとりです。1 往復が終わると、サーバーはその相手のことを忘れます。これが <strong>ステートレス</strong> という性質です。</p>
+    <p>そのままだと、ログインした直後に「マイページ」を開いても、サーバーには「さっきログインした人」かどうかが分かりません。ページを移動するたびにパスワードを入れ直すことになってしまいます。</p>
+    <p>そこで、次のような仕組みを組み合わせて「状態」を補います。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>Cookie（クッキー）</h4>
+        <p>サーバーがブラウザに保存させる小さなメモ。ブラウザは次から同じサイトへのリクエストに <strong>自動で</strong> 付けて送ります。「運ぶ手段」です。</p>
+      </div>
+      <div class="card">
+        <h4>セッション</h4>
+        <p>ログイン情報などを <strong>サーバー側</strong> に保存し、ブラウザには番号（セッション ID）だけを渡す方式。番号札で荷物を預けるクロークのイメージです。</p>
+      </div>
+      <div class="card">
+        <h4>トークン</h4>
+        <p>「誰か」「いつまで有効か」を書いて <strong>署名</strong> した通行証をブラウザに渡す方式。サーバーは覚えておかなくても、署名を確かめれば判断できます。JWT が代表例です。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>ログイン状態が保たれる流れ</h2>
+    <p>もっとも基本的な「Cookie ＋ セッション」方式の流れを図にします。トークン方式でも、②で渡すものが「番号」から「署名つきの通行証」に変わるだけで、流れの形は同じです。</p>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="ブラウザがログイン情報を送り、サーバーがセッションを保存してセッションIDを Set-Cookie で返す。以後ブラウザは Cookie でセッションIDを送り、サーバーは保存した情報と照合して本人のページを返す">
+      <defs>
+        <marker id="arw741a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="20" width="150" height="290" rx="8" class="d-box-accent"/>
+      <text x="95" y="46" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <rect x="40" y="250" width="110" height="44" rx="6" class="d-box"/>
+      <text x="95" y="270" text-anchor="middle" class="d-text-sub">Cookie 保存</text>
+      <text x="95" y="286" text-anchor="middle" class="d-text-sub">sid=abc123</text>
+
+      <rect x="550" y="20" width="150" height="290" rx="8" class="d-box-good"/>
+      <text x="625" y="46" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <rect x="565" y="230" width="120" height="64" rx="6" class="d-box"/>
+      <text x="625" y="252" text-anchor="middle" class="d-text-sub">セッション保存</text>
+      <text x="625" y="270" text-anchor="middle" class="d-text-sub">abc123 →</text>
+      <text x="625" y="286" text-anchor="middle" class="d-text-sub">ユーザー42</text>
+
+      <line x1="172" y1="80" x2="546" y2="80" class="d-line" marker-end="url(#arw741a)"/>
+      <text x="360" y="72" text-anchor="middle" class="d-text">① ログイン（ID・パスワード）</text>
+
+      <line x1="548" y1="130" x2="174" y2="130" class="d-line" marker-end="url(#arw741a)"/>
+      <text x="360" y="122" text-anchor="middle" class="d-text">② Set-Cookie: sid=abc123</text>
+      <text x="360" y="148" text-anchor="middle" class="d-text-sub">サーバーは番号と本人を結びつけて保存</text>
+
+      <line x1="172" y1="190" x2="546" y2="190" class="d-line" marker-end="url(#arw741a)"/>
+      <text x="360" y="182" text-anchor="middle" class="d-text">③ マイページ要求 ＋ Cookie: sid=abc123</text>
+      <text x="360" y="208" text-anchor="middle" class="d-text-sub">ブラウザが自動で付けて送る</text>
+
+      <line x1="548" y1="250" x2="174" y2="250" class="d-line" marker-end="url(#arw741a)"/>
+      <text x="360" y="242" text-anchor="middle" class="d-text">④ 照合して「ユーザー42 のページ」</text>
+      <text x="360" y="296" text-anchor="middle" class="d-text-sub">③④はページを開くたびにくり返す</text>
+    </svg>
+    <figcaption>Cookie は「運ぶ手段」、セッション ID は「目印」、サーバー側の保存が「本当の情報」</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><strong>ログイン</strong>：本人確認そのもの（パスワード・MFA・パスキーなど）は 73 の範囲です（<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">ログイン方式と認証の概念</a>）。</li>
+      <li><strong>目印の発行</strong>：推測できない十分ランダムな ID を作り、Cookie に入れて返します（<a href="20-2_セッションとCookieによるログイン.html">20-2</a>）。トークン方式なら署名つきの JWT を返します（<a href="30-2_JWTの構造と検証.html">30-2</a>）。</li>
+      <li><strong>目印を運ぶ</strong>：Cookie の属性（Secure・HttpOnly・SameSite など）で、どこに・いつ送られるかが決まります（<a href="10-1_Cookieの仕組み.html">10-1</a>）。</li>
+      <li><strong>目印を確かめる</strong>：サーバーがセッションを照合するか、トークンの署名と期限を検証します。そのうえで「その操作をしてよいか」（認可）を判断します（<a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</li>
+      <li><strong>目印を捨てる</strong>：ログアウトや期限切れで無効にします。トークンは一度発行すると取り消しにくいので工夫が必要です（<a href="30-3_アクセストークンとリフレッシュトークン.html">30-3</a>）。</li>
+    </ol>
+
+    <h2 id="sec-4"><span class="num">4.</span>各フォルダの役割とページ</h2>
+
+    <h3 id="sec-4-1">4.1 10 クッキー：目印を運ぶ手段</h3>
+    <p>Cookie は、サーバーがレスポンスの <code>Set-Cookie</code> ヘッダーで保存させ、ブラウザが次のリクエストの <code>Cookie</code> ヘッダーで送り返す小さなデータです。有効期限・送り先・JavaScript から読めるかなどを <strong>属性</strong> で決めます。セッション管理の安全性の多くは、この属性の付け方で決まります。</p>
+    <ul>
+      <li><a href="10-1_Cookieの仕組み.html">10-1 Cookieの仕組み</a> — 流れ・中身・属性・種類・localStorage との違い</li>
+    </ul>
+
+    <h3 id="sec-4-2">4.2 20 セッション：サーバーが覚えておく方式</h3>
+    <p>情報はサーバーに置き、ブラウザには番号だけを持たせる方式です。番号さえ推測・盗難されなければ、Cookie の中身を見られても個人情報は漏れません。サーバー側で消せば即座にログアウトさせられるのも利点です。</p>
+    <ul>
+      <li><a href="20-1_HTTPとセッション管理.html">20-1 HTTPとセッション管理</a> — HTTP の基本から、Cookie によるセッション管理まで（徳丸本1章）</li>
+      <li><a href="20-2_セッションとCookieによるログイン.html">20-2 セッションとCookieによるログイン</a> — ログイン処理の全体像と実装、インフラとの関係</li>
+    </ul>
+
+    <h3 id="sec-4-3">4.3 30 トークン：サーバーが覚えなくてよい方式</h3>
+    <p>署名つきの通行証をブラウザ（やアプリ）に持たせる方式です。サーバーが状態を持たないので、複数サーバーやスマホアプリ・API と相性がよい一方、盗まれたときに取り消しにくいという弱点があります。その弱点を、短い期限のアクセストークンと長い期限のリフレッシュトークンの組み合わせで補います。</p>
+    <ul>
+      <li><a href="30-1_セッション方式とトークン方式.html">30-1 セッション方式とトークン方式</a> — 違いと使い分け、3 種類のトークン</li>
+      <li><a href="30-2_JWTの構造と検証.html">30-2 JWTの構造と検証</a> — 中身・署名・攻撃・検証手順</li>
+      <li><a href="30-3_アクセストークンとリフレッシュトークン.html">30-3 アクセストークンとリフレッシュトークン</a> — 2 つを分ける理由とローテーション</li>
+      <li><a href="30-4_トークンの保存場所.html">30-4 トークンの保存場所</a> — Cookie か localStorage か、BFF 方式</li>
+    </ul>
+
+    <h3 id="sec-4-4">4.4 40 攻撃と対策：目印を狙う攻撃</h3>
+    <p>目印を手に入れれば、攻撃者はパスワードなしで本人になりすませます（<strong>セッションハイジャック</strong>）。手に入れ方には「推測する」「盗む」「あらかじめ押し付ける（固定化）」の 3 通りがあります。</p>
+    <ul>
+      <li><a href="40-1_セッション管理の不備.html">40-1 セッション管理の不備</a> — 推測・盗み出し・固定化と、認証後に ID を変える対策（徳丸本9章）</li>
+      <li><a href="40-2_クッキー出力にまつわる脆弱性.html">40-2 クッキー出力にまつわる脆弱性</a> — Cookie に入れてはいけない情報と Secure 属性（徳丸本11章）</li>
+    </ul>
+    <p>Cookie が自動で送られる性質を悪用する <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> と、スクリプトでトークンや Cookie を盗む <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS</a> は 72 で解説しています。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>セッション方式とトークン方式のざっくり比較</h2>
+    <p>詳しくは <a href="30-1_セッション方式とトークン方式.html">30-1</a> で扱います。ここでは位置づけだけ押さえます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>セッション方式</th><th>トークン方式（JWT など）</th></tr></thead>
+      <tbody>
+        <tr><td>本当の情報の置き場所</td><td>サーバー</td><td>トークンの中（署名で改ざんを防ぐ）</td></tr>
+        <tr><td>ブラウザが持つもの</td><td>セッション ID（ただの番号）</td><td>トークンそのもの</td></tr>
+        <tr><td>サーバーの確かめ方</td><td>保存したセッションと照合</td><td>署名と期限を検証</td></tr>
+        <tr><td>すぐにログアウトさせる</td><td>簡単（サーバーで消す）</td><td>難しい（期限まで有効）</td></tr>
+        <tr><td>向いている場面</td><td>ふつうの Web サイト</td><td>API・スマホアプリ・複数サービス</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>隣のフォルダとの境界</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>話題</th><th>本拠地</th></tr></thead>
+      <tbody>
+        <tr><td>パスワード・MFA・パスキーなど本人確認の方法</td><td><a href="../../73_認証認可/00_全体像/00-0_目次.html">73_認証認可</a></td></tr>
+        <tr><td>OAuth 2.0 / OpenID Connect の仕組み</td><td><a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth 2.0の仕組み</a></td></tr>
+        <tr><td>Cookie・セッション・トークンでログイン状態を保つ仕組み</td><td>74_セッション管理（このフォルダ）</td></tr>
+        <tr><td>CSRF・XSS・CORS など、Cookie やトークンを悪用する脆弱性</td><td><a href="../../72_Web脆弱性対策/00_全体像/00-0_目次.html">72_Web脆弱性対策</a></td></tr>
+        <tr><td>OWASP Top 10 での位置づけ（認証の失敗など）</td><td><a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>なぜ必要か</td><td>HTTP はステートレスなので、目印を渡して毎回見せてもらうことで「同じ人」と分かるようにする</td></tr>
+        <tr><td>10 クッキー</td><td>目印を運ぶ手段。属性（Secure・HttpOnly・SameSite など）が安全性を左右する</td></tr>
+        <tr><td>20 セッション</td><td>情報はサーバー、ブラウザには番号だけ。すぐに無効化できる</td></tr>
+        <tr><td>30 トークン</td><td>署名つきの通行証。サーバーは覚えなくてよいが、取り消しにくい</td></tr>
+        <tr><td>40 攻撃と対策</td><td>目印を推測・盗難・固定化されるとなりすましされる。ランダムな ID、認証後の ID 変更、Cookie 属性で防ぐ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-8"><span class="num">8.</span>理解度チェック</h2>
+    <details><summary>Q1. 「HTTP はステートレス」とはどういう意味ですか？それで何が困りますか？</summary><div class="body"><p>1 回のリクエストとレスポンスが終わると、サーバーはその相手のことを覚えていない、という意味です。そのままだと、ログインした後に別のページを開いても同じ人だと分からず、毎回ログインし直すことになります。</p></div></details>
+    <details><summary>Q2. Cookie・セッション・トークンの関係をひとことずつで説明してください。</summary><div class="body"><p>Cookie は目印を「運ぶ手段」、セッションは情報をサーバーに置いて番号だけ渡す「方式」、トークンは署名つきの通行証そのものを渡す「方式」です。セッション ID もトークンも、Cookie に入れて運ぶことができます。</p></div></details>
+    <details><summary>Q3. セッション ID を攻撃者に知られると、何が起きますか？</summary><div class="body"><p>攻撃者がその ID を自分のブラウザの Cookie に入れるだけで、パスワードを知らなくても本人としてログインした状態になります（セッションハイジャック）。手口と対策は <a href="40-1_セッション管理の不備.html">40-1</a> で扱います。</p></div></details>
+    <details><summary>Q4. 「盗まれたので今すぐログアウトさせたい」とき、セッション方式とトークン方式のどちらが簡単ですか？</summary><div class="body"><p>セッション方式です。サーバーに保存したセッションを消せば、その ID はすぐ使えなくなります。トークン方式は、署名が正しく期限内であれば有効と判断されるため、期限を短くする・リフレッシュトークンを無効にするなどの工夫が必要です（<a href="30-3_アクセストークンとリフレッシュトークン.html">30-3</a>）。</p></div></details>
+    <details><summary>Q5. パスワードの安全な保存方法と、CSRF の対策は、それぞれどのフォルダが本拠地ですか？</summary><div class="body"><p>パスワードの保存は 73_認証認可（<a href="../../73_認証認可/00_全体像/20-2_パスワードの安全な保存.html">20-2</a>）、CSRF は 72_Web脆弱性対策（<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">30-1</a>）です。74 はその間にある「ログイン状態の保ち方」を扱います。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：74_セッション管理/00_全体像/MOC_セッション管理</li>
+      <li>ノート：74_セッション管理 の 10_クッキー／20_セッション／30_トークン／40_攻撃と対策 の各ノート（見出しと概要）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ（1章・9章・11章）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-1_Cookieの仕組み.html"><span class="lbl">次のページ →</span>Cookieの仕組み</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

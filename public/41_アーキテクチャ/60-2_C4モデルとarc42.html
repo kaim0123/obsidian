@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>図と文書化（C4 モデル・arc42）｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">60 意思決定・文書化 › 図と文書化（C4 モデル・arc42）</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 意思決定・文書化</span>
+      <h1>図と文書化（C4 モデル・arc42）</h1>
+      <p class="lead">アーキテクチャをチーム全員が同じ地図で見るための、図の描き方（C4 モデル）と文書の構成（arc42）を詳しく解説します。C4 の4つのズームレベルと補助図、表記のルールとツール、arc42 の12章に何を書くか、そして ADR と組み合わせる実務の型が分かります。</p>
+      <p class="meta">もとにしたノート：60_意思決定・文書化/00_解説_意思決定・文書化.md（§4 図解）、00_全体像/00_解説_アーキテクチャ体系.md（§1-1・§3・§6）。個別ノートがないため C4 モデル・arc42 の公式サイトなどで補足</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>アーキテクチャは、決めただけではチームに伝わりません。「どこに何があり、どうつながっているか」を全員が同じ地図で見られるようにするのが、<strong>図と文書</strong>の役割です。このページでは、図の描き方の型である <strong>C4 モデル</strong>と、文書全体の目次の型である <strong>arc42</strong> を詳しく見ていきます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>このページで分かること</th></tr></thead>
+      <tbody>
+        <tr><td>図と文書の目的</td><td>なぜ図だけでは足りないのか、「誰の・どんな関心に答える図か」という考え方</td></tr>
+        <tr><td>C4 モデル</td><td>4つのズームレベル（コンテキスト・コンテナ・コンポーネント・コード）と、補助図（システムランドスケープ・動的図・デプロイ図）</td></tr>
+        <tr><td>表記のルール</td><td>タイトル・凡例・要素の種類・矢印のラベルなど、C4 が推奨するチェックリスト</td></tr>
+        <tr><td>ツール</td><td>作図ツールとモデリングツールの違い、Structurizr・C4-PlantUML などの書き方</td></tr>
+        <tr><td>arc42</td><td>12章それぞれに何を書くか、小さく始めるならどの章か</td></tr>
+        <tr><td>組み合わせ方</td><td>「C4 で描き、arc42 の枠に入れ、決定は ADR で残す」という実務の型</td></tr>
+      </tbody>
+    </table></div>
+    <p>このテーマにはまだ個別ノートがないため、フォルダの解説ノートと全体解説の該当部分をもとに、C4 モデル・arc42 の公式サイトの内容で詳しく補っています。決定の記録（ADR）そのものは <a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a>、図を使ったレビューは <a href="60-3_レビュー観点.html">アーキテクチャのレビュー観点</a> で扱います。</p>
+    <div class="callout key">
+      <p class="callout-title">境界の目安</p>
+      <p>「どう書くか（Markdown の記法・ドキュメントツール・README 一般）」は 41 外のノート（56_ドキュメント）の担当です。このページは「<strong>アーキテクチャの何を、なぜ、どの粒度で残すか</strong>」を扱います。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ図と文書が必要か</h2>
+    <p>図と文書は「チームが同じ地図を見る」ための道具です。口頭やチャットで伝えた構造は人によって解釈がずれ、時間がたつと誰も正確に覚えていない状態になります。アーキテクチャ上の決定は後から変えにくいものなので、その形を目に見える形で残しておく価値は大きいのです。</p>
+
+    <h3>「誰の、どんな関心に答えるか」— ISO/IEC/IEEE 42010 の考え方</h3>
+    <p>アーキテクチャ記述の国際規格 ISO/IEC/IEEE 42010 は、アーキテクチャを「システムの根本的な概念または性質であり、要素・関係・設計と進化の原則に表れるもの」と定義しています。そのうえで、記述のための言葉として次の4つを定めています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th><th>具体例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ステークホルダー</strong></td><td>システムに利害を持つ人・組織</td><td>利用者、経営者、開発者、運用者、監査担当</td></tr>
+        <tr><td><strong>関心事（Concern）</strong></td><td>ステークホルダーが気にしていること</td><td>「外部のどのシステムとつながるのか」「どこにデプロイされるのか」</td></tr>
+        <tr><td><strong>ビュー</strong></td><td>ある関心事に答えるための、アーキテクチャの見せ方（図や文書）</td><td>コンテナ図、デプロイ図</td></tr>
+        <tr><td><strong>ビューポイント</strong></td><td>ビューを作るための約束事（何を・どの表記で描くか）</td><td>「コンテナ図にはコンテナと技術とプロトコルを描く」</td></tr>
+      </tbody>
+    </table></div>
+    <p>つまり「1枚の図ですべてを説明する」のではなく、<strong>読み手と関心事ごとに図を描き分ける</strong>のが基本です。C4 モデルのズームレベルも、arc42 の章立ても、この考え方の上に成り立っています。</p>
+
+    <h3>図だけではアーキテクチャを説明できない</h3>
+    <p>『ソフトウェアアーキテクチャの基礎』（Richards &amp; Ford）は、アーキテクチャを <strong>構造・アーキテクチャ特性・アーキテクチャ決定・設計原則</strong> の4つの次元の組み合わせとして捉えます。構造の図は、このうち「構造」しか表しません。</p>
+    <div class="grid c2">
+      <div class="card accent"><h4>図で伝えるもの</h4><p>構造（どんな部品があり、どうつながるか）。C4 モデルが担当します。</p></div>
+      <div class="card purple"><h4>文書で伝えるもの</h4><p>なぜその構造なのか（品質目標・制約）、どう守らせるのか（決定・原則）。arc42 と ADR が担当します。</p></div>
+    </div>
+    <p>この2つを組み合わせて初めて、後から来た人が「この構造を盲目的に受け入れるか、盲目的に変えるか」の二択に陥らずに済みます。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>C4 モデルの考え方 — 地図のようにズームする</h2>
+    <p><strong>C4 モデル</strong>は Simon Brown が考案した、ソフトウェアアーキテクチャの図を描くための手法です。名前は4つの階層（Context・Containers・Components・Code）の頭文字から来ています。<strong>地図アプリで縮尺を変えるように</strong>、全体像から細部へ段階的に拡大して描き分けるのが特徴です。</p>
+    <p>C4 は特定の記法（UML など）にも特定のツールにも縛られない、「表記非依存・ツール非依存」の手法とされています。決まっているのは記号の形ではなく、<strong>何を抽象化の単位とするか</strong>です。</p>
+
+    <h3>C4 の5つの抽象</h3>
+    <p>C4 では、ソフトウェアを次の階層的な「抽象」で捉えます。「ソフトウェアシステムは1つ以上のコンテナでできており、コンテナは1つ以上のコンポーネントを含み、コンポーネントは1つ以上のコード要素で実装される」という入れ子の関係です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>抽象</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>人（Person）</strong></td><td>システムを使う人。役割・ペルソナ・特定の個人など</td><td>顧客、店舗スタッフ、管理者</td></tr>
+        <tr><td><strong>ソフトウェアシステム</strong></td><td>利用者に価値を届ける最上位の単位。1チームが責任を持てる程度の範囲</td><td>EC サイト、決済サービス、メール配信サービス</td></tr>
+        <tr><td><strong>コンテナ</strong></td><td>アプリケーションまたはデータストア。システム全体が動くために、動いていなければならない<strong>実行の境界</strong></td><td>Web アプリ、API サーバー、DB、キュー、サーバーレス関数</td></tr>
+        <tr><td><strong>コンポーネント</strong></td><td>1つのコンテナの中にある、インターフェースの裏にまとまった機能のかたまり</td><td>注文コントローラ、注文サービス、注文リポジトリ</td></tr>
+        <tr><td><strong>コード</strong></td><td>クラス・インターフェース・関数・テーブルなど、実装そのもの</td><td><code>OrderService</code> クラス、<code>orders</code> テーブル</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout warn">
+      <p class="callout-title">「コンテナ」は Docker のコンテナではない</p>
+      <p>C4 の「コンテナ」は、コードが実行される、またはデータが保存される<strong>実行時の境界</strong>のことです。C4 の公式サイトでも、コンテナ技術の普及で「コンテナ＝Docker」と連想されるようになったのは残念だ、と断っています。公式に挙げられている例は次のようなものです。</p>
+      <ul>
+        <li>サーバー側の Web アプリケーション（Java EE、ASP.NET、Node.js など）</li>
+        <li>クライアント側の Web アプリケーション（ブラウザで動く JavaScript アプリ）</li>
+        <li>デスクトップアプリ、モバイルアプリ</li>
+        <li>コンソールアプリ・バッチ</li>
+        <li>サーバーレス関数（AWS Lambda、Azure Functions など）</li>
+        <li>データベース、Blob・コンテンツストア（Amazon S3、CDN など）、ファイルシステム</li>
+        <li>シェルスクリプト</li>
+      </ul>
+    </div>
+
+    <figure>
+    <svg viewBox="0 0 760 290" role="img" aria-label="C4 モデルの4レベルのズーム">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <!-- panels -->
+      <rect x="10" y="40" width="160" height="190" rx="10" class="d-line"/>
+      <rect x="200" y="40" width="160" height="190" rx="10" class="d-line"/>
+      <rect x="390" y="40" width="160" height="190" rx="10" class="d-line"/>
+      <rect x="580" y="40" width="160" height="190" rx="10" class="d-line"/>
+      <text x="90" y="28" text-anchor="middle" class="d-text-accent">L1 コンテキスト</text>
+      <text x="280" y="28" text-anchor="middle" class="d-text-accent">L2 コンテナ</text>
+      <text x="470" y="28" text-anchor="middle" class="d-text-accent">L3 コンポーネント</text>
+      <text x="660" y="28" text-anchor="middle" class="d-text-accent">L4 コード</text>
+      <!-- L1 -->
+      <rect x="40" y="55" width="100" height="30" rx="6" class="d-box"/>
+      <text x="90" y="75" text-anchor="middle" class="d-text-sub">利用者</text>
+      <rect x="30" y="110" width="120" height="40" rx="6" class="d-box-accent"/>
+      <text x="90" y="135" text-anchor="middle" class="d-text-bold">対象システム</text>
+      <rect x="40" y="180" width="100" height="30" rx="6" class="d-box"/>
+      <text x="90" y="200" text-anchor="middle" class="d-text-sub">外部システム</text>
+      <line x1="90" y1="85" x2="90" y2="108" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="90" y1="150" x2="90" y2="178" class="d-line" marker-end="url(#arw1)"/>
+      <!-- L2 -->
+      <rect x="210" y="50" width="140" height="170" rx="8" class="d-line-dash"/>
+      <rect x="225" y="62" width="110" height="30" rx="6" class="d-box"/>
+      <text x="280" y="82" text-anchor="middle" class="d-text-sub">Web アプリ</text>
+      <rect x="225" y="117" width="110" height="34" rx="6" class="d-box-accent"/>
+      <text x="280" y="139" text-anchor="middle" class="d-text-bold">API</text>
+      <rect x="225" y="178" width="110" height="30" rx="6" class="d-box"/>
+      <text x="280" y="198" text-anchor="middle" class="d-text-sub">DB</text>
+      <line x1="280" y1="92" x2="280" y2="115" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="280" y1="151" x2="280" y2="176" class="d-line" marker-end="url(#arw1)"/>
+      <!-- L3 -->
+      <rect x="400" y="50" width="140" height="170" rx="8" class="d-line-dash"/>
+      <rect x="410" y="62" width="120" height="30" rx="6" class="d-box"/>
+      <text x="470" y="82" text-anchor="middle" class="d-text-sub">コントローラ</text>
+      <rect x="410" y="117" width="120" height="34" rx="6" class="d-box-accent"/>
+      <text x="470" y="139" text-anchor="middle" class="d-text-bold">注文サービス</text>
+      <rect x="410" y="178" width="120" height="30" rx="6" class="d-box"/>
+      <text x="470" y="198" text-anchor="middle" class="d-text-sub">リポジトリ</text>
+      <line x1="470" y1="92" x2="470" y2="115" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="470" y1="151" x2="470" y2="176" class="d-line" marker-end="url(#arw1)"/>
+      <!-- L4 -->
+      <rect x="600" y="58" width="120" height="78" rx="4" class="d-box-accent"/>
+      <text x="660" y="78" text-anchor="middle" class="d-text-sub">OrderService</text>
+      <line x1="600" y1="86" x2="720" y2="86" class="d-line"/>
+      <text x="612" y="104" class="d-text-sub">+ place()</text>
+      <text x="612" y="124" class="d-text-sub">+ cancel()</text>
+      <rect x="600" y="160" width="120" height="56" rx="4" class="d-box"/>
+      <text x="660" y="180" text-anchor="middle" class="d-text-sub">Order</text>
+      <line x1="600" y1="188" x2="720" y2="188" class="d-line"/>
+      <text x="612" y="206" class="d-text-sub">- items</text>
+      <line x1="660" y1="136" x2="660" y2="158" class="d-line" marker-end="url(#arw1)"/>
+      <!-- zoom arrows -->
+      <line x1="172" y1="134" x2="198" y2="134" class="d-line-accent" marker-end="url(#arw2)"/>
+      <line x1="362" y1="134" x2="388" y2="134" class="d-line-accent" marker-end="url(#arw2)"/>
+      <line x1="552" y1="134" x2="578" y2="134" class="d-line-accent" marker-end="url(#arw2)"/>
+      <!-- audience -->
+      <text x="90" y="254" text-anchor="middle" class="d-text-sub">読み手：全員</text>
+      <text x="90" y="274" text-anchor="middle" class="d-text-sub">（非技術者も）</text>
+      <text x="280" y="254" text-anchor="middle" class="d-text-sub">読み手：開発者・</text>
+      <text x="280" y="274" text-anchor="middle" class="d-text-sub">運用者・関係者</text>
+      <text x="470" y="254" text-anchor="middle" class="d-text-sub">読み手：そのコンテナ</text>
+      <text x="470" y="274" text-anchor="middle" class="d-text-sub">の開発者</text>
+      <text x="660" y="254" text-anchor="middle" class="d-text-sub">必要なときだけ</text>
+      <text x="660" y="274" text-anchor="middle" class="d-text-sub">（自動生成が多い）</text>
+    </svg>
+    <figcaption>図：C4 モデルの4レベル。色付きの要素を「拡大」したものが、右隣の図になる</figcaption>
+    </figure>
+
+    <h2 id="sec-4"><span class="num">4.</span>C4 の4つのレベルを詳しく</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>レベル</th><th>見せるもの</th><th>主な読み手</th><th>公式の推奨</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. System Context（コンテキスト）</strong></td><td>対象システムと、利用者・外部システムの関係</td><td>非技術者も含む全員</td><td><span class="badge good">ほとんどのチームに推奨</span></td></tr>
+        <tr><td><strong>2. Container（コンテナ）</strong></td><td>Web アプリ、API、DB、キューなど実行・デプロイの単位と、その間の通信</td><td>開発者・運用者（技術者以外の関係者にも）</td><td><span class="badge good">ほとんどのチームに推奨</span></td></tr>
+        <tr><td><strong>3. Component（コンポーネント）</strong></td><td>1つのコンテナの中の主要な部品</td><td>そのコンテナの開発者・アーキテクト</td><td><span class="badge warn">価値があるときだけ</span></td></tr>
+        <tr><td><strong>4. Code（コード）</strong></td><td>クラス図・ER 図など</td><td>開発者</td><td><span class="badge warn">価値があるときだけ</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">4つ全部を描く必要はない</p>
+      <p>C4 の公式サイトは「4つのレベルすべてを使う必要はなく、価値のあるものだけでよい」と明言しています。実務では<strong>レベル1・2だけで十分</strong>なことが多いとされます。レベル3・4はコードの変更のたびに古くなりやすく、描くなら自動生成やモデリングツールの助けを借りるのが現実的です。</p>
+    </div>
+
+    <h3>レベル1：システムコンテキスト図</h3>
+    <p>対象のソフトウェアシステムを中央に1つの箱として置き、その周りに<strong>使う人</strong>と<strong>つながる外部システム</strong>を描きます。中身の技術（言語・DB・プロトコル）は描きません。「このシステムは誰のためのもので、何に依存しているのか」を、エンジニア以外も含めた全員が理解できるようにする図です。</p>
+    <ul>
+      <li>範囲：1つのソフトウェアシステム</li>
+      <li>主な要素：対象システム</li>
+      <li>補助の要素：人、直接つながる外部システム</li>
+      <li>使いどころ：プロジェクトの最初の説明、新メンバーのオンボーディング、外部連携の洗い出し</li>
+    </ul>
+
+    <h3>レベル2：コンテナ図</h3>
+    <p>システムの箱を「拡大」して、中にある<strong>アプリケーションとデータストア</strong>を描きます。各コンテナに<strong>使っている技術</strong>を書き、コンテナ間の矢印には<strong>通信のプロトコル</strong>（HTTPS、SQL、AMQP など）を書きます。アーキテクチャの大まかな形と、主要な技術選択が一目で分かる図です。</p>
+    <p>このページの全体マップでいえば、<a href="40-1_分散とスタイル.html">40 システム・分散</a> や <a href="30-1_レンダリング方式.html">30 フロントエンド構成</a> が扱う範囲がこのレベルにあたります。</p>
+
+    <figure>
+    <svg viewBox="0 0 760 470" role="img" aria-label="コンテナ図の例">
+      <defs><marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="20" y="34" class="d-text-bold">［コンテナ図］EC サイト</text>
+      <!-- person -->
+      <rect x="290" y="16" width="180" height="56" rx="28" class="d-box-purple"/>
+      <text x="380" y="40" text-anchor="middle" class="d-text-bold">顧客</text>
+      <text x="380" y="60" text-anchor="middle" class="d-text-sub">［人］</text>
+      <!-- boundary -->
+      <rect x="230" y="105" width="320" height="350" rx="10" class="d-line-dash"/>
+      <text x="246" y="128" class="d-text-sub">EC サイト［ソフトウェアシステム］</text>
+      <!-- containers -->
+      <rect x="290" y="140" width="180" height="60" rx="8" class="d-box-accent"/>
+      <text x="380" y="164" text-anchor="middle" class="d-text-bold">Web アプリ</text>
+      <text x="380" y="186" text-anchor="middle" class="d-text-sub">［コンテナ：React］</text>
+      <rect x="290" y="260" width="180" height="60" rx="8" class="d-box-accent"/>
+      <text x="380" y="284" text-anchor="middle" class="d-text-bold">API サーバー</text>
+      <text x="380" y="306" text-anchor="middle" class="d-text-sub">［コンテナ：Spring Boot］</text>
+      <rect x="290" y="375" width="180" height="60" rx="8" class="d-box-accent"/>
+      <text x="380" y="399" text-anchor="middle" class="d-text-bold">データベース</text>
+      <text x="380" y="421" text-anchor="middle" class="d-text-sub">［コンテナ：PostgreSQL］</text>
+      <!-- external -->
+      <rect x="590" y="260" width="150" height="60" rx="8" class="d-box"/>
+      <text x="665" y="284" text-anchor="middle" class="d-text-bold">決済サービス</text>
+      <text x="665" y="306" text-anchor="middle" class="d-text-sub">［外部システム］</text>
+      <!-- relations -->
+      <line x1="380" y1="72" x2="380" y2="138" class="d-line" marker-end="url(#arw3)"/>
+      <text x="392" y="96" class="d-text-sub">商品を探して購入する</text>
+      <text x="392" y="112" class="d-text-sub">［HTTPS］</text>
+      <line x1="380" y1="200" x2="380" y2="258" class="d-line" marker-end="url(#arw3)"/>
+      <text x="392" y="226" class="d-text-sub">注文 API を呼ぶ</text>
+      <text x="392" y="242" class="d-text-sub">［JSON/HTTPS］</text>
+      <line x1="380" y1="320" x2="380" y2="373" class="d-line" marker-end="url(#arw3)"/>
+      <text x="392" y="346" class="d-text-sub">注文を読み書きする</text>
+      <text x="392" y="362" class="d-text-sub">［SQL/TCP］</text>
+      <line x1="470" y1="290" x2="588" y2="290" class="d-line" marker-end="url(#arw3)"/>
+      <text x="530" y="280" text-anchor="middle" class="d-text-sub">決済を依頼</text>
+      <text x="530" y="308" text-anchor="middle" class="d-text-sub">［HTTPS］</text>
+      <!-- legend -->
+      <text x="20" y="150" class="d-text-bold">凡例</text>
+      <rect x="20" y="164" width="34" height="22" rx="11" class="d-box-purple"/>
+      <text x="64" y="180" class="d-text-sub">人</text>
+      <rect x="20" y="198" width="34" height="22" rx="4" class="d-box-accent"/>
+      <text x="64" y="214" class="d-text-sub">対象システムのコンテナ</text>
+      <rect x="20" y="232" width="34" height="22" rx="4" class="d-box"/>
+      <text x="64" y="248" class="d-text-sub">外部システム</text>
+      <line x1="20" y1="276" x2="54" y2="276" class="d-line-dash"/>
+      <text x="64" y="281" class="d-text-sub">システムの境界</text>
+      <line x1="20" y1="306" x2="52" y2="306" class="d-line" marker-end="url(#arw3)"/>
+      <text x="64" y="311" class="d-text-sub">一方向の関係</text>
+      <text x="64" y="329" class="d-text-sub">（目的［技術］）</text>
+      <text x="20" y="440" class="d-text-sub">作成日：2026-10-05</text>
+    </svg>
+    <figcaption>図：レベル2（コンテナ図）の例。タイトル・凡例・要素の種類・技術・矢印のラベル・日付を付ける</figcaption>
+    </figure>
+
+    <h3>レベル3：コンポーネント図</h3>
+    <p>1つのコンテナを「拡大」し、その中の主要な<strong>コンポーネント</strong>（インターフェースの裏にまとまった機能のかたまり）と、それらの関係を描きます。例えば API サーバーの中にある「注文コントローラ」「注文サービス」「注文リポジトリ」などです。<a href="21-1_層化・三層・レイヤード.html">レイヤー</a> や <a href="23-1_依存性のルールとクリーンアーキテクチャ.html">クリーンアーキテクチャ</a> のような 20 アプリ内部構造の話は、このレベルで表現されます。</p>
+    <p>コンポーネントの数が多いコンテナでは図がすぐに大きくなり、更新も追いつかなくなりがちです。公式サイトでも「価値があるときだけ」とされており、描く場合はコードから自動で作ることが勧められています。</p>
+
+    <h3>レベル4：コード図</h3>
+    <p>コンポーネントの実装を、UML のクラス図や ER 図などで描くレベルです。通常は手で描かず、<strong>IDE やツールで必要なときに自動生成</strong>します。特に複雑で重要な部分だけを説明したいときに限って使う、という位置づけです。クラス単位の設計の話は 41 外のノート（42〜44 の設計・パターン系フォルダ）の範囲になります。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>補助の図 — ランドスケープ・動的図・デプロイ図</h2>
+    <p>4つのレベルは「静的な構造」を描くための図です。C4 にはこれを補う3種類の図があります。</p>
+
+    <div class="grid c3">
+      <div class="card accent">
+        <h4>システムランドスケープ図</h4>
+        <p>組織・部門など、ある範囲に存在する<strong>複数のソフトウェアシステムと人</strong>の全体像。</p>
+      </div>
+      <div class="card purple">
+        <h4>動的図</h4>
+        <p>ユーザーストーリーやユースケースを実現するために、要素が<strong>実行時にどう協調するか</strong>。</p>
+      </div>
+      <div class="card good">
+        <h4>デプロイ図</h4>
+        <p>コンテナが<strong>どのインフラに、どう配置されるか</strong>。環境（本番・ステージングなど）ごとに描く。</p>
+      </div>
+    </div>
+
+    <h3>システムランドスケープ図</h3>
+    <p>公式サイトによれば、システムランドスケープ図は「特定のソフトウェアシステムに焦点を当てないシステムコンテキスト図」です。企業・組織・部門など、選んだ範囲の中にある人とソフトウェアシステムをすべて並べ、それらがどうつながっているかを示します。</p>
+    <ul>
+      <li>読み手：技術者・非技術者の両方。開発チームの外の人も含む</li>
+      <li>向いている場面：多数のシステムを抱える大きな組織。エンタープライズアーキテクチャの世界への「橋渡し」になる図とされています</li>
+      <li>コンテキスト図との違い：コンテキスト図は「1つのシステムから見た周辺」、ランドスケープ図は「全システムの地図」</li>
+    </ul>
+
+    <h3>動的図</h3>
+    <p>静的な図に描いた要素（ソフトウェアシステム・コンテナ・コンポーネントのどれでもよい）が、ある機能を実現するために<strong>どの順番でやり取りするか</strong>を描きます。描き方は2通りあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>スタイル</th><th>描き方</th><th>向いている場面</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コラボレーション形式</strong></td><td>要素を自由に配置し、矢印に「1. 2. 3.」と番号を振って順序を示す</td><td>構造図と同じ配置で、流れを重ねて見せたいとき</td></tr>
+        <tr><td><strong>シーケンス形式</strong></td><td>UML のシーケンス図のように、時間を縦軸にして並べる</td><td>やり取りの数が多く、順序が重要なとき</td></tr>
+      </tbody>
+    </table></div>
+    <p>公式には「控えめに使う」ことが推奨されています。すべての機能について描くのではなく、<strong>興味深い・繰り返し現れる・やり取りが複雑なパターン</strong>に絞ります。たとえば「注文確定時のイベント連携」や「認証のリダイレクトの流れ」などです。arc42 の第6章（ランタイムビュー）に入れる図として最適です。</p>
+
+    <h3>デプロイ図</h3>
+    <p>1つの<strong>デプロイ環境</strong>（本番、ステージング、開発など）の中で、ソフトウェアシステムやコンテナのインスタンスがどこで動くかを示します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>デプロイノード</strong></td><td>ソフトウェアが動く場所。物理サーバー・端末、仮想化された基盤（IaaS・PaaS・仮想マシン）、コンテナ化された基盤（Docker コンテナ）、実行環境（DB サーバーなど）。入れ子にできる</td></tr>
+        <tr><td><strong>コンテナインスタンス</strong></td><td>コンテナ図のコンテナが、どのノードにいくつ配置されるか</td></tr>
+        <tr><td><strong>インフラノード</strong></td><td>DNS、ロードバランサー、ファイアウォールなどの補助的な要素</td></tr>
+      </tbody>
+    </table></div>
+    <p>読み手はアーキテクト・開発者・インフラ担当・運用担当です。AWS や Azure のアイコンを使ってもかまいませんが、その場合も凡例で意味を説明します。ここで初めて「Docker のコンテナ」が<strong>デプロイノードとして</strong>登場する点に注意してください。C4 のコンテナ（アプリ）は、Docker コンテナ（ノード）の<strong>上で動くもの</strong>という関係です。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>表記の推奨 — 図だけで読めるようにする</h2>
+    <p>C4 は記号の形を決めていない代わりに、「図は説明なしで単独で（おおむね）理解できるべき」という方針と、そのためのチェックリストを示しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対象</th><th>推奨</th><th>理由・補足</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="2">図全体</td><td><strong>タイトル</strong>を付け、図の種類と範囲を書く</td><td>例：「［コンテナ図］EC サイト」。何の図か迷わせない</td></tr>
+        <tr><td><strong>凡例（キー）</strong>を付ける</td><td>形・色・枠線のスタイル・線の種類・矢じりの意味を説明する</td></tr>
+        <tr><td rowspan="3">要素</td><td>要素の<strong>種類</strong>を明記する</td><td>人／ソフトウェアシステム／コンテナ／コンポーネントのどれか</td></tr>
+        <tr><td>短い<strong>説明</strong>を書く</td><td>主な責務がひと言で分かるように</td></tr>
+        <tr><td>コンテナとコンポーネントには<strong>技術</strong>を書く</td><td>例：［コンテナ：Spring Boot］</td></tr>
+        <tr><td rowspan="3">関係（線）</td><td>線は<strong>一方向</strong>の関係として描く</td><td>双方向の矢印で曖昧にしない</td></tr>
+        <tr><td>線には<strong>ラベル</strong>を付ける</td><td>「使う」ではなく「注文 API を呼ぶ」のように、意図と向きが分かる具体的な言葉で</td></tr>
+        <tr><td>コンテナ間の通信には<strong>技術・プロトコル</strong>を書く</td><td>例：［JSON/HTTPS］、［AMQP］。同期か非同期かもここで分かる</td></tr>
+        <tr><td rowspan="2">その他</td><td>略語は全員が分かるものにするか、凡例で説明する</td><td>チーム外の人も読む前提で</td></tr>
+        <tr><td>色の使い方は図の間で一貫させる</td><td>色覚の多様性や白黒印刷でも読めるよう、色だけに意味を持たせない</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">このフォルダの約束：凡例と日付</p>
+      <p>図には必ず<strong>凡例</strong>（矢印が同期か非同期かなど）と<strong>日付</strong>を付けます。日付があれば、図が古くなっているかどうかを読み手が判断できます。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>ツール — 作図とモデリング</h2>
+    <p>C4 の公式サイトは、ツールを大きく2種類に分けています。</p>
+    <div class="grid c2">
+      <div class="card warn">
+        <h4>作図（Diagramming）</h4>
+        <p>「箱と線」を描くツール。要素の意味をツールが理解しないので検証がほとんどできず、同じ要素を複数の図で使うにはコピーが必要です。データ形式も差分を見にくいことが多いです。</p>
+        <p class="small muted">例：汎用の作図ツール、ホワイトボード</p>
+      </div>
+      <div class="card good">
+        <h4>モデリング（Modelling）<span class="badge good">推奨</span></h4>
+        <p>図とは別に、要素と関係の<strong>モデル</strong>を1か所で定義し、そこから複数の図（ビュー）を生成します。要素の名前を変えれば全部の図に反映され、問い合わせや検証もできます。</p>
+        <p class="small muted">例：Structurizr</p>
+      </div>
+    </div>
+
+    <h3>Structurizr（モデリング）</h3>
+    <p>Structurizr は C4 の考案者 Simon Brown による、C4 のためのモデリングツール群です。テキストの DSL でモデルを書き、そこからコンテキスト図・コンテナ図などのビューを生成します。テキストなので、コードと同じリポジトリでバージョン管理し、レビューできます。</p>
+    <span class="code-label">workspace.dsl（イメージ）</span>
+    <pre><code>workspace {
+  model {
+    customer = person "顧客"
+    shop = softwareSystem "EC サイト" {
+      web = container "Web アプリ" "画面を表示する" "React"
+      api = container "API サーバー" "注文を受け付ける" "Spring Boot"
+      db  = container "データベース" "注文と商品を保存する" "PostgreSQL"
+    }
+    payment = softwareSystem "決済サービス" "外部の決済代行"
+
+    customer -&gt; web "商品を探して購入する" "HTTPS"
+    web -&gt; api "注文 API を呼ぶ" "JSON/HTTPS"
+    api -&gt; db "注文を読み書きする" "SQL/TCP"
+    api -&gt; payment "決済を依頼する" "HTTPS"
+  }
+  views {
+    systemContext shop { include * autolayout lr }
+    container shop { include * autolayout lr }
+  }
+}</code></pre>
+    <p>1つのモデルから「コンテキスト図」と「コンテナ図」の2つのビューを作っている点がポイントです。コンテキスト図では <code>shop</code> の中身が隠れ、コンテナ図では中身が展開されます。</p>
+
+    <h3>C4-PlantUML（作図をテキストで）</h3>
+    <p>PlantUML に C4 用のマクロを追加するライブラリです。<code>Person</code>・<code>Container</code>・<code>Rel</code> などのマクロで要素と関係を書きます。モデルは図ごとに書くので厳密には「作図」側ですが、テキストで差分が取れる点は大きな利点です。</p>
+    <span class="code-label">container.puml（イメージ）</span>
+    <pre><code>@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title ［コンテナ図］EC サイト
+
+Person(customer, "顧客")
+System_Boundary(shop, "EC サイト") {
+  Container(web, "Web アプリ", "React", "画面を表示する")
+  Container(api, "API サーバー", "Spring Boot", "注文を受け付ける")
+  ContainerDb(db, "データベース", "PostgreSQL", "注文と商品")
+}
+System_Ext(payment, "決済サービス", "外部の決済代行")
+
+Rel(customer, web, "商品を探して購入する", "HTTPS")
+Rel(web, api, "注文 API を呼ぶ", "JSON/HTTPS")
+Rel(api, db, "注文を読み書きする", "SQL/TCP")
+Rel(api, payment, "決済を依頼する", "HTTPS")
+
+SHOW_LEGEND()
+@enduml</code></pre>
+
+    <h3>そのほかの選択肢</h3>
+    <ul>
+      <li><strong>Mermaid の C4 図</strong>：Markdown の中に書ける Mermaid にも C4 図の構文があります（公式ドキュメントでは実験的な機能とされています）。Obsidian や GitHub で手軽に表示できるのが利点です。</li>
+      <li><strong>汎用作図ツール</strong>：C4 用の図形セットを使えば普通の作図ツールでも描けます。少数の図を手早く描くには十分ですが、図が増えると整合性を保つのが難しくなります。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">選び方の目安</p>
+      <p>図が1〜2枚なら、使い慣れたツールで十分です。図が増えてきたら、同じ要素を何度も描かずに済む<strong>モデリング（Structurizr など）</strong>や、コードと一緒にレビューできる<strong>テキスト形式（diagrams as code）</strong>に移ると、図が古くなりにくくなります。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>このノート群のフォルダと C4 の対応</h2>
+    <p>41_アーキテクチャのフォルダは、<strong>範囲の大きさ（ズームレベル）</strong>で分けてあり、C4 の考え方と対応しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ズーム</th><th>C4 のレベル</th><th>対応するフォルダ</th></tr></thead>
+      <tbody>
+        <tr><td>広い：システムの外と中</td><td>L1 コンテキスト</td><td>システムと外部の関係（60 で図にして残す）</td></tr>
+        <tr><td>中：プロセス・サービス間</td><td>L2 コンテナ</td><td><a href="40-1_分散とスタイル.html">40 システム・分散</a>、<a href="30-1_レンダリング方式.html">30 フロントエンド構成</a></td></tr>
+        <tr><td>狭い：1つのアプリの中</td><td>L3 コンポーネント</td><td><a href="21-1_層化・三層・レイヤード.html">20 アプリ内部構造</a></td></tr>
+        <tr><td>さらに狭い：コード</td><td>L4 コード</td><td>41 外のノート（42〜44 の設計・パターン）</td></tr>
+      </tbody>
+    </table></div>
+    <p>ズームの軸とは別に、横に効くものと時間・人の軸があります。</p>
+    <ul>
+      <li><strong>どのレベルでも使う物差し</strong>：10 基礎（品質特性・トレードオフ・結合）</li>
+      <li><strong>全レベルを貫く仕組み</strong>：<a href="50-1_横断的関心事と認証認可.html">50 横断的関心事</a>（認証・観測性・設定）</li>
+      <li><strong>決めて残す</strong>：60 意思決定・文書化（ADR・C4・arc42。このページ）</li>
+      <li><strong>時間と人</strong>：70 進化と組織（負債・適応度関数・コンウェイ）</li>
+    </ul>
+
+    <h2 id="sec-9"><span class="num">9.</span>arc42 とは — アーキテクチャ文書の目次の型</h2>
+    <p><strong>arc42</strong> は、2005年から公開されている、技術に依存しない <strong>12章構成</strong>のアーキテクチャ文書テンプレートです。Gernot Starke と Peter Hruschka によって作られ、無料で使えます。C4 が「図の描き方」なら、arc42 は「<strong>文書全体の構成</strong>」です。</p>
+    <p>arc42 の考え方は「どこに何を書くかを決めておく」ことにあります。章の置き場所が決まっていれば、書く人は迷わず、読む人は必要な情報をすぐに見つけられます。公式ドキュメントでは、軽量に使う（lean）・しっかり書く（thorough）・最低限これだけは（essential）という観点で、章ごとの書き方のヒントが示されています。</p>
+
+    <figure>
+    <svg viewBox="0 0 760 340" role="img" aria-label="arc42 の12章マップ">
+      <!-- row 1 -->
+      <rect x="20" y="20" width="170" height="70" rx="8" class="d-box-purple"/>
+      <text x="105" y="48" text-anchor="middle" class="d-text-bold">1 導入と目標</text>
+      <text x="105" y="70" text-anchor="middle" class="d-text-sub">要求・品質目標・関係者</text>
+      <rect x="205" y="20" width="170" height="70" rx="8" class="d-box-purple"/>
+      <text x="290" y="48" text-anchor="middle" class="d-text-bold">2 制約</text>
+      <text x="290" y="70" text-anchor="middle" class="d-text-sub">技術・組織・法律・規約</text>
+      <rect x="390" y="20" width="170" height="70" rx="8" class="d-box-good"/>
+      <text x="475" y="48" text-anchor="middle" class="d-text-bold">3 コンテキスト</text>
+      <text x="475" y="70" text-anchor="middle" class="d-text-sub">外との境界 ≒ C4 L1</text>
+      <rect x="575" y="20" width="170" height="70" rx="8" class="d-box-good"/>
+      <text x="660" y="48" text-anchor="middle" class="d-text-bold">4 解決戦略</text>
+      <text x="660" y="70" text-anchor="middle" class="d-text-sub">中心となる方針の要約</text>
+      <!-- row 2 -->
+      <rect x="20" y="110" width="170" height="70" rx="8" class="d-box-accent"/>
+      <text x="105" y="138" text-anchor="middle" class="d-text-bold">5 ビルディング</text>
+      <text x="105" y="160" text-anchor="middle" class="d-text-sub">ブロック ≒ C4 L2・L3</text>
+      <rect x="205" y="110" width="170" height="70" rx="8" class="d-box-accent"/>
+      <text x="290" y="138" text-anchor="middle" class="d-text-bold">6 ランタイム</text>
+      <text x="290" y="160" text-anchor="middle" class="d-text-sub">シナリオ ≒ C4 動的図</text>
+      <rect x="390" y="110" width="170" height="70" rx="8" class="d-box-accent"/>
+      <text x="475" y="138" text-anchor="middle" class="d-text-bold">7 デプロイメント</text>
+      <text x="475" y="160" text-anchor="middle" class="d-text-sub">配置 ≒ C4 デプロイ図</text>
+      <rect x="575" y="110" width="170" height="70" rx="8" class="d-box-warn"/>
+      <text x="660" y="138" text-anchor="middle" class="d-text-bold">8 横断的コンセプト</text>
+      <text x="660" y="160" text-anchor="middle" class="d-text-sub">認証・ログ・エラー処理</text>
+      <!-- row 3 -->
+      <rect x="20" y="200" width="170" height="70" rx="8" class="d-box-warn"/>
+      <text x="105" y="228" text-anchor="middle" class="d-text-bold">9 アーキ決定</text>
+      <text x="105" y="250" text-anchor="middle" class="d-text-sub">ADR を並べる</text>
+      <rect x="205" y="200" width="170" height="70" rx="8" class="d-box-purple"/>
+      <text x="290" y="228" text-anchor="middle" class="d-text-bold">10 品質要求</text>
+      <text x="290" y="250" text-anchor="middle" class="d-text-sub">品質ツリー・シナリオ</text>
+      <rect x="390" y="200" width="170" height="70" rx="8" class="d-box"/>
+      <text x="475" y="228" text-anchor="middle" class="d-text-bold">11 リスクと負債</text>
+      <text x="475" y="250" text-anchor="middle" class="d-text-sub">既知の問題の一覧</text>
+      <rect x="575" y="200" width="170" height="70" rx="8" class="d-box"/>
+      <text x="660" y="228" text-anchor="middle" class="d-text-bold">12 用語集</text>
+      <text x="660" y="250" text-anchor="middle" class="d-text-sub">ドメインと技術の用語</text>
+      <!-- legend -->
+      <rect x="20" y="296" width="22" height="16" rx="3" class="d-box-purple"/>
+      <text x="50" y="309" class="d-text-sub">何を満たすか</text>
+      <rect x="160" y="296" width="22" height="16" rx="3" class="d-box-good"/>
+      <text x="190" y="309" class="d-text-sub">境界と方針</text>
+      <rect x="290" y="296" width="22" height="16" rx="3" class="d-box-accent"/>
+      <text x="320" y="309" class="d-text-sub">構造と動き（図）</text>
+      <rect x="450" y="296" width="22" height="16" rx="3" class="d-box-warn"/>
+      <text x="480" y="309" class="d-text-sub">全体の決まり</text>
+      <rect x="590" y="296" width="22" height="16" rx="3" class="d-box"/>
+      <text x="620" y="309" class="d-text-sub">管理と共通語彙</text>
+    </svg>
+    <figcaption>図：arc42 の12章マップ（色分けはこのページでの整理）。青い章に C4 の図が入り、第9章に ADR が並ぶ</figcaption>
+    </figure>
+
+    <h2 id="sec-10"><span class="num">10.</span>arc42 の12章 — それぞれに何を書くか</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>章</th><th>中身</th><th>関連</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>導入と目標</td><td>要求の要点、<strong>品質目標トップ3</strong>、ステークホルダー</td><td><a href="12-1_品質特性と非機能要件.html">品質特性</a></td></tr>
+        <tr><td>2</td><td>制約</td><td>守らなければならない技術・組織・法律上の制約、規約</td><td></td></tr>
+        <tr><td>3</td><td>コンテキストとスコープ</td><td>外部システム・利用者との境界</td><td>≒ C4 L1</td></tr>
+        <tr><td>4</td><td>解決戦略（ソリューション戦略）</td><td>中心となるアイデアと方針の要約</td><td></td></tr>
+        <tr><td>5</td><td>ビルディングブロックビュー</td><td>静的な構造を階層的に分解</td><td>≒ C4 L2・L3</td></tr>
+        <tr><td>6</td><td>ランタイムビュー</td><td>重要なシナリオでの動き</td><td>C4 動的図</td></tr>
+        <tr><td>7</td><td>デプロイメントビュー</td><td>インフラと配置</td><td>C4 デプロイ図</td></tr>
+        <tr><td>8</td><td>横断的コンセプト</td><td>認証・ログ・エラー処理など、全体に効く仕組み</td><td><a href="50-1_横断的関心事と認証認可.html">横断的関心事</a></td></tr>
+        <tr><td>9</td><td>アーキテクチャ決定</td><td>重要な決定（ADR の一覧）</td><td><a href="60-1_意思決定とADR.html">ADR</a></td></tr>
+        <tr><td>10</td><td>品質要求</td><td>品質ツリーと品質シナリオ</td><td><a href="12-2_品質特性シナリオと計測.html">品質特性シナリオ</a></td></tr>
+        <tr><td>11</td><td>リスクと技術的負債</td><td>リスク分析の結果、負債の一覧</td><td><a href="70-1_技術的負債.html">技術的負債</a></td></tr>
+        <tr><td>12</td><td>用語集</td><td>ドメイン用語・技術用語</td><td></td></tr>
+      </tbody>
+    </table></div>
+    <p>以下、章ごとに書く内容を詳しく見ていきます（開くと詳細が表示されます）。</p>
+
+    <details open>
+      <summary>第1章 導入と目標（Introduction and Goals）</summary>
+      <div class="body">
+        <p>文書を読む人が最初に知るべき「このシステムは何のためにあり、何を大事にするのか」を書きます。</p>
+        <ul>
+          <li><strong>要求の概要</strong>：主な機能要求を短く。詳しい要求仕様があるならそこへのリンクでよい</li>
+          <li><strong>品質目標</strong>：アーキテクチャにとって最も重要な品質特性を、優先順位を付けて<strong>3つ程度（多くても5つ）</strong>挙げる。「性能」「保守性」のような言葉に、具体的な意味を一文添える</li>
+          <li><strong>ステークホルダー</strong>：誰がこの文書・システムに関心を持ち、何を期待しているかを表にする（役割・連絡先・期待）</li>
+        </ul>
+        <p>品質目標は、第10章の品質要求と第4章の解決戦略につながる「アーキテクチャの出発点」です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第2章 制約（Architecture Constraints）</summary>
+      <div class="body">
+        <p>設計者が自由に選べない条件を書きます。ここに書かれたものは、トレードオフの議論の対象外になります。</p>
+        <ul>
+          <li><strong>技術的な制約</strong>：使える言語・クラウド・既存システムとの互換性など</li>
+          <li><strong>組織的な制約</strong>：チーム構成、予算、期限、開発プロセス</li>
+          <li><strong>法律・規制上の制約</strong>：個人情報保護、業界の規制、データの保存場所</li>
+          <li><strong>規約</strong>：コーディング規約、命名規則、文書化のルール</li>
+        </ul>
+      </div>
+    </details>
+    <details>
+      <summary>第3章 コンテキストとスコープ（Context and Scope）</summary>
+      <div class="body">
+        <p>システムの<strong>境界</strong>を明らかにします。どこまでが自分たちの責任で、どこからが外部かを決める章です。</p>
+        <ul>
+          <li><strong>ビジネスコンテキスト</strong>：やり取りする相手（利用者・外部システム）と、交換するデータや業務上の意味</li>
+          <li><strong>技術コンテキスト</strong>：外部との接続に使うチャネル・プロトコル・ハードウェア</li>
+        </ul>
+        <p>ビジネスコンテキストの図は、C4 のシステムコンテキスト図（L1）がほぼそのまま使えます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第4章 解決戦略（Solution Strategy）</summary>
+      <div class="body">
+        <p>アーキテクチャを形作る<strong>根本的な判断の要約</strong>を短く書きます。詳細は後の章や ADR に任せ、ここでは全体の方針が一望できるようにします。</p>
+        <ul>
+          <li>技術の選択（言語・フレームワーク・DB など）</li>
+          <li>トップレベルの分割方針（どのアーキテクチャスタイル・パターンを使うか）</li>
+          <li>重要な品質目標をどう達成するか（「品質目標 → 採用した方法」の対応表にすると分かりやすい）</li>
+          <li>組織上の判断（開発プロセス、外部への委託など）</li>
+        </ul>
+      </div>
+    </details>
+    <details>
+      <summary>第5章 ビルディングブロックビュー（Building Block View）</summary>
+      <div class="body">
+        <p>システムの<strong>静的な構造</strong>を、階層的に分解して示します。公式ドキュメントでは、アーキテクチャ文書の中で最も詳しくなることが多い章とされています。</p>
+        <ul>
+          <li><strong>レベル1</strong>：システム全体を「ホワイトボックス」として開き、中の主要な部品を示す</li>
+          <li><strong>レベル2以降</strong>：レベル1の部品のうち重要なものをさらに開く</li>
+          <li><strong>ブラックボックスの説明</strong>：各部品の責務とインターフェース（中身は見せない）</li>
+          <li><strong>ホワイトボックスの説明</strong>：部品の中の構成と、分割の理由</li>
+        </ul>
+        <p>レベル1は C4 のコンテナ図、レベル2は C4 のコンポーネント図に対応させると描きやすくなります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第6章 ランタイムビュー（Runtime View）</summary>
+      <div class="body">
+        <p>部品が<strong>実行時にどう協調するか</strong>を、具体的なシナリオで示します。すべての機能ではなく、アーキテクチャ上重要なものに絞ります。</p>
+        <ul>
+          <li>重要なユースケース・機能の流れ</li>
+          <li>外部インターフェースとの重要なやり取り</li>
+          <li>起動・停止などの運用・管理の流れ</li>
+          <li>エラーや例外が起きたときの流れ</li>
+        </ul>
+        <p>表現にはシーケンス図・アクティビティ図、または番号付きの手順を使います。C4 の動的図がそのまま使えます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第7章 デプロイメントビュー（Deployment View）</summary>
+      <div class="body">
+        <p>システムを動かす<strong>技術的なインフラ</strong>と、そこへのソフトウェアの配置を示します。</p>
+        <ul>
+          <li>インフラの構成（サーバー・ネットワーク・クラウドのサービス）。必要なら階層的に詳しくする</li>
+          <li>第5章のビルディングブロックが、どのインフラ要素に配置されるかの対応</li>
+          <li>環境ごとの違い（本番・ステージング・開発）</li>
+        </ul>
+        <p>C4 のデプロイ図がこの章の図になります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第8章 横断的コンセプト（Crosscutting Concepts）</summary>
+      <div class="body">
+        <p>特定の部品に属さず、<strong>システム全体に繰り返し現れる仕組みや決まり</strong>を書きます。</p>
+        <ul>
+          <li>ドメインモデル（業務の主要な概念とその関係）</li>
+          <li>アーキテクチャ・設計のパターン（例：全サービスでヘキサゴナルにする）</li>
+          <li>技術の使い方のルール</li>
+          <li>永続化、ユーザーインターフェース、セキュリティ（認証・認可）、エラー処理、ログ・観測性、テストのしやすさ、設定など</li>
+        </ul>
+        <p>41 の <a href="50-1_横断的関心事と認証認可.html">50 横断的関心事</a>（認証・観測性・設定）がほぼそのままこの章の中身になります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第9章 アーキテクチャ決定（Architecture Decisions）</summary>
+      <div class="body">
+        <p><strong>重要・高コスト・大規模・リスクが高い・意見が分かれた</strong>決定を、その理由とともに記録します。他の章に書いた内容と重複させないようにします。</p>
+        <p>形式として ADR が適しており、この章には ADR の一覧（タイトル・ステータス・リンク）を並べるのが実務的です。第4章の解決戦略には「要約」を、第9章には「個々の決定の記録」を、という役割分担になります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第10章 品質要求（Quality Requirements）</summary>
+      <div class="body">
+        <p>第1章の品質目標を<strong>具体的で測れる形</strong>にします。</p>
+        <ul>
+          <li><strong>品質ツリー</strong>：「性能 → 応答時間 → 検索は1秒以内」のように、品質特性を木構造で具体化したもの（ATAM の品質特性ユーティリティツリーと同じ考え方）</li>
+          <li><strong>品質シナリオ</strong>：「ピーク時に〜したら、〜以内に〜する」のように、刺激と応答で書く。通常の利用シナリオと、変更シナリオ（「新しい決済手段を追加したら」など）がある</li>
+        </ul>
+        <p>書き方は <a href="12-2_品質特性シナリオと計測.html">品質特性シナリオと計測</a> を参照してください。ここで測れる形にした品質は、<a href="70-2_進化的アーキテクチャと適応度関数.html">適応度関数</a> による自動チェックの対象にもなります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第11章 リスクと技術的負債（Risks and Technical Debt）</summary>
+      <div class="body">
+        <p>既知のリスクと技術的負債を、<strong>優先順位を付けて</strong>一覧にします。それぞれに、起きたときの影響と、軽減・返済の方針を添えます。</p>
+        <p>リスクマトリクスやリスクストーミングの結果（<a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a>）や、意図的な暫定案の「意図・範囲・期限・直し方」（<a href="70-1_技術的負債.html">技術的負債と意図的な暫定案</a>）を置く場所として使えます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>第12章 用語集（Glossary）</summary>
+      <div class="body">
+        <p>重要な<strong>ドメイン用語と技術用語</strong>の定義を表にします。関係者が同じ言葉を同じ意味で使えるようにするための章です。複数の言語で開発する場合は訳語も載せます。DDD のユビキタス言語を置く場所としても使えます。</p>
+      </div>
+    </details>
+
+    <div class="callout tip">
+      <p class="callout-title">全部を埋めなくてよい</p>
+      <p>arc42 の12章は「置き場所の一覧」であって、すべてを埋めるべきノルマではありません。小さなプロジェクトなら、<strong>第1章（目標）・第3章（コンテキスト）・第4章（解決戦略）・第5章（構造）・第9章（決定）</strong>だけでも十分に役立ちます。空の章は「まだ書いていない」ことが分かるよう見出しだけ残しておくと、後から足しやすくなります。</p>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>C4・arc42・ADR の組み合わせ方</h2>
+    <p>実務でよく使われるのが、<strong>C4 で描き、arc42 の枠に入れ、決定は ADR で残す</strong>という組み合わせです。それぞれの得意分野が重ならないので、組み合わせても無駄がありません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>道具</th><th>役割</th><th>答える問い</th><th>arc42 での置き場</th></tr></thead>
+      <tbody>
+        <tr><td><strong>C4 モデル</strong></td><td>図の描き方</td><td>何があり、どうつながっているか</td><td>第3章（L1）、第5章（L2・L3）、第6章（動的図）、第7章（デプロイ図）</td></tr>
+        <tr><td><strong>arc42</strong></td><td>文書全体の構成</td><td>どこに何が書いてあるか</td><td>文書そのもの</td></tr>
+        <tr><td><strong>ADR</strong></td><td>個々の決定の記録</td><td>なぜそうしたか</td><td>第9章（一覧）。第4章は要約</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>このノート群との対応</h3>
+    <p>41_アーキテクチャのフォルダ構成も、arc42 の章立てとほぼ対応しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>arc42 の章</th><th>対応するフォルダ・ページ</th></tr></thead>
+      <tbody>
+        <tr><td>1 導入と目標 ／ 10 品質要求</td><td>10 基礎（<a href="12-1_品質特性と非機能要件.html">品質特性と非機能要件</a>、<a href="12-2_品質特性シナリオと計測.html">品質特性シナリオ</a>）</td></tr>
+        <tr><td>5 ビルディングブロック</td><td>20 アプリ内部構造、30 フロントエンド構成、40 システム・分散</td></tr>
+        <tr><td>8 横断的コンセプト</td><td>50 横断的関心事</td></tr>
+        <tr><td>9 アーキテクチャ決定</td><td>60 意思決定・文書化（<a href="60-1_意思決定とADR.html">ADR</a>）</td></tr>
+        <tr><td>11 リスクと技術的負債</td><td>70 進化と組織（<a href="70-1_技術的負債.html">技術的負債</a>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>小さく始める手順</h3>
+    <ol class="steps">
+      <li><strong>コンテキスト図を1枚描く</strong>（C4 L1）。利用者と外部システムを洗い出すだけで、境界の認識のずれが見つかります。</li>
+      <li><strong>コンテナ図を1枚描く</strong>（C4 L2）。技術とプロトコルを書き、凡例と日付を付けます。</li>
+      <li><strong>arc42 の見出しだけのファイルを作る</strong>。第1・3・4・5・9章から埋め、図はそれぞれの章に貼ります。</li>
+      <li><strong>大きな決定が出るたびに ADR を書き</strong>、第9章に一覧として足していきます。</li>
+      <li><strong>レビューのたびに図の日付を確認する</strong>。古くなった図は直すか、消します（<a href="60-3_レビュー観点.html">レビュー観点</a>）。</li>
+    </ol>
+    <p>図と文書を<strong>コードと同じリポジトリ</strong>（例：<code>docs/architecture/</code>）に置き、テキスト形式で書いておくと、コードの変更と一緒にレビューでき、古くなりにくくなります。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>C4 の「コンテナ」は Docker コンテナのこと</td><td>アプリケーションやデータストアなど「実行時の境界」のこと。Docker コンテナはデプロイ図の「デプロイノード」として現れる</td></tr>
+        <tr><td>C4 なら4つのレベルを全部描かなければならない</td><td>価値があるレベルだけでよい。多くの場合はレベル1・2で十分</td></tr>
+        <tr><td>C4 は独自の記号（表記法）を覚える必要がある</td><td>C4 は表記非依存。記号の形より、タイトル・凡例・種類・技術・ラベルを書くことが大切</td></tr>
+        <tr><td>図があればアーキテクチャは説明できる</td><td>図は「構造」だけ。特性・決定・原則まで含めて初めてアーキテクチャ（Richards &amp; Ford の4次元）</td></tr>
+        <tr><td>arc42 は12章すべてを埋めるもの</td><td>置き場所の一覧であり、小さく始めてよい。第1・3・4・5・9章だけでも役立つ</td></tr>
+        <tr><td>arc42 と C4 と ADR はどれか1つを選ぶもの</td><td>役割が違うので組み合わせて使う。C4 で描き、arc42 に入れ、ADR で決定を残す</td></tr>
+        <tr><td>一度描いた図はずっと使える</td><td>図はすぐに古くなる。日付を付け、コードと一緒に管理し、レビューで確認する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>覚えること</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>図と文書の目的</td><td>チームが同じ地図を見るため。読み手と関心事ごとに描き分ける（42010 のビューの考え方）</td></tr>
+        <tr><td>C4 の4レベル</td><td>コンテキスト → コンテナ → コンポーネント → コード。地図のようにズームする。まずは L1・L2</td></tr>
+        <tr><td>C4 の補助図</td><td>システムランドスケープ（全システムの地図）、動的図（実行時の流れ）、デプロイ図（インフラへの配置）</td></tr>
+        <tr><td>表記</td><td>タイトル・凡例・要素の種類・説明・技術・一方向の矢印とラベル・プロトコル。日付も付ける</td></tr>
+        <tr><td>ツール</td><td>図が増えるならモデリング（Structurizr）やテキスト形式（C4-PlantUML など）で、コードと一緒に管理する</td></tr>
+        <tr><td>arc42</td><td>12章の文書テンプレート。全部埋めなくてよい。小さくは第1・3・4・5・9章から</td></tr>
+        <tr><td>組み合わせ</td><td>C4 で描き、arc42 の枠に入れ、決定は ADR で残す</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>C4 モデル公式サイト：<a href="https://c4model.com/">https://c4model.com/</a></li>
+      <li>C4 モデル — 抽象（Abstractions）：<a href="https://c4model.com/abstractions">https://c4model.com/abstractions</a> ／ コンテナの定義：<a href="https://c4model.com/abstractions/container">https://c4model.com/abstractions/container</a></li>
+      <li>C4 モデル — 図の種類：<a href="https://c4model.com/diagrams">https://c4model.com/diagrams</a>（<a href="https://c4model.com/diagrams/system-landscape">システムランドスケープ</a> ／ <a href="https://c4model.com/diagrams/dynamic">動的図</a> ／ <a href="https://c4model.com/diagrams/deployment">デプロイ図</a>）</li>
+      <li>C4 モデル — 表記（Notation）：<a href="https://c4model.com/diagrams/notation">https://c4model.com/diagrams/notation</a></li>
+      <li>C4 モデル — ツール：<a href="https://c4model.com/tooling">https://c4model.com/tooling</a></li>
+      <li>The C4 Model for Software Architecture（InfoQ）：<a href="https://www.infoq.com/articles/C4-architecture-model/">https://www.infoq.com/articles/C4-architecture-model/</a></li>
+      <li>Structurizr：<a href="https://structurizr.com/">https://structurizr.com/</a></li>
+      <li>C4-PlantUML：<a href="https://github.com/plantuml-stdlib/C4-PlantUML">https://github.com/plantuml-stdlib/C4-PlantUML</a></li>
+      <li>Mermaid — C4 Diagrams：<a href="https://mermaid.js.org/syntax/c4.html">https://mermaid.js.org/syntax/c4.html</a></li>
+      <li>arc42 Template Overview：<a href="https://arc42.org/overview/">https://arc42.org/overview/</a></li>
+      <li>arc42 Documentation（章ごとのヒント）：<a href="https://docs.arc42.org/home/">https://docs.arc42.org/home/</a></li>
+      <li>Architectural Decision Records（adr.github.io）：<a href="https://adr.github.io/">https://adr.github.io/</a></li>
+      <li>ISO/IEC/IEEE 42010 — Defining "architecture"：<a href="http://www.iso-architecture.org/ieee-1471/defining-architecture.html">http://www.iso-architecture.org/ieee-1471/defining-architecture.html</a> ／ Conceptual Model：<a href="http://www.iso-architecture.org/42010/cm/">http://www.iso-architecture.org/42010/cm/</a></li>
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』（<em>Fundamentals of Software Architecture</em>, 2nd Edition, O'Reilly, 2025）：<a href="https://www.oreilly.com/library/view/fundamentals-of-software/9781098175504/">https://www.oreilly.com/library/view/fundamentals-of-software/9781098175504/</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-1_意思決定とADR.html"><span class="lbl">← 前のページ</span>意思決定の進め方と ADR</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-3_レビュー観点.html"><span class="lbl">次のページ →</span>アーキテクチャのレビュー観点</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

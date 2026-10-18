@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>結合の指標（求心性・遠心性・主系列からの距離）｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">10 基礎 › 13 モジュール性・結合 › 結合の指標</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎 ／ 13 モジュール性・結合</span>
+      <h1>結合の指標（求心性・遠心性・主系列からの距離）</h1>
+      <p class="lead">「このモジュールは結合が強すぎるか？」を感覚ではなく数値で判断するための指標を解説します。凝集度を測る LCOM、結合度を測る求心性結合（Ca）・遠心性結合（Ce）、そこから計算する不安定度・抽象度・主系列からの距離と、苦痛ゾーン・無駄ゾーンの読み方、アーキテクチャでの使い方までを扱います。</p>
+      <p class="meta">もとにしたノート：10_基礎/13_モジュール性・結合/02_結合の指標_求心性遠心性と主系列からの距離</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><a href="13-1_モジュール性と疎結合高凝集.html">モジュール性・疎結合と高凝集</a> では、「疎結合・高凝集が良い」ことを学びました。しかし「このモジュールは結合が強すぎるか？」を <strong>感覚ではなく数値で</strong> 判断できると、コードレビューや改善の優先順位づけがずっとしやすくなります。</p>
+    <p>このページでは、『ソフトウェアアーキテクチャの基礎』第3章で紹介されている <strong>モジュール性の計測指標</strong> を解説します。</p>
+    <ul>
+      <li>凝集度を測る <strong>LCOM</strong></li>
+      <li>結合度を測る <strong>求心性結合（Ca）・遠心性結合（Ce）</strong></li>
+      <li>そこから計算する <strong>不安定度（I）・抽象度（A）・主系列からの距離（D）</strong></li>
+      <li><strong>苦痛ゾーン・無駄ゾーン</strong> の読み方</li>
+      <li>アーキテクチャの評価・CI での使い方と、指標の限界</li>
+    </ul>
+    <p>結合度の指標（Ca・Ce・I・A・D）は、Robert C. Martin（『Clean Architecture』の著者）が 1990 年代に提唱したものです。パッケージ設計の原則（安定依存の原則 SDP・安定抽象の原則 SAP）としての詳しい解説は（41 外のノート：43_モジュール設計『01_パッケージ設計の原則』）にあり、このページでは <strong>アーキテクチャを評価する物差しとしての使い方</strong> に焦点を当てます。</p>
+    <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="指標の関係">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="20" width="120" height="44" rx="8" class="d-box"/>
+      <text x="80" y="47" text-anchor="middle" class="d-text">Ca（入る）</text>
+      <rect x="20" y="86" width="120" height="44" rx="8" class="d-box"/>
+      <text x="80" y="113" text-anchor="middle" class="d-text">Ce（出る）</text>
+      <line x1="140" y1="42" x2="208" y2="68" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="140" y1="108" x2="208" y2="82" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="210" y="52" width="150" height="44" rx="8" class="d-box-accent"/>
+      <text x="285" y="79" text-anchor="middle" class="d-text">不安定度 I</text>
+      <rect x="210" y="104" width="150" height="40" rx="8" class="d-box-purple"/>
+      <text x="285" y="129" text-anchor="middle" class="d-text">抽象度 A</text>
+      <line x1="360" y1="74" x2="438" y2="90" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="360" y1="124" x2="438" y2="102" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="440" y="72" width="260" height="48" rx="8" class="d-box-good"/>
+      <text x="570" y="101" text-anchor="middle" class="d-text-bold">主系列からの距離 D</text>
+      <text x="285" y="30" text-anchor="middle" class="d-text-sub">結合度の指標の流れ</text>
+    </svg>
+    <figcaption>図：Ca と Ce から I を、I と A から D を計算する</figcaption>
+    </figure>
+
+    <h2 id="sec-2"><span class="num">2.</span>凝集度を測る — LCOM</h2>
+    <h3>2.1 LCOM とは</h3>
+    <p><strong>LCOM</strong>（Lack of Cohesion in Methods：メソッドの凝集の欠如）は、Chidamber と Kemerer が 1994 年に発表したオブジェクト指向メトリクス群（<strong>CK メトリクス</strong>）の1つです。名前のとおり <strong>凝集の「欠如」</strong> を測るので、<strong>値が大きいほど凝集度が低い</strong>（＝分割を検討すべき）という意味になります。数値の向きが直感と逆なので注意してください。</p>
+
+    <h3>2.2 考え方</h3>
+    <p>LCOM の基本的な発想は「<strong>同じフィールドを使うメソッド同士は関係が深い</strong>」というものです。</p>
+    <pre><code>class OrderService {
+    orders      // フィールドA
+    mailer      // フィールドB
+
+    placeOrder()     → orders を使う
+    cancelOrder()    → orders を使う
+    sendNewsletter() → mailer を使う    ← 他のメソッドと共有するフィールドがない
+}</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="メソッドとフィールドの共有関係">
+      <rect x="30" y="20" width="660" height="196" rx="10" class="d-box"/>
+      <text x="50" y="46" class="d-text-bold">class OrderService</text>
+      <rect x="80" y="70" width="170" height="40" rx="8" class="d-box-accent"/>
+      <text x="165" y="95" text-anchor="middle" class="d-text">placeOrder()</text>
+      <rect x="80" y="150" width="170" height="40" rx="8" class="d-box-accent"/>
+      <text x="165" y="175" text-anchor="middle" class="d-text">cancelOrder()</text>
+      <rect x="330" y="110" width="120" height="40" rx="20" class="d-box-good"/>
+      <text x="390" y="135" text-anchor="middle" class="d-text">orders</text>
+      <line x1="250" y1="90" x2="330" y2="124" class="d-line"/>
+      <line x1="250" y1="170" x2="330" y2="136" class="d-line"/>
+      <rect x="500" y="70" width="170" height="40" rx="8" class="d-box-bad"/>
+      <text x="585" y="95" text-anchor="middle" class="d-text">sendNewsletter()</text>
+      <rect x="525" y="150" width="120" height="40" rx="20" class="d-box-warn"/>
+      <text x="585" y="175" text-anchor="middle" class="d-text">mailer</text>
+      <line x1="585" y1="110" x2="585" y2="150" class="d-line"/>
+      <line x1="475" y1="60" x2="475" y2="205" class="d-line-dash"/>
+      <text x="470" y="210" text-anchor="end" class="d-text-sub">フィールドを共有しない境目</text>
+    </svg>
+    <figcaption>図：sendNewsletter は他のメソッドとフィールドを共有していない＝別のクラスへ移す候補</figcaption>
+    </figure>
+    <ul>
+      <li><code>placeOrder</code> と <code>cancelOrder</code> は <code>orders</code> を共有している → 関係が深い</li>
+      <li><code>sendNewsletter</code> は他と何も共有していない → <strong>このクラスにいる理由がない</strong></li>
+    </ul>
+    <p>LCOM は、こうした「フィールドを共有していないメソッドの組」がどれだけ多いかを数えます。上の例では、<code>sendNewsletter</code> を別のクラス（たとえば <code>NewsletterService</code>）に移すべき、というサインになります。</p>
+
+    <h3>2.3 注意点</h3>
+    <div class="callout warn">
+      <p class="callout-title">LCOM を使うときの注意</p>
+      <ul>
+        <li>LCOM には定義のバリエーションが多く（LCOM1〜LCOM4 など）、<strong>ツールによって値の意味が違う</strong></li>
+        <li>『基礎』でも、LCOM は <strong>構造的な凝集しか測れない</strong>（メソッドが論理的に一緒にあるべきかどうかは分からない）と注意しています</li>
+        <li>「<strong>分割を検討すべき場所」を見つける道具</strong> として使い、最終判断は人が行う</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>結合度を測る — 求心性と遠心性</h2>
+    <h3>3.1 2つの向きの結合</h3>
+    <p>モジュール（パッケージ・コンポーネント）の依存には <strong>2つの向き</strong> があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指標</th><th>英語</th><th>数えるもの</th><th>直感的な意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>求心性結合</strong>（Ca）</td><td>Afferent Coupling</td><td><strong>外から自分へ</strong> 入ってくる依存の数</td><td>どれだけ <strong>頼られているか</strong>（責任の重さ）</td></tr>
+        <tr><td><strong>遠心性結合</strong>（Ce）</td><td>Efferent Coupling</td><td><strong>自分から外へ</strong> 出ていく依存の数</td><td>どれだけ <strong>他に頼っているか</strong>（変更の受けやすさ）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">覚え方</p>
+      <p>「求心」＝中心に向かう＝自分に <strong>入ってくる</strong>。「遠心」＝中心から離れる＝自分から <strong>出ていく</strong>。英語では <strong>A</strong>fferent を <strong>A</strong>rriving（到着）、<strong>E</strong>fferent を <strong>E</strong>xiting（出発）と結びつけると覚えやすいです。</p>
+    </div>
+
+    <h3>3.2 例で数える</h3>
+    <p>次のような依存関係を持つ6つのモジュールで考えます（矢印は「依存している」向き）。</p>
+    <figure>
+    <svg viewBox="0 0 740 300" role="img" aria-label="モジュールの依存関係と Ca・Ce">
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="30" width="140" height="56" rx="8" class="d-box"/>
+      <text x="90" y="54" text-anchor="middle" class="d-text-bold">ui</text>
+      <text x="90" y="75" text-anchor="middle" class="d-text-sub">Ca=0 / Ce=1</text>
+      <rect x="20" y="122" width="140" height="56" rx="8" class="d-box"/>
+      <text x="90" y="146" text-anchor="middle" class="d-text-bold">api</text>
+      <text x="90" y="167" text-anchor="middle" class="d-text-sub">Ca=0 / Ce=1</text>
+      <rect x="20" y="214" width="140" height="56" rx="8" class="d-box"/>
+      <text x="90" y="238" text-anchor="middle" class="d-text-bold">batch</text>
+      <text x="90" y="259" text-anchor="middle" class="d-text-sub">Ca=0 / Ce=1</text>
+      <rect x="270" y="122" width="170" height="56" rx="8" class="d-box-accent"/>
+      <text x="355" y="146" text-anchor="middle" class="d-text-bold">application</text>
+      <text x="355" y="167" text-anchor="middle" class="d-text-sub">Ca=3 / Ce=2</text>
+      <rect x="560" y="30" width="160" height="56" rx="8" class="d-box-good"/>
+      <text x="640" y="54" text-anchor="middle" class="d-text-bold">domain</text>
+      <text x="640" y="75" text-anchor="middle" class="d-text-sub">Ca=2 / Ce=0</text>
+      <rect x="560" y="214" width="160" height="56" rx="8" class="d-box-warn"/>
+      <text x="640" y="238" text-anchor="middle" class="d-text-bold">infrastructure</text>
+      <text x="640" y="259" text-anchor="middle" class="d-text-sub">Ca=1 / Ce=1</text>
+      <line x1="160" y1="58" x2="268" y2="136" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="160" y1="150" x2="268" y2="150" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="160" y1="242" x2="268" y2="164" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="440" y1="138" x2="558" y2="68" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="440" y1="162" x2="558" y2="232" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="640" y1="214" x2="640" y2="88" class="d-line" marker-end="url(#arw2)"/>
+    </svg>
+    <figcaption>図：矢印は依存の向き。入ってくる矢印の数が Ca、出ていく矢印の数が Ce</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モジュール</th><th class="c">Ca（入ってくる）</th><th class="c">Ce（出ていく）</th></tr></thead>
+      <tbody>
+        <tr><td>ui / api / batch</td><td class="c">0</td><td class="c">1</td></tr>
+        <tr><td>application</td><td class="c">3（ui・api・batch）</td><td class="c">2（domain・infrastructure）</td></tr>
+        <tr><td>infrastructure</td><td class="c">1（application）</td><td class="c">1（domain）</td></tr>
+        <tr><td>domain</td><td class="c">2（application・infrastructure）</td><td class="c">0</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card good">
+        <h4>domain</h4>
+        <p>頼られる一方で、何にも頼っていません。他の変更の影響は受けにくいのですが、<strong>自分を変更すると影響が大きい</strong> モジュールです。</p>
+      </div>
+      <div class="card warn">
+        <h4>ui</h4>
+        <p>何にも頼られず、他に頼っています。<strong>自由に変えられる</strong> 一方で、他の変更の影響を受けやすいモジュールです。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>不安定度（I）— 変更の影響の受けやすさ</h2>
+    <h3>4.1 定義</h3>
+    <div class="callout key">
+      <p class="callout-title">不安定度（Instability）</p>
+      <p style="font-size:20px;text-align:center;margin:8px 0"><strong>I = Ce ÷ (Ca + Ce)</strong></p>
+    </div>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>I = 0：安定</h4>
+        <p>外への依存がない。他の変更の影響を受けません。ただし、自分を変えると頼っている側への影響が大きいので、<strong>変えにくい</strong>。</p>
+      </div>
+      <div class="card warn">
+        <h4>I = 1：不安定</h4>
+        <p>外からの依存がない。他の変更の影響を受けやすいのですが、<strong>自分を変えても誰も困らない</strong>。</p>
+      </div>
+    </div>
+    <p>先ほどの例で計算すると、次のようになります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モジュール</th><th class="c">Ca</th><th class="c">Ce</th><th class="c">I</th></tr></thead>
+      <tbody>
+        <tr><td>ui</td><td class="c">0</td><td class="c">1</td><td class="c">1 ÷ (0 + 1) = 1.0（不安定）</td></tr>
+        <tr><td>application</td><td class="c">3</td><td class="c">2</td><td class="c">2 ÷ (3 + 2) = 0.4</td></tr>
+        <tr><td>infrastructure</td><td class="c">1</td><td class="c">1</td><td class="c">1 ÷ (1 + 1) = 0.5</td></tr>
+        <tr><td>domain</td><td class="c">2</td><td class="c">0</td><td class="c">0 ÷ (2 + 0) = 0.0（安定）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>4.2 「不安定」は悪い意味ではない</h3>
+    <p>ここでの「不安定」は「壊れやすい」という意味ではなく、<strong>「変わりやすい・変えやすい」</strong> という意味です。UI のように頻繁に変わる部分は、むしろ不安定（I が 1 に近い）であるべきです。</p>
+    <p>大事なのは依存の <strong>向き</strong> です。</p>
+    <blockquote><p><strong>依存は、不安定なものから安定したものへ向かうべき</strong>（安定依存の原則：SDP / Stable Dependencies Principle）</p></blockquote>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="安定依存の原則">
+      <defs><marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="arw3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <rect x="30" y="40" width="160" height="56" rx="8" class="d-box-warn"/>
+      <text x="110" y="65" text-anchor="middle" class="d-text-bold">ui</text>
+      <text x="110" y="85" text-anchor="middle" class="d-text-sub">I = 1.0</text>
+      <rect x="280" y="40" width="160" height="56" rx="8" class="d-box-accent"/>
+      <text x="360" y="65" text-anchor="middle" class="d-text-bold">application</text>
+      <text x="360" y="85" text-anchor="middle" class="d-text-sub">I = 0.4</text>
+      <rect x="530" y="40" width="160" height="56" rx="8" class="d-box-good"/>
+      <text x="610" y="65" text-anchor="middle" class="d-text-bold">domain</text>
+      <text x="610" y="85" text-anchor="middle" class="d-text-sub">I = 0.0</text>
+      <line x1="190" y1="68" x2="278" y2="68" class="d-line-accent" marker-end="url(#arw3a)"/>
+      <line x1="440" y1="68" x2="528" y2="68" class="d-line-accent" marker-end="url(#arw3a)"/>
+      <text x="360" y="128" text-anchor="middle" class="d-text-accent">○ 不安定 → 安定 の向きに依存する</text>
+      <path d="M610,96 L610,160 L110,160 L110,98" class="d-line-dash" marker-end="url(#arw3)"/>
+      <text x="360" y="186" text-anchor="middle" class="d-text-sub">✕ domain が ui に依存すると、UI を変えるたびにドメインが壊れる</text>
+    </svg>
+    <figcaption>図：安定依存の原則（SDP）。依存の矢印は I が小さくなる方向へ</figcaption>
+    </figure>
+    <p>安定した domain が不安定な ui に依存していると、UI を変えるたびにドメインが壊れることになります。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>抽象度（A）— インターフェースの割合</h2>
+    <h3>5.1 定義</h3>
+    <div class="callout key">
+      <p class="callout-title">抽象度（Abstractness）</p>
+      <p style="font-size:18px;text-align:center;margin:8px 0"><strong>A = 抽象要素の数（インターフェース・抽象クラス） ÷ 要素の総数</strong></p>
+    </div>
+    <ul>
+      <li><strong>A = 0</strong>：すべて具体クラス</li>
+      <li><strong>A = 1</strong>：すべてインターフェース・抽象クラス</li>
+    </ul>
+
+    <h3>5.2 安定したものほど抽象的であるべき</h3>
+    <p>安定したモジュール（I が 0 に近い）は、多くのモジュールに頼られています。これが <strong>具体的な実装</strong> だと、変更したときに影響が広がるうえ、拡張もしにくくなります。そこで、次のように考えます。</p>
+    <blockquote><p><strong>安定したモジュールほど抽象的であるべき</strong>（安定抽象の原則：SAP / Stable Abstractions Principle）</p></blockquote>
+    <p>抽象（インターフェース）に依存させておけば、実装を差し替えても依存元は影響を受けません。これは <a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a> をモジュール単位に広げた考え方です。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>主系列からの距離（D）</h2>
+    <h3>6.1 主系列とは</h3>
+    <p>横軸に不安定度 I、縦軸に抽象度 A をとると、理想的なモジュールは <strong>A + I = 1</strong> の直線の近くに並びます。この線を <strong>主系列</strong>（Main Sequence）と呼びます。</p>
+    <ul>
+      <li>安定（I = 0）なら抽象的（A = 1）</li>
+      <li>不安定（I = 1）なら具体的（A = 0）</li>
+      <li>その中間なら、中間の抽象度</li>
+    </ul>
+
+    <h3>6.2 定義</h3>
+    <div class="callout key">
+      <p class="callout-title">主系列からの距離（Distance from the Main Sequence）</p>
+      <p style="font-size:20px;text-align:center;margin:8px 0"><strong>D = | A + I − 1 |</strong></p>
+    </div>
+    <ul>
+      <li><strong>D = 0</strong>：主系列の上にある。抽象度と安定度のバランスが良い</li>
+      <li><strong>D = 1</strong>：主系列から最も遠い。バランスが悪い</li>
+    </ul>
+    <p>たとえば先ほどの例で、domain が I = 0.0 のまま具体クラスだけ（A = 0）なら D = |0 + 0 − 1| = 1 となり、主系列から最も遠くなります。domain の公開部分をインターフェース中心にして A を上げるほど、D は 0 に近づきます。</p>
+
+    <h3>6.3 2つの危険ゾーン</h3>
+    <figure>
+    <svg viewBox="0 0 720 440" role="img" aria-label="主系列と苦痛ゾーン・無駄ゾーン">
+      <rect x="100" y="40" width="400" height="320" class="d-box"/>
+      <path d="M100,360 L100,250 A110,110 0 0 1 210,360 Z" class="d-box-bad"/>
+      <path d="M500,40 L390,40 A110,110 0 0 0 500,150 Z" class="d-box-warn"/>
+      <line x1="100" y1="40" x2="500" y2="360" class="d-line-accent"/>
+      <text x="318" y="186" class="d-text-accent" transform="rotate(38.7 318 186)">主系列 A + I = 1</text>
+      <text x="108" y="292" class="d-text-bold">苦痛ゾーン</text>
+      <text x="108" y="312" class="d-text-sub">具体的×頼られる</text>
+      <text x="492" y="64" text-anchor="end" class="d-text-bold">無駄ゾーン</text>
+      <text x="492" y="84" text-anchor="end" class="d-text-sub">抽象的×使われない</text>
+      <circle cx="140" cy="340" r="6" class="d-box-bad"/>
+      <circle cx="478" cy="118" r="6" class="d-box-warn"/>
+      <circle cx="122" cy="72" r="6" class="d-box-good"/>
+      <text x="136" y="77" class="d-text-sub">安定 × 抽象（良い）</text>
+      <circle cx="480" cy="344" r="6" class="d-box-good"/>
+      <text x="468" y="336" text-anchor="end" class="d-text-sub">不安定 × 具体（良い）</text>
+      <circle cx="300" cy="200" r="6" class="d-box-good"/>
+      <text x="100" y="384" text-anchor="middle" class="d-text-sub">0</text>
+      <text x="300" y="384" text-anchor="middle" class="d-text-sub">0.5</text>
+      <text x="500" y="384" text-anchor="middle" class="d-text-sub">1</text>
+      <text x="300" y="414" text-anchor="middle" class="d-text">不安定度 I →</text>
+      <text x="88" y="365" text-anchor="end" class="d-text-sub">0</text>
+      <text x="88" y="205" text-anchor="end" class="d-text-sub">0.5</text>
+      <text x="88" y="45" text-anchor="end" class="d-text-sub">1</text>
+      <text x="40" y="200" text-anchor="middle" class="d-text" transform="rotate(-90 40 200)">抽象度 A →</text>
+      <text x="530" y="80" class="d-text-sub">左上：domain の</text>
+      <text x="530" y="98" class="d-text-sub">インターフェース群</text>
+      <text x="530" y="140" class="d-text-sub">右下：UI・アダプター</text>
+      <text x="530" y="190" class="d-text-sub">左下：何でも入った</text>
+      <text x="530" y="208" class="d-text-sub">common / utils</text>
+      <text x="530" y="250" class="d-text-sub">右上：実装が1つしか</text>
+      <text x="530" y="268" class="d-text-sub">ないインターフェース</text>
+      <text x="530" y="310" class="d-text-sub">※点は位置のイメージ</text>
+    </svg>
+    <figcaption>図：横軸 I・縦軸 A。主系列の近く（D≈0）が健全、左下と右上の角が危険</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ゾーン</th><th>位置</th><th>状態</th><th>例</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>苦痛ゾーン</strong><br><span class="small muted">Zone of Pain</span></td><td>左下<br>（A≈0, I≈0）</td><td>具体的なのに、多くのモジュールが依存している。変更すると影響が広がり、拡張もしにくい</td><td>何でも入った <code>common</code> / <code>utils</code> パッケージ、全サービスが直接参照する DB スキーマ</td><td>インターフェースを抽出する、責務ごとに分割する</td></tr>
+        <tr><td><strong>無駄ゾーン</strong><br><span class="small muted">Zone of Uselessness</span></td><td>右上<br>（A≈1, I≈1）</td><td>抽象的なのに、誰も依存していない。拡張のために作ったが使われていない</td><td>実装が1つしかないのに作られたインターフェース群、使われなくなった基底クラス</td><td>不要な抽象を削除する（YAGNI：必要になるまで作らない）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">例外：ほとんど変わらないモジュール</p>
+      <p>文字列ユーティリティや標準ライブラリのように <strong>ほとんど変更されない</strong> 具体的なモジュールは、苦痛ゾーンにあっても実害は小さいです。苦痛は「変更するとき」に生じるからです。D の値は <strong>変更頻度とあわせて</strong> 見ます。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>アーキテクチャでの使い方</h2>
+    <h3>7.1 どこで役立つか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>場面</th><th>使い方</th></tr></thead>
+      <tbody>
+        <tr><td><strong>レイヤードやクリーンアーキテクチャの検証</strong></td><td>domain が I≈0・A が高め、外側の層が I≈1 になっているか。逆転していたら依存の向きが壊れている（→ <a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード</a>、<a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a>）</td></tr>
+        <tr><td><strong>モジュラーモノリスの境界チェック</strong></td><td>あるモジュールの Ca が急に増えたら、「他モジュールから内部を直接呼ばれている」サイン</td></tr>
+        <tr><td><strong>分割候補の発見</strong></td><td>Ca も Ce も高いモジュール（頼られていて、頼ってもいる）は、変更の影響の中継点になりやすい</td></tr>
+        <tr><td><strong>共通ライブラリの見直し</strong></td><td><code>common</code> が苦痛ゾーンにあれば、分割や抽象化を検討する</td></tr>
+        <tr><td><strong>適応度関数として CI に組み込む</strong></td><td>「domain の Ce は 0」「D が 0.7 を超えるパッケージを作らない」などのルールを自動チェックする（→ <a href="70-2_進化的アーキテクチャと適応度関数.html">進化的アーキテクチャと適応度関数</a>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>7.2 ツールの例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>言語・環境</th><th>ツール</th></tr></thead>
+      <tbody>
+        <tr><td>Java</td><td>JDepend、ArchUnit、SonarQube</td></tr>
+        <tr><td>PHP</td><td>PDepend（Abstraction Instability Chart を出力）</td></tr>
+        <tr><td>.NET</td><td>NDepend</td></tr>
+        <tr><td>TypeScript / JavaScript</td><td>dependency-cruiser、ArchUnitTS</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>7.3 限界</h3>
+    <div class="callout warn">
+      <p class="callout-title">指標で分からないこと</p>
+      <ul>
+        <li>これらの指標は <strong>「構造の結合」の数</strong> しか測れません。結合の <strong>種類や強さ</strong>（名前に依存しているのか、実行順序に依存しているのか）は分かりません → それを表すのが <a href="13-3_コナーセンス.html">コナーセンス</a></li>
+        <li>サービス間の <strong>実行時の結合</strong>（同期呼び出し・共有 DB）も測れません → <a href="13-4_アーキテクチャ量子と論理コンポーネント.html">アーキテクチャ量子と粒度</a></li>
+        <li>数値を目標にすると、数値をよく見せるための不自然な設計（不要なインターフェースの追加など）が生まれます。<strong>数値は議論のきっかけ</strong> として使います</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解</h2>
+    <details open>
+      <summary>「不安定度が高いモジュールは悪い」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> UI やアダプターのように、頻繁に変わる部分は不安定（I≈1）であるべきです。問題なのは <strong>安定したものが不安定なものに依存している</strong> ことです。</p>
+      </div>
+    </details>
+    <details open>
+      <summary>「抽象度は高いほど良い」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> 誰も依存していないのにインターフェースばかり作ると <strong>無駄ゾーン</strong> に入ります。抽象化は、<strong>多くのモジュールから頼られる安定した部分</strong> にこそ必要です。</p>
+      </div>
+    </details>
+    <details open>
+      <summary>「指標が良ければ良い設計」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> 指標は構造的な結合の数しか見ていません。ドメインとして正しい分け方か、変更の単位と合っているかは、人が判断します。</p>
+      </div>
+    </details>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>LCOM</strong>：クラス内のメソッドがフィールドを共有していない度合い。大きいほど分割を検討する</li>
+        <li><strong>求心性結合 Ca</strong>：自分に入ってくる依存（頼られている）／<strong>遠心性結合 Ce</strong>：自分から出ていく依存（頼っている）</li>
+        <li><strong>不安定度 I = Ce / (Ca + Ce)</strong>：0 が安定、1 が不安定。依存は <strong>不安定 → 安定</strong> に向けるべき（SDP）</li>
+        <li><strong>抽象度 A</strong>：抽象要素の割合。<strong>安定したものほど抽象的に</strong>（SAP）</li>
+        <li><strong>主系列からの距離 D = |A + I − 1|</strong>：0 に近いほどバランスが良い</li>
+        <li>左下の <strong>苦痛ゾーン</strong>（具体的なのに頼られすぎ）と右上の <strong>無駄ゾーン</strong>（抽象的なのに使われない）に注意する</li>
+        <li>指標は CI に組み込んで <strong>適応度関数</strong> にできる。ただし数値は議論のきっかけであり、結合の「種類」は <a href="13-3_コナーセンス.html">コナーセンス</a> で補う</li>
+      </ul>
+    </div>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Robert C. Martin『アジャイルソフトウェア開発の奥義』『Clean Architecture』（第14章 コンポーネントの結合）</li>
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』第3章（モジュール性）</li>
+      <li><a href="https://www.codeproject.com/Articles/1007524/Object-oriented-metrics-by-Robert-Martin">Object-oriented metrics by Robert Martin（CodeProject）</a></li>
+      <li><a href="https://pdepend.org/documentation/handbook/reports/abstraction-instability-chart.html">Abstraction Instability Chart（PDepend）</a></li>
+      <li><a href="https://paulserban.eu/blog/post/distance-from-the-main-sequence-the-hidden-metric-for-software-quality/">Distance from the Main Sequence: The Hidden Metric for Software Quality（Paul Serban）</a></li>
+      <li><a href="https://www.eso.org/~tcsmgr/oowg-forum/TechMeetings/Articles/OOMetrics.pdf">A Metrics Suite for Object Oriented Design（Chidamber &amp; Kemerer, PDF）</a></li>
+      <li><a href="https://www.aivosto.com/project/help/pm-oo-ck.html">Chidamber &amp; Kemerer object-oriented metrics suite（Aivosto）</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="13-1_モジュール性と疎結合高凝集.html"><span class="lbl">← 前のページ</span>モジュール性・疎結合と高凝集</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="13-3_コナーセンス.html"><span class="lbl">次のページ →</span>コナーセンス</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

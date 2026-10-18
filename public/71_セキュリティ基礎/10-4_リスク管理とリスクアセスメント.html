@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>リスク管理とリスクアセスメント｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 基本概念 › リスク管理とリスクアセスメント</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+<div class="hero">
+  <span class="eyebrow">10 基本概念</span>
+  <h1>リスク管理とリスクアセスメント</h1>
+  <p class="lead">限られたお金・人・時間で「どのリスクに、どれだけ、どの順番で手を打つか」を決める方法を学びます。ISO/IEC 27005・NIST SP 800-30・IPA ガイドラインに沿った手順、リスク値の出し方（マトリクス・ALE・FAIR）、リスク対応の選び方、リスク登録簿の付け方、そして実務で回し続けるコツまでを、図と表で整理します。</p>
+  <p class="meta">もとにしたノート：10_基本概念/04_リスク管理とリスクアセスメント</p>
+</div>
+
+<div class="callout key">
+  <p class="callout-title">ひとことで言うと</p>
+  <p><strong>守るものを決め、起こりうる悪いことを見積もり、手を打つか打たないかを根拠つきで決める。</strong>そして決めたとおりに管理し続けることが <strong>リスク管理</strong>です。そのうち「洗い出す・大きさを見積もる・対応が必要か判断する」部分を <strong>リスクアセスメント</strong>と呼びます。</p>
+</div>
+<p>脅威・脆弱性・リスクの違いと、リスク対応の4分類の入門は <a href="10-1_CIA三原則と脅威・脆弱性・リスク.html">CIA三原則と脅威・脆弱性・リスク</a> で扱いました。このページはその先の、<strong>規格に沿った手順・リスク値の出し方・記録の付け方・実務での回し方</strong>です。</p>
+
+<h2 id="terms"><span class="num">1.</span>用語の整理</h2>
+<p>リスク管理の文書には独特の言葉が出てきます。まずは意味をそろえましょう。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>用語</th><th>意味（例）</th></tr></thead>
+  <tbody>
+    <tr><td><strong>リスク</strong></td><td>目的に対する不確かさの影響（JIS Q 31000 / 27000）。情報セキュリティでは「脅威が脆弱性を突いて資産に損害を与える可能性 × その影響」と考えることが多い</td></tr>
+    <tr><td><strong>情報資産</strong></td><td>守る対象。データだけでなくシステム・サービス・人・評判も含む（顧客情報、決済 API、運用担当者）</td></tr>
+    <tr><td><strong>リスク所有者</strong></td><td>そのリスクを管理する責任と権限を持つ人（会員サービスの事業責任者）</td></tr>
+    <tr><td><strong>リスク基準</strong></td><td>どの大きさなら許容するかの物差し（リスク値3は必ず対応、1は受容可）</td></tr>
+    <tr><td><strong>リスク選好</strong> ／ <strong>許容度</strong></td><td>取りにいく・受け入れるリスクの量（経営の方針）／ それを測れる形にしたもの（漏洩は年1%未満に抑える）</td></tr>
+    <tr><td><strong>固有リスク</strong> ／ <strong>残留リスク</strong></td><td>対策前のリスク ／ 対策後に残るリスク（MFA 導入後も残る、端末経由の乗っ取りリスク）</td></tr>
+  </tbody>
+</table></div>
+<div class="callout tip">
+  <p class="callout-title">ポイント</p>
+  <p>リスクは「脅威」単体でも「脆弱性」単体でもなく、<strong>資産 × 脅威 × 脆弱性 の組み合わせ</strong>で生まれます。どれか1つがゼロなら、リスクもほぼゼロです。</p>
+</div>
+
+<h2 id="process"><span class="num">2.</span>リスクマネジメントの全体像</h2>
+<p>あらゆる分野に共通するリスク管理の枠組みが <strong>ISO 31000</strong>、それを情報セキュリティ向けに具体化したのが <strong>ISO/IEC 27005</strong>（最新は2022年版・第4版）です。ISMS（情報セキュリティマネジメントシステム）の認証規格 <strong>ISO/IEC 27001</strong>（JIS Q 27001）は、「6.1.2 リスクアセスメント」「6.1.3 リスク対応」でこのプロセスの実施を求めています。</p>
+<figure>
+<svg viewBox="0 0 740 400" role="img" aria-label="リスクマネジメントのプロセス">
+  <defs>
+    <marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+    <marker id="m1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+  </defs>
+  <rect x="20" y="14" width="560" height="52" rx="10" class="d-box"/>
+  <text x="300" y="38" text-anchor="middle" class="d-text-bold">状況の確定</text>
+  <text x="300" y="56" text-anchor="middle" class="d-text-sub">範囲・目的・リスク基準を決める</text>
+  <line x1="300" y1="66" x2="300" y2="88" class="d-line" marker-end="url(#m1)"/>
+
+  <rect x="20" y="92" width="560" height="122" rx="10" class="d-box-accent"/>
+  <text x="36" y="112" class="d-text-bold">リスクアセスメント</text>
+  <rect x="36" y="124" width="160" height="74" rx="8" class="d-box"/>
+  <text x="116" y="154" text-anchor="middle" class="d-text-bold">リスク特定</text>
+  <text x="116" y="176" text-anchor="middle" class="d-text-sub">何が起こりうるか</text>
+  <line x1="196" y1="161" x2="216" y2="161" class="d-line" marker-end="url(#m1)"/>
+  <rect x="220" y="124" width="160" height="74" rx="8" class="d-box"/>
+  <text x="300" y="154" text-anchor="middle" class="d-text-bold">リスク分析</text>
+  <text x="300" y="176" text-anchor="middle" class="d-text-sub">起こりやすさ × 影響</text>
+  <line x1="380" y1="161" x2="400" y2="161" class="d-line" marker-end="url(#m1)"/>
+  <rect x="404" y="124" width="160" height="74" rx="8" class="d-box"/>
+  <text x="484" y="154" text-anchor="middle" class="d-text-bold">リスク評価</text>
+  <text x="484" y="176" text-anchor="middle" class="d-text-sub">基準と比べ優先順位</text>
+  <line x1="300" y1="214" x2="300" y2="236" class="d-line" marker-end="url(#m1)"/>
+
+  <rect x="20" y="240" width="560" height="44" rx="10" class="d-box-good"/>
+  <text x="300" y="267" text-anchor="middle" class="d-text"><tspan class="d-text-bold">リスク対応</tspan>　回避・低減・移転・保有</text>
+  <line x1="300" y1="284" x2="300" y2="300" class="d-line" marker-end="url(#m1)"/>
+  <rect x="20" y="304" width="560" height="40" rx="10" class="d-box-warn"/>
+  <text x="300" y="329" text-anchor="middle" class="d-text"><tspan class="d-text-bold">残留リスクの受容</tspan>　リスク所有者が承認</text>
+  <line x1="300" y1="344" x2="300" y2="356" class="d-line" marker-end="url(#m1)"/>
+  <rect x="20" y="360" width="560" height="36" rx="10" class="d-box"/>
+  <text x="300" y="383" text-anchor="middle" class="d-text-bold">モニタリング・レビュー</text>
+
+  <path d="M580,378 L640,378 L640,40 L584,40" class="d-line" marker-end="url(#m1a)"/>
+  <text x="652" y="200" class="d-text-bold">変化が</text>
+  <text x="652" y="218" class="d-text-bold">あれば</text>
+  <text x="652" y="236" class="d-text-bold">戻る</text>
+  <rect x="700" y="14" width="30" height="382" rx="8" class="d-box"/>
+  <text x="715" y="205" text-anchor="middle" class="d-text-sub" transform="rotate(90 715 205)">コミュニケーション・協議（全段階）</text>
+</svg>
+<figcaption>図：ISO 31000 / ISO/IEC 27005 のリスクマネジメントの流れ。全段階で関係者との対話を続ける</figcaption>
+</figure>
+<p>各段階の主な成果物は、状況の確定 →「適用範囲・リスク基準」、特定 →「情報資産台帳・リスク一覧」、分析 →「リスク値」、評価 →「優先順位つきリスク一覧」、対応 →「リスク対応計画・適用宣言書（SoA）」、受容 →「承認記録」、モニタリング →「見直し記録」です。</p>
+<p>これらをまとめた台帳が <strong>リスク登録簿</strong>（Risk Register）です（→ <a href="#register">8章</a>）。</p>
+
+<h2 id="identify"><span class="num">3.</span>準備とリスク特定 — 物差しを決め、洗い出す</h2>
+<h3 id="context">3.1 状況の確定とリスク基準</h3>
+<p>アセスメントを始める前に「物差し」を決めます。ここが曖昧だと担当者ごとに評価がばらつき、結果を比べられません。</p>
+<ul>
+  <li><strong>範囲</strong>：全社か、特定のサービスか、特定のシステムか</li>
+  <li><strong>目的・制約</strong>：事業目標、法規制（個人情報保護法、PCI DSS など）、契約上の義務</li>
+  <li><strong>リスク基準</strong>：影響の基準（金額・件数・停止時間・法的責任で段階を定義）、起こりやすさの基準（頻度や確率）、<strong>受容基準</strong>（どのリスク値まで受け入れるか）</li>
+  <li><strong>体制</strong>：リスク所有者は誰か、誰が承認するか</li>
+</ul>
+<p>ISO/IEC 27001 は「<strong>一貫性があり、妥当で、比較可能な結果</strong>」が出るように基準を定めることを求めています。同じ手順を繰り返したら同じような結論になること、が目安です。</p>
+
+<h3 id="approach">3.2 2つの洗い出し方（ISO/IEC 27005:2022）</h3>
+<div class="grid c2">
+  <div class="card">
+    <h4>資産ベース（Asset-based）</h4>
+    <p>資産を列挙し、それぞれの脅威と脆弱性を洗い出す。<strong>抜け漏れなく網羅したい、台帳を整備したい</strong>ときに向く。</p>
+    <p>例：「会員 DB」→ 脅威「外部攻撃・内部不正・障害」→ 脆弱性「SQLi・DB 管理者権限の共有・バックアップ未検証」</p>
+  </div>
+  <div class="card">
+    <h4>イベントベース（Event-based）</h4>
+    <p>「起こってほしくない事象（リスクシナリオ）」から考える。<strong>経営層と話す、全体像を素早くつかむ</strong>ときに向く。</p>
+    <p>例：「ランサムウェアで業務が1週間止まる」「委託先経由で会員情報が漏洩する」</p>
+  </div>
+</div>
+<p>2つは併用してかまいません。イベントベースのシナリオはそのままアタックツリーの根（ゴール）にでき、データフロー図 ＋ STRIDE は資産ベースの特定にあたります（→ <a href="30-1_脅威モデリングとデータフロー図.html">脅威モデリング</a>）。</p>
+
+<h3 id="asset-ledger">3.3 情報資産台帳を作る</h3>
+<p>資産ベースで進めるなら、まず <strong>情報資産台帳</strong>を作り、資産ごとに CIA の重要度（1〜3）を付けます。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>資産</th><th>保管場所</th><th>管理者</th><th>機密性</th><th>完全性</th><th>可用性</th><th>重要度</th></tr></thead>
+  <tbody>
+    <tr><td>会員情報（氏名・住所・メール）</td><td>RDS（本番）</td><td>会員サービス部</td><td>3</td><td>3</td><td>2</td><td><strong>3</strong></td></tr>
+    <tr><td>決済トークン</td><td>決済代行事業者</td><td>決済チーム</td><td>3</td><td>3</td><td>3</td><td><strong>3</strong></td></tr>
+    <tr><td>社内 Wiki</td><td>SaaS</td><td>情シス</td><td>2</td><td>1</td><td>1</td><td><strong>2</strong></td></tr>
+    <tr><td>公開 Web サイトの静的ページ</td><td>CDN</td><td>広報</td><td>1</td><td>2</td><td>2</td><td><strong>2</strong></td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li>重要度は「CIA のうち最大値」とするのがよくあるやり方（IPA ガイドラインも同様の考え方）</li>
+  <li>データの「所在」と「流れ」も書いておくと、データフロー図や漏洩時の影響範囲の特定に使える</li>
+  <li>個人情報は <strong>持たないこと自体が最強の対策</strong>（<a href="20-1_最小権限とデータ最小化.html">データ最小化</a>）。台帳作りは「この資産は本当に要るか」を見直す機会でもある</li>
+</ul>
+<p><strong>脅威と脆弱性の情報源</strong>としては、IPA「情報セキュリティ10大脅威」（毎年1月頃公表）、同業他社や自社の過去の事故事例、JVN・NVD・CISA KEV などの脆弱性情報（→ <a href="10-3_セキュリティの専門用語.html">専門用語</a>）、脅威モデリングの成果物、脆弱性診断・ペネトレーションテストの結果が使えます。</p>
+
+<h2 id="analysis"><span class="num">4.</span>リスク分析 — 大きさを見積もる</h2>
+<h3 id="methods">4.1 3つの分析方法</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>方法</th><th>内容</th><th>長所</th><th>短所</th></tr></thead>
+  <tbody>
+    <tr><td><strong>定性的</strong></td><td>「高・中・低」などの段階で評価</td><td>速い、データがなくてもできる、合意しやすい</td><td>主観が入る、細かい比較が難しい</td></tr>
+    <tr><td><strong>半定量的</strong></td><td>段階に数値（1〜3、1〜5 など）を割り当てて掛け合わせる</td><td>優先順位を付けやすい</td><td>数値に見えても中身は主観。掛け算の意味に注意</td></tr>
+    <tr><td><strong>定量的</strong></td><td>金額・確率で評価（ALE、FAIR など）</td><td>投資判断（費用対効果）に直結</td><td>データ集めが大変。見積もりの幅が大きい</td></tr>
+  </tbody>
+</table></div>
+<p>実務では <strong>まず定性・半定量で全体を見渡し、重要なリスクだけ定量化する</strong>のが一般的です。</p>
+
+<h3 id="ipa">4.2 IPA 方式（中小企業の情報セキュリティ対策ガイドライン）</h3>
+<p>IPA のガイドライン（第3.1版）は、付録の「リスク分析シート」で次の <strong>2段階のマトリクス</strong>を使います。</p>
+<h4>① 被害発生可能性 ＝ 脅威 × 脆弱性</h4>
+<div class="table-wrap"><table>
+  <thead><tr><th>脅威 ＼ 脆弱性</th><th>低<br><span>対策をすべて実施</span></th><th>中<br><span>一部実施</span></th><th>高<br><span>対策なし</span></th></tr></thead>
+  <tbody>
+    <tr><th>高 <span>いつでも起こりうる</span></th><td><strong>中</strong></td><td><strong>高</strong></td><td><strong>高</strong></td></tr>
+    <tr><th>中 <span>年に数回程度</span></th><td><strong>低</strong></td><td><strong>中</strong></td><td><strong>高</strong></td></tr>
+    <tr><th>低 <span>通常は起こらない</span></th><td><strong>低</strong></td><td><strong>低</strong></td><td><strong>中</strong></td></tr>
+  </tbody>
+</table></div>
+<h4>② リスク値 ＝ 被害発生可能性 × 重要度</h4>
+<div class="table-wrap"><table>
+  <thead><tr><th>可能性 ＼ 重要度</th><th>低<br><span>事業への影響が少ない</span></th><th>中<br><span>事業に深刻な影響</span></th><th>高<br><span>法的責任・重大な影響</span></th></tr></thead>
+  <tbody>
+    <tr><th>高</th><td><strong>2</strong></td><td><strong>3</strong></td><td><strong>3</strong></td></tr>
+    <tr><th>中</th><td><strong>1</strong></td><td><strong>2</strong></td><td><strong>3</strong></td></tr>
+    <tr><th>低</th><td><strong>1</strong></td><td><strong>1</strong></td><td><strong>2</strong></td></tr>
+  </tbody>
+</table></div>
+<p>リスク値 <strong>3</strong> は「重大な事故が起こる可能性が高い → 優先して対策」、<strong>2</strong> は「可能性がある → 計画的に対策」、<strong>1</strong> は「可能性は低く被害も許容範囲 → 受容してよい」が目安です。</p>
+<div class="callout tip">
+  <p class="callout-title">この方式のよいところ</p>
+  <p>「<strong>脆弱性 ＝ 対策状況</strong>」と定義しているので、対策を実施すると脆弱性が下がり、リスク値が下がる様子が目に見えます。対策の効果を説明しやすい方式です。</p>
+</div>
+
+<h3 id="nist">4.3 NIST SP 800-30 Rev.1 の考え方</h3>
+<p>米国 NIST の <strong>SP 800-30 Rev.1</strong>（Guide for Conducting Risk Assessments, 2012）は、リスクアセスメントを4ステップで定めています。</p>
+<p><strong>準備</strong>（目的・範囲・情報源を決める）→ <strong>実施</strong>（脅威源と脅威事象、脆弱性と「前提条件」（例：単一のデータセンターに依存）を特定し、<strong>リスク ＝ 起こりやすさ × 影響</strong> を決める）→ <strong>伝達</strong>（意思決定者に伝える）→ <strong>維持</strong>（継続的に見直す）。起こりやすさは「発生する可能性 × 悪影響が出る可能性」で考えます。</p>
+<p>評価は Very Low〜Very High の5段階（または 0〜100 の半定量スケール）で、攻撃者を <strong>能力・意図・標的</strong>の3点で評価するのが特徴です。</p>
+<div class="callout warn">
+  <p class="callout-title">落とし穴：低頻度・高影響</p>
+  <p>「よく起きるが影響は小さい」事象と「めったに起きないが影響は大きい」事象が、同じリスク値になりえます。後者は見落とされやすいので、<strong>影響だけで別のしきい値を設ける</strong>（例：影響が「非常に高」なら確率に関係なく検討対象）ことがあります。</p>
+</div>
+
+<h3 id="ale">4.4 定量的分析：ALE（年間予想損失額）</h3>
+<p>リスクを <strong>金額</strong>で表す古典的な方法です（情報処理技術者試験や CISSP でも頻出）。</p>
+<pre><code>SLE（単一損失予想額：1回あたりの損失） = AV（資産価値） × EF（暴露係数：1回で失う割合 0〜100%）
+ALE（年間予想損失額）                 = SLE × ARO（年間発生率：10年に1回なら 0.1）</code></pre>
+<p><strong>計算例：会員 DB の漏洩</strong></p>
+<figure>
+<svg viewBox="0 0 740 200" role="img" aria-label="ALE の計算例">
+  <rect x="10" y="20" width="120" height="76" rx="10" class="d-box"/>
+  <text x="70" y="48" text-anchor="middle" class="d-text-sub">AV 資産価値</text>
+  <text x="70" y="76" text-anchor="middle" class="d-text-bold">5,000万円</text>
+  <text x="148" y="64" text-anchor="middle" class="d-text-bold">×</text>
+  <rect x="166" y="20" width="110" height="76" rx="10" class="d-box"/>
+  <text x="221" y="48" text-anchor="middle" class="d-text-sub">EF 損失割合</text>
+  <text x="221" y="76" text-anchor="middle" class="d-text-bold">40%</text>
+  <text x="294" y="64" text-anchor="middle" class="d-text-bold">＝</text>
+  <rect x="312" y="20" width="130" height="76" rx="10" class="d-box-warn"/>
+  <text x="377" y="48" text-anchor="middle" class="d-text-sub">SLE 1回の損失</text>
+  <text x="377" y="76" text-anchor="middle" class="d-text-bold">2,000万円</text>
+  <text x="460" y="64" text-anchor="middle" class="d-text-bold">×</text>
+  <rect x="478" y="20" width="110" height="76" rx="10" class="d-box"/>
+  <text x="533" y="48" text-anchor="middle" class="d-text-sub">ARO 年間発生率</text>
+  <text x="533" y="76" text-anchor="middle" class="d-text-bold">0.1</text>
+  <text x="606" y="64" text-anchor="middle" class="d-text-bold">＝</text>
+  <rect x="624" y="20" width="106" height="76" rx="10" class="d-box-bad"/>
+  <text x="677" y="48" text-anchor="middle" class="d-text-sub">ALE</text>
+  <text x="677" y="76" text-anchor="middle" class="d-text-bold">200万円/年</text>
+  <text x="70" y="124" text-anchor="middle" class="d-text-sub">対応費・補償・</text>
+  <text x="70" y="142" text-anchor="middle" class="d-text-sub">売上減・改修</text>
+  <text x="221" y="124" text-anchor="middle" class="d-text-sub">全件ではなく</text>
+  <text x="221" y="142" text-anchor="middle" class="d-text-sub">一部が漏れる想定</text>
+  <text x="533" y="124" text-anchor="middle" class="d-text-sub">10年に1回</text>
+  <text x="533" y="142" text-anchor="middle" class="d-text-sub">業界の事故頻度</text>
+  <text x="370" y="186" text-anchor="middle" class="d-text-bold">「1年あたり平均いくら損をしそうか」を出す</text>
+</svg>
+<figcaption>図：ALE ＝ AV × EF × ARO。下段は各値の根拠の例</figcaption>
+</figure>
+<p>この数字を使うと、<strong>対策にいくらまでかけてよいか</strong>を判断できます。WAF・DB の監視・権限分離を入れて ARO が 0.02（50年に1回）に下がるとすると、次のようになります。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th></th><th>年間予想損失（ALE）</th><th>対策の年間コスト</th><th>合計</th></tr></thead>
+  <tbody>
+    <tr><th>対策前</th><td>2,000万 × 0.1 ＝ <strong>200万円</strong></td><td>0円</td><td>200万円</td></tr>
+    <tr><th>対策後</th><td>2,000万 × 0.02 ＝ <strong>40万円</strong></td><td>60万円</td><td>100万円</td></tr>
+  </tbody>
+</table></div>
+<p>年間の削減効果は 200万 − 40万 ＝ <strong>160万円</strong>。対策の年間コスト 60万円を引いても <strong>+100万円</strong> なので、<strong>実施する価値あり</strong>と判断できます。削減できる損失が対策費を上回るかどうかが、投資判断の基本です。</p>
+<div class="callout warn">
+  <p class="callout-title">注意：数字はすべて推定値</p>
+  <p>AV・EF・ARO はどれも推定です。<strong>1点の数字ではなく「最小〜最大」の幅で見積もる</strong>ほうが実態に合います。計算結果が精密に見えても、前提が変われば大きく変わります。</p>
+</div>
+
+<h3 id="fair">4.5 FAIR（Factor Analysis of Information Risk）</h3>
+<p>ALE を発展させた、サイバーリスクを金額で表すための標準モデルです（The Open Group が標準化し、FAIR Institute が普及を進めています）。リスクを次のように分解して見積もります。</p>
+<figure>
+<svg viewBox="0 0 740 300" role="img" aria-label="FAIR のリスク分解">
+  <rect x="300" y="10" width="140" height="44" rx="10" class="d-box-accent"/>
+  <text x="370" y="38" text-anchor="middle" class="d-text-bold">リスク</text>
+  <line x1="340" y1="54" x2="190" y2="92" class="d-line"/>
+  <line x1="400" y1="54" x2="550" y2="92" class="d-line"/>
+  <rect x="90" y="92" width="200" height="54" rx="10" class="d-box-warn"/>
+  <text x="190" y="116" text-anchor="middle" class="d-text-bold">損失事象の頻度</text>
+  <text x="190" y="135" text-anchor="middle" class="d-text-sub">どれくらい起きるか</text>
+  <rect x="450" y="92" width="200" height="54" rx="10" class="d-box-bad"/>
+  <text x="550" y="116" text-anchor="middle" class="d-text-bold">損失の大きさ</text>
+  <text x="550" y="135" text-anchor="middle" class="d-text-sub">起きたらいくらか</text>
+  <line x1="150" y1="146" x2="85" y2="172" class="d-line"/>
+  <line x1="230" y1="146" x2="275" y2="172" class="d-line"/>
+  <line x1="510" y1="146" x2="465" y2="172" class="d-line"/>
+  <line x1="590" y1="146" x2="645" y2="172" class="d-line"/>
+  <rect x="10" y="172" width="150" height="54" rx="8" class="d-box"/>
+  <text x="85" y="196" text-anchor="middle" class="d-text">脅威事象の頻度</text>
+  <text x="85" y="215" text-anchor="middle" class="d-text-sub">攻撃が試みられる頻度</text>
+  <rect x="200" y="172" width="150" height="54" rx="8" class="d-box"/>
+  <text x="275" y="196" text-anchor="middle" class="d-text">脆弱性</text>
+  <text x="275" y="215" text-anchor="middle" class="d-text-sub">試みが成功する確率</text>
+  <rect x="390" y="172" width="150" height="54" rx="8" class="d-box"/>
+  <text x="465" y="196" text-anchor="middle" class="d-text">一次損失</text>
+  <text x="465" y="215" text-anchor="middle" class="d-text-sub">対応費用・業務停止</text>
+  <rect x="580" y="172" width="150" height="54" rx="8" class="d-box"/>
+  <text x="655" y="196" text-anchor="middle" class="d-text">二次損失</text>
+  <text x="655" y="215" text-anchor="middle" class="d-text-sub">罰金・訴訟・顧客離れ</text>
+  <line x1="245" y1="226" x2="205" y2="250" class="d-line"/>
+  <line x1="305" y1="226" x2="345" y2="250" class="d-line"/>
+  <rect x="130" y="250" width="140" height="40" rx="8" class="d-box"/>
+  <text x="200" y="275" text-anchor="middle" class="d-text-sub">脅威の能力</text>
+  <rect x="290" y="250" width="140" height="40" rx="8" class="d-box"/>
+  <text x="360" y="275" text-anchor="middle" class="d-text-sub">抵抗力（対策の強さ）</text>
+</svg>
+<figcaption>図：FAIR はリスクを「頻度」と「損失の大きさ」に分解し、さらに細かい要素から積み上げる</figcaption>
+</figure>
+<ul>
+  <li>各要素を <strong>最小値・最頻値・最大値</strong> で見積もり、モンテカルロシミュレーション（乱数で何万回も試算する方法）で「年間損失額の分布」を出す</li>
+  <li>「90%の確率で年間損失は X 円以下」のように、経営層が理解しやすい形で示せる</li>
+  <li>サイバー保険の加入額や、セキュリティ投資の優先順位付けに使われる</li>
+</ul>
+
+<h2 id="evaluation"><span class="num">5.</span>リスク評価 — 優先順位を決める</h2>
+<p>分析で出したリスクの大きさを <strong>リスク基準と比べ、対応の要否と優先順位を決めます</strong>。</p>
+<ul>
+  <li>リスク値が受容基準を超える → 対応が必要</li>
+  <li>同じリスク値なら、<strong>影響が大きいもの・法的責任を伴うもの・顧客に被害が及ぶもの</strong>を優先</li>
+  <li>対策の <strong>コストと効果</strong>、実施にかかる <strong>期間</strong> も考える</li>
+  <li>結果はリスク所有者（事業側の責任者）と合意する。<strong>セキュリティ担当者だけで決めない</strong></li>
+</ul>
+<p>結果は、縦軸に影響・横軸に起こりやすさをとった <strong>ヒートマップ</strong>（4.2 の IPA のマトリクスと同じ形）に点で打っておくと便利です。右上ほど優先度が高く、対策後に点が左下へ動く様子をそのまま報告に使えます。</p>
+
+<h2 id="treatment"><span class="num">6.</span>リスク対応 — どう手を打つか</h2>
+<h3 id="four">6.1 4つの基本方針</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>方針</th><th>意味</th><th>例</th></tr></thead>
+  <tbody>
+    <tr><td><strong>回避</strong>（Avoid）</td><td>リスクの原因となる活動をやめる・変える</td><td>カード番号を自社で持たない（決済代行に任せる）、不要な公開サービスを止める</td></tr>
+    <tr><td><strong>低減</strong>（Mitigate / Modify）</td><td>起こりやすさや影響を小さくする</td><td>MFA、パッチ適用、暗号化、バックアップ、監視</td></tr>
+    <tr><td><strong>移転・共有</strong>（Transfer / Share）</td><td>損失の一部を他者と分け合う</td><td>サイバー保険、外部委託（契約で責任分担）、クラウドの責任共有</td></tr>
+    <tr><td><strong>保有・受容</strong>（Retain / Accept）</td><td>根拠をもってそのまま受け入れる</td><td>影響が小さく、対策が高すぎるリスク</td></tr>
+  </tbody>
+</table></div>
+<div class="grid c2">
+  <div class="callout bad">
+    <p class="callout-title">移転しても「責任」は移らない</p>
+    <p>委託先で漏洩しても、委託元は個人情報保護法上の監督責任を問われます（→ <a href="50-5_サプライチェーン攻撃と2026年の事例.html">サプライチェーン攻撃</a>）。保険は「お金」は補えても「信用」は戻りません。</p>
+  </div>
+  <div class="callout warn">
+    <p class="callout-title">受容は「放置」ではない</p>
+    <p>誰が・いつ・どんな根拠で受け入れたかを記録し、定期的に見直すことが条件です。</p>
+  </div>
+</div>
+
+<h3 id="iso31000">6.2 ISO 31000 の7つの選択肢</h3>
+<p>ISO 31000:2018 は、4分類をさらに細かく分けています。</p>
+<p>①活動を始めない・やめる（回避）、②機会を追求するために <strong>リスクを取る・増やす</strong>、③リスク源を取り除く、④起こりやすさを変える、⑤結果（影響）を変える、⑥リスクを共有する（契約・保険）、⑦情報に基づいてリスクを保有する、の7つです。</p>
+<p>2番があるのが特徴で、リスクには「損失」だけでなく「機会」の側面もある、という ISO 31000 の考え方を表しています。</p>
+
+<h3 id="controls">6.3 管理策の選び方とリスク対応計画</h3>
+<p>ISMS では、必要な管理策（対策）を決めたあと、<strong>ISO/IEC 27001 附属書A</strong> の管理策（2022年版で93個、4分類）と照らし合わせて抜け漏れを確認します。</p>
+<p>内訳は <strong>組織的管理策 37</strong>（方針、供給者関係、インシデント管理、脅威インテリジェンスなど）、<strong>人的管理策 8</strong>（教育訓練、秘密保持契約、リモートワークなど）、<strong>物理的管理策 14</strong>（入退室管理、クリアデスク、機器の廃棄など）、<strong>技術的管理策 34</strong>（アクセス制御、マルウェア対策、ログ取得、セキュアコーディング、データマスキングなど）です。</p>
+<ul>
+  <li><strong>適用宣言書（SoA: Statement of Applicability）</strong>：93の管理策それぞれについて「採用するか」「採用・除外の理由」「実施状況」を書いた文書</li>
+  <li><strong>リスク対応計画</strong>：どのリスクに、どの管理策を、誰が、いつまでに実施するか</li>
+  <li>対策後は <strong>残留リスク</strong>を再評価し、リスク所有者が受容を承認する</li>
+</ul>
+<p>対策を選ぶときは、1つの対策に頼らず層を重ねる（<a href="20-2_深層防御.html">深層防御</a>）、権限を絞って影響を小さくする（<a href="20-1_最小権限とデータ最小化.html">最小権限</a>）といった設計原則が効きます。</p>
+
+<h2 id="strategies"><span class="num">7.</span>アセスメントの4つの進め方</h2>
+<p>組織全体を、どの細かさで見るかの選択肢です（情報処理技術者試験でもよく問われます）。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>アプローチ</th><th>内容</th><th>長所</th><th>短所</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ベースライン</strong></td><td>既存の基準（ISO 27002、CIS Controls、業界ガイドライン）に沿って、必要な対策ができているかチェックする</td><td>速い、低コスト</td><td>組織固有のリスクを見落とす</td></tr>
+    <tr><td><strong>非形式的</strong></td><td>担当者・専門家の経験や知見で判断する</td><td>すぐできる</td><td>属人的。根拠を説明しにくい</td></tr>
+    <tr><td><strong>詳細リスク分析</strong></td><td>資産ごとに脅威・脆弱性・影響を詳しく分析する</td><td>精度が高く、根拠が明確</td><td>時間とコストがかかる</td></tr>
+    <tr><td><strong>組み合わせ</strong></td><td>重要な資産は詳細分析、それ以外はベースライン</td><td>効率と精度のバランスがよい</td><td>振り分けの判断が必要</td></tr>
+  </tbody>
+</table></div>
+<div class="callout tip">
+  <p class="callout-title">現実的なやり方</p>
+  <p><strong>組み合わせアプローチ</strong>が主流です。まずベースライン（例：IPA の「5分でできる！情報セキュリティ自社診断」や CIS Controls）で底上げし、重要度3の資産だけ詳しく分析します。</p>
+</div>
+
+<h2 id="register"><span class="num">8.</span>リスク登録簿（Risk Register）</h2>
+<p>リスク管理の中心となる台帳です。スプレッドシートでも、チケット管理ツールでもかまいません。実際の列は「ID・シナリオ・資産・脅威・脆弱性・可能性・影響・リスク値・方針・対策・所有者・期限・残留リスク・見直し日」ですが、ここでは主な列に絞って例を示します。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>ID</th><th>リスクシナリオ</th><th>脆弱性</th><th>値</th><th>方針</th><th>対策</th><th>残留</th></tr></thead>
+  <tbody>
+    <tr><td>R-01</td><td>VPN 装置の脆弱性を突かれて社内に侵入され、ランサムウェアで業務停止</td><td>VPN の未パッチ、MFA なし</td><td><strong>3</strong></td><td>低減</td><td>パッチの即時適用手順、MFA、オフラインバックアップ</td><td>2</td></tr>
+    <tr><td>R-02</td><td>会員 DB への SQL インジェクションで個人情報漏洩</td><td>一部の旧 API で文字列連結の SQL</td><td><strong>3</strong></td><td>低減</td><td>プレースホルダ化、WAF、取得件数の上限と監視</td><td>1</td></tr>
+    <tr><td>R-03</td><td>委託先の保守アカウント経由で本番環境に侵入</td><td>常時有効な保守アカウント</td><td><strong>3</strong></td><td>低減＋移転</td><td>必要なときだけ権限を出す（JIT アクセス）、契約に報告義務・監査条項</td><td>2</td></tr>
+    <tr><td>R-04</td><td>カード番号の漏洩</td><td>—</td><td>—</td><td>回避</td><td>自社で保持しない（決済代行のトークン化）</td><td>—</td></tr>
+    <tr><td>R-05</td><td>社内 Wiki の一時的な閲覧不能</td><td>単一 SaaS 依存</td><td><strong>1</strong></td><td>受容</td><td>なし（SaaS の SLA で許容）</td><td>1</td></tr>
+  </tbody>
+</table></div>
+<p>R-01・R-03 のようなリスクは <a href="50-4_脆弱性管理とランサムウェア対策.html">脆弱性管理とランサムウェア対策</a> で詳しく扱います。</p>
+
+<h2 id="relation"><span class="num">9.</span>脅威モデリング・脆弱性管理との関係</h2>
+<p>リスク管理は「組織全体の意思決定の枠組み」、脅威モデリングや脆弱性管理は「その入力を作る技術的な活動」という関係です。</p>
+<ul>
+  <li><strong>脅威モデリング</strong>（DFD・STRIDE・アタックツリー）→ システム単位のリスク特定（<a href="30-1_脅威モデリングとデータフロー図.html">30-1</a>、<a href="30-2_STRIDE.html">30-2</a>）。DREAD などはシステム単位の簡易なリスク分析（<a href="30-3_DREADとアタックツリー.html">30-3</a>）</li>
+  <li><strong>脆弱性管理</strong>（CVSS・EPSS・KEV）→ 脆弱性の状況と対応の優先順位（<a href="50-4_脆弱性管理とランサムウェア対策.html">50-4</a>）</li>
+  <li><strong>脅威情報</strong>（10大脅威・事故事例）→ 起こりやすさの判断材料（<a href="50-5_サプライチェーン攻撃と2026年の事例.html">50-5</a>）</li>
+  <li><strong>監視・ログ</strong> → 残留リスクのモニタリングと検知（<a href="50-3_セキュアな運用とログ出力.html">50-3</a>）</li>
+</ul>
+<p>リスク対応の結果は、<strong>設計・実装への要件</strong>（セキュアな設計）と、<strong>監視項目</strong>（ログ・監視）として現場に戻っていきます。</p>
+
+<h3 id="cvss-not-risk">CVSS はリスクではない</h3>
+<p>よくある誤解です。<strong>CVSS は脆弱性の「深刻度」</strong>であり、自社にとっての「リスク」ではありません。</p>
+<div class="grid c2">
+  <div class="card">
+    <h4>CVSS 9.8 でも優先度が低い例</h4>
+    <p>その製品を使っていない、または外部から到達できない。</p>
+  </div>
+  <div class="card">
+    <h4>CVSS 6.5 でも最優先の例</h4>
+    <p>インターネットに公開した VPN 装置で、<strong>実際に悪用されている（KEV 掲載）</strong>。</p>
+  </div>
+</div>
+<p>脆弱性対応の優先順位は「<strong>深刻度（CVSS）× 悪用の可能性（EPSS・KEV）× 資産の重要度・露出度</strong>」で決めます。これはまさにリスク分析の考え方そのものです。</p>
+
+<h2 id="frameworks"><span class="num">10.</span>フレームワークでの位置づけ</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>フレームワーク</th><th>リスク管理の扱い</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ISO 31000:2018</strong></td><td>分野を問わないリスクマネジメントの原則と枠組み</td></tr>
+    <tr><td><strong>ISO/IEC 27001:2022</strong>（JIS Q 27001:2023）</td><td>ISMS の要求事項。6.1.2 リスクアセスメント、6.1.3 リスク対応、8.2 / 8.3 で実施を要求</td></tr>
+    <tr><td><strong>ISO/IEC 27005:2022</strong></td><td>情報セキュリティリスク管理の手引き。資産ベース／イベントベース、リスクシナリオ</td></tr>
+    <tr><td><strong>NIST SP 800-30 Rev.1</strong></td><td>リスクアセスメントの実施方法（米国連邦政府向けだが広く参照される）</td></tr>
+    <tr><td><strong>NIST CSF 2.0</strong>（2024年2月）</td><td>新設の <strong>GOVERN（統治）</strong> 機能に「リスク管理戦略（GV.RM）」を置き、リスク選好・許容度の表明（GV.RM-02）などを経営の責任として明確化</td></tr>
+    <tr><td><strong>サイバーセキュリティ経営ガイドライン Ver3.0</strong>（経産省・IPA）</td><td>経営者がリスクを認識し、対策を指示する責任を明記</td></tr>
+  </tbody>
+</table></div>
+<div class="callout key">
+  <p class="callout-title">NIST CSF 2.0 で GOVERN が加わった意味</p>
+  <p>「セキュリティは技術部門の仕事」ではなく、<strong>リスクをどこまで受け入れるかは経営が決めること</strong>だと明確にしました。</p>
+</div>
+
+<h2 id="continuous"><span class="num">11.</span>継続的に回す・よくある失敗</h2>
+<h3 id="review">11.1 見直しのタイミング</h3>
+<p><strong>定期</strong>には年1回以上（ISMS では内部監査・マネジメントレビューと連動）。<strong>変化があったとき</strong>も見直します：新サービス・大きな構成変更、クラウド移行や新しい SaaS・委託先の採用、組織変更や M&amp;A、使っている機器の重大な脆弱性の公表（KEV 掲載など）、自社や同業他社のインシデント、法改正。</p>
+<h3 id="devteam">11.2 開発チームでの取り入れ方</h3>
+<p>設計レビューのテンプレートに「新しく扱う資産」「想定するリスクシナリオ」の欄を入れる、大きな機能追加では軽量な脅威モデリングをして結果を登録簿に追記する、受容したリスクはチケット化して見直し期限を付ける、インシデントの振り返り（ポストモーテム）で登録簿の評価が妥当だったか確かめる――といった形で日常の開発に組み込みます。</p>
+<h3 id="failures">11.3 よくある失敗</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>失敗</th><th>何が問題か</th><th>改善</th></tr></thead>
+  <tbody>
+    <tr><td>台帳作りが目的になる</td><td>作って満足し、対策も見直しもされない</td><td>対応計画と期限まで書き、進捗を追う</td></tr>
+    <tr><td>すべてを「高」にする</td><td>優先順位が付かず、何も進まない</td><td>基準を具体的（件数・金額・時間）に定義する</td></tr>
+    <tr><td>セキュリティ担当者だけで評価する</td><td>事業への影響が過小／過大に評価される</td><td>事業側のリスク所有者を必ず巻き込む</td></tr>
+    <tr><td>受容の記録がない</td><td>事故のとき「誰が決めたのか」が分からない</td><td>受容者・日付・根拠・見直し日を記録する</td></tr>
+    <tr><td>委託先・クラウドを範囲外にする</td><td>侵入口の多くが委託先・境界機器</td><td>範囲に含め、委託先の評価も行う</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="summary"><span class="num">12.</span>まとめ</h2>
+<ul>
+  <li>リスク管理は <strong>「どのリスクに、どれだけ、どの順番で手を打つか」を根拠つきで決め続けること</strong>。</li>
+  <li>流れは <strong>状況の確定 → 特定 → 分析 → 評価 → 対応 → 受容 → モニタリング</strong>（ISO 31000 / ISO/IEC 27005）。特定は資産ベースとイベントベースを使い分ける。</li>
+  <li>分析は <strong>定性 → 必要に応じて定量（ALE・FAIR）</strong>。IPA 方式は「脅威 × 脆弱性 → 被害発生可能性 × 重要度」。</li>
+  <li>対応は <strong>回避・低減・移転・保有</strong>。移転しても責任は残り、受容は記録と見直しが条件。</li>
+  <li><strong>CVSS は深刻度でありリスクではない</strong>。資産の重要度と悪用状況を掛け合わせる。</li>
+  <li><strong>リスク登録簿</strong>を中心に、定期と変化時に見直す。どこまで受け入れるかは <strong>経営が決める</strong>（NIST CSF 2.0 GOVERN）。</li>
+</ul>
+
+<h2 id="quiz"><span class="num">13.</span>理解度チェック</h2>
+<details>
+  <summary>Q1. AV 1,000万円、EF 50%、ARO 0.2 のとき、ALE はいくら？</summary>
+  <div class="body">
+    <p>SLE ＝ 1,000万 × 0.5 ＝ 500万円。ALE ＝ 500万 × 0.2 ＝ <strong>100万円/年</strong>です。年間コストがこれより十分小さく、ALE を大きく下げられる対策なら、投資する価値があると判断できます。</p>
+  </div>
+</details>
+<details>
+  <summary>Q2. IPA 方式で、脅威「中」・脆弱性「高（対策なし）」・重要度「中」の資産のリスク値は？</summary>
+  <div class="body">
+    <p>① 脅威「中」× 脆弱性「高」→ 被害発生可能性「<strong>高</strong>」。② 可能性「高」× 重要度「中」→ リスク値 <strong>3</strong>（優先して対策）です。対策を一部実施して脆弱性が「中」になれば、可能性は「中」、リスク値は2に下がります。</p>
+  </div>
+</details>
+<details>
+  <summary>Q3. 「サイバー保険に入ったので、このリスクはもう心配ない」は正しい？</summary>
+  <div class="body">
+    <p><strong>正しくありません。</strong>保険は損失の「お金」の一部を移転するだけで、法的な責任や顧客からの信用は移りません。委託も同様で、委託先で漏洩しても委託元は監督責任を問われます。</p>
+  </div>
+</details>
+
+<h2 id="sources">参考資料</h2>
+<ul class="sources">
+  <li>ISO/IEC 27005:2022 Information security, cybersecurity and privacy protection — Guidance on managing information security risks — <a href="https://www.iso.org/standard/80585.html">https://www.iso.org/standard/80585.html</a></li>
+  <li>NIST SP 800-30 Rev.1 Guide for Conducting Risk Assessments — <a href="https://csrc.nist.gov/pubs/sp/800/30/r1/final">https://csrc.nist.gov/pubs/sp/800/30/r1/final</a></li>
+  <li>NIST Cybersecurity Framework 2.0 — <a href="https://www.nist.gov/cyberframework">https://www.nist.gov/cyberframework</a></li>
+  <li>IPA 中小企業の情報セキュリティ対策ガイドライン — <a href="https://www.ipa.go.jp/security/guide/sme/about.html">https://www.ipa.go.jp/security/guide/sme/about.html</a></li>
+  <li>IPA サイバーセキュリティ対策の実践事例（リスク値の算定） — <a href="https://www.ipa.go.jp/security/economics/practices_navi/practice211.html">https://www.ipa.go.jp/security/economics/practices_navi/practice211.html</a></li>
+  <li>FAIR Institute — <a href="https://www.fairinstitute.org/">https://www.fairinstitute.org/</a></li>
+</ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-3_セキュリティの専門用語.html"><span class="lbl">← 前のページ</span>セキュリティの専門用語</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-1_最小権限とデータ最小化.html"><span class="lbl">次のページ →</span>最小権限とデータ最小化</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

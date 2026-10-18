@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>同期 API・メッセージ・イベント駆動｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">40 システム・分散 › 同期 API・メッセージ・イベント駆動</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 システム・分散</span>
+      <h1>同期 API・メッセージ・イベント駆動</h1>
+      <p class="lead">サービスやモジュールを分けると、「どうやって連携するか」が設計の中心になります。このページでは、同期 API・メッセージ（キュー）・イベント駆動の3つのつなぎ方の特徴と選び方を整理し、後半ではイベント駆動アーキテクチャの仕組み（ブローカー型とメディエーター型、データロス防止、エラー処理、データトポロジー）を詳しく見ます。</p>
+      <p class="meta">もとにしたノート：40_システム・分散/03同期APIとメッセージとイベント駆動の概観.md、イベント駆動アーキテクチャ.md（＋ 00_解説_システム・分散.md）</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <ul>
+      <li><strong>同期 API</strong>（リクエスト／レスポンス）の特徴</li>
+      <li><strong>メッセージ</strong>（キュー・ブローカー）の特徴</li>
+      <li><strong>イベント駆動</strong>のイメージと、コマンドとイベントの違い</li>
+      <li>どれをいつ選ぶかの<strong>初心者向けの目安</strong>と、よくあるつまずき</li>
+      <li><strong>イベント駆動アーキテクチャ</strong>の詳しい仕組み（書籍の読書メモを整理したもの）</li>
+    </ul>
+    <p>Kafka の設定のような実装の詳細よりも、<strong>考え方の地図</strong>を重視します。実装（ジョブキュー・リトライなど）は（41 外のノート：34_Backend『50_非同期・メッセージング』）、キューの仕組みと運用は（41 外のノート：69_分散システム）が本拠地です。前提として <a href="40-1_分散とスタイル.html">分散とスタイル</a> と <a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a> を読んでおくと分かりやすくなります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ「つなぎ方」が重要か</h2>
+    <p>同じ「在庫を減らす」処理でも、</p>
+    <ul>
+      <li><strong>呼び出し側が結果を待つ</strong>のか</li>
+      <li><strong>後で別のプロセスが処理する</strong>のか</li>
+    </ul>
+    <p>によって、性能・障害時の振る舞い・データの整合性が大きく変わります。3つのつなぎ方を並べると、次のようになります。</p>
+    <figure>
+    <svg viewBox="0 0 760 300" role="img" aria-label="同期 API・メッセージキュー・Pub/Sub の比較">
+      <defs><marker id="c3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="10" width="240" height="280" rx="12" class="d-box"/>
+      <rect x="260" y="10" width="240" height="280" rx="12" class="d-box"/>
+      <rect x="510" y="10" width="240" height="280" rx="12" class="d-box"/>
+      <text x="130" y="38" text-anchor="middle" class="d-text-accent">① 同期 API（REST・gRPC）</text>
+      <text x="380" y="38" text-anchor="middle" class="d-text-accent">② メッセージ（キュー）</text>
+      <text x="630" y="38" text-anchor="middle" class="d-text-accent">③ イベント（Pub/Sub）</text>
+      <!-- panel 1 -->
+      <rect x="30" y="110" width="80" height="46" rx="8" class="d-box-accent"/>
+      <text x="70" y="138" text-anchor="middle" class="d-text">注文</text>
+      <rect x="150" y="110" width="80" height="46" rx="8" class="d-box-accent"/>
+      <text x="190" y="138" text-anchor="middle" class="d-text">在庫</text>
+      <line x1="110" y1="124" x2="146" y2="124" class="d-line" marker-end="url(#c3a)"/>
+      <line x1="150" y1="144" x2="114" y2="144" class="d-line" marker-end="url(#c3a)"/>
+      <text x="130" y="96" text-anchor="middle" class="d-text-sub">呼ぶ → 答える</text>
+      <text x="130" y="184" text-anchor="middle" class="d-text-sub">答えが返るまで待つ</text>
+      <text x="130" y="236" text-anchor="middle" class="d-text-sub">呼んだ側は返事を待つ</text>
+      <text x="130" y="258" text-anchor="middle" class="d-text-sub">相手が遅い・落ちると</text>
+      <text x="130" y="278" text-anchor="middle" class="d-text-sub">自分も止まる</text>
+      <!-- panel 2 -->
+      <rect x="272" y="110" width="64" height="46" rx="8" class="d-box-accent"/>
+      <text x="304" y="138" text-anchor="middle" class="d-text">注文</text>
+      <rect x="356" y="116" width="64" height="34" rx="4" class="d-box-warn"/>
+      <text x="388" y="138" text-anchor="middle" class="d-text-sub">キュー</text>
+      <rect x="440" y="110" width="50" height="46" rx="8" class="d-box-accent"/>
+      <text x="465" y="138" text-anchor="middle" class="d-text">在庫</text>
+      <line x1="336" y1="133" x2="352" y2="133" class="d-line" marker-end="url(#c3a)"/>
+      <line x1="420" y1="133" x2="436" y2="133" class="d-line" marker-end="url(#c3a)"/>
+      <text x="380" y="96" text-anchor="middle" class="d-text-sub">投げたらすぐ戻る</text>
+      <text x="380" y="184" text-anchor="middle" class="d-text-sub">在庫は後で取り出して処理</text>
+      <text x="380" y="236" text-anchor="middle" class="d-text-sub">宛先は1つに決まっている</text>
+      <text x="380" y="258" text-anchor="middle" class="d-text-sub">送り手は待たない</text>
+      <text x="380" y="278" text-anchor="middle" class="d-text-sub">再送・冪等性が必要</text>
+      <!-- panel 3 -->
+      <rect x="522" y="117" width="60" height="46" rx="8" class="d-box-accent"/>
+      <text x="552" y="145" text-anchor="middle" class="d-text">注文</text>
+      <rect x="598" y="122" width="58" height="36" rx="4" class="d-box-purple"/>
+      <text x="627" y="145" text-anchor="middle" class="d-text-sub">トピック</text>
+      <rect x="678" y="66" width="62" height="34" rx="8" class="d-box-accent"/>
+      <text x="709" y="88" text-anchor="middle" class="d-text">在庫</text>
+      <rect x="678" y="123" width="62" height="34" rx="8" class="d-box-accent"/>
+      <text x="709" y="145" text-anchor="middle" class="d-text">会計</text>
+      <rect x="678" y="180" width="62" height="34" rx="8" class="d-box-accent"/>
+      <text x="709" y="202" text-anchor="middle" class="d-text">通知</text>
+      <line x1="582" y1="140" x2="594" y2="140" class="d-line" marker-end="url(#c3a)"/>
+      <line x1="656" y1="134" x2="675" y2="88" class="d-line" marker-end="url(#c3a)"/>
+      <line x1="656" y1="140" x2="674" y2="140" class="d-line" marker-end="url(#c3a)"/>
+      <line x1="656" y1="146" x2="675" y2="192" class="d-line" marker-end="url(#c3a)"/>
+      <text x="580" y="96" text-anchor="middle" class="d-text-sub">OrderPlaced</text>
+      <text x="630" y="242" text-anchor="middle" class="d-text-sub">起きたことを知らせるだけ</text>
+      <text x="630" y="262" text-anchor="middle" class="d-text-sub">発行者は受け手を知らない</text>
+      <text x="630" y="282" text-anchor="middle" class="d-text-sub">受け手は0〜複数</text>
+    </svg>
+    <figcaption>図：3つのつなぎ方。①は待つ、②は宛先1つに投げて待たない、③は宛先を知らずに知らせる</figcaption>
+    </figure>
+
+    <h2 id="sec-3"><span class="num">3.</span>同期 API（リクエスト／レスポンス）</h2>
+    <h3>3-1. どんなものか</h3>
+    <p>クライアントが <strong>HTTP や gRPC などで相手を直接呼び出し</strong>、応答が返ってくるのを<strong>待ってから</strong>次に進む方式です。たとえば注文サービスが在庫 API に <code>GET /stock/123</code>（在庫ある？）と問い合わせ、在庫 API が在庫 DB を見て <code>200 OK, quantity: 5</code> を返し、呼び出し元はこの結果を使って処理を続けます。</p>
+    <pre><code>ブラウザ / 注文サービス
+   │  GET /stock/123   （在庫ある？）
+   ▼
+在庫 API ──→ 在庫 DB
+   │  200 OK, quantity: 5
+   ▼
+呼び出し元はこの結果を使って続行</code></pre>
+    <p>REST API、GraphQL、内部の gRPC 呼び出しは、多くがこの<strong>同期</strong>モデルです。</p>
+
+    <h3>3-2. メリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>メリット</h4><ul>
+        <li><strong>わかりやすい</strong> — 「呼んだら結果が返る」が直感的</li>
+        <li><strong>すぐ結果が必要</strong>な処理に向く（在庫をチェックしてから注文確定、など）</li>
+        <li>エラー処理が<strong>その場で</strong>できる（在庫なしなら 409 を返す）</li>
+      </ul></div>
+      <div class="card bad"><h4>デメリット</h4><ul>
+        <li><strong>結合が強くなりやすい</strong> — 在庫 API が遅い・落ちていると、注文も止まる（連鎖障害）</li>
+        <li><strong>チェーンが長いと遅い</strong> — A→B→C→D と直列に呼ぶと遅延が足し算される</li>
+        <li>呼び出し先の<strong>負荷がピークと連動</strong>する</li>
+      </ul></div>
+    </div>
+    <h3>3-3. 向いている例</h3>
+    <ul>
+      <li>ユーザーが<strong>画面で結果を待っている</strong>操作（ログイン、在庫の問い合わせ）</li>
+      <li><strong>読み取り</strong>が中心で、少しの遅延は許容できる</li>
+      <li>サービス数が少なく、<strong>運用を単純に保ちたい</strong>とき</li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>メッセージ（非同期）</h2>
+    <h3>4-1. どんなものか</h3>
+    <p>送信側は<strong>メッセージキュー／メッセージブローカー</strong>にメッセージを<strong>投げる</strong>だけで、すぐに戻ります。受信側（コンシューマー）が<strong>後から</strong>取り出して処理します。たとえば注文サービスが「注文確定」メッセージをキューに入れ、在庫サービスがそれを非同期に取り出して在庫を減らします。</p>
+    <p>代表的な製品：RabbitMQ、Amazon SQS、Apache Kafka、Google Cloud Pub/Sub など。</p>
+    <h3>4-2. メリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>メリット</h4><ul>
+        <li><strong>時間的な切り離し</strong> — 受信側がオンラインでなくても（一定期間なら）投げられる</li>
+        <li><strong>負荷の平準化</strong> — ピーク時はキューに溜め、後で処理できる</li>
+        <li><strong>障害の緩和</strong> — 一時的な障害時にリトライしやすい（設計次第）</li>
+      </ul></div>
+      <div class="card bad"><h4>デメリット</h4><ul>
+        <li><strong>結果がすぐわからない</strong> — 「在庫が減ったか」は後で確認が必要</li>
+        <li><strong>運用が増える</strong> — キューの監視、デッドレターキュー、順序・重複の扱い</li>
+        <li><strong>デバッグが難しい</strong> — 処理がいつ・どこで行われたか追いにくい（<a href="50-2_観測性.html">観測性</a>）</li>
+      </ul></div>
+    </div>
+    <h3>4-3. 向いている例</h3>
+    <ul>
+      <li><strong>メール送信</strong>、<strong>画像変換</strong>、<strong>レポート生成</strong>、<strong>検索インデックス更新</strong></li>
+      <li>ユーザーが<strong>待たなくてよい</strong>後処理</li>
+      <li>ピークが激しく、<strong>吸収バッファ</strong>が欲しいとき</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>イベント駆動（Event-Driven）</h2>
+    <h3>5-1. どんなものか</h3>
+    <p>ある処理が起きたときに、<strong>「何が起きたか」という事実（イベント）</strong>を発行し、<strong>興味のある複数の購読者</strong>がそれぞれ反応するスタイルです。注文サービスが <code>OrderPlaced</code>（注文された）を発行すると、在庫サービスは在庫を減らし、会計サービスは売上を計上し、通知サービスはメールを送ります。</p>
+    <p>メッセージキューを使うことも多いですが、イベント駆動は特に次の点を強調します。</p>
+    <ul>
+      <li><strong>過去形の事実</strong>を伝える（<code>OrderPlaced</code>）</li>
+      <li><strong>発行者は購読者を知らない</strong>（疎結合）。応答も待たない（ファイア＆フォーゲット）</li>
+      <li><strong>購読者が複数</strong>に増えやすい</li>
+    </ul>
+
+    <h3>5-2. コマンドとイベントの違い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>意味</th><th>例</th><th>宛先</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コマンド</strong></td><td>「〇〇してほしい」という依頼。断られることもある</td><td><code>ReserveStock</code>（在庫を確保して）</td><td>1つの宛先を想定しがち</td></tr>
+        <tr><td><strong>イベント</strong></td><td>「〇〇が起きた」という事実。過去形</td><td><code>StockReserved</code>（在庫が確保された）</td><td>0人以上の購読者を想定</td></tr>
+      </tbody>
+    </table></div>
+    <p>コマンドとイベントを混同すると設計がぶれやすいので、<strong>名前（命令形か過去形か）で区別する</strong>のがおすすめです。</p>
+
+    <h3>5-3. メリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>メリット</h4><ul>
+        <li><strong>拡張しやすい</strong> — 新機能は「イベントを購読するサービスを足す」だけで済むこともある</li>
+        <li><strong>ドメインの事実</strong>をそのまま伝えられる（（41 外のノート：42_ソフトウェア設計『02_集約とエンティティと値オブジェクトとドメインイベント』）と相性がよい）</li>
+        <li>高いスケール・性能・耐障害性を得やすい</li>
+      </ul></div>
+      <div class="card bad"><h4>デメリット</h4><ul>
+        <li><strong>全体の流れが見えにくい</strong> — 誰が何に反応するか、図やドキュメントがないと迷子になる</li>
+        <li><strong>結果整合性（最終的整合性）</strong>になりやすい — すぐには全部そろわない（<a href="40-4_データ所有権とSAGA.html">40-4</a>）</li>
+        <li><strong>順序・重複</strong> — 同じイベントが2回来たらどうするか、を決める必要がある</li>
+      </ul></div>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>3つの比較</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>同期 API</th><th>メッセージ（非同期）</th><th>イベント駆動</th></tr></thead>
+      <tbody>
+        <tr><td>応答</td><td>すぐ返る</td><td>後で処理</td><td>後で複数が反応</td></tr>
+        <tr><td>呼んだ側は</td><td>返事を<strong>待つ</strong></td><td>送ったら<strong>待たない</strong>（宛先は決まっている）</td><td>「起きたこと」を<strong>知らせるだけ</strong>（宛先を知らない）</td></tr>
+        <tr><td>結合度</td><td>やや強い</td><td>弱め</td><td>弱め</td></tr>
+        <tr><td>ユーザー待ち</td><td>向く</td><td>不向き（本体処理）</td><td>本体は別途</td></tr>
+        <tr><td>障害時</td><td>相手次第で失敗</td><td>キューに残せる</td><td>同上＋購読者が増える</td></tr>
+        <tr><td>運用</td><td>比較的単純</td><td>キュー監視が必要</td><td>同上＋可視化が重要</td></tr>
+        <tr><td>例</td><td>在庫の問い合わせ、ログイン</td><td>メール送信、画像変換</td><td>注文確定 → 在庫・通知・分析がそれぞれ反応</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>どう選ぶか — 初心者向けの目安</h2>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>同期 API を基本にする</h4>
+        <ul>
+          <li>チーム・サービスがまだ少ない</li>
+          <li>ユーザーが<strong>その場で結果</strong>を必要とする</li>
+          <li><strong>強い整合性</strong>が必要（在庫を見てから確定、など）</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h4>メッセージ／イベントを足す</h4>
+        <ul>
+          <li><strong>後でよい処理</strong>が明確にある</li>
+          <li>ピーク吸収や、<strong>呼び出し先のダウン</strong>に耐えたい</li>
+          <li>1つの出来事に<strong>複数の反応</strong>がある（注文 → 在庫・会計・通知）</li>
+        </ul>
+      </div>
+    </div>
+    <h3>ハイブリッドが現実的</h3>
+    <p>多くのシステムは<strong>同期 API ＋ イベント</strong>の併用です。ユーザーの操作に対しては同期 API で注文を確定してすぐに OK/NG を返し、その裏でイベントを発行して、在庫更新・分析用ログ・メール送信をバックグラウンドで進めます。</p>
+    <figure>
+    <svg viewBox="0 0 700 250" role="img" aria-label="ハイブリッド構成：同期で注文確定し、イベントで後処理">
+      <defs><marker id="c3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="90" width="120" height="50" rx="8" class="d-box-accent"/>
+      <text x="80" y="120" text-anchor="middle" class="d-text-bold">ユーザー操作</text>
+      <rect x="190" y="80" width="190" height="70" rx="8" class="d-box-good"/>
+      <text x="285" y="108" text-anchor="middle" class="d-text-bold">同期 API で注文確定</text>
+      <text x="285" y="130" text-anchor="middle" class="d-text-sub">すぐ OK / NG を返す</text>
+      <line x1="140" y1="108" x2="186" y2="108" class="d-line" marker-end="url(#c3b)"/>
+      <line x1="186" y1="126" x2="144" y2="126" class="d-line" marker-end="url(#c3b)"/>
+      <line x1="380" y1="115" x2="426" y2="115" class="d-line-dash" marker-end="url(#c3b)"/>
+      <text x="403" y="104" text-anchor="middle" class="d-text-sub">発行</text>
+      <rect x="430" y="95" width="80" height="40" rx="4" class="d-box-purple"/>
+      <text x="470" y="120" text-anchor="middle" class="d-text-sub">イベント</text>
+      <rect x="555" y="30" width="125" height="40" rx="8" class="d-box"/>
+      <text x="617" y="55" text-anchor="middle" class="d-text">在庫更新</text>
+      <rect x="555" y="95" width="125" height="40" rx="8" class="d-box"/>
+      <text x="617" y="120" text-anchor="middle" class="d-text">分析用ログ</text>
+      <rect x="555" y="160" width="125" height="40" rx="8" class="d-box"/>
+      <text x="617" y="185" text-anchor="middle" class="d-text">メール送信</text>
+      <line x1="510" y1="110" x2="551" y2="52" class="d-line" marker-end="url(#c3b)"/>
+      <line x1="510" y1="115" x2="551" y2="115" class="d-line" marker-end="url(#c3b)"/>
+      <line x1="510" y1="120" x2="551" y2="178" class="d-line" marker-end="url(#c3b)"/>
+      <text x="200" y="232" class="d-text-sub">ユーザーが待つのはここまで</text>
+      <text x="555" y="232" class="d-text-sub">バックグラウンド</text>
+    </svg>
+    <figcaption>図：同期 API ＋ イベントのハイブリッド</figcaption>
+    </figure>
+    <p>「全部イベント」も「全部同期」も極端になりやすいので、<strong>ユーザー体験が必要とする部分</strong>で線を引くとよいでしょう。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくあるつまずきと対策</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>つまずき</th><th>対策のヒント</th></tr></thead>
+      <tbody>
+        <tr><td>同期チェーンが長すぎる</td><td>読み取りは集約 API（<a href="40-5_BFFとAPIゲートウェイ.html">BFF・API ゲートウェイ</a>）でまとめ、更新はイベント化を検討する</td></tr>
+        <tr><td>イベントの順序が狂う</td><td>同じ集約 ID で同じパーティションに流す、またはバージョン番号で順序を制御する</td></tr>
+        <tr><td>同じメッセージが2回来る</td><td><strong>冪等性</strong>（何度処理しても同じ結果になる性質）を設計する。処理済み ID を記録するなど</td></tr>
+        <tr><td>失敗したメッセージの行き場がない</td><td>デッドレターキュー、リトライ上限、アラートを用意する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>イベント駆動アーキテクチャを詳しく見る</h2>
+    <p>ここからは、アーキテクチャスタイルとしての<strong>イベント駆動アーキテクチャ（EDA）</strong>を、Richards &amp; Ford『ソフトウェアアーキテクチャの基礎』の内容に沿って掘り下げます。もとのノートは見出しだけの読書メモが多いため、書籍の考え方に沿って説明を補っています。</p>
+    <p>EDA の基本は、コンシューマーからの応答を待たない<strong>「ファイア＆フォーゲット」型の非同期通信</strong>を活用することです。</p>
+
+    <h3>9-1. ブローカー型：開始イベントと派生イベント</h3>
+    <figure>
+    <svg viewBox="0 0 760 270" role="img" aria-label="ブローカー型トポロジー：開始イベントから派生イベントが連鎖する">
+      <defs><marker id="c3c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="110" width="110" height="50" rx="8" class="d-box-accent"/>
+      <text x="65" y="132" text-anchor="middle" class="d-text-bold">開始イベント</text>
+      <text x="65" y="150" text-anchor="middle" class="d-text-sub">注文が入った</text>
+      <rect x="150" y="115" width="100" height="40" rx="4" class="d-box-purple"/>
+      <text x="200" y="140" text-anchor="middle" class="d-text-sub">チャネル A</text>
+      <rect x="280" y="105" width="130" height="60" rx="8" class="d-box"/>
+      <text x="345" y="131" text-anchor="middle" class="d-text-bold">プロセッサー</text>
+      <text x="345" y="151" text-anchor="middle" class="d-text-sub">注文を登録</text>
+      <rect x="440" y="115" width="110" height="40" rx="4" class="d-box-purple"/>
+      <text x="495" y="134" text-anchor="middle" class="d-text-sub">派生イベント</text>
+      <text x="495" y="150" text-anchor="middle" class="d-text-sub">注文作成済</text>
+      <rect x="590" y="30" width="160" height="50" rx="8" class="d-box"/>
+      <text x="670" y="60" text-anchor="middle" class="d-text">決済プロセッサー</text>
+      <rect x="590" y="110" width="160" height="50" rx="8" class="d-box"/>
+      <text x="670" y="140" text-anchor="middle" class="d-text">在庫プロセッサー</text>
+      <rect x="590" y="190" width="160" height="50" rx="8" class="d-box"/>
+      <text x="670" y="220" text-anchor="middle" class="d-text">通知プロセッサー</text>
+      <line x1="120" y1="135" x2="146" y2="135" class="d-line" marker-end="url(#c3c)"/>
+      <line x1="250" y1="135" x2="276" y2="135" class="d-line" marker-end="url(#c3c)"/>
+      <line x1="410" y1="135" x2="436" y2="135" class="d-line" marker-end="url(#c3c)"/>
+      <line x1="550" y1="128" x2="586" y2="58" class="d-line" marker-end="url(#c3c)"/>
+      <line x1="550" y1="135" x2="586" y2="135" class="d-line" marker-end="url(#c3c)"/>
+      <line x1="550" y1="142" x2="586" y2="212" class="d-line" marker-end="url(#c3c)"/>
+      <text x="380" y="40" text-anchor="middle" class="d-text-sub">各プロセッサーは処理後、</text>
+      <text x="380" y="60" text-anchor="middle" class="d-text-sub">さらに派生イベントを発行していく</text>
+      <text x="380" y="250" text-anchor="middle" class="d-text-sub">中央の指揮役はいない（連鎖反応）</text>
+    </svg>
+    <figcaption>図：ブローカー型 — 開始イベントを起点に、派生イベントが連鎖していく</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><strong>開始イベント</strong>：イベントフロー全体を開始するイベントです。イベントブローカーのイベントチャネルに送信されます。</li>
+      <li>イベントプロセッサーが開始イベントを受け取り、そのイベントに関連する特定のタスクを実行します。</li>
+      <li>処理を終えたプロセッサーは、<strong>派生イベント</strong>を非同期に発行し、「自分が何をしたか」をイベントブローカーを通じてシステム全体に知らせます。</li>
+      <li>他のイベントプロセッサーは派生イベントに反応して自分の処理を行い、さらに新しい派生イベントで自分が行ったことを知らせます。これが連鎖していきます。</li>
+    </ol>
+    <p>イベントブローカーは通常<strong>フェデレーション</strong>されています。つまり、1つの巨大なブローカーではなく、<strong>ドメインごとにクラスタ化された複数のブローカーのインスタンス</strong>に分かれています。ここでの「クラスタ」は、同じ役割の複数のサーバーをまとめて1つのように動かし、冗長性や処理能力を高めた構成のことです。「インスタンス」は、実際に動いている1つのブローカーのことです。フェデレーションされた各ブローカーには、その特定ドメインのイベントフローで使うすべてのイベントチャネルが含まれます。イベントは複数の購読者に配られる性質があるため、チャネルには<strong>トピック</strong>、（AMQP の）<strong>トピックエクスチェンジ</strong>、または<strong>ストリーム</strong>を使います。</p>
+
+    <h3>9-2. イベントとメッセージの違い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>イベント</th><th>メッセージ</th></tr></thead>
+      <tbody>
+        <tr><td>意味</td><td>「何かが起きた」という状態変化の通知</td><td>特定の相手への指示（コマンド）や問い合わせ（リクエスト）</td></tr>
+        <tr><td>送り手と受け手</td><td>送り手は誰が受け取るかを知らないし、気にしない</td><td>送り手は宛先を知っている</td></tr>
+        <tr><td>受け手の数</td><td>0〜複数（ブロードキャスト）</td><td>通常1つ（ポイントツーポイント）</td></tr>
+        <tr><td>典型的なチャネル</td><td>トピック・ストリーム</td><td>キュー</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>9-3. 応答性とパフォーマンス</h3>
+    <p>非同期通信で改善されるのは、主に<strong>応答性（responsiveness）</strong>です。たとえばユーザーがコメントを投稿したとき、同期処理なら投稿の検証・保存・通知まで全部終わってから「投稿しました」と返しますが、非同期なら「受け付けました」とすぐに返し、残りは裏で処理します。ユーザーが感じる待ち時間は大きく短くなります。</p>
+    <p>ただし、処理全体にかかる時間（<strong>パフォーマンス</strong>）が短くなるわけではありません。また、裏の処理が失敗したときにユーザーへどう知らせるか、というエラー処理の難しさが代わりに生まれます。「非同期にすると速くなる」ではなく「<strong>待たせなくなる</strong>」と理解するのが正確です。</p>
+
+    <h3>9-4. ブロードキャスト機構</h3>
+    <p>イベント駆動の特徴の1つは、プロデューサーが<strong>誰が受け取るのか、受け取って何をするのかを知らずに</strong>イベントを配信（ブロードキャスト）できることです。新しい購読者を追加しても発行側は変更不要なので、システムを最も疎結合に保てる仕組みです。一方で、「このイベントを誰が使っているのか」を把握しにくくなるため、イベントの一覧や購読関係を文書化しておくことが重要になります。</p>
+
+    <h3>9-5. イベントペイロード：データ型とキー型</h3>
+    <p>イベントに何を載せるか（ペイロード）には2つの考え方があります。</p>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>データイベントペイロード</h4>
+        <p>処理に必要な<strong>データをすべてイベントに含める</strong>方式。</p>
+        <ul>
+          <li>良い点：受け手は DB に問い合わせ直さなくてよい。性能・スケールに有利</li>
+          <li>注意点：イベントのスキーマ（契約）の管理が大変。ペイロードが大きくなる。使わないデータまで受け取る（スタンプ結合）。受け取った時点でデータが古い可能性</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h4>キーイベントペイロード</h4>
+        <p><strong>キー（注文 ID など）だけ</strong>をイベントに含め、詳しいデータは受け手が取りに行く方式。</p>
+        <ul>
+          <li>良い点：契約がシンプルで変更に強い。常に最新のデータを読める</li>
+          <li>注意点：受け手が DB や API に問い合わせるため、負荷と結合が増える。データの持ち主が落ちていると処理できない</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>9-6. 「ブヨの群れ」アンチパターン</h3>
+    <p>派生イベントを、<strong>誰も必要としていない細かい単位で大量に発行してしまう</strong>状態を、小さな虫が群がる様子にたとえて「ブヨの群れ（Swarm of Gnats）」と呼びます。ブロードキャストは便利なので「念のため」何でもイベントにしたくなりますが、イベントが増えすぎると、ブローカーの負荷が増え、流れの把握もできなくなります。派生イベントは、<strong>意味のある状態変化</strong>を表すものに絞って発行するのが基本です。</p>
+
+    <h3>9-7. エラー処理：ワークフローイベントパターン</h3>
+    <p>非同期の世界では、コンシューマーがエラーに遭遇しても、プロデューサーはすでに次の仕事に移っています。そこで使われるのが<strong>ワークフローイベントパターン</strong>です。</p>
+    <ol class="steps">
+      <li>イベントプロデューサーが、メッセージキュー（イベントチャネル）を介してイベントコンシューマーに非同期にデータを渡します。</li>
+      <li>コンシューマーはデータ処理中にエラーに遭遇すると、そのエラーを<strong>ワークフロープロセッサー</strong>に委譲し、自分はすぐにキュー内の次のメッセージの処理に移ります（全体の応答性を落とさないため）。</li>
+      <li>ワークフロープロセッサーはエラーを受け取ると、メッセージの何が問題なのかを調べます。プログラムで修正できればデータを直して元のキューに戻し、再処理させます。</li>
+      <li>自動で直せない場合は、ダッシュボードなどに送り、人が確認・修正して再送します。</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">副作用：順序が崩れる</p>
+      <p>エラーになったメッセージは修正後に再投入されるため、<strong>後から来たメッセージより遅れて処理される</strong>ことがあります。同じ注文に対する更新の順序が重要な場合は、別途対策（同じキーのメッセージを保留するなど）が必要です。</p>
+    </div>
+
+    <h3>9-8. データロスの防止</h3>
+    <p>AMQP（RabbitMQ などが使うメッセージングのプロトコル）を使う構成では、イベントは<strong>エクスチェンジ</strong>に発行されます。エクスチェンジは、コンシューマー側のイベントプロセッサーが設定した<strong>バインディングルール</strong>を使って、そのイベントを購読している各プロセッサーのキューへ転送します（Amazon SNS ＋ SQS の組み合わせも、トピックからキューへ配るという点で同じ構図です）。</p>
+    <p>プロセッサー A がイベントを発行し、プロセッサー B が受け取って DB に保存する流れを考えると、データが失われる可能性は3か所にあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>データロスが起きる場面</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>A が発行したメッセージがキューに届かない。または届いても、B が取得する前にブローカーが落ちてしまう</td><td><strong>永続化されたキュー＋同期送信</strong>：イベントは高速化のためにメモリに置くだけでなく、物理的なデータストアにも永続化する（保証付き配信）。ブローカーが復旧した後でも処理できる。さらに A はブローカーが永続化を終えたという応答を待ってから次を送る</td></tr>
+        <tr><td>2</td><td>B がキューからメッセージを取り出した後、処理する前にクラッシュしてしまう</td><td><strong>クライアント確認応答（client acknowledge）モード</strong>：取り出した時点ではメッセージをキューから消さず、クライアント ID を付けてロックし、他のコンシューマーが読めないようにする。B が処理完了を応答して初めて削除される。B がクラッシュしてもメッセージはキューに残る</td></tr>
+        <tr><td>3</td><td>何らかのデータエラーで、B がメッセージを DB に永続化できない</td><td><strong>DB コミットによる ACID トランザクション</strong>：コミットが成功すればデータは確実に永続化される。さらに <strong>LPS（Last Participant Support）</strong>を使うと、処理が完了して DB に永続化されたことを確認してから、キューからイベントを削除できる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>9-9. リクエスト・リプライ処理（疑似同期通信）</h3>
+    <p>イベント駆動の中でも、注文 ID を受け取るなど<strong>応答が必要な場面</strong>があります。そのときはメッセージングで疑似的に同期通信を実現します。</p>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>相関 ID（Correlation ID）を使う方法</h4>
+        <ol>
+          <li>プロデューサーはリクエストキューにメッセージを送り、その<strong>メッセージ ID</strong> を覚えておく</li>
+          <li>コンシューマーは処理後、リプライキューに応答を送る。このとき応答の<strong>相関 ID</strong> に元のメッセージ ID を入れる</li>
+          <li>プロデューサーはリプライキューで、相関 ID が自分のメッセージ ID と一致する応答を待って受け取る</li>
+        </ol>
+      </div>
+      <div class="card purple">
+        <h4>テンポラリーキューを使う方法</h4>
+        <ol>
+          <li>プロデューサーはリクエストごとに一時的な応答用キューを作り、その名前をメッセージに付けて送る</li>
+          <li>コンシューマーはその一時キューに応答を送る</li>
+          <li>応答を受け取ったら一時キューを削除する</li>
+        </ol>
+        <p class="small">仕組みは単純ですが、リクエストのたびにキューを作るため、量が多いとブローカーの負荷が高くなります。</p>
+      </div>
+    </div>
+
+    <h3>9-10. メディエーター型トポロジー</h3>
+    <p>ブローカー型と対になるのが<strong>メディエーター型</strong>です。<strong>イベントメディエーター</strong>（指揮役）が開始イベントを受け取り、ワークフローの手順を知っていて、各プロセッサーに順番に処理を指示します。</p>
+    <figure>
+    <svg viewBox="0 0 740 280" role="img" aria-label="メディエーター型トポロジー：メディエーターが各プロセッサーに順番に指示する">
+      <defs><marker id="c3d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="115" width="140" height="50" rx="8" class="d-box-accent"/>
+      <text x="90" y="145" text-anchor="middle" class="d-text-bold">開始イベント</text>
+      <rect x="230" y="100" width="180" height="80" rx="10" class="d-box-warn"/>
+      <text x="320" y="132" text-anchor="middle" class="d-text-bold">イベント</text>
+      <text x="320" y="152" text-anchor="middle" class="d-text-bold">メディエーター</text>
+      <text x="320" y="200" text-anchor="middle" class="d-text-sub">ワークフローを知っている</text>
+      <rect x="520" y="30" width="190" height="50" rx="8" class="d-box"/>
+      <text x="615" y="60" text-anchor="middle" class="d-text">① 注文を登録</text>
+      <rect x="520" y="115" width="190" height="50" rx="8" class="d-box"/>
+      <text x="615" y="145" text-anchor="middle" class="d-text">② 決済する</text>
+      <rect x="520" y="200" width="190" height="50" rx="8" class="d-box"/>
+      <text x="615" y="230" text-anchor="middle" class="d-text">③ 出荷を手配</text>
+      <line x1="160" y1="140" x2="226" y2="140" class="d-line" marker-end="url(#c3d)"/>
+      <line x1="410" y1="120" x2="516" y2="58" class="d-line" marker-end="url(#c3d)"/>
+      <line x1="410" y1="140" x2="516" y2="140" class="d-line" marker-end="url(#c3d)"/>
+      <line x1="410" y1="160" x2="516" y2="222" class="d-line" marker-end="url(#c3d)"/>
+      <text x="465" y="270" text-anchor="middle" class="d-text-sub">各プロセッサーは結果をメディエーターに返し、次の指示を待つ</text>
+    </svg>
+    <figcaption>図：メディエーター型 — 指揮役が手順を管理する（SAGA のオーケストレーションに近い）</figcaption>
+    </figure>
+    <ul>
+      <li>メディエーターと各プロセッサーの間のチャネルには、宛先が決まった<strong>キュー</strong>（ポイントツーポイント）がよく使われます。プロセッサーは処理結果をシステム全体に宣伝せず、メディエーターに返します。</li>
+      <li>メディエーターは、扱うワークフローの複雑さに応じて使い分けます。単純なルーティングなら Apache Camel や Spring Integration のような統合フレームワーク、複雑な条件分岐があるならワークフロー・エンジン（BPEL など）、人の承認が入る長いフローなら BPM エンジン（jBPM など）といった具合です。</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>型</th><th>良い点</th><th>弱い点</th></tr></thead>
+      <tbody>
+        <tr><td>ブローカー型</td><td>疎結合。拡張性・応答性・性能・耐障害性が高い。処理の追加が容易</td><td>ワークフロー全体の制御ができない。エラー処理・再実行・再開が難しい。全体の状態が分からない</td></tr>
+        <tr><td>メディエーター型</td><td>ワークフローを制御できる。エラー処理・回復・途中からの再開がしやすい。状態を管理できる</td><td>メディエーターとの結合が強い。メディエーターがボトルネック・単一障害点になりやすく、スケールと性能で劣る</td></tr>
+      </tbody>
+    </table></div>
+    <p>この関係は、SAGA の<strong>コレオグラフィ（ブローカー型に近い）</strong>と<strong>オーケストレーション（メディエーター型に近い）</strong>と同じ構図です（<a href="40-4_データ所有権とSAGA.html">40-4</a>）。</p>
+
+    <h3>9-11. データトポロジー</h3>
+    <p>イベントプロセッサーがどのように DB を持つかにも、いくつかの選択肢があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トポロジー</th><th>形</th><th>良い点</th><th>弱い点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>モノリシックデータベース</strong></td><td>すべてのプロセッサーが1つの DB を共有する</td><td>シンプル。データの取得が簡単で、整合性を取りやすい</td><td>DB がスケール・耐障害性のボトルネックになる。スキーマ変更が全プロセッサーに波及する</td></tr>
+        <tr><td><strong>ドメインデータベース</strong></td><td>ドメインごとに DB を分け、同じドメインのプロセッサーで共有する</td><td>変更の影響がドメイン内に閉じる。バランスがよい</td><td>ドメインをまたぐデータはイベントや API 経由で取る必要がある</td></tr>
+        <tr><td><strong>専用データベース</strong></td><td>プロセッサーごとに専用の DB を持つ</td><td>最も疎結合。個別にスケール・変更できる</td><td>データ共有はイベント経由になり、結果整合性・重複データの管理が必要</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>9-12. リクエストベースモデルとイベントベースモデル</h3>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>リクエストベースモデル</h4>
+        <p>「この注文履歴を見せて」のような<strong>データ駆動の要求</strong>を、決まった手順で処理するモデル（オーケストレーターが順に処理を呼ぶ）。</p>
+        <ul>
+          <li>良い点：流れが決定的で分かりやすい。強い整合性を保ちやすい。結果がすぐ分かる</li>
+          <li>弱い点：スケールや応答性に限界がある。変更に対して柔軟性が低い</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h4>イベントベースモデル</h4>
+        <p>「入札が入った」のような<strong>状況（出来事）に反応して</strong>処理を進めるモデル。</p>
+        <ul>
+          <li>良い点：動的な状況に強い。スケール・応答性・耐障害性が高い</li>
+          <li>弱い点：結果整合性になる。処理の流れを制御しにくく、結果が不確定になりやすい</li>
+        </ul>
+      </div>
+    </div>
+    <p>1つのシステムの中でも、要求の性質によって両方を使い分けるのが一般的です。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>小さな練習</h2>
+    <p>EC サイトの「注文確定」について、次の3つに分類してみてください。</p>
+    <ol class="steps">
+      <li><strong>同期でやるべきこと</strong>（ユーザーが待つ）</li>
+      <li><strong>非同期でよいこと</strong>（後でよい）</li>
+      <li><strong>イベントとして発行するとよさそうな事実</strong>（過去形で名前をつける）</li>
+    </ol>
+    <details>
+      <summary>答えの一例</summary>
+      <div class="body">
+        <ul>
+          <li>同期：支払い可否、在庫の最終チェック、注文番号の返却</li>
+          <li>非同期：配送手配、レコメンド更新、社内レポート</li>
+          <li>イベント：<code>OrderPlaced</code>、<code>PaymentCaptured</code></li>
+        </ul>
+      </div>
+    </details>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>非同期にすれば処理が速くなる</td><td>速くなるのはユーザーへの応答。処理全体の時間は変わらないか、むしろ増えることもある</td></tr>
+        <tr><td>キューを使えばイベント駆動</td><td>宛先が決まった「〜して」はコマンド（メッセージ）。イベントは過去形の事実を、宛先を知らずに知らせるもの</td></tr>
+        <tr><td>全部イベントにすれば疎結合で理想的</td><td>流れが見えなくなり、ブヨの群れや結果整合性の問題を招く。ユーザーが待つ部分は同期がよい</td></tr>
+        <tr><td>メッセージは必ず1回だけ届く</td><td>重複・順序の入れ替わり・取りこぼしは起こりうる前提で、冪等性・永続化・確認応答を設計する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページのポイント</p>
+      <ul>
+        <li><strong>同期 API</strong> は待つ。分かりやすく強い整合性を取りやすいが、連鎖障害と遅延の足し算に注意。</li>
+        <li><strong>メッセージ</strong>は宛先に投げて待たない。負荷の平準化と障害の緩和に効くが、運用と冪等性が必要。</li>
+        <li><strong>イベント</strong>は起きた事実を知らせるだけ。拡張しやすいが、流れが見えにくく結果整合性になる。</li>
+        <li>コマンド（〜して）とイベント（〜した）を名前で区別する。</li>
+        <li>現実的なのは <strong>同期 API ＋ イベント</strong>のハイブリッド。ユーザー体験が必要とする部分で線を引く。</li>
+        <li>EDA にはブローカー型とメディエーター型があり、データロス防止（永続化・確認応答・LPS）とエラー処理（ワークフローイベント）の設計が欠かせない。</li>
+      </ul>
+    </div>
+    <p>関連：<a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a>、<a href="40-4_データ所有権とSAGA.html">データ所有権・分散トランザクション・SAGA</a>、<a href="40-5_BFFとAPIゲートウェイ.html">BFF・API ゲートウェイ</a>、<a href="23-4_CQRS.html">CQRS</a>、（41 外のノート：42_ソフトウェア設計『02_集約とエンティティと値オブジェクトとドメインイベント』）</p>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Mark Richards &amp; Neal Ford『ソフトウェアアーキテクチャの基礎』（O'Reilly Japan）イベント駆動アーキテクチャの章</li>
+      <li>Gregor Hohpe &amp; Bobby Woolf『Enterprise Integration Patterns』— Correlation Identifier、Request-Reply、Dead Letter Channel など <a href="https://www.enterpriseintegrationpatterns.com/">https://www.enterpriseintegrationpatterns.com/</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-2_モノリスとマイクロサービス.html"><span class="lbl">← 前のページ</span>モノリス・分散モノリス・マイクロサービス</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-4_データ所有権とSAGA.html"><span class="lbl">次のページ →</span>データ所有権・分散トランザクション・SAGA</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

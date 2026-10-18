@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BFF・マイクロフロントエンド｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">30 フロントエンド構成 › BFF・マイクロフロントエンド</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 フロントエンド構成</span>
+      <h1>BFF・マイクロフロントエンド</h1>
+      <p class="lead">BFF（Backend for Frontend）は特定の画面のためだけに置く薄いバックエンド、マイクロフロントエンドは大きなフロントエンドをチームごとの独立したアプリに分ける考え方です。このページでは、それぞれが生まれた背景（SoundCloud の BFF、ThoughtWorks のマイクロフロントエンド）、役割と配置、統合方式（ビルド時・サーバー側・ランタイム、Module Federation）、設計上の注意点と「使うべきでない場面」までを整理します。</p>
+      <p class="meta">もとにしたノート：30_フロントエンド構成／00_解説_フロントエンド構成（BFF・マイクロフロントエンド部分）。ノートの説明が薄い部分は Sam Newman・Phil Calçado・Cam Jackson（martinfowler.com）の記事などで補足</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>前のページ（<a href="30-1_レンダリング方式.html">レンダリング方式</a>）では「HTML をいつ・どこで作るか」を扱いました。このページでは、フロントエンドの構成に関わる残りの2つのテーマを扱います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>一言でいうと</th><th>解決したい問題</th></tr></thead>
+      <tbody>
+        <tr><td><strong>BFF</strong>（Backend for Frontend）</td><td>特定のフロントエンド専用の薄いバックエンド</td><td>1画面のためにフロントが多数の API を呼び、データを組み合わせる負担</td></tr>
+        <tr><td><strong>マイクロフロントエンド</strong></td><td>フロントエンドをドメインごとの独立したアプリに分け、別チームが開発・デプロイする</td><td>大規模なフロントエンドで、複数チームのリリース調整がボトルネックになる問題</td></tr>
+      </tbody>
+    </table></div>
+    <p>どちらも「コードの書き方」ではなく、<strong>どこに境界を引き、誰がどの部分を持つか</strong> という構成の判断です。次のテーマは別ページ・別フォルダが本拠地です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地</th></tr></thead>
+      <tbody>
+        <tr><td>API ゲートウェイの詳細、グレースフルデグレーデーション</td><td><a href="40-5_BFFとAPIゲートウェイ.html">BFF・API ゲートウェイ・グレースフルデグレーデーション</a>（40 システム・分散）</td></tr>
+        <tr><td>マイクロサービスそのもの</td><td><a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a></td></tr>
+        <tr><td>チーム構成とシステム構成の関係（コンウェイの法則）</td><td><a href="70-3_コンウェイの法則とTeamTopologies.html">コンウェイの法則と Team Topologies</a></td></tr>
+        <tr><td>コンポーネント・ディレクトリの設計</td><td>41 外のノート：47_フロントエンド設計、43_モジュール設計</td></tr>
+        <tr><td>Next.js の Route Handler などの書き方</td><td>41 外のノート：33_Next.js</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-2"><span class="num">2.</span>BFF とは何か・なぜ必要か</h2>
+    <h3 id="sec-2-1">定義</h3>
+    <p><strong>BFF（Backend for Frontend）</strong> とは、<strong>特定のフロントエンド（Web、iOS、Android、管理画面など）専用に用意する、薄いバックエンド</strong> です。汎用の API を全クライアントで共有するのではなく、「この画面（このユーザー体験）のための API」をサーバー側に1枚はさみます。</p>
+    <h3 id="sec-2-2">BFF がないと何が困るか</h3>
+    <p>マイクロサービス化が進むと、1つの画面を表示するために、フロントエンドが複数のサービスを呼んでデータを組み合わせる必要が出てきます。たとえば商品詳細ページを表示するのに、スマホアプリが次のように5つの API を呼ぶ状況です。</p>
+    <pre><code>  スマホアプリ ──→ 商品 API
+              ├──→ 在庫 API
+              ├──→ 会員 API
+              ├──→ おすすめ API
+              └──→ レビュー API
+
+  × 呼び先が多すぎる（通信回数が増え、遅いモバイル回線では特に遅い）
+  × 認証を各所で繰り返す
+  × 画面1枚分のデータを集める・組み合わせるロジックがクライアントに散らばる
+  × 内部のサービス構成を変えると、全クライアントの改修が必要になる</code></pre>
+    <p>これをブラウザやアプリでやると通信回数が増え、フロントのコードも複雑になります。また、Web とモバイルでは必要なデータの量や形が違うのに、汎用 API は「全員に合わせた最大公約数」になりがちです。</p>
+    <h3 id="sec-2-3">BFF がやること</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>集約（アグリゲーション）</strong></td><td>複数の API を呼んで <strong>1画面分のデータにまとめ</strong>、1リクエストで返す</td></tr>
+        <tr><td><strong>変換・整形</strong></td><td>フロントが使いやすい形にデータを変換し、不要なフィールドを落とす。Web には多めの情報、モバイルには軽量な JSON と小さい画像 URL、のように出し分ける</td></tr>
+        <tr><td><strong>ブラウザに置きたくない処理の肩代わり</strong></td><td>認証トークンの扱い、API キーの保持など</td></tr>
+        <tr><td><strong>画面特化のロジック</strong></td><td>表示順、ページネーション、キャッシュ戦略など、画面の都合</td></tr>
+        <tr><td><strong>バックエンドの変更を隠す</strong></td><td>内部サービスの分割・統合をフロントから切り離す。サービス構成が変わっても BFF の中だけで吸収できる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>BFF の由来 ── SoundCloud と Sam Newman</h2>
+    <p>BFF という名前と考え方は、音楽配信サービス <strong>SoundCloud</strong> の実践から広まりました。</p>
+    <ol class="steps">
+      <li><strong>モノリスから公開 API へ</strong>：SoundCloud は 2011 年ごろまで、すべてのロジックを1つのモノリスに持っていました。その後 UI 層を切り出し、Web やモバイルのアプリが <strong>外部向けの汎用公開 API</strong> を直接呼ぶ構成にしました。</li>
+      <li><strong>汎用 API の問題</strong>：プロフィール画面1つを表示するのに <code>/tracks</code>、<code>/related</code>、<code>/users</code> など多数の HTTP 呼び出しが必要で、不安定なモバイル回線では特に問題になりました。また、API を変えるには全クライアントやサードパーティとの調整が必要で、A/B テストや機能の段階的な公開もしにくくなっていました。</li>
+      <li><strong>クライアントごとのバックエンド</strong>：そこで Web・iOS・Android などのクライアントごとに専用のバックエンドを用意し、クライアントを担当するチームが他チームと調整せずに速く動けるようにしました。やがて画面の表示ロジックも BFF に寄せ、クライアントは <code>GET /user-profile/123.json</code> のような1回のリクエストで画面分のデータを受け取るようになりました。</li>
+      <li><strong>名前の誕生</strong>：「BFF」という呼び名は、当時の Web のテックリード <strong>Nick Fisher</strong> が付けたものです。この経緯は元 SoundCloud の <strong>Phil Calçado</strong> が 2015 年の記事「The Back-end for Front-end Pattern (BFF)」で紹介しています。</li>
+      <li><strong>パターンとしての整理</strong>：同じ 2015 年、<strong>Sam Newman</strong>（『マイクロサービスアーキテクチャ』の著者）が記事「Pattern: Backends For Frontends」で、Phil Calçado の紹介を出発点に、SoundCloud や REA での実践をパターンとして整理しました。BFF が一般に知られるようになったのはこの記事からです。</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">SoundCloud のその後</p>
+      <p>Phil Calçado の記事によると、SoundCloud では BFF が5つほどに増えた段階で、複数の BFF に同じコードが重複していることに気づきました。そこで、ユーザープロフィールのような中核の業務データを扱う専用のマイクロサービス（例：<code>UserProfileService</code>）を作り、BFF からはそれを呼ぶ形に整理していきました。「BFF に業務ロジックを入れすぎると重複する」という、後述の注意点の実例です。</p>
+    </div>
+    <p>Sam Newman の整理で特に大事なのは次の2点です。</p>
+    <ul>
+      <li><strong>BFF は1つの UI（1つのユーザー体験）に密着する</strong>：その UI のためだけに存在するので、小さく焦点の絞れたサービスになる。</li>
+      <li><strong>その UI を担当するチームが BFF も持つ</strong>：画面の変更と API の変更を同じチームが同時に行えるので、他チームを待たずにリリースできる。</li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>BFF の配置と API ゲートウェイとの違い</h2>
+    <h3 id="sec-4-1">配置図</h3>
+    <p>BFF はクライアントと内部サービスの間に置きます。実務では、全クライアント共通の API ゲートウェイの内側に、クライアントごとの BFF を置く構成もよく見られます。</p>
+    <figure>
+      <svg viewBox="0 0 760 360" role="img" aria-label="API ゲートウェイの内側にクライアントごとの BFF を置く構成">
+        <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+        <text x="85" y="28" text-anchor="middle" class="d-text-sub">クライアント</text>
+        <text x="245" y="28" text-anchor="middle" class="d-text-sub">共通の入口</text>
+        <text x="420" y="28" text-anchor="middle" class="d-text-sub">画面ごとの窓口</text>
+        <text x="645" y="28" text-anchor="middle" class="d-text-sub">内部サービス</text>
+
+        <rect x="20" y="80" width="130" height="56" rx="8" class="d-box"/>
+        <text x="85" y="113" text-anchor="middle" class="d-text">Web ブラウザ</text>
+        <rect x="20" y="220" width="130" height="56" rx="8" class="d-box"/>
+        <text x="85" y="245" text-anchor="middle" class="d-text">モバイル</text>
+        <text x="85" y="264" text-anchor="middle" class="d-text-sub">iOS / Android</text>
+
+        <rect x="185" y="50" width="120" height="260" rx="10" class="d-box-purple"/>
+        <text x="245" y="160" text-anchor="middle" class="d-text-bold">API</text>
+        <text x="245" y="180" text-anchor="middle" class="d-text-bold">ゲートウェイ</text>
+        <text x="245" y="210" text-anchor="middle" class="d-text-sub">認証・</text>
+        <text x="245" y="227" text-anchor="middle" class="d-text-sub">レート制限・</text>
+        <text x="245" y="244" text-anchor="middle" class="d-text-sub">ルーティング</text>
+
+        <rect x="350" y="80" width="140" height="56" rx="8" class="d-box-accent"/>
+        <text x="420" y="104" text-anchor="middle" class="d-text-bold">Web BFF</text>
+        <text x="420" y="123" text-anchor="middle" class="d-text-sub">集約・整形</text>
+        <rect x="350" y="220" width="140" height="56" rx="8" class="d-box-accent"/>
+        <text x="420" y="244" text-anchor="middle" class="d-text-bold">Mobile BFF</text>
+        <text x="420" y="263" text-anchor="middle" class="d-text-sub">軽量 JSON</text>
+
+        <rect x="560" y="50" width="170" height="44" rx="8" class="d-box"/>
+        <text x="645" y="77" text-anchor="middle" class="d-text">商品サービス</text>
+        <rect x="560" y="120" width="170" height="44" rx="8" class="d-box"/>
+        <text x="645" y="147" text-anchor="middle" class="d-text">在庫サービス</text>
+        <rect x="560" y="190" width="170" height="44" rx="8" class="d-box"/>
+        <text x="645" y="217" text-anchor="middle" class="d-text">会員サービス</text>
+        <rect x="560" y="260" width="170" height="44" rx="8" class="d-box"/>
+        <text x="645" y="287" text-anchor="middle" class="d-text">レビューサービス</text>
+
+        <line x1="150" y1="108" x2="183" y2="108" class="d-line" marker-end="url(#arw1)"/>
+        <line x1="150" y1="248" x2="183" y2="248" class="d-line" marker-end="url(#arw1)"/>
+        <line x1="305" y1="108" x2="348" y2="108" class="d-line" marker-end="url(#arw1)"/>
+        <line x1="305" y1="248" x2="348" y2="248" class="d-line" marker-end="url(#arw1)"/>
+
+        <line x1="490" y1="100" x2="558" y2="72" class="d-line" marker-end="url(#arw1)"/>
+        <line x1="490" y1="108" x2="558" y2="142" class="d-line" marker-end="url(#arw1)"/>
+        <line x1="490" y1="116" x2="558" y2="212" class="d-line" marker-end="url(#arw1)"/>
+        <line x1="490" y1="124" x2="558" y2="280" class="d-line" marker-end="url(#arw1)"/>
+        <line x1="490" y1="236" x2="558" y2="76" class="d-line-dash" marker-end="url(#arw1)"/>
+        <line x1="490" y1="244" x2="558" y2="146" class="d-line-dash" marker-end="url(#arw1)"/>
+        <line x1="490" y1="252" x2="558" y2="216" class="d-line-dash" marker-end="url(#arw1)"/>
+
+        <text x="380" y="345" text-anchor="middle" class="d-text-sub">BFF が複数サービスを呼び（実線＝Web、点線＝モバイル）、画面1枚分にまとめて返す</text>
+      </svg>
+      <figcaption>図1：BFF の配置。クライアント → API ゲートウェイ（共通）→ BFF（クライアントごと）→ 各サービス</figcaption>
+    </figure>
+    <p>同じ「商品詳細ページ」でも、Web は SEO 用の HTML と多めの情報、モバイルは軽量な JSON と画像サイズ違い、というように画面の要望が違います。図のモバイル BFF はレビューを呼ばない（モバイル画面では別タブで遅延読み込みする）といった、クライアントごとの出し分けを BFF の中で行えます。</p>
+    <h3 id="sec-4-2">API ゲートウェイとの違い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>API ゲートウェイ</th><th>BFF</th></tr></thead>
+      <tbody>
+        <tr><td>位置づけ</td><td><strong>全クライアント共通の入口</strong></td><td><strong>クライアントごとの専用窓口</strong></td></tr>
+        <tr><td>主な目的</td><td>横断的関心事（認証の一次チェック・レート制限・ルーティング・ログ）</td><td>画面都合の集約・変換、画面・クライアント向けの API 設計</td></tr>
+        <tr><td>誰が書くか</td><td>インフラ／プラットフォーム寄りのチーム</td><td>フロントエンドチーム、またはその近くのチーム</td></tr>
+        <tr><td>ロジック</td><td>薄いのが理想</td><td>集約・整形のロジックを持つ</td></tr>
+        <tr><td>個数</td><td>しばしば1つ（環境ごと）</td><td>クライアント種別（ユーザー体験）ごとに複数ありうる</td></tr>
+      </tbody>
+    </table></div>
+    <p>両者は対立するものではなく、<strong>組み合わせて使う</strong> こともよくあります（図1の構成）。API ゲートウェイの詳細と、一部のサービスが落ちても機能を縮小して動き続けるグレースフルデグレーデーションは、<a href="40-5_BFFとAPIゲートウェイ.html">40-5 のページ</a> で扱います。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>BFF を設計するときの判断ポイント</h2>
+    <h3 id="sec-5-1">いくつ作るか：プラットフォームごとか、体験ごとか</h3>
+    <p>BFF の分け方には「iOS 用と Android 用を別々に作る」か、「モバイル体験として1つにまとめる」かの選択があります。Sam Newman は、iOS と Android の画面がほぼ同じなら1つにまとめてもよいが、<strong>担当チームが別々なら BFF も分けた方が自然</strong> だとしています。チームの分け方がシステムの分け方に表れる、というコンウェイの法則の典型例です。逆に、1つの BFF に性質の違う複数の UI をぶら下げると、BFF が肥大化して「汎用 API」に逆戻りします。</p>
+    <h3 id="sec-5-2">重複をどう扱うか</h3>
+    <p>BFF を複数作ると、似た集約処理が BFF ごとに重複しがちです。ある程度の重複は「チームが独立して動ける」代償として受け入れ、重複が業務ロジックに及んできたら、SoundCloud のように <strong>共通部分を下流のサービスに移す</strong> のが基本方針です。共有ライブラリにまとめる方法もありますが、ライブラリの更新が BFF 同士を結合させてしまう点に注意します。</p>
+    <h3 id="sec-5-3">下流呼び出しと部分障害</h3>
+    <p>BFF は1リクエストで複数のサービスを呼ぶ（ファンアウトする）ので、次の点を設計します。</p>
+    <ul>
+      <li><strong>並列か順番か</strong>：依存関係のない呼び出しは並列にして待ち時間を短くする。前の結果が必要な呼び出しだけ順番にする。</li>
+      <li><strong>部分的な失敗</strong>：おすすめ欄のサービスだけが落ちた場合に、ページ全体をエラーにするのか、その欄だけ空にして返すのかを決めておく。タイムアウトとフォールバックを BFF に置くと、グレースフルデグレーデーションを実現しやすくなります。</li>
+    </ul>
+    <h3 id="sec-5-4">BFF に入れてよいもの・入れないもの</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>入れてよい（画面の都合）</h4><ul>
+        <li>複数 API の集約、レスポンスの整形</li>
+        <li>表示順・ページネーション・画面向けキャッシュ</li>
+        <li>トークンの保持などセキュリティ上ブラウザに置きたくない処理</li>
+      </ul></div>
+      <div class="card bad"><h4>入れない（業務の都合）</h4><ul>
+        <li>価格計算・在庫引当などの業務ルール</li>
+        <li>複数クライアントで同じ結果になるべき判定</li>
+        <li>データの所有（BFF は自前のデータを持たないのが基本）</li>
+      </ul></div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">注意：BFF は「画面の都合を吸収する層」にとどめる</p>
+      <p>BFF に業務ロジックを入れすぎると、クライアントごとにロジックが重複し、Web とモバイルで計算結果が食い違うといった不具合の原因になります。業務ルールは下流のサービス（ドメイン）に置き、BFF は集約・変換に徹します。</p>
+    </div>
+    <h3 id="sec-5-5">BFF と認証：トークンをブラウザに置かない</h3>
+    <p>SPA がアクセストークンをブラウザ内（JavaScript から読める場所）に保持すると、XSS で盗まれる危険があります。そこで、OAuth のトークンは BFF が保持し、ブラウザとは HttpOnly の Cookie によるセッションでやり取りする構成が使われます。IETF の「OAuth 2.0 for Browser-Based Applications」でも、ブラウザアプリの構成パターンの1つとして BFF が挙げられています。詳しくは 41 外のノート（73_認証認可）が本拠地です。</p>
+    <h3 id="sec-5-6">GraphQL という選択肢</h3>
+    <p>クライアントごとに BFF を作る代わりに、<strong>GraphQL</strong> の API を1つ用意し、各クライアントが必要なフィールドだけを問い合わせる方法もあります。「画面ごとに欲しいデータの形が違う」という問題を、BFF の数ではなくクエリの柔軟さで解く考え方です。実際には、GraphQL サーバー自体を BFF として各サービスの前に置く構成もよく見られます。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>レンダリング方式と BFF の関係</h2>
+    <p>前のページで扱った SSR や React Server Components は、BFF と深く結びついています。</p>
+    <ul>
+      <li>Next.js の <strong>Route Handler</strong>（<code>app/api/.../route.js</code>）や <strong>Server Components</strong> でサーバー側のデータ取得を書くと、それ自体が <strong>BFF の役割</strong> を果たします。</li>
+      <li>SSR / RSC を選ぶことは、実質的に「フロントエンドチームがサーバー層を持つ」＝「BFF を持つ」ことでもあります。</li>
+      <li>一方、CSR だけの SPA では、BFF を別に立てるか、ブラウザから直接 API（または API ゲートウェイ）を呼ぶことになります。</li>
+    </ul>
+    <span class="code-label">Server Component が BFF として複数サービスを集約する例（イメージ）</span>
+    <pre><code>// app/products/[id]/page.js（サーバーでだけ実行される）
+export default async function ProductPage({ params }) {
+  // 依存関係のない呼び出しは並列にする
+  const [product, stock, reviews] = await Promise.all([
+    fetch(`${PRODUCT_API}/products/${params.id}`).then((r) =&gt; r.json()),
+    fetch(`${STOCK_API}/stock/${params.id}`).then((r) =&gt; r.json()),
+    fetch(`${REVIEW_API}/reviews?product=${params.id}`)
+      .then((r) =&gt; r.json())
+      .catch(() =&gt; []),            // レビューが落ちても空で表示を続ける
+  ]);
+  return &lt;ProductView product={product} stock={stock} reviews={reviews} /&gt;;
+}</code></pre>
+    <p>この例では、内部 API の URL やキーはサーバーの中だけにあり、ブラウザには完成した画面だけが届きます。「集約」「部分障害の吸収」「ブラウザに置きたくない情報の隠蔽」という BFF の役割を、フロントエンドのフレームワークの中で果たしているわけです。</p>
+    <div class="callout key">
+      <p class="callout-title">気をつけたいこと</p>
+      <p>フレームワークの中に BFF が溶け込むぶん、「どこまでが画面の都合で、どこからが業務ロジックか」の境界があいまいになりがちです。Server Component の中に価格計算を書き始めたら、それは BFF に業務ロジックが漏れているサインです。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>マイクロフロントエンドとは</h2>
+    <h3 id="sec-7-1">定義</h3>
+    <p><strong>マイクロフロントエンド</strong> とは、<strong>大きなフロントエンドを、機能（ドメイン）ごとに独立したアプリに分け、別々のチームが開発・デプロイできるようにする</strong> 考え方です。バックエンドのマイクロサービスの考え方をフロントエンドに持ち込んだものといえます。Cam Jackson（martinfowler.com, 2019）は、これを「独立して提供できるフロントエンドのアプリを、より大きな全体へと組み立てるアーキテクチャスタイル」と表現しています。</p>
+    <h3 id="sec-7-2">由来</h3>
+    <ul>
+      <li>「Micro Frontends」という言葉は、2016 年 11 月の <strong>ThoughtWorks Technology Radar</strong> で取り上げられたのが始まりとされています。バックエンドはマイクロサービスに分かれたのに、フロントエンドだけが巨大な一枚岩（フロントエンドモノリス）として残る問題への対策として紹介されました。</li>
+      <li>その後、Michael Geers のサイト「micro-frontends.org」や、Cam Jackson の記事「Micro Frontends」（martinfowler.com, 2019）によって考え方と実装方法が広く知られるようになりました。</li>
+    </ul>
+    <h3 id="sec-7-3">全体像</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>分け方</td><td>「商品検索」「カート」「マイページ」など、<strong>ドメイン単位</strong> でチームとアプリを分ける（技術の層で分けるのではない）</td></tr>
+        <tr><td>組み立て方</td><td>ビルド時に統合（npm パッケージ）／サーバーやエッジで統合／実行時に統合（Module Federation、iframe、Web Components）</td></tr>
+        <tr><td>長所</td><td>チームごとに独立してリリースできる。技術スタックを段階的に移行できる</td></tr>
+        <tr><td>短所</td><td>共通 UI・デザインの一貫性を保つのが難しい。重複したライブラリで JS が重くなる。構成が複雑</td></tr>
+        <tr><td>向く場面</td><td>複数チームが1つの大規模画面を開発していて、リリースの調整がボトルネックになっているとき</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-7-4">得られるもの</h3>
+    <p>Cam Jackson は利点として次の4つを挙げています。</p>
+    <div class="grid c2">
+      <div class="card accent"><h4>段階的なアップグレード</h4><p>古いフレームワークで書かれた画面を、全面書き換えせずに一部ずつ新しい技術へ移行できる。</p></div>
+      <div class="card accent"><h4>小さく分離されたコードベース</h4><p>1つのアプリが小さくなり、境界がはっきりするので、意図しない結合が生まれにくい。</p></div>
+      <div class="card accent"><h4>独立したデプロイ</h4><p>それぞれが自分のパイプラインでデプロイできるので、1回のリリースの影響範囲が小さい。</p></div>
+      <div class="card accent"><h4>自律したチーム</h4><p>画面からバックエンドまで、1つのドメインを1つのチームが縦に持てる。</p></div>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>マイクロフロントエンドの統合方式</h2>
+    <p>マイクロフロントエンドで最も重要な設計判断は、<strong>分けたアプリを「いつ・どこで」1つの画面に組み立てるか</strong> です。前のページのレンダリング方式と同じく、ビルド時・サーバー側（リクエスト時）・ブラウザ（ランタイム）の3つのタイミングがあります。</p>
+    <figure>
+      <svg viewBox="0 0 760 330" role="img" aria-label="マイクロフロントエンドの3つの統合タイミング">
+        <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+        <text x="130" y="30" text-anchor="middle" class="d-text-bold">ビルド時統合</text>
+        <text x="380" y="30" text-anchor="middle" class="d-text-bold">サーバー側統合</text>
+        <text x="630" y="30" text-anchor="middle" class="d-text-bold">ランタイム統合</text>
+
+        <rect x="20" y="50" width="100" height="44" rx="8" class="d-box"/>
+        <text x="70" y="77" text-anchor="middle" class="d-text-sub">検索（npm）</text>
+        <rect x="140" y="50" width="100" height="44" rx="8" class="d-box"/>
+        <text x="190" y="77" text-anchor="middle" class="d-text-sub">カート（npm）</text>
+        <line x1="70" y1="94" x2="115" y2="136" class="d-line" marker-end="url(#arw2)"/>
+        <line x1="190" y1="94" x2="145" y2="136" class="d-line" marker-end="url(#arw2)"/>
+        <rect x="40" y="138" width="180" height="56" rx="8" class="d-box-accent"/>
+        <text x="130" y="162" text-anchor="middle" class="d-text">コンテナアプリで</text>
+        <text x="130" y="182" text-anchor="middle" class="d-text">まとめてビルド</text>
+        <line x1="130" y1="194" x2="130" y2="236" class="d-line" marker-end="url(#arw2)"/>
+        <rect x="40" y="238" width="180" height="50" rx="8" class="d-box"/>
+        <text x="130" y="268" text-anchor="middle" class="d-text">1つのバンドル</text>
+
+        <rect x="270" y="50" width="100" height="44" rx="8" class="d-box"/>
+        <text x="320" y="77" text-anchor="middle" class="d-text-sub">検索の断片</text>
+        <rect x="390" y="50" width="100" height="44" rx="8" class="d-box"/>
+        <text x="440" y="77" text-anchor="middle" class="d-text-sub">カートの断片</text>
+        <line x1="320" y1="94" x2="365" y2="136" class="d-line" marker-end="url(#arw2)"/>
+        <line x1="440" y1="94" x2="395" y2="136" class="d-line" marker-end="url(#arw2)"/>
+        <rect x="290" y="138" width="180" height="56" rx="8" class="d-box-accent"/>
+        <text x="380" y="162" text-anchor="middle" class="d-text">サーバー・エッジが</text>
+        <text x="380" y="182" text-anchor="middle" class="d-text">HTML を組み立て</text>
+        <line x1="380" y1="194" x2="380" y2="236" class="d-line" marker-end="url(#arw2)"/>
+        <rect x="290" y="238" width="180" height="50" rx="8" class="d-box"/>
+        <text x="380" y="268" text-anchor="middle" class="d-text">完成した HTML</text>
+
+        <rect x="540" y="50" width="180" height="56" rx="8" class="d-box-accent"/>
+        <text x="630" y="74" text-anchor="middle" class="d-text">ブラウザで</text>
+        <text x="630" y="94" text-anchor="middle" class="d-text">シェルが起動</text>
+        <line x1="600" y1="106" x2="575" y2="152" class="d-line" marker-end="url(#arw2)"/>
+        <line x1="660" y1="106" x2="685" y2="152" class="d-line" marker-end="url(#arw2)"/>
+        <rect x="520" y="154" width="105" height="56" rx="8" class="d-box"/>
+        <text x="572" y="178" text-anchor="middle" class="d-text-sub">検索の JS を</text>
+        <text x="572" y="196" text-anchor="middle" class="d-text-sub">読み込む</text>
+        <rect x="635" y="154" width="105" height="56" rx="8" class="d-box"/>
+        <text x="687" y="178" text-anchor="middle" class="d-text-sub">カートの JS を</text>
+        <text x="687" y="196" text-anchor="middle" class="d-text-sub">読み込む</text>
+        <text x="630" y="240" text-anchor="middle" class="d-text-sub">それぞれ別の URL から</text>
+        <text x="630" y="258" text-anchor="middle" class="d-text-sub">独立してデプロイされた</text>
+        <text x="630" y="276" text-anchor="middle" class="d-text-sub">最新版を取得</text>
+
+        <text x="130" y="315" text-anchor="middle" class="d-text-sub">独立デプロイ ✕</text>
+        <text x="380" y="315" text-anchor="middle" class="d-text-sub">独立デプロイ ○</text>
+        <text x="630" y="315" text-anchor="middle" class="d-text-sub">独立デプロイ ○</text>
+      </svg>
+      <figcaption>図2：統合のタイミング。ビルド時統合は全体の再ビルドが必要なので、独立デプロイの利点を失う</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>しくみ</th><th>長所</th><th>短所</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ビルド時統合</strong></td><td>各マイクロフロントエンドを npm パッケージとして公開し、コンテナアプリが依存として取り込んでまとめてビルドする</td><td>単純。1つのバンドルなので依存の重複を除きやすく、型チェックも効く</td><td>どれか1つを変えるたびにコンテナを再ビルド・再リリースする必要があり、<strong>リリースが足並みをそろえる（ロックステップ）</strong> ことになる。マイクロフロントエンドの最大の利点である独立デプロイを失うため、Cam Jackson は推奨していない</td></tr>
+        <tr><td><strong>サーバー側統合</strong></td><td>サーバーやエッジ（CDN）が、各チームの HTML 断片を組み合わせて1枚の HTML を作る。古典的には SSI（Server Side Includes）や ESI（Edge Side Includes）を使う</td><td>最も昔からある素朴な方法。完成した HTML を返せるので初回表示・SEO に強い</td><td>ページ内で動的にやり取りする UI には向きにくい。断片をまたいだ状態共有が難しい</td></tr>
+        <tr><td><strong>ランタイム統合：iframe</strong></td><td>各アプリを iframe で埋め込む</td><td>スタイルも JS も完全に隔離される。最も単純な隔離手段</td><td>ルーティング・ディープリンク・履歴の扱い、レスポンシブな高さ調整、アプリ間の連携がやりにくい。アクセシビリティや SEO の面でも不利</td></tr>
+        <tr><td><strong>ランタイム統合：JavaScript</strong></td><td>コンテナ（シェル）が各アプリの JS バンドルを実行時に読み込み、各アプリが公開した描画関数（例：<code>window.renderCart(el)</code>）を呼ぶ。Module Federation や single-spa もこの系統</td><td>最も柔軟。各アプリを独立してデプロイでき、シェルは実行時に最新版を読み込める</td><td>依存ライブラリの重複、グローバルな名前・CSS の衝突、エラーの波及に注意が必要</td></tr>
+        <tr><td><strong>ランタイム統合：Web Components</strong></td><td>各アプリをカスタム要素（例：<code>&lt;cart-widget&gt;</code>）として定義し、コンテナは HTML タグとして配置する</td><td>ブラウザ標準の仕組みでフレームワークに依存しない。Shadow DOM でスタイルを隔離できる</td><td>React などとの属性・イベントの受け渡しにひと手間かかる。SSR との組み合わせが難しい</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label">サーバー側統合の例（SSI と ESI）</span>
+    <pre><code>&lt;!-- Nginx などの SSI：サーバーが断片を埋め込んでから返す --&gt;
+&lt;body&gt;
+  &lt;!--# include virtual="/search/fragment" --&gt;
+  &lt;!--# include virtual="/cart/fragment" --&gt;
+&lt;/body&gt;
+
+&lt;!-- CDN の ESI：エッジで断片を組み立てる --&gt;
+&lt;esi:include src="https://cart.example.com/fragment" /&gt;</code></pre>
+    <span class="code-label">ランタイム統合の例（Web Components）</span>
+    <pre><code>// カートチームが公開するスクリプト（https://cart.example.com/cart.js）
+class CartWidget extends HTMLElement {
+  connectedCallback() {
+    const userId = this.getAttribute("user-id");
+    this.attachShadow({ mode: "open" }).innerHTML = `&lt;p&gt;カート（${userId}）&lt;/p&gt;`;
+  }
+}
+customElements.define("cart-widget", CartWidget);
+
+&lt;!-- コンテナ側：タグを置くだけ --&gt;
+&lt;script src="https://cart.example.com/cart.js" defer&gt;&lt;/script&gt;
+&lt;cart-widget user-id="123"&gt;&lt;/cart-widget&gt;</code></pre>
+
+    <h2 id="sec-9"><span class="num">9.</span>Module Federation と主な道具</h2>
+    <h3 id="sec-9-1">Module Federation とは</h3>
+    <p><strong>Module Federation</strong> は、2020 年に webpack 5 で導入された機能で、Zack Jackson が中心になって考案しました。<strong>別々にビルド・デプロイされたアプリ同士が、実行時にお互いのモジュールを読み込み合える</strong> 仕組みです。ランタイム統合の「JavaScript」方式を、バンドラーの機能として扱いやすくしたものといえます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Host（ホスト）</strong></td><td>他のアプリのモジュールを読み込んで使う側。シェル／コンテナアプリ</td></tr>
+        <tr><td><strong>Remote（リモート）</strong></td><td>自分のモジュールを公開する側。<code>remoteEntry.js</code> という入口ファイルを出力する</td></tr>
+        <tr><td><strong>exposes</strong></td><td>リモートが外部に公開するモジュールの一覧</td></tr>
+        <tr><td><strong>shared</strong></td><td>React などを複数アプリで共有する設定。<code>singleton: true</code> で1つのインスタンスにそろえ、重複読み込みを防ぐ</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label">リモート側（カートチーム）の webpack 設定</span>
+    <pre><code>const { ModuleFederationPlugin } = require("webpack").container;
+
+new ModuleFederationPlugin({
+  name: "cart",
+  filename: "remoteEntry.js",                 // 公開用の入口
+  exposes: { "./Cart": "./src/Cart" },        // 外に見せるモジュール
+  shared: { react: { singleton: true }, "react-dom": { singleton: true } },
+});</code></pre>
+    <span class="code-label">ホスト側（シェル）の設定と使い方</span>
+    <pre><code>new ModuleFederationPlugin({
+  name: "shell",
+  remotes: { cart: "cart@https://cart.example.com/remoteEntry.js" },
+  shared: { react: { singleton: true }, "react-dom": { singleton: true } },
+});
+
+// アプリのコード：実行時にカートチームの最新版を読み込む
+const Cart = React.lazy(() =&gt; import("cart/Cart"));</code></pre>
+    <p>カートチームが新しい版をデプロイすると、シェルを再ビルドしなくても、次にページを開いたときから新しいカートが読み込まれます。これが「独立デプロイ」の実体です。その後、型定義の共有やマニフェストによる公開モジュールの発見、プリロードなどを加えた <strong>Module Federation 2.0</strong> が登場し、webpack 以外に Rspack や Vite などのバンドラーでも使えるようになっています。</p>
+    <h3 id="sec-9-2">その他の主な道具</h3>
+    <ul>
+      <li><strong>single-spa</strong>：複数のフレームワークで作ったアプリを、URL に応じて1つのページ上で起動・停止させる「ルーター兼ライフサイクル管理」のフレームワーク。</li>
+      <li><strong>Import Maps</strong>：ブラウザ標準の仕組みで、<code>import "cart"</code> のようなモジュール名を実際の URL に対応づける。バンドラーに頼らないランタイム統合に使われる。</li>
+      <li><strong>iframe・Web Components</strong>：8章のとおり、ブラウザ標準だけで統合する手段。</li>
+    </ul>
+
+    <h2 id="sec-10"><span class="num">10.</span>マイクロフロントエンドの設計課題</h2>
+    <h3 id="sec-10-1">スタイルの衝突</h3>
+    <p>CSS はページ全体に効くため、あるチームの <code>h2 { … }</code> が別チームの画面を崩すことがあります。BEM のような命名規約、CSS Modules、CSS-in-JS、Shadow DOM による隔離などで、<strong>チームが互いを気にせず作業できる</strong> 状態を作ります。</p>
+    <h3 id="sec-10-2">共有コンポーネントライブラリとデザインの一貫性</h3>
+    <p>ボタンやアイコンなどの見た目の部品は、共有のコンポーネントライブラリ（デザインシステム）にまとめるとデザインの一貫性を保ちやすくなります。ただし、<strong>業務ロジックやドメインの概念を共有ライブラリに入れると、チーム同士が強く結合</strong> してしまいます。Cam Jackson は、最初から共有ライブラリを作り込むのではなく、重複が見えてから抽出すること、ライブラリの品質に責任を持つ担当者を決めることを勧めています。</p>
+    <h3 id="sec-10-3">アプリ間の通信</h3>
+    <p>マイクロフロントエンド同士の直接のやり取りは最小限にします。必要な場合は、カスタムイベント（疎結合な通知）、コンテナからのコールバック・属性の受け渡し、URL（ルーティング）を介した状態の共有などを使い、<strong>グローバルな状態を共有しない</strong> ようにします。</p>
+    <span class="code-label">カスタムイベントで疎結合に知らせる例</span>
+    <pre><code>// 商品チーム：カートに追加されたことを知らせるだけ（誰が受け取るかは知らない）
+window.dispatchEvent(new CustomEvent("cart:item-added", { detail: { sku: "A-100" } }));
+
+// カートチーム：関心があれば受け取る
+window.addEventListener("cart:item-added", (e) =&gt; refreshCart(e.detail.sku));</code></pre>
+    <h3 id="sec-10-4">バックエンドとの関係：マイクロフロントエンドごとの BFF</h3>
+    <p>マイクロフロントエンドとBFF は相性がよく、<strong>各マイクロフロントエンドに対応する BFF をそのチームが持つ</strong> 構成がよく紹介されます。チームが画面から BFF までを縦に持てば、他チームの API 変更を待たずに動けます。認証はコンテナ側で一度だけ行い、トークンなどを各マイクロフロントエンドに渡します。</p>
+    <h3 id="sec-10-5">テスト</h3>
+    <p>テストの考え方は通常のアプリと同じで、各マイクロフロントエンドの中ではユニットテストを中心にします。全体を組み合わせた E2E テストは「正しく組み立てられているか」の確認に絞り、チーム間の約束（イベントの形・属性など）は契約テストで検証すると、壊れやすい統合環境に頼らずにすみます。</p>
+    <h3 id="sec-10-6">デメリット</h3>
+    <div class="grid c3">
+      <div class="card bad"><h4>JS が重くなる</h4><p>各チームが同じライブラリを別々に同梱すると、ダウンロード量が増える。共有すると今度はチームの独立性が下がる、という綱引きになる。</p></div>
+      <div class="card bad"><h4>環境の差</h4><p>開発中は自分のアプリ単体で動かすため、本番で組み合わせたときに初めて問題が出ることがある。本番に近い環境での確認が欠かせない。</p></div>
+      <div class="card bad"><h4>運用の複雑さ</h4><p>リポジトリ・パイプライン・配信先が増える。自動化とガバナンス（決まりごと）を整えられる組織の成熟度が必要。</p></div>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>使うべき場面・使うべきでない場面</h2>
+    <div class="grid c2">
+      <div class="card good"><h4>BFF が向いている</h4><ul>
+        <li>Web とモバイルなど、画面の要望が大きく違うクライアントがある</li>
+        <li>1画面のために多数のサービスを呼ぶ必要があり、サーバー側での集約が効く</li>
+        <li>フロントエンドチームとバックエンドチームが分かれていて、API 変更の調整が遅い</li>
+        <li>トークンなど、ブラウザに置きたくない情報がある</li>
+      </ul></div>
+      <div class="card bad"><h4>BFF が過剰になりやすい</h4><ul>
+        <li>クライアントが1種類しかなく、バックエンドもモノリスで API が1つ</li>
+        <li>バックエンドの API がすでに画面に合った形で、集約・変換がほぼ不要</li>
+        <li>BFF を担当できるチーム・運用体制がない（サーバーが1つ増えるだけになる）</li>
+      </ul></div>
+      <div class="card good"><h4>マイクロフロントエンドが向いている</h4><ul>
+        <li>複数チームが1つの大規模画面を開発していて、リリースの調整がボトルネックになっている</li>
+        <li>古いフロントエンドを、全面書き換えせずに段階的に移行したい</li>
+        <li>ドメインごとにチームが分かれ、画面からバックエンドまで縦に持つ体制がある</li>
+      </ul></div>
+      <div class="card bad"><h4>マイクロフロントエンドが過剰になりやすい</h4><ul>
+        <li>小〜中規模のチーム（1〜数チーム）</li>
+        <li>リリースの調整がまだ問題になっていない</li>
+        <li>CI/CD・監視・デザインシステムなどの基盤が整っていない</li>
+      </ul></div>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">まずは1つのアプリの中で機能別に分ける</p>
+      <p>マイクロフロントエンドは <strong>小〜中規模のチームには過剰</strong> になりやすい構成です。まずは1つのアプリの中で、ディレクトリ・モジュールを機能別に分ける（41 外のノート：47_フロントエンド設計、43_モジュール設計）ところから始め、チームの独立性が本当に必要になってから検討します。バックエンドで「いきなりマイクロサービスにせず、まずモジュラーモノリス」とするのと同じ考え方です。チーム構成がシステム構成に表れる点は、<a href="70-3_コンウェイの法則とTeamTopologies.html">コンウェイの法則</a> と同じ話です。</p>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>よくある誤解</h2>
+    <details>
+      <summary>「BFF と API ゲートウェイは同じもの」</summary>
+      <div class="body"><p>API ゲートウェイは全クライアント共通の入口で、認証の一次チェックやレート制限など横断的な処理を薄く担います。BFF はクライアントごとの専用窓口で、画面の都合に合わせた集約・変換を担います。目的も持ち主も違い、組み合わせて使うこともあります。</p></div>
+    </details>
+    <details>
+      <summary>「BFF に業務ロジックを書けば、フロントもバックエンドも楽になる」</summary>
+      <div class="body"><p>BFF はクライアントごとにあるので、業務ロジックを入れると BFF の数だけ重複し、結果の食い違いを生みます。SoundCloud でも BFF が増えたときに重複が問題になり、共通部分を下流のサービスに移しました。BFF は画面の都合を吸収する層にとどめます。</p></div>
+    </details>
+    <details>
+      <summary>「BFF は 1 つのバックエンドで全クライアントに対応するもの」</summary>
+      <div class="body"><p>それは汎用 API の考え方です。BFF の本質は「1 つのユーザー体験に密着した、その UI のチームが持つバックエンド」です。1つの BFF に性質の違う UI を詰め込むと、肥大化して汎用 API に逆戻りします。</p></div>
+    </details>
+    <details>
+      <summary>「マイクロフロントエンドにすれば、技術を自由に混ぜられるのが一番の利点」</summary>
+      <div class="body"><p>技術の混在は「できる」だけで、積極的にやるべきことではありません。フレームワークが増えるほど JS が重くなり、知識も分散します。主な利点は <strong>チームごとの独立したリリース</strong> と <strong>段階的な移行</strong> です。</p></div>
+    </details>
+    <details>
+      <summary>「npm パッケージに分ければマイクロフロントエンドになる」</summary>
+      <div class="body"><p>ビルド時統合では、どれか1つを変えるたびにコンテナ全体を再ビルド・再リリースする必要があり、独立デプロイという最大の利点が得られません。コードの整理としては有効ですが、マイクロフロントエンドの目的を果たすにはサーバー側かランタイムでの統合が必要です。</p></div>
+    </details>
+    <details>
+      <summary>「マイクロフロントエンドは画面のパーツ（コンポーネント）を細かく分けること」</summary>
+      <div class="body"><p>分ける単位は UI 部品ではなく <strong>ドメイン（業務の領域）とチーム</strong> です。ボタンやヘッダーの共有はデザインシステムの役割で、マイクロフロントエンドの境界とは別の話です。</p></div>
+    </details>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <ul>
+      <li><strong>BFF</strong> は、特定のフロントエンド専用の薄いバックエンド。複数 API の集約、画面向けの変換、ブラウザに置きたくない処理の肩代わりを担う。</li>
+      <li>BFF は <strong>SoundCloud</strong> の実践から生まれ（命名は Nick Fisher、紹介は Phil Calçado）、<strong>Sam Newman</strong> が 2015 年にパターンとして整理した。要点は「1 つの UI に密着」「その UI のチームが持つ」。</li>
+      <li><strong>API ゲートウェイ</strong> は全クライアント共通の入口、BFF はクライアントごとの窓口。組み合わせて使える。</li>
+      <li>BFF に業務ロジックを入れすぎると重複する。<strong>画面の都合を吸収する層</strong> にとどめる。</li>
+      <li>Next.js の Server Components や Route Handler は、それ自体が BFF の役割を果たす。SSR / RSC を選ぶことは BFF を持つことでもある。</li>
+      <li><strong>マイクロフロントエンド</strong> は、フロントエンドをドメインごとの独立したアプリに分け、チームごとに開発・デプロイする考え方（2016 年の ThoughtWorks Technology Radar が発端）。</li>
+      <li>統合方式は <strong>ビルド時・サーバー側・ランタイム</strong>（iframe / JavaScript / Web Components）。独立デプロイを得るならサーバー側かランタイム。<strong>Module Federation</strong> はランタイム統合の代表的な道具。</li>
+      <li>スタイルの衝突、共有ライブラリ、JS の重複、運用の複雑さが課題。<strong>小〜中規模には過剰</strong> になりやすく、まずは1つのアプリの中で機能別に分けることから始める。</li>
+    </ul>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Sam Newman「Pattern: Backends For Frontends」（2015）：<a href="https://samnewman.io/patterns/architectural/bff/">https://samnewman.io/patterns/architectural/bff/</a></li>
+      <li>Phil Calçado「The Back-end for Front-end Pattern (BFF)」（2015）：<a href="https://philcalcado.com/2015/09/18/the_back_end_for_front_end_pattern_bff.html">https://philcalcado.com/2015/09/18/the_back_end_for_front_end_pattern_bff.html</a></li>
+      <li>InfoQ「A Pattern for API Backends Serving Frontends」（2015）：<a href="https://www.infoq.com/news/2015/12/bff-backend-frontend-pattern/">https://www.infoq.com/news/2015/12/bff-backend-frontend-pattern/</a></li>
+      <li>Cam Jackson「Micro Frontends」（martinfowler.com, 2019）：<a href="https://martinfowler.com/articles/micro-frontends.html">https://martinfowler.com/articles/micro-frontends.html</a></li>
+      <li>Michael Geers「Micro Frontends」：<a href="https://micro-frontends.org/">https://micro-frontends.org/</a></li>
+      <li>ThoughtWorks Technology Radar「Micro frontends」：<a href="https://www.thoughtworks.com/radar/techniques/micro-frontends">https://www.thoughtworks.com/radar/techniques/micro-frontends</a></li>
+      <li>Module Federation 公式サイト：<a href="https://module-federation.io/">https://module-federation.io/</a></li>
+      <li>webpack「Module Federation」：<a href="https://webpack.js.org/concepts/module-federation/">https://webpack.js.org/concepts/module-federation/</a></li>
+      <li>IETF「OAuth 2.0 for Browser-Based Applications」：<a href="https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/">https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/</a></li>
+      <li>関連ノート：<a href="40-5_BFFとAPIゲートウェイ.html">BFF・API ゲートウェイ・グレースフルデグレーデーション</a>（40_システム・分散／05BFFとAPIゲートウェイとグレースフルデグレーデーション）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-1_レンダリング方式.html"><span class="lbl">← 前のページ</span>レンダリング方式（CSR・SSR・SSG・ISR）</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-1_分散とスタイル.html"><span class="lbl">次のページ →</span>分散とスタイル（7スタイルの概観）</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

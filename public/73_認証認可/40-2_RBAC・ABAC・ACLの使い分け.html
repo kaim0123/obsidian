@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RBAC・ABAC・ACLの使い分け｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 認可モデル › RBAC・ABAC・ACLの使い分け</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 認可モデル</span>
+      <h1>RBAC・ABAC・ACLの使い分け</h1>
+      <p class="lead">ログインに成功して「誰か」が分かったあと、<strong>そのユーザーがどのリソースにアクセスでき、どの操作をしてよいか</strong> を決めるのが <strong>認可</strong> です。このページでは、実務でよく使われる 3 つの認可モデル <strong>RBAC・ABAC・ACL</strong> の考え方と向き・不向きを整理し、さらにそれを実際に「強制」する仕組みである <strong>OAuth 2.0</strong> や <strong>JWT</strong> との違いまでを、初心者向けにまとめます。</p>
+      <p class="meta">もとにしたノート：40_認可モデル/02_RBAC・ABAC・ACLの使い分け（Hayk Simonyan）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>認証と認可の違い（GitHub のリポジトリ権限を例に）</li>
+        <li>RBAC（ロールベース）・ABAC（属性ベース）・ACL（アクセス制御リスト）の考え方</li>
+        <li>それぞれが向いている場面と限界、モデル選びの目安</li>
+        <li>OAuth 2.0・JWT は「モデル」ではなく、認可を運ぶ・強制する「仕組み」であること</li>
+        <li>実装時のチェックリスト</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>認可とは：認証の次の段階</h2>
+    <p><strong>認可（Authorization）</strong> は、<strong>認証（Authentication）</strong> の次に行われる段階です。ログインのリクエストが承認され、システムが「このユーザーは誰か」を把握したら、次は <strong>そのユーザーが何をしてよいか</strong> を決めます。アクセスしてよいリソースや操作だけでなく、<strong>拒否される操作</strong> もあわせて定義することで、システムのセキュリティとプライバシーを守ります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>答える問い</th><th>例（GitHub）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証</strong></td><td>誰か？ログインしてよいか？</td><td>ユーザー名・パスワード、SSO で本人確認</td></tr>
+        <tr><td><strong>認可</strong></td><td>ログイン後、何ができるか？</td><td>リポジトリへの read / write / admin</td></tr>
+      </tbody>
+    </table></div>
+    <p>認証と認可の違いそのものは <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> で詳しく扱っています。ここでは GitHub のリポジトリを例に、「同じリポジトリでもユーザーごとに権限が違う」様子だけ確認します。</p>
+    <ul>
+      <li><strong>ユーザー A</strong>：write のみ → コードの push は可能だが、設定変更や削除は不可（動画の例では pull request 作成も不可と説明）</li>
+      <li><strong>ユーザー B</strong>：read のみ → 閲覧のみ</li>
+      <li><strong>管理者</strong>：フルコントロール → 設定変更、リポジトリ削除、他ユーザーの権限管理など</li>
+    </ul>
+    <p>この「ユーザーごとに異なるアクセス制御」を体系的に管理するための考え方が、次に紹介する <strong>認可モデル</strong> です。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>3 つの主要な認可モデル（概要）</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モデル</th><th>略称</th><th>考え方</th><th>代表例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ロールベース</strong></td><td>RBAC</td><td>ユーザーに <strong>ロール</strong>（役割）を付与し、ロールごとに権限セットを定義</td><td>GitHub、Jira、CMS、チーム管理ツール</td></tr>
+        <tr><td><strong>属性ベース</strong></td><td>ABAC</td><td>ユーザー・リソース・環境の <strong>属性と条件</strong> で許可／拒否を判定</td><td>部門・機密区分・時間帯・端末種別などの組み合わせ</td></tr>
+        <tr><td><strong>アクセス制御リスト</strong></td><td>ACL</td><td><strong>リソース単位</strong> に「誰が何をできるか」のリストを持つ</td><td>Google ドキュメントの共有設定</td></tr>
+      </tbody>
+    </table></div>
+    <p>3 つの違いは「何を起点に権限を決めるか」です。RBAC は <strong>ユーザー → ロール → 権限</strong>、ABAC は <strong>属性 → ポリシー → 判定</strong>、ACL は <strong>リソース → そのリソースに付いた利用者リスト</strong> という流れで考えます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 420" role="img" aria-label="3つの認可モデルの比較。RBACはユーザーにロール（Admin、Editor、Viewer）を付け、ロールが権限のセットを決める。ABACはユーザー・リソース・環境の属性をポリシー（部門がHRかつ分類がinternal）に照らし、許可または拒否を判定する。ACLはリソース（ドキュメント1件）ごとにアクセスリスト（Aliceはread、Bobはreadとwrite）を持ち、リストにない人は拒否する">
+      <defs>
+        <marker id="arw4021a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <!-- RBAC -->
+      <rect x="10" y="10" width="220" height="50" rx="8" class="d-box-accent"/>
+      <text x="120" y="32" text-anchor="middle" class="d-text-bold">RBAC</text>
+      <text x="120" y="50" text-anchor="middle" class="d-text-sub">ロールベース</text>
+      <rect x="10" y="80" width="220" height="56" rx="8" class="d-box"/>
+      <text x="120" y="104" text-anchor="middle" class="d-text-bold">ユーザー</text>
+      <text x="120" y="124" text-anchor="middle" class="d-text-sub">Alice・Bob など</text>
+      <path d="M120,136 L120,168" class="d-line" marker-end="url(#arw4021a)"/>
+      <rect x="10" y="170" width="220" height="76" rx="8" class="d-box-accent"/>
+      <text x="120" y="196" text-anchor="middle" class="d-text-bold">ロール</text>
+      <text x="120" y="216" text-anchor="middle" class="d-text-sub">Admin・Editor</text>
+      <text x="120" y="234" text-anchor="middle" class="d-text-sub">Viewer</text>
+      <path d="M120,246 L120,278" class="d-line" marker-end="url(#arw4021a)"/>
+      <rect x="10" y="280" width="220" height="56" rx="8" class="d-box-good"/>
+      <text x="120" y="304" text-anchor="middle" class="d-text-bold">権限のセット</text>
+      <text x="120" y="324" text-anchor="middle" class="d-text-sub">作成・読取・更新・削除</text>
+      <rect x="10" y="360" width="220" height="44" rx="8" class="d-box"/>
+      <text x="120" y="387" text-anchor="middle" class="d-text-sub">得意：役割が明確な組織</text>
+
+      <!-- ABAC -->
+      <rect x="250" y="10" width="220" height="50" rx="8" class="d-box-accent"/>
+      <text x="360" y="32" text-anchor="middle" class="d-text-bold">ABAC</text>
+      <text x="360" y="50" text-anchor="middle" class="d-text-sub">属性ベース</text>
+      <rect x="250" y="80" width="220" height="56" rx="8" class="d-box"/>
+      <text x="360" y="104" text-anchor="middle" class="d-text-bold">属性</text>
+      <text x="360" y="124" text-anchor="middle" class="d-text-sub">ユーザー・リソース・環境</text>
+      <path d="M360,136 L360,168" class="d-line" marker-end="url(#arw4021a)"/>
+      <rect x="250" y="170" width="220" height="76" rx="8" class="d-box-accent"/>
+      <text x="360" y="196" text-anchor="middle" class="d-text-bold">ポリシー</text>
+      <text x="360" y="216" text-anchor="middle" class="d-text-sub">department = HR</text>
+      <text x="360" y="234" text-anchor="middle" class="d-text-sub">かつ 分類 = internal</text>
+      <path d="M360,246 L360,278" class="d-line" marker-end="url(#arw4021a)"/>
+      <rect x="250" y="280" width="220" height="56" rx="8" class="d-box-good"/>
+      <text x="360" y="304" text-anchor="middle" class="d-text-bold">判定</text>
+      <text x="360" y="324" text-anchor="middle" class="d-text-sub">許可 または 拒否</text>
+      <rect x="250" y="360" width="220" height="44" rx="8" class="d-box"/>
+      <text x="360" y="387" text-anchor="middle" class="d-text-sub">得意：条件で細かく制御</text>
+
+      <!-- ACL -->
+      <rect x="490" y="10" width="220" height="50" rx="8" class="d-box-accent"/>
+      <text x="600" y="32" text-anchor="middle" class="d-text-bold">ACL</text>
+      <text x="600" y="50" text-anchor="middle" class="d-text-sub">アクセス制御リスト</text>
+      <rect x="490" y="80" width="220" height="56" rx="8" class="d-box"/>
+      <text x="600" y="104" text-anchor="middle" class="d-text-bold">リソース</text>
+      <text x="600" y="124" text-anchor="middle" class="d-text-sub">ドキュメント 1 件</text>
+      <path d="M600,136 L600,168" class="d-line" marker-end="url(#arw4021a)"/>
+      <rect x="490" y="170" width="220" height="76" rx="8" class="d-box-accent"/>
+      <text x="600" y="196" text-anchor="middle" class="d-text-bold">アクセスリスト</text>
+      <text x="600" y="216" text-anchor="middle" class="d-text-sub">Alice：read</text>
+      <text x="600" y="234" text-anchor="middle" class="d-text-sub">Bob：read + write</text>
+      <path d="M600,246 L600,278" class="d-line" marker-end="url(#arw4021a)"/>
+      <rect x="490" y="280" width="220" height="56" rx="8" class="d-box-good"/>
+      <text x="600" y="304" text-anchor="middle" class="d-text-bold">判定</text>
+      <text x="600" y="324" text-anchor="middle" class="d-text-sub">リストにない人は拒否</text>
+      <rect x="490" y="360" width="220" height="44" rx="8" class="d-box"/>
+      <text x="600" y="387" text-anchor="middle" class="d-text-sub">得意：1 件ずつの共有</text>
+    </svg>
+    <figcaption>図：3 つのモデルの考え方。RBAC はロール、ABAC は属性とポリシー、ACL はリソースごとのリストを起点に権限を決める</figcaption>
+    </figure>
+
+    <p>いずれのモデルにもトレードオフ（一方を取ると他方を失う関係）があり、システムの要件（規模、柔軟性、運用コスト）に応じて選びます。また、本番システムでは単一モデルに限定せず、<strong>複数のモデルを組み合わせる</strong> のが一般的です。たとえば「RBAC を土台に ABAC で細かい条件を足す」「特定のリソースだけ ACL で共有する」といった <strong>ハイブリッド</strong> がよく見られます。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>RBAC（Role-Based Access Control）</h2>
+    <p><strong>最も普及している</strong> 認可モデルです。ユーザーに <strong>ロール</strong> を割り当て、各ロールには決められた権限のセットがあります。つまり <strong>ユーザー → ロール → 権限</strong> という階層で管理します。</p>
+
+    <h3 id="sec-3-1">3.1 典型的なロール例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ロール</th><th>できること（概略）</th><th>できないこと（概略）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Admin</strong></td><td>作成・読取・更新・削除、他ユーザー・ロールの管理</td><td>（ポリシー次第）</td></tr>
+        <tr><td><strong>Editor</strong></td><td>コンテンツの作成・読取・更新</td><td>削除、他ユーザーの管理</td></tr>
+        <tr><td><strong>Viewer</strong></td><td>読取のみ</td><td>作成・更新・削除</td></tr>
+      </tbody>
+    </table></div>
+    <p>Admin は通常すべてのリソースにフルアクセスでき、Editor はそれより少し狭く、Viewer はデータを読むことしかできません。</p>
+
+    <h3 id="sec-3-2">3.2 向いている場面</h3>
+    <ul>
+      <li>組織内の役割が比較的固定している（管理者／編集者／閲覧者など）</li>
+      <li>ダッシュボード、CMS（コンテンツ管理システム）、社内ツール、開発プラットフォーム。動画では GitHub、Stripe のダッシュボード、チーム管理ツールなど、日常的に使うアプリが例に挙げられています</li>
+      <li>権限の説明・監査が「ロール名」で分かりやすいことが重要</li>
+    </ul>
+
+    <h3 id="sec-3-3">3.3 限界</h3>
+    <div class="callout warn">
+      <p class="callout-title">RBAC が苦手なこと</p>
+      <ul>
+        <li>「同じ Editor でも、部門が HR のときだけこのファイル」といった <strong>細かい条件</strong> には不向きです</li>
+        <li>条件ごとにロールを作っていくとロールが増えすぎ、<strong>ロール爆発（role explosion）</strong> になって運用が難しくなります</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>ABAC（Attribute-Based Access Control）</h2>
+    <p>ロールを超えて、<strong>属性（attributes）とポリシー</strong> でアクセスを決めるモデルです。属性とは「部門」「機密区分」「時刻」のような、ユーザーやリソースや状況が持つ性質のことです。データベースにあるユーザーやリソースの情報を確認し、その属性に応じて許可または拒否します。RBAC より柔軟ですが、設計・運用は複雑になります。</p>
+
+    <h3 id="sec-4-1">4.1 判定に使う属性の種類</h3>
+    <ol class="steps">
+      <li><strong>ユーザー属性</strong>：部門（例：HR）、年齢、雇用形態、クレーム（トークンに書かれたユーザー情報）上のグループなど</li>
+      <li><strong>リソース属性</strong>：機密区分（internal / public）、所有者、分類ラベルなど</li>
+      <li><strong>環境属性</strong>：時刻、地理位置、デバイス種別、IP レンジなど</li>
+    </ol>
+
+    <h3 id="sec-4-2">4.2 ポリシーの例</h3>
+    <div class="callout tip">
+      <p class="callout-title">動画のイメージ</p>
+      <p>ユーザーの <code>department</code> が <strong>HR</strong> <strong>かつ</strong> リソースの分類が <strong>internal</strong> のときだけ、read または write を許可する。</p>
+    </div>
+    <p>複数の条件を AND / OR で組み合わせ、read と write を個別に指定できます。RBAC と <strong>併用</strong> することも多く、ロールで大枠を決め、ABAC で例外や細部を決めます。</p>
+
+    <h3 id="sec-4-3">4.3 向いている場面</h3>
+    <ul>
+      <li>同じロールでも、データの機密度・部門・時間帯で制限が変わる</li>
+      <li>コンプライアンスや <strong>ゼロトラスト</strong>（社内・社外を問わず毎回確かめる考え方）寄りの「常に条件付き」アクセス</li>
+    </ul>
+
+    <h3 id="sec-4-4">4.4 注意点</h3>
+    <div class="callout warn">
+      <p class="callout-title">ABAC の運用で気をつけること</p>
+      <ul>
+        <li><strong>ポリシー管理</strong>（誰がどのルールを書けるか、テスト、バージョン管理）が必須です</li>
+        <li>ルールが増えると <strong>競合・矛盾</strong>（ある条件では許可、別の条件では拒否）の検出が難しくなります</li>
+        <li>デバッグ時に「なぜ拒否されたか」を説明しづらいことがあります</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>ACL（Access Control List）</h2>
+    <p><strong>各リソース</strong> に対して、「どの主体（ユーザー／グループ）がどの権限を持つか」のリストを持つモデルです。RBAC のように「システム全体のロール表」を持つのではなく、<strong>リソース中心</strong> に考えます。</p>
+
+    <h3 id="sec-5-1">5.1 動作イメージ（ドキュメント 1 件）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ユーザー</th><th>このドキュメントへの権限</th></tr></thead>
+      <tbody>
+        <tr><td>Alice</td><td>read のみ</td></tr>
+        <tr><td>Bob</td><td>read + write</td></tr>
+        <tr><td>その他</td><td>アクセスなし</td></tr>
+      </tbody>
+    </table></div>
+    <p>ACL で管理するのは次の 2 点です。</p>
+    <ol class="steps">
+      <li><strong>誰が</strong> このリソースにアクセスできるか</li>
+      <li>その主体ごとに <strong>どの操作</strong> が許可されるか</li>
+    </ol>
+
+    <h3 id="sec-5-2">5.2 代表例：Google ドライブ</h3>
+    <p>1 つの Google ドキュメントを、同僚 A には閲覧のみ、同僚 B には編集・コメント可、と設定する <strong>共有リンク／共有設定</strong> が ACL の典型です。リソース単位の細かい制御に優れています。</p>
+
+    <h3 id="sec-5-3">5.3 向いている場面</h3>
+    <ul>
+      <li>ファイル、フォルダ、レコード単位で「この人だけ編集可」が必要</li>
+      <li>ユーザー数・オブジェクト数が中規模で、リストの運用が現実的</li>
+    </ul>
+
+    <h3 id="sec-5-4">5.4 限界</h3>
+    <div class="callout warn">
+      <p class="callout-title">ACL が苦手なこと</p>
+      <ul>
+        <li>ACL は非常に個別的でユーザー中心のため、ユーザー・オブジェクトが <strong>数百万規模</strong> になると、リストの更新・同期・クエリのコストが重くなります（Google ドライブのように大規模でも可能ですが、慎重な設計とインフラが必要です）</li>
+        <li>組織全体で一貫したポリシーを ACL だけで揃えるのは難しいです</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>モデル選びの目安</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要件</th><th>第一候補</th><th>補足</th></tr></thead>
+      <tbody>
+        <tr><td>社内アプリで役割が明確</td><td><strong>RBAC</strong></td><td>Admin / Member / Guest など</td></tr>
+        <tr><td>部門・機密・時間で細かく変える</td><td><strong>ABAC</strong>（または RBAC + ABAC）</td><td>ポリシーエンジン（OPA、Cedar 等）の検討</td></tr>
+        <tr><td>1 ファイル・1 レコード単位の共有</td><td><strong>ACL</strong></td><td>ドキュメント、カレンダー、共有フォルダ</td></tr>
+        <tr><td>大規模 SaaS</td><td>多くは <strong>RBAC + リソース ACL</strong> の併用</td><td>GitHub もロール＋リポジトリ単位の権限</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ポリシーエンジン</strong> は、認可のルール（ポリシー）をアプリのコードから切り離して書き、「このリクエストは許可か拒否か」を評価してくれる仕組みです。OPA（Open Policy Agent）や Cedar がその例です。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>認可を「強制」する仕組み（モデルではない）</h2>
+    <p>動画では、認可の <strong>モデル</strong>（何を許可するかの設計）と、それを運ぶ <strong>メカニズム</strong>（トークン・プロトコル）をはっきり分けています。ここを混同しないことが大切です。</p>
+
+    <h3 id="sec-7-1">7.1 OAuth 2.0：委任された認可（Delegated Authorization）</h3>
+    <p><strong>第三者アプリ</strong> が、ユーザーの代わりに別サービスのリソースにアクセスするときの <strong>プロトコル</strong> です。認可モデルそのものではなく、<strong>安全に権限を委譲するための枠組み</strong> です。</p>
+    <p><strong>例：Vercel が GitHub リポジトリにアクセスする</strong></p>
+    <div class="grid c2">
+      <div class="card">
+        <p class="code-label bad">✕ 危険なやり方</p>
+        <p>GitHub のユーザー名・パスワードを Vercel に渡す → 相手が何をするか分からないまま、第三者にフル権限を渡すことになります。</p>
+      </div>
+      <div class="card">
+        <p class="code-label">○ OAuth 2.0 のやり方</p>
+        <p>ユーザーが GitHub 上で「どのリポジトリに」「どの操作（read / push 等）まで」を承認 → GitHub が <strong>アクセストークン</strong> を発行 → Vercel はそのトークンの範囲内だけで操作します。</p>
+      </div>
+    </div>
+    <p>OAuth 2.0 は、このトークンを <strong>安全に発行・検証するフロー</strong> を定義します。<strong>スコープ</strong>（読取のみ、特定リポジトリのみ、削除不可など、許可する範囲）を、ユーザーが承認した内容に限定できます。フローの詳細は <a href="30-1_OAuth2.0の仕組み.html">OAuth 2.0の仕組み</a>、スコープについては <a href="30-1_OAuth2.0の仕組み.html#sec-8-1">通行証の中身：範囲</a> を参照してください。</p>
+
+    <h3 id="sec-7-2">7.2 JWT / Bearer トークン：リクエストごとに認可情報を運ぶ</h3>
+    <p>認証に成功すると、多くの API は <strong>JWT</strong>（JSON Web Token：署名付きの JSON 形式トークン）または Bearer トークンをクライアントに返します。以降のリクエストでは <code>Authorization: Bearer &lt;token&gt;</code> ヘッダーで送り、サーバーが検証します。Bearer と JWT の仕組み自体は <a href="10-2_ログイン方式と認証の概念.html#sec-7">トークンベース認証：Bearer と JWT</a> で解説しています。</p>
+    <p>トークンに含めがちな情報（<strong>クレーム</strong>）の例は次のとおりです。</p>
+    <ul>
+      <li>ユーザー ID</li>
+      <li><strong>ロール</strong>（admin / editor など）</li>
+      <li><strong>スコープ</strong>（アクセス可能な API や操作の範囲）</li>
+      <li>有効期限（exp）</li>
+      <li>発行者（iss）</li>
+    </ul>
+    <p>サーバーはトークンを検証したうえで、RBAC / ABAC などの <strong>ポリシーに照らして</strong> 最終的に許可／拒否します。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="認可が強制される場所。クライアントがBearerトークン付きでリクエストを送る。APIサーバー（ミドルウェアやポリシーエンジン）では、まずトークンを検証（署名・exp・iss）し、次にRBAC・ABAC・ACLのポリシーに照らして評価し、許可または拒否する。拒否時は理由をログに残す。トークンはID・ロール・スコープを運ぶもの、モデルは何を許可するかを決めるルール">
+      <defs>
+        <marker id="arw4021b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="170" y="10" width="410" height="230" rx="10" class="d-line-dash"/>
+      <text x="375" y="32" text-anchor="middle" class="d-text-sub">API サーバー（ミドルウェア・ポリシーエンジン）</text>
+
+      <rect x="10" y="50" width="140" height="70" rx="8" class="d-box"/>
+      <text x="80" y="80" text-anchor="middle" class="d-text-bold">クライアント</text>
+      <text x="80" y="102" text-anchor="middle" class="d-text-sub">Bearer トークン付き</text>
+      <path d="M150,85 L183,85" class="d-line" marker-end="url(#arw4021b)"/>
+
+      <rect x="185" y="50" width="165" height="70" rx="8" class="d-box"/>
+      <text x="267" y="80" text-anchor="middle" class="d-text-bold">① トークン検証</text>
+      <text x="267" y="102" text-anchor="middle" class="d-text-sub">署名・exp・iss</text>
+      <path d="M350,85 L393,85" class="d-line" marker-end="url(#arw4021b)"/>
+
+      <rect x="395" y="50" width="170" height="70" rx="8" class="d-box-accent"/>
+      <text x="480" y="80" text-anchor="middle" class="d-text-bold">② ポリシー評価</text>
+      <text x="480" y="102" text-anchor="middle" class="d-text-sub">ロール・属性・リスト</text>
+
+      <path d="M565,72 L603,62" class="d-line" marker-end="url(#arw4021b)"/>
+      <path d="M565,100 L603,124" class="d-line" marker-end="url(#arw4021b)"/>
+      <rect x="605" y="38" width="105" height="44" rx="8" class="d-box-good"/>
+      <text x="657" y="65" text-anchor="middle" class="d-text-bold">許可</text>
+      <rect x="605" y="100" width="105" height="56" rx="8" class="d-box-bad"/>
+      <text x="657" y="123" text-anchor="middle" class="d-text-bold">拒否</text>
+      <text x="657" y="143" text-anchor="middle" class="d-text-sub">理由をログに</text>
+
+      <path d="M267,120 L267,158" class="d-line-dash"/>
+      <path d="M480,120 L480,158" class="d-line-dash"/>
+      <rect x="185" y="160" width="165" height="60" rx="8" class="d-box-warn"/>
+      <text x="267" y="186" text-anchor="middle" class="d-text-bold">トークン＝運ぶもの</text>
+      <text x="267" y="206" text-anchor="middle" class="d-text-sub">ID・ロール・スコープ</text>
+      <rect x="395" y="160" width="170" height="60" rx="8" class="d-box-good"/>
+      <text x="480" y="186" text-anchor="middle" class="d-text-bold">モデル＝決めるルール</text>
+      <text x="480" y="206" text-anchor="middle" class="d-text-sub">RBAC・ABAC・ACL</text>
+    </svg>
+    <figcaption>図：認可が強制される場所。トークンは情報を運ぶだけで、何を許可するかはサーバー側のモデル（ポリシー）が決める</figcaption>
+    </figure>
+
+    <h3 id="sec-7-3">7.3 重要な区別</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>トークン（JWT 等）</strong></td><td>身元・ロール・スコープなどの <strong>クレームを運ぶメカニズム</strong></td></tr>
+        <tr><td><strong>認可モデル（RBAC / ABAC / ACL）</strong></td><td>「このユーザーは何をしてよいか」を決める <strong>ルールの設計</strong></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">ここがポイント</p>
+      <p>トークンに <code>role: editor</code> が入っていても、<strong>そのロールが何を意味するか</strong> は RBAC の定義側で決めます。トークンだけでは認可設計は完結しません。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>実装時のチェックリスト</h2>
+    <ol class="steps">
+      <li><strong>認証のあと</strong> に認可を必ず挟む（「ログインできた＝全部できる」にしない）</li>
+      <li>まず <strong>RBAC</strong> で大枠を設計し、必要なら <strong>ABAC</strong> や <strong>ACL</strong> を足す</li>
+      <li>外部連携は <strong>OAuth 2.0</strong> でパスワード共有を避け、スコープを最小限にする（考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）</li>
+      <li>API では <strong>短命アクセストークン</strong> ＋ サーバー側でのポリシー評価を組み合わせる</li>
+      <li>拒否時は理由が追えるよう、ログ・監査（誰が・何に・なぜ拒否されたか）を残す</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <p>認可は「入場許可（認証）」の先で「館内で何ができるか」を制御する仕組みです。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>RBAC</h4>
+        <ul>
+          <li>ユーザー → ロール → 権限</li>
+          <li>最も普及、説明・監査しやすい</li>
+          <li>細かい条件は苦手、ロール爆発に注意</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ABAC</h4>
+        <ul>
+          <li>ユーザー・リソース・環境の属性 ＋ ポリシー</li>
+          <li>柔軟だが複雑</li>
+          <li>ポリシー管理・矛盾の検出が課題</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ACL</h4>
+        <ul>
+          <li>リソースごとに「誰が何をできるか」</li>
+          <li>1 件単位の共有に強い（Google ドライブ）</li>
+          <li>大規模化・全体の一貫性は難しい</li>
+        </ul>
+      </div>
+    </div>
+    <ul>
+      <li>本番では単一モデルにこだわらず、<strong>RBAC を土台に ABAC や ACL を組み合わせる</strong> のが一般的です</li>
+      <li><strong>OAuth 2.0</strong> や <strong>JWT</strong> は権限情報を安全に渡すための <strong>メカニズム</strong> で、何を許可するかは <strong>モデル側</strong> で定義します</li>
+    </ul>
+
+    <h2 id="sec-10"><span class="num">10.</span>理解度チェック</h2>
+    <details><summary>Q1. 認証と認可は、それぞれどんな問いに答えますか？</summary><div class="body"><p>認証は「誰か？ログインしてよいか？」、認可は「ログイン後、何ができるか？」に答えます。認可は認証の次の段階です。</p></div></details>
+    <details><summary>Q2. RBAC で管理する 3 つの階層は何ですか？ また RBAC の代表的な限界を 2 つ挙げてください。</summary><div class="body"><p><strong>ユーザー → ロール → 権限</strong> です。限界は、「同じ Editor でも部門が HR のときだけ」のような <strong>細かい条件に不向き</strong> なことと、ロールが増えすぎる <strong>ロール爆発</strong> で運用が難しくなることです。</p></div></details>
+    <details><summary>Q3. ABAC が判定に使う属性の 3 種類と、それぞれの例を答えてください。</summary><div class="body"><p><strong>ユーザー属性</strong>（部門、年齢、雇用形態など）、<strong>リソース属性</strong>（機密区分、所有者、分類ラベルなど）、<strong>環境属性</strong>（時刻、地理位置、デバイス種別、IP レンジなど）です。</p></div></details>
+    <details><summary>Q4. ACL が RBAC と違うのはどこですか？ 代表例も挙げてください。</summary><div class="body"><p>RBAC が「システム全体のロール表」で管理するのに対し、ACL は <strong>リソースごと</strong> に「誰がどの操作をできるか」のリストを持つ、リソース中心のモデルです。代表例は Google ドキュメントの共有設定（A は閲覧のみ、B は編集・コメント可）です。</p></div></details>
+    <details><summary>Q5. 「部門・機密区分・時間帯でアクセスを細かく変えたい」場合と「1 ファイル単位で共有したい」場合、第一候補はそれぞれどのモデルですか？</summary><div class="body"><p>前者は <strong>ABAC</strong>（または RBAC + ABAC）、後者は <strong>ACL</strong> です。大規模 SaaS では RBAC + リソース ACL の併用が多く見られます。</p></div></details>
+    <details><summary>Q6. 「JWT に <code>role: editor</code> を入れたので認可は完成した」という考えはなぜ不十分ですか？</summary><div class="body"><p>JWT はクレームを <strong>運ぶメカニズム</strong> にすぎず、<code>editor</code> が何をしてよいかを決めるのは RBAC などの <strong>認可モデル</strong> の定義だからです。サーバーはトークンを検証したうえで、ポリシーに照らして許可／拒否を判断する必要があります。</p></div></details>
+    <details><summary>Q7. Vercel に GitHub リポジトリへのアクセスを許すとき、パスワードを渡す代わりに OAuth 2.0 で何をしますか？</summary><div class="body"><p>ユーザーが GitHub 上で「どのリポジトリに」「どの操作まで」を承認し、GitHub が発行した <strong>アクセストークン</strong> を Vercel に渡します。Vercel はそのトークンのスコープの範囲内だけで操作できます。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li><a href="https://www.youtube.com/watch?v=DT6Zy1X3ytM">Authorization Explained: When to Use RBAC, ABAC, ACL &amp; More</a>（Hayk Simonyan, YouTube, 2025）</li>
+      <li>関連ページ：<a href="10-1_認証と認可の違い.html">認証と認可の違い</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="10-2_ログイン方式と認証の概念.html#sec-7">トークンベース認証：Bearer と JWT</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="10-4_社内システム向け認証方式の選び方.html">社内システム向け認証方式の選び方</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="30-1_OAuth2.0の仕組み.html">OAuth 2.0の仕組み</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="40-1_認可不備と認可の要件定義.html">認可不備と認可の要件定義</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="40-3_権限管理・ロール管理の実装.html">権限管理・ロール管理の実装</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="40-1_認可不備と認可の要件定義.html"><span class="lbl">← 前のページ</span>認可不備と認可の要件定義</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-3_権限管理・ロール管理の実装.html"><span class="lbl">次のページ →</span>権限管理・ロール管理の実装</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

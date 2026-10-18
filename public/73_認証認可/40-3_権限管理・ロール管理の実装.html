@@ -1,0 +1,1212 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>権限管理・ロール管理の実装｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 認可モデル › 権限管理・ロール管理の実装</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 認可モデル</span>
+      <h1>権限管理・ロール管理の実装</h1>
+      <p class="lead">権限管理・ロール管理機能は、ユーザーがシステム内で <strong>どの操作を実行できるか</strong> を制御する重要なセキュリティ機能です。適切な権限設計により、最小権限の原則に基づいた安全なシステムを構築できます。このページでは、RBAC（ロールベースのアクセス制御）を例に、データベースの設計・サーバー側の権限チェック・ロール管理 API・管理画面までを、実際のコードで順に見ていきます。</p>
+      <p class="meta">もとにしたノート：40_認可モデル/03_権限管理・ロール管理機能</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>ユーザー・ロール・権限をデータベースでどうつなぐか</li>
+        <li>サーバー側で「この操作をしてよいか」を確かめるミドルウェアの書き方</li>
+        <li>ロールの作成・更新・削除、ユーザーへの割り当てを行う API と管理画面</li>
+        <li>リソースベース権限・動的権限・最小権限・監査ログ</li>
+        <li>システム規模ごとの権限モデルの選び方</li>
+      </ul>
+    </div>
+    <p>コード例は Node.js の Web フレームワーク <strong>Express</strong> と、MongoDB（文書型のデータベース）を扱うライブラリ <strong>Mongoose</strong> で書かれています。画面側は <strong>React</strong> です。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>権限管理の基本概念</h2>
+
+    <h3 id="sec-1-1">1.1 認証（Authentication）と認可（Authorization）</h3>
+    <ul>
+      <li><strong>認証</strong>：ユーザーが <strong>誰であるか</strong> を確認</li>
+      <li><strong>認可</strong>：ユーザーが <strong>何を実行できるか</strong> を決定</li>
+    </ul>
+    <p>このページで作るのは「認可」の仕組みです。2 つの違いと 401／403 の使い分けは <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> で詳しく説明しています。</p>
+
+    <h3 id="sec-1-2">1.2 権限モデル</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モデル</th><th>正式名</th><th>何で決めるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>RBAC</strong></td><td>Role-Based Access Control</td><td>ロール（役割）ベース</td></tr>
+        <tr><td><strong>ABAC</strong></td><td>Attribute-Based Access Control</td><td>属性ベース</td></tr>
+        <tr><td><strong>ACL</strong></td><td>Access Control List</td><td>アクセス制御リスト</td></tr>
+        <tr><td><strong>PBAC</strong></td><td>Policy-Based Access Control</td><td>ポリシー（規則の集まり）ベース</td></tr>
+      </tbody>
+    </table></div>
+    <p>それぞれの考え方と使い分けは、前のページ <a href="40-2_RBAC・ABAC・ACLの使い分け.html">RBAC・ABAC・ACLの使い分け</a> を参照してください。このページでは、いちばん広く使われる RBAC を実装します。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>データベーススキーマ設計（RBAC）</h2>
+    <p><strong>スキーマ</strong> は、データベースに保存するデータの形（項目名と型）の定義です。RBAC では「ロール」「ユーザーとロールの割り当て」「権限」の 3 つを用意し、ユーザーにロール情報を追加します。</p>
+<pre><code>// ロールスキーマ
+const RoleSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  description: String,
+  permissions: [{ type: String, required: true }],
+  isActive: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+// ユーザーロールスキーマ
+const UserRoleSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  roleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Role', required: true },
+  assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  assignedAt: { type: Date, default: Date.now },
+  expiresAt: Date, // ロールの有効期限
+  isActive: { type: Boolean, default: true }
+});
+
+// 権限スキーマ
+const PermissionSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  resource: { type: String, required: true }, // リソース（例：users, posts, orders）
+  action: { type: String, required: true },   // アクション（例：create, read, update, delete）
+  description: String,
+  isActive: { type: Boolean, default: true }
+});
+
+// ユーザースキーマにロール情報を追加
+UserSchema.add({
+  roles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'UserRole' }],
+  permissions: [{ type: String }] // 直接権限（オーバーライド用）
+});</code></pre>
+    <p><code>ObjectId</code> は MongoDB が各データに振る ID、<code>ref</code> は「この ID はどのデータを指すか」の指定です。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="UserのrolesがUserRoleを参照し、UserRoleのroleIdがRoleを参照する。Roleのpermissionsには権限名の文字列が入り、ロール作成時にPermissionマスタと名前で照合して検証する。権限チェックでは有効なUserRoleと有効なRoleのpermissionsにUserの直接権限を足して1つの集合にする">
+      <defs><marker id="arw403a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="12" y="30" width="150" height="150" rx="8" class="d-box"/>
+      <text x="87" y="56" text-anchor="middle" class="d-text-bold">User</text>
+      <text x="87" y="84" text-anchor="middle" class="d-text-sub">roles[]</text>
+      <text x="87" y="102" text-anchor="middle" class="d-text-sub">（UserRole を参照）</text>
+      <text x="87" y="130" text-anchor="middle" class="d-text-sub">permissions[]</text>
+      <text x="87" y="148" text-anchor="middle" class="d-text-sub">（直接付与の権限）</text>
+
+      <rect x="194" y="30" width="150" height="150" rx="8" class="d-box-accent"/>
+      <text x="269" y="56" text-anchor="middle" class="d-text-bold">UserRole</text>
+      <text x="269" y="74" text-anchor="middle" class="d-text-sub">（割り当て）</text>
+      <text x="269" y="100" text-anchor="middle" class="d-text-sub">userId / roleId</text>
+      <text x="269" y="118" text-anchor="middle" class="d-text-sub">assignedBy</text>
+      <text x="269" y="136" text-anchor="middle" class="d-text-sub">expiresAt</text>
+      <text x="269" y="154" text-anchor="middle" class="d-text-sub">isActive</text>
+
+      <rect x="376" y="30" width="150" height="150" rx="8" class="d-box-accent"/>
+      <text x="451" y="56" text-anchor="middle" class="d-text-bold">Role</text>
+      <text x="451" y="84" text-anchor="middle" class="d-text-sub">name / description</text>
+      <text x="451" y="108" text-anchor="middle" class="d-text-sub">permissions:</text>
+      <text x="451" y="126" text-anchor="middle" class="d-text-sub">['posts:read', …]</text>
+      <text x="451" y="154" text-anchor="middle" class="d-text-sub">isActive</text>
+
+      <rect x="558" y="30" width="150" height="150" rx="8" class="d-box"/>
+      <text x="633" y="56" text-anchor="middle" class="d-text-bold">Permission</text>
+      <text x="633" y="74" text-anchor="middle" class="d-text-sub">（権限マスタ）</text>
+      <text x="633" y="100" text-anchor="middle" class="d-text-sub">name</text>
+      <text x="633" y="118" text-anchor="middle" class="d-text-sub">resource</text>
+      <text x="633" y="136" text-anchor="middle" class="d-text-sub">action</text>
+      <text x="633" y="154" text-anchor="middle" class="d-text-sub">isActive</text>
+
+      <line x1="162" y1="105" x2="192" y2="105" class="d-line" marker-end="url(#arw403a)"/>
+      <line x1="344" y1="105" x2="374" y2="105" class="d-line" marker-end="url(#arw403a)"/>
+      <line x1="526" y1="105" x2="556" y2="105" class="d-line-dash" marker-end="url(#arw403a)"/>
+      <text x="178" y="204" text-anchor="middle" class="d-text-sub">roles で参照</text>
+      <text x="360" y="204" text-anchor="middle" class="d-text-sub">roleId で参照</text>
+      <text x="542" y="204" text-anchor="middle" class="d-text-sub">名前で照合</text>
+      <text x="542" y="222" text-anchor="middle" class="d-text-sub">（作成時に検証）</text>
+
+      <rect x="12" y="246" width="696" height="70" rx="8" class="d-box-good"/>
+      <text x="360" y="268" text-anchor="middle" class="d-text-bold">getUserPermissions（権限チェック時）</text>
+      <text x="360" y="289" text-anchor="middle" class="d-text-sub">有効で期限内の UserRole → 有効な Role の permissions</text>
+      <text x="360" y="306" text-anchor="middle" class="d-text-sub">＋ User の直接権限 を 1 つの集合にまとめる</text>
+    </svg>
+    <figcaption>図：ユーザーは「割り当て（UserRole）」を通してロールを持ち、ロールが権限名の一覧を持つ</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>スキーマ</th><th>役割</th><th>ポイント</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Role</strong></td><td>ロール（役割）の定義</td><td><code>permissions</code> に権限名（例：<code>posts:read</code>）の配列を持つ。<code>isActive</code> で無効化できる</td></tr>
+        <tr><td><strong>UserRole</strong></td><td>ユーザーとロールの割り当て</td><td>誰が割り当てたか（<code>assignedBy</code>）、いつ割り当てたか、<strong>ロールの有効期限</strong>（<code>expiresAt</code>）を記録できる</td></tr>
+        <tr><td><strong>Permission</strong></td><td>権限の一覧（マスタ）</td><td><strong>リソース</strong>（例：users, posts, orders）と <strong>アクション</strong>（例：create, read, update, delete）の組み合わせ</td></tr>
+        <tr><td><strong>User（追加分）</strong></td><td>ロール情報</td><td><code>roles</code> で割り当てを参照。<code>permissions</code> はロールを通さない <strong>直接権限</strong>（オーバーライド用）</td></tr>
+      </tbody>
+    </table></div>
+    <p>ユーザーとロールを直接つながず、間に UserRole を置くことで、「期限付きで一時的に権限を渡す」「誰がいつ権限を与えたかを残す」といった管理ができるようになります。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>バックエンド：権限チェックの仕組み</h2>
+
+    <h3 id="sec-3-1">3.1 権限チェックミドルウェア</h3>
+    <p><strong>ミドルウェア</strong> は、リクエストが本来の処理に届く前に挟み込む関数です。<code>checkPermission('roles:read')</code> のように、必要な権限を引数に渡して使います。</p>
+<pre><code>// 権限チェックミドルウェア
+const checkPermission = (requiredPermission) =&gt; {
+  return async (req, res, next) =&gt; {
+    try {
+      const user = req.user;
+      
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      
+      // ユーザーの権限を取得
+      const userPermissions = await getUserPermissions(user.id);
+      
+      // 権限チェック
+      if (!userPermissions.includes(requiredPermission)) {
+        return res.status(403).json({ 
+          error: 'Insufficient permissions',
+          required: requiredPermission,
+          userPermissions: userPermissions
+        });
+      }
+      
+      next();
+    } catch (error) {
+      console.error('Permission check error:', error);
+      res.status(500).json({ error: 'Permission check failed' });
+    }
+  };
+};</code></pre>
+    <p>ログインしていなければ <strong>401</strong>（誰か分からない）、ログインしていても権限がなければ <strong>403</strong>（権限がない）を返します。<code>req.user</code> は、その前に動く認証の仕組み（セッションや JWT の検証）が入れておく前提です。</p>
+    <div class="callout warn">
+      <p class="callout-title">エラー応答に渡す情報は最小限に</p>
+      <p>このコードは 403 の応答に <code>userPermissions</code>（そのユーザーが持つ権限の一覧）まで含めています。開発中の確認には便利ですが、本番では攻撃者に手がかりを与えるため、エラー内容だけを返すのが安全です（71 の <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-2-3">エラー処理 — 攻撃者にヒントを与えない</a> を参照）。</p>
+    </div>
+
+    <h3 id="sec-3-2">3.2 ユーザーの権限取得</h3>
+<pre><code>// ユーザーの権限取得
+const getUserPermissions = async (userId) =&gt; {
+  try {
+    const user = await User.findById(userId)
+      .populate({
+        path: 'roles',
+        populate: {
+          path: 'roleId',
+          model: 'Role'
+        }
+      });
+    
+    if (!user) {
+      return [];
+    }
+    
+    const permissions = new Set();
+    
+    // ロールから権限を取得
+    user.roles.forEach(userRole =&gt; {
+      if (userRole.isActive &amp;&amp; (!userRole.expiresAt || userRole.expiresAt &gt; new Date())) {
+        const role = userRole.roleId;
+        if (role &amp;&amp; role.isActive) {
+          role.permissions.forEach(permission =&gt; {
+            permissions.add(permission);
+          });
+        }
+      }
+    });
+    
+    // 直接権限を追加（オーバーライド）
+    user.permissions.forEach(permission =&gt; {
+      permissions.add(permission);
+    });
+    
+    return Array.from(permissions);
+  } catch (error) {
+    console.error('Get user permissions error:', error);
+    return [];
+  }
+};</code></pre>
+    <p><code>populate</code> は、ID で参照している先のデータを取り込んで一緒に取得する Mongoose の機能です。ここでは User → UserRole → Role と 2 段階でたどっています。権限を集めるときの条件は次のとおりです。</p>
+    <ul>
+      <li>割り当て（UserRole）が <strong>有効</strong>（<code>isActive</code>）で、<strong>期限切れでない</strong>（<code>expiresAt</code> がないか、未来の日時）</li>
+      <li>ロール（Role）自体も <strong>有効</strong></li>
+      <li>最後に、ユーザーの <strong>直接権限</strong> を追加（オーバーライド）</li>
+    </ul>
+    <p><code>Set</code> は重複を持たない集合で、複数のロールに同じ権限があっても 1 つにまとまります。エラー時に空の配列を返すので、何かあれば「権限なし」として扱われます（安全側に倒れる）。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="リクエストが来るとまずログイン済みかを確認し、いいえなら401を返す。はいなら権限を集め、必要な権限を持っているかを確認し、いいえなら403を返す。はいならnextで本来の処理へ進む">
+      <defs><marker id="arw403b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="12" y="30" width="150" height="70" rx="8" class="d-box-accent"/>
+      <text x="87" y="60" text-anchor="middle" class="d-text-bold">① ログイン済み？</text>
+      <text x="87" y="82" text-anchor="middle" class="d-text-sub">req.user を確認</text>
+
+      <rect x="194" y="30" width="150" height="70" rx="8" class="d-box-accent"/>
+      <text x="269" y="60" text-anchor="middle" class="d-text-bold">② 権限を集める</text>
+      <text x="269" y="82" text-anchor="middle" class="d-text-sub">getUserPermissions</text>
+
+      <rect x="376" y="30" width="150" height="70" rx="8" class="d-box-accent"/>
+      <text x="451" y="54" text-anchor="middle" class="d-text-bold">③ 必要な権限を</text>
+      <text x="451" y="72" text-anchor="middle" class="d-text-bold">持っている？</text>
+      <text x="451" y="90" text-anchor="middle" class="d-text-sub">includes(…)</text>
+
+      <rect x="558" y="30" width="150" height="70" rx="8" class="d-box-good"/>
+      <text x="633" y="60" text-anchor="middle" class="d-text-bold">④ next()</text>
+      <text x="633" y="82" text-anchor="middle" class="d-text-sub">本来の処理へ</text>
+
+      <line x1="162" y1="65" x2="192" y2="65" class="d-line" marker-end="url(#arw403b)"/>
+      <text x="178" y="22" text-anchor="middle" class="d-text-sub">はい</text>
+      <line x1="344" y1="65" x2="374" y2="65" class="d-line" marker-end="url(#arw403b)"/>
+      <line x1="526" y1="65" x2="556" y2="65" class="d-line" marker-end="url(#arw403b)"/>
+      <text x="542" y="22" text-anchor="middle" class="d-text-sub">はい</text>
+
+      <line x1="87" y1="100" x2="87" y2="158" class="d-line-bad" marker-end="url(#arw403b)"/>
+      <text x="97" y="134" class="d-text-sub">いいえ</text>
+      <line x1="451" y1="100" x2="451" y2="158" class="d-line-bad" marker-end="url(#arw403b)"/>
+      <text x="461" y="134" class="d-text-sub">いいえ</text>
+
+      <rect x="12" y="160" width="150" height="64" rx="8" class="d-box-bad"/>
+      <text x="87" y="186" text-anchor="middle" class="d-text-bold">401</text>
+      <text x="87" y="208" text-anchor="middle" class="d-text-sub">認証が必要</text>
+      <rect x="376" y="160" width="150" height="64" rx="8" class="d-box-bad"/>
+      <text x="451" y="186" text-anchor="middle" class="d-text-bold">403</text>
+      <text x="451" y="208" text-anchor="middle" class="d-text-sub">権限が足りない</text>
+    </svg>
+    <figcaption>図：checkPermission の判定の流れ。リソースベース権限（6 章）では ③ と ④ の間に「このデータに触れてよいか」の確認が加わる</figcaption>
+    </figure>
+
+    <h2 id="sec-4"><span class="num">4.</span>ロール管理 API</h2>
+    <p>ロールの一覧・作成・更新・削除を行う API です。どの API にも <code>checkPermission</code> を付け、<strong>ロールを管理する操作そのものにも権限が必要</strong> にしています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>メソッドとパス</th><th>必要な権限</th></tr></thead>
+      <tbody>
+        <tr><td>ロール一覧取得</td><td><code>GET /api/roles</code></td><td><code>roles:read</code></td></tr>
+        <tr><td>ロール作成</td><td><code>POST /api/roles</code></td><td><code>roles:create</code></td></tr>
+        <tr><td>ロール更新</td><td><code>PUT /api/roles/:roleId</code></td><td><code>roles:update</code></td></tr>
+        <tr><td>ロール削除</td><td><code>DELETE /api/roles/:roleId</code></td><td><code>roles:delete</code></td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// ロール管理API
+// ロール一覧取得
+app.get('/api/roles', checkPermission('roles:read'), async (req, res) =&gt; {
+  try {
+    const roles = await Role.find({ isActive: true })
+      .select('name description permissions createdAt')
+      .sort({ name: 1 });
+    
+    res.json({ roles });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch roles' });
+  }
+});
+
+// ロール作成
+app.post('/api/roles', checkPermission('roles:create'), async (req, res) =&gt; {
+  try {
+    const { name, description, permissions } = req.body;
+    
+    // 入力値検証
+    if (!name || !permissions || !Array.isArray(permissions)) {
+      return res.status(400).json({ error: 'Name and permissions are required' });
+    }
+    
+    // 重複チェック
+    const existingRole = await Role.findOne({ name });
+    if (existingRole) {
+      return res.status(409).json({ error: 'Role already exists' });
+    }
+    
+    // 権限の有効性チェック
+    const validPermissions = await Permission.find({ 
+      name: { $in: permissions },
+      isActive: true 
+    });
+    
+    if (validPermissions.length !== permissions.length) {
+      return res.status(400).json({ error: 'Invalid permissions provided' });
+    }
+    
+    const role = await Role.create({
+      name,
+      description,
+      permissions
+    });
+    
+    res.status(201).json({ 
+      success: true, 
+      role: {
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        permissions: role.permissions
+      }
+    });
+    
+  } catch (error) {
+    console.error('Role creation error:', error);
+    res.status(500).json({ error: 'Role creation failed' });
+  }
+});
+
+// ロール更新
+app.put('/api/roles/:roleId', checkPermission('roles:update'), async (req, res) =&gt; {
+  try {
+    const { roleId } = req.params;
+    const { name, description, permissions } = req.body;
+    
+    const role = await Role.findById(roleId);
+    if (!role) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+    
+    // 権限の有効性チェック
+    if (permissions) {
+      const validPermissions = await Permission.find({ 
+        name: { $in: permissions },
+        isActive: true 
+      });
+      
+      if (validPermissions.length !== permissions.length) {
+        return res.status(400).json({ error: 'Invalid permissions provided' });
+      }
+    }
+    
+    // ロール更新
+    role.name = name || role.name;
+    role.description = description !== undefined ? description : role.description;
+    role.permissions = permissions || role.permissions;
+    role.updatedAt = new Date();
+    
+    await role.save();
+    
+    res.json({ 
+      success: true, 
+      role: {
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        permissions: role.permissions
+      }
+    });
+    
+  } catch (error) {
+    console.error('Role update error:', error);
+    res.status(500).json({ error: 'Role update failed' });
+  }
+});
+
+// ロール削除
+app.delete('/api/roles/:roleId', checkPermission('roles:delete'), async (req, res) =&gt; {
+  try {
+    const { roleId } = req.params;
+    
+    const role = await Role.findById(roleId);
+    if (!role) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+    
+    // ロールを使用しているユーザーをチェック
+    const usersWithRole = await UserRole.countDocuments({ 
+      roleId, 
+      isActive: true 
+    });
+    
+    if (usersWithRole &gt; 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete role. Users are still assigned to this role.' 
+      });
+    }
+    
+    // ソフトデリート
+    role.isActive = false;
+    role.updatedAt = new Date();
+    await role.save();
+    
+    res.json({ success: true, message: 'Role deleted successfully' });
+    
+  } catch (error) {
+    console.error('Role deletion error:', error);
+    res.status(500).json({ error: 'Role deletion failed' });
+  }
+});</code></pre>
+    <p>コードの中で確かめていることを整理します。</p>
+    <ul>
+      <li><strong>入力値検証</strong>：名前と権限の配列がなければ 400（リクエストの誤り）</li>
+      <li><strong>重複チェック</strong>：同じ名前のロールがあれば 409（競合）</li>
+      <li><strong>権限の有効性チェック</strong>：指定された権限名がすべて Permission マスタに有効な形で存在するかを照合し、存在しない権限名が混ざっていれば 400</li>
+      <li><strong>削除前のチェック</strong>：そのロールを割り当てられたユーザーが残っていれば削除しない</li>
+      <li><strong>ソフトデリート</strong>：データを実際には消さず、<code>isActive = false</code> にして「無効」の印を付ける方法。履歴を残せ、誤操作からも戻せます</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>ユーザーロール管理 API</h2>
+    <p>ユーザーにロールを割り当てたり、外したりする API です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>メソッドとパス</th><th>必要な権限</th></tr></thead>
+      <tbody>
+        <tr><td>ユーザーロール一覧取得</td><td><code>GET /api/users/:userId/roles</code></td><td><code>users:read</code></td></tr>
+        <tr><td>ユーザーロール割り当て</td><td><code>POST /api/users/:userId/roles</code></td><td><code>users:update</code></td></tr>
+        <tr><td>ユーザーロール削除</td><td><code>DELETE /api/users/:userId/roles/:roleId</code></td><td><code>users:update</code></td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// ユーザーロール管理API
+// ユーザーロール一覧取得
+app.get('/api/users/:userId/roles', checkPermission('users:read'), async (req, res) =&gt; {
+  try {
+    const { userId } = req.params;
+    
+    const userRoles = await UserRole.find({ 
+      userId, 
+      isActive: true 
+    }).populate('roleId', 'name description permissions');
+    
+    res.json({ userRoles });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch user roles' });
+  }
+});
+
+// ユーザーロール割り当て
+app.post('/api/users/:userId/roles', checkPermission('users:update'), async (req, res) =&gt; {
+  try {
+    const { userId } = req.params;
+    const { roleId, expiresAt } = req.body;
+    const assignedBy = req.user.userId;
+    
+    // ユーザー存在チェック
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // ロール存在チェック
+    const role = await Role.findById(roleId);
+    if (!role || !role.isActive) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+    
+    // 既存の割り当てチェック
+    const existingAssignment = await UserRole.findOne({
+      userId,
+      roleId,
+      isActive: true
+    });
+    
+    if (existingAssignment) {
+      return res.status(409).json({ error: 'User already has this role' });
+    }
+    
+    // ロール割り当て
+    const userRole = await UserRole.create({
+      userId,
+      roleId,
+      assignedBy,
+      expiresAt: expiresAt ? new Date(expiresAt) : undefined
+    });
+    
+    res.status(201).json({ 
+      success: true, 
+      userRole: {
+        id: userRole.id,
+        role: {
+          id: role.id,
+          name: role.name,
+          description: role.description
+        },
+        assignedAt: userRole.assignedAt,
+        expiresAt: userRole.expiresAt
+      }
+    });
+    
+  } catch (error) {
+    console.error('User role assignment error:', error);
+    res.status(500).json({ error: 'User role assignment failed' });
+  }
+});
+
+// ユーザーロール削除
+app.delete('/api/users/:userId/roles/:roleId', checkPermission('users:update'), async (req, res) =&gt; {
+  try {
+    const { userId, roleId } = req.params;
+    
+    const userRole = await UserRole.findOne({
+      userId,
+      roleId,
+      isActive: true
+    });
+    
+    if (!userRole) {
+      return res.status(404).json({ error: 'User role assignment not found' });
+    }
+    
+    // ソフトデリート
+    userRole.isActive = false;
+    await userRole.save();
+    
+    res.json({ success: true, message: 'User role removed successfully' });
+    
+  } catch (error) {
+    console.error('User role removal error:', error);
+    res.status(500).json({ error: 'User role removal failed' });
+  }
+});</code></pre>
+    <ul>
+      <li>割り当て時に、ユーザーとロールが存在するか、すでに同じロールを持っていないかを確かめます。</li>
+      <li><code>assignedBy</code> に操作した人を記録し、<code>expiresAt</code> で有効期限を付けられます。</li>
+      <li>ロールを外すときもソフトデリートです。外した時点で <code>isActive</code> が false になるため、次の権限チェックからそのロールの権限は使われなくなります。</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>フロントエンド実装（React）</h2>
+    <p>管理者がロールを作ったり、ユーザーにロールを割り当てたりする画面です。<code>authenticatedRequest</code> は、ログイン情報を付けて API を呼ぶ自作の関数を想定しています。</p>
+
+    <h3 id="sec-6-1">6.1 ロール管理コンポーネント</h3>
+    <p>ロール一覧と権限一覧を読み込み、作成フォームの表示切り替え・作成・削除を行います。</p>
+<pre><code>// フロントエンド（React）
+import { useState, useEffect } from 'react';
+
+// ロール管理コンポーネント
+const RoleManagement = () =&gt; {
+  const [roles, setRoles] = useState([]);
+  const [permissions, setPermissions] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  useEffect(() =&gt; {
+    fetchRoles();
+    fetchPermissions();
+  }, []);
+
+  const fetchRoles = async () =&gt; {
+    try {
+      const response = await authenticatedRequest('/api/roles');
+      const data = await response.json();
+      setRoles(data.roles);
+    } catch (error) {
+      console.error('Failed to fetch roles:', error);
+    }
+  };
+
+  const fetchPermissions = async () =&gt; {
+    try {
+      const response = await authenticatedRequest('/api/permissions');
+      const data = await response.json();
+      setPermissions(data.permissions);
+    } catch (error) {
+      console.error('Failed to fetch permissions:', error);
+    }
+  };
+
+  const handleCreateRole = async (roleData) =&gt; {
+    setIsLoading(true);
+    try {
+      const response = await authenticatedRequest('/api/roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(roleData)
+      });
+
+      if (response.ok) {
+        await fetchRoles();
+        setShowCreateForm(false);
+        alert('Role created successfully');
+      } else {
+        const error = await response.json();
+        alert(error.error);
+      }
+    } catch (error) {
+      alert('Failed to create role');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteRole = async (roleId) =&gt; {
+    if (!confirm('Are you sure you want to delete this role?')) {
+      return;
+    }
+
+    try {
+      const response = await authenticatedRequest(`/api/roles/${roleId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        await fetchRoles();
+        alert('Role deleted successfully');
+      } else {
+        const error = await response.json();
+        alert(error.error);
+      }
+    } catch (error) {
+      alert('Failed to delete role');
+    }
+  };
+
+  return (
+    &lt;div className="role-management"&gt;
+      &lt;div className="page-header"&gt;
+        &lt;h2&gt;Role Management&lt;/h2&gt;
+        &lt;button 
+          onClick={() =&gt; setShowCreateForm(true)}
+          className="create-btn"
+        &gt;
+          Create New Role
+        &lt;/button&gt;
+      &lt;/div&gt;
+
+      {showCreateForm &amp;&amp; (
+        &lt;CreateRoleForm
+          permissions={permissions}
+          onSubmit={handleCreateRole}
+          onCancel={() =&gt; setShowCreateForm(false)}
+          isLoading={isLoading}
+        /&gt;
+      )}
+
+      &lt;div className="roles-list"&gt;
+        {roles.map(role =&gt; (
+          &lt;RoleCard
+            key={role.id}
+            role={role}
+            onDelete={handleDeleteRole}
+          /&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+};</code></pre>
+
+    <h3 id="sec-6-2">6.2 ロール作成フォーム</h3>
+    <p>権限を <strong>リソース別にグループ化</strong> し、チェックボックスで選べるようにしています（例：posts の下に create / read / update / delete が並ぶ）。</p>
+<pre><code>// ロール作成フォーム
+const CreateRoleForm = ({ permissions, onSubmit, onCancel, isLoading }) =&gt; {
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    permissions: []
+  });
+
+  const handleInputChange = (e) =&gt; {
+    const { name, value } = e.target;
+    setFormData(prev =&gt; ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handlePermissionChange = (permission, checked) =&gt; {
+    setFormData(prev =&gt; ({
+      ...prev,
+      permissions: checked
+        ? [...prev.permissions, permission]
+        : prev.permissions.filter(p =&gt; p !== permission)
+    }));
+  };
+
+  const handleSubmit = (e) =&gt; {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  // 権限をリソース別にグループ化
+  const groupedPermissions = permissions.reduce((groups, permission) =&gt; {
+    const resource = permission.resource;
+    if (!groups[resource]) {
+      groups[resource] = [];
+    }
+    groups[resource].push(permission);
+    return groups;
+  }, {});
+
+  return (
+    &lt;form onSubmit={handleSubmit} className="create-role-form"&gt;
+      &lt;h3&gt;Create New Role&lt;/h3&gt;
+      
+      &lt;div className="form-group"&gt;
+        &lt;label htmlFor="name"&gt;Role Name&lt;/label&gt;
+        &lt;input
+          type="text"
+          id="name"
+          name="name"
+          value={formData.name}
+          onChange={handleInputChange}
+          required
+        /&gt;
+      &lt;/div&gt;
+      
+      &lt;div className="form-group"&gt;
+        &lt;label htmlFor="description"&gt;Description&lt;/label&gt;
+        &lt;textarea
+          id="description"
+          name="description"
+          value={formData.description}
+          onChange={handleInputChange}
+          rows="3"
+        /&gt;
+      &lt;/div&gt;
+      
+      &lt;div className="form-group"&gt;
+        &lt;label&gt;Permissions&lt;/label&gt;
+        &lt;div className="permissions-grid"&gt;
+          {Object.entries(groupedPermissions).map(([resource, resourcePermissions]) =&gt; (
+            &lt;div key={resource} className="permission-group"&gt;
+              &lt;h4&gt;{resource}&lt;/h4&gt;
+              {resourcePermissions.map(permission =&gt; (
+                &lt;label key={permission.id} className="permission-item"&gt;
+                  &lt;input
+                    type="checkbox"
+                    checked={formData.permissions.includes(permission.name)}
+                    onChange={(e) =&gt; handlePermissionChange(permission.name, e.target.checked)}
+                  /&gt;
+                  {permission.action}
+                &lt;/label&gt;
+              ))}
+            &lt;/div&gt;
+          ))}
+        &lt;/div&gt;
+      &lt;/div&gt;
+      
+      &lt;div className="form-actions"&gt;
+        &lt;button type="submit" disabled={isLoading}&gt;
+          {isLoading ? 'Creating...' : 'Create Role'}
+        &lt;/button&gt;
+        &lt;button type="button" onClick={onCancel}&gt;
+          Cancel
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/form&gt;
+  );
+};</code></pre>
+
+    <h3 id="sec-6-3">6.3 ロールカード</h3>
+    <p>1 つのロールの名前・説明・権限の一覧を表示します。</p>
+<pre><code>// ロールカードコンポーネント
+const RoleCard = ({ role, onDelete }) =&gt; {
+  return (
+    &lt;div className="role-card"&gt;
+      &lt;div className="role-header"&gt;
+        &lt;h3&gt;{role.name}&lt;/h3&gt;
+        &lt;div className="role-actions"&gt;
+          &lt;button className="edit-btn"&gt;Edit&lt;/button&gt;
+          &lt;button 
+            className="delete-btn"
+            onClick={() =&gt; onDelete(role.id)}
+          &gt;
+            Delete
+          &lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+      
+      &lt;p className="role-description"&gt;{role.description}&lt;/p&gt;
+      
+      &lt;div className="role-permissions"&gt;
+        &lt;h4&gt;Permissions:&lt;/h4&gt;
+        &lt;div className="permissions-list"&gt;
+          {role.permissions.map(permission =&gt; (
+            &lt;span key={permission} className="permission-tag"&gt;
+              {permission}
+            &lt;/span&gt;
+          ))}
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+};</code></pre>
+
+    <h3 id="sec-6-4">6.4 ユーザーロール管理コンポーネント</h3>
+    <p>特定のユーザーが持つロールの一覧を表示し、割り当て・取り外しを行います。割り当て日と有効期限も表示します。</p>
+<pre><code>// ユーザーロール管理コンポーネント
+const UserRoleManagement = ({ userId }) =&gt; {
+  const [userRoles, setUserRoles] = useState([]);
+  const [availableRoles, setAvailableRoles] = useState([]);
+  const [showAssignForm, setShowAssignForm] = useState(false);
+
+  useEffect(() =&gt; {
+    fetchUserRoles();
+    fetchAvailableRoles();
+  }, [userId]);
+
+  const fetchUserRoles = async () =&gt; {
+    try {
+      const response = await authenticatedRequest(`/api/users/${userId}/roles`);
+      const data = await response.json();
+      setUserRoles(data.userRoles);
+    } catch (error) {
+      console.error('Failed to fetch user roles:', error);
+    }
+  };
+
+  const fetchAvailableRoles = async () =&gt; {
+    try {
+      const response = await authenticatedRequest('/api/roles');
+      const data = await response.json();
+      setAvailableRoles(data.roles);
+    } catch (error) {
+      console.error('Failed to fetch available roles:', error);
+    }
+  };
+
+  const handleAssignRole = async (roleId, expiresAt) =&gt; {
+    try {
+      const response = await authenticatedRequest(`/api/users/${userId}/roles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleId, expiresAt })
+      });
+
+      if (response.ok) {
+        await fetchUserRoles();
+        setShowAssignForm(false);
+        alert('Role assigned successfully');
+      } else {
+        const error = await response.json();
+        alert(error.error);
+      }
+    } catch (error) {
+      alert('Failed to assign role');
+    }
+  };
+
+  const handleRemoveRole = async (roleId) =&gt; {
+    if (!confirm('Are you sure you want to remove this role?')) {
+      return;
+    }
+
+    try {
+      const response = await authenticatedRequest(`/api/users/${userId}/roles/${roleId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        await fetchUserRoles();
+        alert('Role removed successfully');
+      } else {
+        const error = await response.json();
+        alert(error.error);
+      }
+    } catch (error) {
+      alert('Failed to remove role');
+    }
+  };
+
+  return (
+    &lt;div className="user-role-management"&gt;
+      &lt;div className="section-header"&gt;
+        &lt;h3&gt;User Roles&lt;/h3&gt;
+        &lt;button 
+          onClick={() =&gt; setShowAssignForm(true)}
+          className="assign-btn"
+        &gt;
+          Assign Role
+        &lt;/button&gt;
+      &lt;/div&gt;
+
+      {showAssignForm &amp;&amp; (
+        &lt;AssignRoleForm
+          availableRoles={availableRoles}
+          userRoles={userRoles}
+          onSubmit={handleAssignRole}
+          onCancel={() =&gt; setShowAssignForm(false)}
+        /&gt;
+      )}
+
+      &lt;div className="user-roles-list"&gt;
+        {userRoles.map(userRole =&gt; (
+          &lt;div key={userRole.id} className="user-role-item"&gt;
+            &lt;div className="role-info"&gt;
+              &lt;h4&gt;{userRole.roleId.name}&lt;/h4&gt;
+              &lt;p&gt;{userRole.roleId.description}&lt;/p&gt;
+              &lt;small&gt;Assigned: {new Date(userRole.assignedAt).toLocaleDateString()}&lt;/small&gt;
+              {userRole.expiresAt &amp;&amp; (
+                &lt;small&gt;Expires: {new Date(userRole.expiresAt).toLocaleDateString()}&lt;/small&gt;
+              )}
+            &lt;/div&gt;
+            &lt;button 
+              onClick={() =&gt; handleRemoveRole(userRole.roleId._id)}
+              className="remove-btn"
+            &gt;
+              Remove
+            &lt;/button&gt;
+          &lt;/div&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+};</code></pre>
+
+    <div class="callout warn">
+      <p class="callout-title">画面は入口、守りはサーバー</p>
+      <p>管理画面を見せない・ボタンを隠すのは使いやすさのためで、守りにはなりません。API を直接呼ばれても止まるよう、必ずサーバー側の <code>checkPermission</code> で確かめます（<a href="10-1_認証と認可の違い.html#sec-5">画面で隠しても守れない</a>）。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>リソースベース権限</h2>
+    <p>ロールの権限だけでは「投稿を編集できる人」までしか決まりません。<strong>リソースベース権限</strong> は、さらに「<strong>この</strong> 投稿を編集してよいか」を、データの持ち主などで確かめる方法です。</p>
+<pre><code>// リソースベース権限チェック
+const checkResourcePermission = (resource, action, resourceId = null) =&gt; {
+  return async (req, res, next) =&gt; {
+    try {
+      const user = req.user;
+      const permission = `${resource}:${action}`;
+      
+      // 基本権限チェック
+      const userPermissions = await getUserPermissions(user.id);
+      if (!userPermissions.includes(permission)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+      
+      // リソース固有の権限チェック
+      if (resourceId) {
+        const hasResourceAccess = await checkResourceAccess(user.id, resource, resourceId);
+        if (!hasResourceAccess) {
+          return res.status(403).json({ error: 'Access denied to this resource' });
+        }
+      }
+      
+      next();
+    } catch (error) {
+      console.error('Resource permission check error:', error);
+      res.status(500).json({ error: 'Permission check failed' });
+    }
+  };
+};
+
+// リソースアクセスチェック
+const checkResourceAccess = async (userId, resource, resourceId) =&gt; {
+  switch (resource) {
+    case 'posts':
+      const post = await Post.findById(resourceId);
+      return post &amp;&amp; (post.authorId.toString() === userId || await hasAdminRole(userId));
+    
+    case 'users':
+      return resourceId === userId || await hasAdminRole(userId);
+    
+    default:
+      return true;
+  }
+};</code></pre>
+    <ul>
+      <li>まず <code>posts:update</code> のような <strong>基本権限</strong> を確認します。</li>
+      <li>次に <code>checkResourceAccess</code> で <strong>リソース固有の権限</strong> を確認します。投稿なら作成者本人か管理者、ユーザー情報なら本人か管理者だけが通ります。</li>
+    </ul>
+    <p>同じ考え方の短い例は <a href="10-1_認証と認可の違い.html#sec-11-2">リソースベース認可</a>（認証と認可の違い）にもあります。この確認が抜けると、ID を書き換えるだけで他人のデータに触れられる「認可不備」になります（<a href="40-1_認可不備と認可の要件定義.html">認可不備と認可の要件定義</a> を参照）。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>動的権限</h2>
+    <p><strong>動的権限</strong> は、ロールの権限に加えて、時刻やリクエストの内容など <strong>その場の状況</strong> で判定する方法です。判定用の関数を渡せるようにしておくと、さまざまな条件を同じ形で書けます。</p>
+<pre><code>// 動的権限チェック
+const checkDynamicPermission = (permissionFunction) =&gt; {
+  return async (req, res, next) =&gt; {
+    try {
+      const user = req.user;
+      const hasPermission = await permissionFunction(user, req);
+      
+      if (!hasPermission) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+      
+      next();
+    } catch (error) {
+      console.error('Dynamic permission check error:', error);
+      res.status(500).json({ error: 'Permission check failed' });
+    }
+  };
+};
+
+// 使用例：時間制限付き権限
+const timeBasedPermission = async (user, req) =&gt; {
+  const userPermissions = await getUserPermissions(user.id);
+  
+  if (!userPermissions.includes('posts:create')) {
+    return false;
+  }
+  
+  // 営業時間内のみ投稿可能
+  const currentHour = new Date().getHours();
+  return currentHour &gt;= 9 &amp;&amp; currentHour &lt;= 17;
+};
+
+app.post('/api/posts', checkDynamicPermission(timeBasedPermission), createPostHandler);</code></pre>
+    <p>この例では、<code>posts:create</code> 権限を持っていても、<strong>営業時間内（9〜17 時台）のみ投稿可能</strong> になります。属性（時刻など）で判定する点は ABAC の考え方に近いものです。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>セキュリティベストプラクティス</h2>
+
+    <h3 id="sec-9-1">9.1 権限の最小化</h3>
+    <p>デフォルトロール（最初から用意しておくロール）を、それぞれの仕事に必要な権限だけで作ります。</p>
+<pre><code>// デフォルトロールの設定
+const createDefaultRoles = async () =&gt; {
+  const defaultRoles = [
+    {
+      name: 'admin',
+      description: 'Full system access',
+      permissions: ['*'] // 全権限
+    },
+    {
+      name: 'user',
+      description: 'Basic user access',
+      permissions: [
+        'profile:read',
+        'profile:update',
+        'posts:create',
+        'posts:read'
+      ]
+    },
+    {
+      name: 'moderator',
+      description: 'Content moderation access',
+      permissions: [
+        'posts:read',
+        'posts:update',
+        'posts:delete',
+        'users:read'
+      ]
+    }
+  ];
+  
+  for (const roleData of defaultRoles) {
+    const existingRole = await Role.findOne({ name: roleData.name });
+    if (!existingRole) {
+      await Role.create(roleData);
+    }
+  }
+};</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ロール</th><th>説明</th><th>権限</th></tr></thead>
+      <tbody>
+        <tr><td><strong>admin</strong></td><td>システム全体へのアクセス</td><td><code>*</code>（全権限）</td></tr>
+        <tr><td><strong>user</strong></td><td>基本的なユーザーアクセス</td><td>プロフィールの閲覧・更新、投稿の作成・閲覧</td></tr>
+        <tr><td><strong>moderator</strong></td><td>コンテンツの管理（モデレーション）</td><td>投稿の閲覧・更新・削除、ユーザーの閲覧</td></tr>
+      </tbody>
+    </table></div>
+    <p>一般ユーザーには投稿の削除権限を、モデレーターにはロール管理の権限を渡していない点が「最小化」です。最小権限の原則そのものは 71 の <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照してください。</p>
+    <div class="callout warn">
+      <p class="callout-title"><code>*</code> は自動では効かない</p>
+      <p>3 章の <code>checkPermission</code> は <code>includes(requiredPermission)</code> で完全一致を見るだけなので、<code>'*'</code> を「全権限」として扱うには、チェック側に <code>'*'</code> を特別扱いする処理を足す必要があります。</p>
+    </div>
+
+    <h3 id="sec-9-2">9.2 監査ログ</h3>
+    <p><strong>監査ログ</strong> は、「誰が・いつ・何をしたか」を後から確かめるための記録です。権限の変更は不正や事故の調査で特に重要なので、ロール作成などのたびに記録します。</p>
+<pre><code>// 権限変更の監査ログ
+const auditLog = async (action, details) =&gt; {
+  await AuditLog.create({
+    action,
+    details,
+    timestamp: new Date(),
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+};
+
+// ロール変更時の監査ログ
+app.post('/api/roles', checkPermission('roles:create'), async (req, res) =&gt; {
+  // ... ロール作成処理 ...
+  
+  await auditLog('role_created', {
+    roleId: role.id,
+    roleName: role.name,
+    permissions: role.permissions,
+    createdBy: req.user.userId
+  });
+  
+  res.json({ success: true, role });
+});</code></pre>
+    <p>操作の種類・内容・時刻・IP アドレス・ブラウザ情報（User-Agent）と、誰が作成したか（<code>createdBy</code>）を残しています。なお、この例の <code>auditLog</code> は中で <code>req</code> を使っていますが引数で受け取っていないため、実際には <code>req</code> も渡す形にします。何を記録しどう守るかは 71 の <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-4">何を記録するか — ログの種類・イベント・項目</a> を参照してください。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>実装の選択指針</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>システム規模</th><th>推奨権限モデル</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>小規模</strong></td><td>シンプル RBAC</td><td>実装の簡素化</td></tr>
+        <tr><td><strong>中規模</strong></td><td>RBAC ＋ リソースベース</td><td>柔軟性とセキュリティのバランス</td></tr>
+        <tr><td><strong>大規模</strong></td><td>ABAC ＋ ポリシーエンジン</td><td>複雑な要件への対応</td></tr>
+        <tr><td><strong>エンタープライズ</strong></td><td>複数モデルの組み合わせ</td><td>包括的なセキュリティ</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ポリシーエンジン</strong> は、アクセスの規則（ポリシー）をコードから切り離して書き、判定を専門に行う仕組みです。</p>
+    <p>ログイン・ログアウト、ユーザー登録・プロフィール管理、パスワードリセット、二要素認証など、関連する機能の実装は今後追加予定の 50 系（実装）のページで扱います。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>データ設計</td><td>User → UserRole（割り当て・期限・付与者）→ Role（権限名の配列）。Permission はマスタ</td></tr>
+        <tr><td>権限チェック</td><td>ミドルウェアで未ログインは 401、権限不足は 403</td></tr>
+        <tr><td>権限の集め方</td><td>有効で期限内の割り当て → 有効なロールの権限 ＋ 直接権限</td></tr>
+        <tr><td>管理 API</td><td>ロール管理自体にも権限が必要。入力・重複・権限名を検証し、削除はソフトデリート</td></tr>
+        <tr><td>画面</td><td>使いやすさのため。守りはサーバー側のチェック</td></tr>
+        <tr><td>リソースベース</td><td>「この」データの持ち主か・管理者かまで確かめる</td></tr>
+        <tr><td>動的権限</td><td>時刻などその場の条件で判定する</td></tr>
+        <tr><td>運用</td><td>ロールは必要最小限の権限で作り、権限の変更は監査ログに残す</td></tr>
+        <tr><td>選び方</td><td>小規模は RBAC、中規模は RBAC ＋ リソースベース、大規模は ABAC ＋ ポリシーエンジン</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ユーザーとロールを直接つながず、間に UserRole を置くのはなぜですか？</summary>
+      <div class="body">
+        <p>割り当てごとに「誰が割り当てたか（<code>assignedBy</code>）」「いつ割り当てたか」「いつまで有効か（<code>expiresAt</code>）」「今も有効か（<code>isActive</code>）」を記録するためです。期限付きの権限付与や、権限変更の追跡ができるようになります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. <code>checkPermission</code> は、どんなときに 401 を返し、どんなときに 403 を返しますか？</summary>
+      <div class="body">
+        <p><code>req.user</code> がない（ログインしていない）ときは 401、ログインしているが必要な権限を持っていないときは 403 を返します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. <code>getUserPermissions</code> が、あるロールの権限を集めないのはどんな場合ですか？</summary>
+      <div class="body">
+        <p>割り当て（UserRole）が無効のとき、割り当ての有効期限が過ぎているとき、またはロール（Role）自体が無効のときです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. 管理画面で「削除」ボタンを権限のない人に見せなければ、サーバー側のチェックは省けますか？</summary>
+      <div class="body">
+        <p>省けません。画面を通さずに API を直接呼べるため、ボタンを隠すのは使いやすさのためでしかありません。守りは必ずサーバー側の <code>checkPermission</code> などで行います。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. <code>posts:update</code> 権限を持つ一般ユーザーが、他人の投稿を編集できないようにするには何を加えますか？</summary>
+      <div class="body">
+        <p>リソースベース権限です。基本権限の確認に加えて、<code>checkResourceAccess</code> のように「その投稿の作成者本人か、管理者か」を確かめます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. ロール削除で、データを実際に消さずに <code>isActive = false</code> にするのはなぜですか？</summary>
+      <div class="body">
+        <p>ソフトデリートにすると、履歴が残って後から調べられ、誤って削除しても元に戻せるからです。さらにこの例では、割り当てられたユーザーが残っているロールは削除できないようにしています。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. 中規模のシステムでは、どの権限モデルが勧められていますか？</summary>
+      <div class="body">
+        <p>RBAC ＋ リソースベースです。ロールによる分かりやすい管理と、データ単位の確認を組み合わせ、柔軟性とセキュリティのバランスを取ります。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：73_認証認可/40_認可モデル/03_権限管理・ロール管理機能</li>
+      <li>関連ノート：73_認証認可/50_実装/01_ログイン・ログアウト機能、02_ユーザー登録・プロフィール管理機能、03_パスワードリセット機能、04_二要素認証（2FA）機能</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-2_RBAC・ABAC・ACLの使い分け.html"><span class="lbl">← 前のページ</span>RBAC・ABAC・ACLの使い分け</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <span class="empty"></span>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

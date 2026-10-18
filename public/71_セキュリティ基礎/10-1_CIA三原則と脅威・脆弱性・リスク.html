@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CIA三原則と脅威・脆弱性・リスク｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 基本概念 › CIA三原則と脅威・脆弱性・リスク</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基本概念</span>
+      <h1>CIA三原則と脅威・脆弱性・リスク</h1>
+      <p class="lead">セキュリティのいちばん根っこにある考え方を学びます。「守れている」とはどういう状態か（CIA三原則）、よく混同される「脅威・脆弱性・リスク」の違い、リスクへの4つの向き合い方、攻撃者の種類と動機、そして多層防御・最小権限・多要素認証などの基本的な守り方までを、家や銀行のたとえで整理します。</p>
+      <p class="meta">もとにしたノート：10_基本概念/01_CIA三原則・脅威・脆弱性・リスク（基礎講座第1回）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>守りたいのは情報の <strong>機密性（見せない）・完全性（書き換えさせない）・可用性（止めさせない）</strong> の3つ。<strong>脆弱性</strong>（弱点）を <strong>脅威</strong>（弱点を突く存在）が突いたときに被害が生まれ、その起こりやすさと大きさが <strong>リスク</strong> です。セキュリティの目的は「100%安全」ではなく、<strong>リスクを適切に管理すること</strong>です。</p>
+    </div>
+
+    <h2 id="security"><span class="num">1.</span>セキュリティとは何か</h2>
+    <p><strong>情報セキュリティ</strong>とは「大切な情報を守るための取り組み全般」です。何を、何から守るのかを整理しておきましょう。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>守るもの</h4>
+        <ul>
+          <li><strong>データ</strong>：顧客情報・財務情報・機密文書</li>
+          <li><strong>システム</strong>：サーバー・ネットワーク・アプリ</li>
+          <li><strong>ビジネス</strong>：サービスの継続性・信頼・評判</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>何から守るか</h4>
+        <ul>
+          <li><strong>悪意ある攻撃者</strong></li>
+          <li><strong>内部の不正・ミス</strong></li>
+          <li><strong>自然災害・システム障害</strong></li>
+        </ul>
+      </div>
+    </div>
+    <h3 id="security-why">なぜ重要なのか</h3>
+    <p>セキュリティ上の事故（<strong>インシデント</strong>）が起きると、次のような被害につながります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>被害</th><th>具体的には</th></tr></thead>
+      <tbody>
+        <tr><td><strong>金銭的損失</strong></td><td>不正送金、身代金の支払い要求、復旧のための費用。ランサムウェア（データを人質に取るマルウェア）で多額の損失が出ることもある</td></tr>
+        <tr><td><strong>信頼の失墜</strong></td><td>顧客情報が漏洩するとユーザーが離れる。大規模な漏洩では株価が下がることもある</td></tr>
+        <tr><td><strong>法的責任</strong></td><td>個人情報保護法や GDPR（EU の個人データ保護規則）などへの違反。罰金や訴訟のリスク</td></tr>
+        <tr><td><strong>サービス停止</strong></td><td>大量アクセス攻撃（DDoS）やシステム破壊で業務が止まる。病院のシステムが止まり診療できなくなった例もある</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="cia"><span class="num">2.</span>CIA三原則 — 守るべき3つの性質</h2>
+    <p>情報セキュリティの世界には「守るべき3つの性質」があります。英語の頭文字をとって <strong>CIA三原則</strong>（CIA の3要素、CIA トライアドとも）と呼びます。</p>
+    <figure>
+    <svg viewBox="0 0 680 380" role="img" aria-label="CIA三原則の三角形">
+      <polygon points="340,70 120,320 560,320" class="d-box"/>
+      <text x="340" y="232" text-anchor="middle" class="d-text-bold">CIA 三原則</text>
+      <text x="340" y="256" text-anchor="middle" class="d-text-sub">どれか1つでも欠けると</text>
+      <text x="340" y="274" text-anchor="middle" class="d-text-sub">「守れていない」</text>
+
+      <rect x="230" y="14" width="220" height="74" rx="10" class="d-box-accent"/>
+      <text x="340" y="42" text-anchor="middle" class="d-text-bold">機密性（C）</text>
+      <text x="340" y="66" text-anchor="middle" class="d-text-sub">見せてはいけない人に見せない</text>
+
+      <rect x="20" y="292" width="220" height="74" rx="10" class="d-box-good"/>
+      <text x="130" y="320" text-anchor="middle" class="d-text-bold">完全性（I）</text>
+      <text x="130" y="344" text-anchor="middle" class="d-text-sub">勝手に書き換えさせない</text>
+
+      <rect x="440" y="292" width="220" height="74" rx="10" class="d-box-warn"/>
+      <text x="550" y="320" text-anchor="middle" class="d-text-bold">可用性（A）</text>
+      <text x="550" y="344" text-anchor="middle" class="d-text-sub">使いたいときに使える</text>
+    </svg>
+    <figcaption>図：CIA三原則。Confidentiality（機密性）・Integrity（完全性）・Availability（可用性）</figcaption>
+    </figure>
+
+    <h3 id="cia-c">C：機密性（Confidentiality）—「見せてはいけない人には見せない」</h3>
+    <p><strong>権限のある人だけが情報にアクセスできる状態</strong>のことです。銀行でいえば、自分の口座残高は自分と銀行員にしか見えない、という状態です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>失われると</h4>
+        <ul>
+          <li>顧客の個人情報が外部に漏洩する</li>
+          <li>社外秘の設計書が競合他社に流出する</li>
+          <li>パスワードが盗まれて不正ログインされる</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>守る手段</h4>
+        <ul>
+          <li><strong>アクセス制御</strong>：誰がアクセスできるかを管理する</li>
+          <li><strong>暗号化</strong>：盗まれても読めない状態にする</li>
+          <li><strong>認証</strong>：本人確認を行う</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="cia-i">I：完全性（Integrity）—「正しい状態で、勝手に書き換えられていない」</h3>
+    <p><strong>情報が正確・完全で、不正に変更されていない状態</strong>のことです。銀行でいえば、通帳の残高が誰にも勝手に書き換えられていない、という状態です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>失われると</h4>
+        <ul>
+          <li>データベースの金額が書き換えられる</li>
+          <li>ソフトウェアにマルウェアが混入される</li>
+          <li>ログファイルが改ざんされて証拠が消える</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>守る手段</h4>
+        <ul>
+          <li><strong>ハッシュ値</strong>（データの指紋のようなもの）による改ざん検知</li>
+          <li><strong>デジタル署名</strong>：誰が作ったかを証明する</li>
+          <li><strong>アクセスログの記録</strong></li>
+          <li><strong>バックアップ</strong>：改ざん前の状態を保持する</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="cia-a">A：可用性（Availability）—「使いたいときに使える」</h3>
+    <p><strong>必要なときに情報やシステムが利用できる状態</strong>のことです。銀行でいえば、ATM や ネットバンキングがいつでも使える、という状態です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>失われると</h4>
+        <ul>
+          <li>DDoS 攻撃（大量のアクセスを送りつける攻撃）で Web サイトがダウンする</li>
+          <li>ランサムウェアでシステムが使えなくなる</li>
+          <li>自然災害でデータセンターが停止する</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>守る手段</h4>
+        <ul>
+          <li><strong>冗長化</strong>：サーバーなどの予備を用意して二重にする</li>
+          <li><strong>バックアップ・ディザスタリカバリ</strong>（災害からの復旧計画）</li>
+          <li><strong>DDoS 対策</strong>：AWS Shield・Cloudflare などのサービス</li>
+          <li><strong>監視・自動復旧</strong>の仕組み</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="cia-table">CIA三原則のまとめ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原則</th><th>キーワード</th><th>失われると</th><th>守る手段</th></tr></thead>
+      <tbody>
+        <tr><td><strong>機密性</strong></td><td>見せない</td><td>情報漏洩</td><td>暗号化・アクセス制御</td></tr>
+        <tr><td><strong>完全性</strong></td><td>改ざんしない</td><td>データ破損・改ざん</td><td>ハッシュ化・デジタル署名</td></tr>
+        <tr><td><strong>可用性</strong></td><td>使えるようにする</td><td>サービス停止</td><td>冗長化・バックアップ</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">ヒント：攻撃を CIA で読む</p>
+      <p>ニュースで攻撃の話を見たら「これは C・I・A のどれを壊す攻撃か？」と考える癖をつけると理解が早くなります。情報漏洩は C、改ざんは I、DDoS は A。ランサムウェアはデータを暗号化して使えなくする（A）うえに、最近はデータを盗んで公開すると脅す（C）ことも多く、複数にまたがります。</p>
+    </div>
+
+    <h2 id="tradeoff"><span class="num">3.</span>CIA のトレードオフ — 安全と便利はシーソー</h2>
+    <p>3つの性質は、いつも同時に最大にできるわけではありません。特に <strong>機密性と可用性（使いやすさ）</strong> はぶつかりやすい関係にあります。</p>
+    <figure>
+    <svg viewBox="0 0 680 262" role="img" aria-label="セキュリティと利便性のシーソー">
+      <line x1="110" y1="150" x2="570" y2="90" class="d-line"/>
+      <polygon points="340,122 310,190 370,190" class="d-box"/>
+      <rect x="30" y="160" width="200" height="70" rx="10" class="d-box-accent"/>
+      <text x="130" y="190" text-anchor="middle" class="d-text-bold">機密性を高める</text>
+      <text x="130" y="214" text-anchor="middle" class="d-text-sub">アクセスを厳しく制限</text>
+      <rect x="450" y="10" width="200" height="70" rx="10" class="d-box-warn"/>
+      <text x="550" y="40" text-anchor="middle" class="d-text-bold">可用性が下がる</text>
+      <text x="550" y="64" text-anchor="middle" class="d-text-sub">使いにくくなる</text>
+      <text x="460" y="250" text-anchor="middle" class="d-text-sub">逆も同じ：誰でも簡単に使える → 漏洩しやすい</text>
+    </svg>
+    <figcaption>図：セキュリティを上げると利便性が下がり、利便性を上げるとセキュリティが下がりやすい</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>こうすると</th><th>代わりに</th></tr></thead>
+      <tbody>
+        <tr><td>機密性を高める（アクセスを厳しく制限）</td><td>可用性が下がる（使いにくくなる）</td></tr>
+        <tr><td>可用性を高める（誰でも簡単にアクセスできる）</td><td>機密性が下がる（漏洩リスクが増える）</td></tr>
+      </tbody>
+    </table></div>
+    <p>つまり <strong>「セキュリティ↑ = 利便性↓」「利便性↑ = セキュリティ↓」</strong> になりがちです。そのため、守る対象の重要さに応じて <strong>バランスをとること</strong>が大切です。そもそも <strong>「完璧なセキュリティ」は存在しない</strong>、という前提に立ちましょう。</p>
+
+    <h2 id="tvr"><span class="num">4.</span>脅威・脆弱性・リスクの違い</h2>
+    <p>セキュリティの世界で特に混同されやすい3つの言葉です。まずは家で考えてみましょう。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th><th>家のたとえ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>脆弱性</strong></td><td>建物の「弱点」</td><td>鍵のかかっていない窓、壊れたフェンス、監視カメラの死角</td></tr>
+        <tr><td><strong>脅威</strong></td><td>弱点を狙う「存在・出来事」</td><td>泥棒、台風、火事</td></tr>
+        <tr><td><strong>リスク</strong></td><td>「損害が起きる可能性」</td><td>鍵のない窓（脆弱性）× 泥棒（脅威）＝ 空き巣リスク</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 210" role="img" aria-label="リスク＝脅威×脆弱性×影響度">
+      <rect x="10" y="40" width="150" height="100" rx="10" class="d-box-bad"/>
+      <text x="85" y="76" text-anchor="middle" class="d-text-bold">脅威</text>
+      <text x="85" y="100" text-anchor="middle" class="d-text-sub">泥棒・マルウェア</text>
+      <text x="85" y="118" text-anchor="middle" class="d-text-sub">内部不正・災害</text>
+      <text x="180" y="96" text-anchor="middle" class="d-text-bold">×</text>
+      <rect x="200" y="40" width="150" height="100" rx="10" class="d-box-warn"/>
+      <text x="275" y="76" text-anchor="middle" class="d-text-bold">脆弱性</text>
+      <text x="275" y="100" text-anchor="middle" class="d-text-sub">鍵のない窓</text>
+      <text x="275" y="118" text-anchor="middle" class="d-text-sub">未パッチの OS</text>
+      <text x="370" y="96" text-anchor="middle" class="d-text-bold">×</text>
+      <rect x="390" y="40" width="150" height="100" rx="10" class="d-box"/>
+      <text x="465" y="76" text-anchor="middle" class="d-text-bold">影響度</text>
+      <text x="465" y="100" text-anchor="middle" class="d-text-sub">盗まれる物の価値</text>
+      <text x="465" y="118" text-anchor="middle" class="d-text-sub">漏れる情報の量</text>
+      <text x="560" y="96" text-anchor="middle" class="d-text-bold">＝</text>
+      <rect x="580" y="40" width="130" height="100" rx="10" class="d-box-accent"/>
+      <text x="645" y="84" text-anchor="middle" class="d-text-bold">リスク</text>
+      <text x="645" y="108" text-anchor="middle" class="d-text-sub">被害の可能性</text>
+      <text x="360" y="186" text-anchor="middle" class="d-text-sub">どれか1つがゼロなら、リスクもほぼゼロ（泥棒がいない／窓に鍵／盗まれる物がない）</text>
+    </svg>
+    <figcaption>図：リスク ＝ 脅威 × 脆弱性 × 影響度（考え方のイメージ）</figcaption>
+    </figure>
+
+    <h3 id="tvr-it">IT システムで例えると</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>脆弱性（Vulnerability）</h4>
+        <p>システムの弱点・欠陥。</p>
+        <ul>
+          <li>パッチ（修正プログラム）が当たっていない OS</li>
+          <li>SQL インジェクションが可能なコード</li>
+          <li>「password123」という弱いパスワード</li>
+          <li>多要素認証が設定されていない VPN</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>脅威（Threat）</h4>
+        <p>脆弱性を悪用しようとする存在・事象。</p>
+        <ul>
+          <li>ハッカー・クラッカー</li>
+          <li>マルウェア</li>
+          <li>内部の不正者</li>
+          <li>自然災害</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>リスク（Risk）</h4>
+        <p>実際に被害が発生する可能性とその影響。</p>
+        <ul>
+          <li>リスク ＝ 脅威が成功する確率 × 被害の大きさ</li>
+          <li>高リスク：対策が急務</li>
+          <li>低リスク：受け入れるか、低コストで対応</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「脆弱性があれば必ず危ない」</p>
+      <p>脆弱性は「弱点がある」というだけで、それ自体がリスクの大きさではありません。インターネットから届かない場所にある・攻撃する人がいない・壊れても困るデータがない、といった場合はリスクは小さくなります。逆に、小さな弱点でも重要なデータに直結していればリスクは大きくなります。<strong>脅威・脆弱性・影響をセットで考える</strong>のがポイントです。</p>
+    </div>
+
+    <h2 id="response"><span class="num">5.</span>リスクへの4つの対応方法</h2>
+    <p>リスクが分かったら、どう向き合うかを決めます。選択肢は大きく4つです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>① リスク回避（Avoidance）</h4>
+        <p>リスクの原因となる活動そのものをやめる。</p>
+        <p>例：危険なサービスを廃止する</p>
+      </div>
+      <div class="card">
+        <h4>② リスク軽減（Mitigation）</h4>
+        <p>対策を実施してリスクを小さくする。</p>
+        <p>例：パッチを当てる、多要素認証（MFA）を導入する</p>
+      </div>
+      <div class="card">
+        <h4>③ リスク転嫁（Transfer）</h4>
+        <p>リスクを第三者に移す。</p>
+        <p>例：サイバー保険に加入する、クラウドに任せる</p>
+      </div>
+      <div class="card">
+        <h4>④ リスク受容（Acceptance）</h4>
+        <p>リスクを認識したうえで受け入れる。</p>
+        <p>例：コストと影響を比べて「このリスクは許容する」と判断</p>
+      </div>
+    </div>
+    <p>家でいえば、①は「物騒な場所に家を建てない」、②は「鍵を二重にする」、③は「盗難保険に入る」、④は「物置の中身は安物なので鍵は付けない」にあたります。どれを選ぶか、どう記録するかは <a href="10-4_リスク管理とリスクアセスメント.html">リスク管理とリスクアセスメント</a> で詳しく扱います。</p>
+
+    <h2 id="attackers"><span class="num">6.</span>攻撃者の種類と動機</h2>
+    <p>「誰が攻撃してくるのか」を知っておくと、どこまで備えるべきかの目安になります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>特徴</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ブラックハット</strong><br><span>悪意のあるハッカー</span></td><td>金銭目的・愉快犯・スパイ活動。企業・政府・個人を攻撃し、ランサムウェア・情報窃取・サービス妨害などを行う</td></tr>
+        <tr><td><strong>ホワイトハット</strong><br><span>倫理的なハッカー</span></td><td>許可を得てセキュリティ診断を行う。ペネトレーションテスター（侵入テストの専門家）やセキュリティ研究者。脆弱性を見つけて報告し、修正を助ける</td></tr>
+        <tr><td><strong>グレーハット</strong><br><span>中間的なハッカー</span></td><td>許可なく侵入するが悪用はしない。脆弱性を見つけて報告するが、その方法は違法</td></tr>
+        <tr><td><strong>国家支援型攻撃者（APT）</strong></td><td>国家の支援を受けた高度な攻撃集団。長期間・隠密に活動する（APT ＝ 高度持続的脅威）。政府機関や重要インフラが標的</td></tr>
+        <tr><td><strong>内部脅威</strong><br><span>Insider Threat</span></td><td>組織内部の従業員・元従業員。意図的な情報漏洩や不正アクセスのほか、不注意・ミスによる事故も含む</td></tr>
+        <tr><td><strong>スクリプトキディ</strong></td><td>既存のツールを使うだけの、技術力の低い攻撃者。理解は浅いが数が多く、自動化ツールで手当たり次第に攻撃する</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="attackers-motive">攻撃者の動機</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>動機</th><th>攻撃者の例</th><th>目的</th></tr></thead>
+      <tbody>
+        <tr><td><strong>金銭</strong></td><td>サイバー犯罪組織</td><td>ランサムウェア・詐欺・情報の販売</td></tr>
+        <tr><td><strong>スパイ活動</strong></td><td>国家支援型 APT</td><td>機密情報の窃取</td></tr>
+        <tr><td><strong>報復・恨み</strong></td><td>元従業員</td><td>データ破壊・情報リーク</td></tr>
+        <tr><td><strong>愉快犯</strong></td><td>スクリプトキディ</td><td>目立ちたい・スキルの誇示</td></tr>
+        <tr><td><strong>思想・主義</strong></td><td>ハクティビスト（政治的な主張のために攻撃する人）</td><td>政治的メッセージの発信</td></tr>
+        <tr><td><strong>好奇心</strong></td><td>研究者・グレーハット</td><td>技術的な探求</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント</p>
+      <p>多くの Web サービスにとって、最初に備えるべきは「国家レベルの攻撃者」ではなく、<strong>自動化ツールで弱いところを探して回る大量の攻撃</strong>と、<strong>内部のミス</strong>です。基本的な対策（パッチ、強い認証、権限の絞り込み）だけで防げるものが大半を占めます。</p>
+    </div>
+
+    <h2 id="principles"><span class="num">7.</span>セキュリティの基本的な考え方</h2>
+    <p>ここからは、具体的な守り方の土台になる5つの考え方を紹介します。それぞれ後のページで詳しく扱います。</p>
+
+    <h3 id="p-did">① 多層防御（Defense in Depth）—「1つ破られても次の壁で止める」</h3>
+    <p>お城の堀・城壁・門番のように、防御を何層にも重ねる考え方です。</p>
+    <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="多層防御の層">
+      <defs><marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="40" width="100" height="56" rx="8" class="d-box-bad"/>
+      <text x="60" y="66" text-anchor="middle" class="d-text-sub">外部</text>
+      <text x="60" y="84" text-anchor="middle" class="d-text-sub">インターネット</text>
+      <rect x="130" y="40" width="100" height="56" rx="8" class="d-box-accent"/>
+      <text x="180" y="66" text-anchor="middle" class="d-text-sub">第1の壁</text>
+      <text x="180" y="84" text-anchor="middle" class="d-text">FW</text>
+      <rect x="245" y="40" width="100" height="56" rx="8" class="d-box-accent"/>
+      <text x="295" y="66" text-anchor="middle" class="d-text-sub">第2の壁</text>
+      <text x="295" y="84" text-anchor="middle" class="d-text">DMZ・WAF</text>
+      <rect x="360" y="40" width="100" height="56" rx="8" class="d-box-accent"/>
+      <text x="410" y="66" text-anchor="middle" class="d-text-sub">第3の壁</text>
+      <text x="410" y="84" text-anchor="middle" class="d-text">認証・認可</text>
+      <rect x="475" y="40" width="100" height="56" rx="8" class="d-box-accent"/>
+      <text x="525" y="66" text-anchor="middle" class="d-text-sub">第4の壁</text>
+      <text x="525" y="84" text-anchor="middle" class="d-text">暗号化</text>
+      <rect x="590" y="40" width="120" height="56" rx="8" class="d-box-good"/>
+      <text x="650" y="66" text-anchor="middle" class="d-text-sub">第5の壁</text>
+      <text x="650" y="84" text-anchor="middle" class="d-text">ログ監視・検知</text>
+      <line x1="20" y1="122" x2="700" y2="122" class="d-line" marker-end="url(#m2)"/>
+      <text x="360" y="144" text-anchor="middle" class="d-text-sub">攻撃者は、すべての壁を越えないと目的を達成できない</text>
+    </svg>
+    <figcaption>図：多層防御の例。FW＝ファイアウォール、WAF＝Web アプリ用のファイアウォール、DMZ＝外部公開用の緩衝地帯</figcaption>
+    </figure>
+    <p>詳しくは <a href="20-2_深層防御.html">深層防御</a> で扱います。</p>
+
+    <h3 id="p-polp">② 最小権限の原則（Principle of Least Privilege）—「必要最小限の権限だけを与える」</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>✕ 悪い例</h4>
+        <p>全従業員に管理者権限を付与する。<br>→ 1人の PC がマルウェアに感染しただけで、システム全体が危険になる。</p>
+      </div>
+      <div class="card">
+        <h4>○ 良い例</h4>
+        <p>経理担当は経理システムだけ、開発者は開発環境だけにアクセスできる。管理者も、必要なときだけ管理者権限を使う。<br>→ 被害範囲を最小限に抑えられる。</p>
+      </div>
+    </div>
+    <p>ホテルのカードキーが「自分の部屋だけ」開けられるのと同じ発想です。詳しくは <a href="20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> で扱います。</p>
+
+    <h3 id="p-mfa">③ 多要素認証（MFA）—「種類の違う証拠を2つ以上」</h3>
+    <p>本人確認（<strong>認証</strong>）に使える証拠には、次の3種類があります。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>知識情報</h4>
+        <p>Something You Know</p>
+        <p>本人だけが知っていること：パスワード・PIN コード・秘密の質問</p>
+      </div>
+      <div class="card">
+        <h4>所持情報</h4>
+        <p>Something You Have</p>
+        <p>本人だけが持っているもの：スマートフォン・セキュリティキー・IC カード</p>
+      </div>
+      <div class="card">
+        <h4>生体情報</h4>
+        <p>Something You Are</p>
+        <p>本人の体の特徴：指紋・顔・虹彩</p>
+      </div>
+    </div>
+    <p><strong>多要素認証（MFA）</strong>とは、これらのうち <strong>2種類以上を組み合わせる</strong>ことです。たとえば「パスワード（知識）＋ SMS 認証（所持）」なら、パスワードが盗まれても、スマホがなければログインできません。銀行の ATM で「キャッシュカード（所持）＋暗証番号（知識）」が必要なのと同じ仕組みです。</p>
+    <div class="callout warn">
+      <p class="callout-title">注意：「2回聞く」は多要素ではない</p>
+      <p>パスワードと秘密の質問は、どちらも「知識情報」なので、2つ聞いても <strong>多要素</strong>にはなりません。種類の違う証拠を組み合わせることが大切です。</p>
+    </div>
+
+    <h3 id="p-sbd">④ セキュリティバイデザイン（Security by Design）—「後付けでなく、最初から設計に組み込む」</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>✕ 後付けセキュリティ</h4>
+        <p>機能を全部作ってから「さあセキュリティ対策をしよう」。<br>→ 根本的な設計が弱く、対策が中途半端になる。</p>
+      </div>
+      <div class="card">
+        <h4>○ セキュリティバイデザイン</h4>
+        <p>設計段階から「このデータは誰がアクセスできる？」「この入力値は検証している？」「ログはどこに記録する？」を考える。<br>→ 後から直すより <strong>早く・安く・確実</strong>。</p>
+      </div>
+    </div>
+    <p>家でいえば、建てた後で窓に格子を付けるより、設計図の段階で窓の位置や鍵を決めるほうが安く確実、ということです。詳しくは <a href="20-4_セキュアバイデザイン.html">セキュアバイデザイン</a> で扱います。</p>
+
+    <h3 id="p-zt">⑤ ゼロトラスト（Zero Trust）—「信頼しない・常に確認する」</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>従来の考え方（境界防御）</th><th>ゼロトラスト</th></tr></thead>
+      <tbody>
+        <tr><th>前提</th><td>社内 ＝ 安全、社外 ＝ 危険</td><td>場所を問わず、すべてのアクセスを疑う</td></tr>
+        <tr><th>扱い</th><td>社内に入れば信頼する</td><td>VPN で社内に接続しても、毎回認証・認可する</td></tr>
+        <tr><th>たとえ</th><td>会社の正門で社員証を見せれば、中はどこでも入れる</td><td>部屋に入るたびに社員証をかざす</td></tr>
+      </tbody>
+    </table></div>
+    <p>なぜ必要になったのかというと、クラウド・リモートワーク・IoT の普及で、<strong>「社内」と「社外」の境界があいまいになった</strong>からです。詳しくは <a href="20-3_ゼロトラスト.html">ゼロトラスト</a> で扱います。</p>
+
+    <h2 id="summary"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li><strong>CIA三原則</strong>：機密性（見せない）・完全性（改ざんさせない）・可用性（使えるようにする）。どれも欠かせないが、互いにトレードオフになることがある。</li>
+      <li><strong>脆弱性</strong>は弱点、<strong>脅威</strong>は弱点を突く存在・出来事、<strong>リスク</strong>は被害が起きる可能性とその大きさ。</li>
+      <li>リスクへの対応は <strong>回避・軽減・転嫁・受容</strong> の4つ。</li>
+      <li>攻撃者は金銭目的の犯罪組織から内部のミスまでさまざま。動機を知ると備え方が見える。</li>
+      <li>守り方の基本は <strong>多層防御・最小権限・多要素認証・セキュリティバイデザイン・ゼロトラスト</strong>。</li>
+      <li>目的は「100%安全」ではなく、<strong>リスクを適切に管理すること</strong>。</li>
+    </ul>
+
+    <h2 id="quiz"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Web サイトが DDoS 攻撃でつながらなくなった。CIA のどれが損なわれた？</summary>
+      <div class="body">
+        <p><strong>可用性（A）</strong>です。情報が漏れたり書き換えられたりしたわけではなく、「使いたいときに使えない」状態になっています。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 「パッチが当たっていない VPN 装置」は、脅威・脆弱性・リスクのどれ？</summary>
+      <div class="body">
+        <p><strong>脆弱性</strong>です。それを狙う攻撃者が <strong>脅威</strong>、その装置が突破されて社内に侵入され被害が出る可能性が <strong>リスク</strong> です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 「パスワード＋秘密の質問」は多要素認証と言える？</summary>
+      <div class="body">
+        <p><strong>言えません。</strong>どちらも「知識情報」なので、1種類の要素を2回使っているだけです。多要素認証にするには、スマホやセキュリティキー（所持）や指紋（生体）など、種類の違う要素を組み合わせます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. サイバー保険に入るのは、リスク対応の4つのうちどれ？</summary>
+      <div class="body">
+        <p><strong>リスク転嫁（移転）</strong>です。損失のお金の部分を保険会社に移します。ただし、信用の失墜や法的な責任まで移せるわけではない点に注意しましょう（<a href="10-4_リスク管理とリスクアセスメント.html">10-4</a> 参照）。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>toamoku「🔐 セキュリティ基礎講座【第一回】CIA三原則・脅威・脆弱性・リスクをやさしく解説！」Qiita — <a href="https://qiita.com/toamoku-20220418/items/7b3ffcab1f9ba31f2f7a">https://qiita.com/toamoku-20220418/items/7b3ffcab1f9ba31f2f7a</a></li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_セキュリティの全体像.html"><span class="lbl">← 前のページ</span>セキュリティの全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-2_さまざまな脅威と対策の基本.html"><span class="lbl">次のページ →</span>さまざまな脅威と対策の基本</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

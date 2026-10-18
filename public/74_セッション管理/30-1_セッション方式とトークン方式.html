@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セッション方式とトークン方式｜セッション管理解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セッション管理解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 トークン › セッション方式とトークン方式</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 トークン</span>
+      <h1>セッション方式とトークン方式</h1>
+      <p class="lead">ログインした後の「この人はログイン済み」という状態を覚えておく方法には、大きく 2 つあります。サーバーが覚えておく <strong>セッション方式</strong> と、情報を書いた札をユーザーに持たせる <strong>トークン方式</strong> です。このページでは、2 つの仕組みと違い、使い分け、アクセストークン・リフレッシュトークン・ID トークンという 3 種類のトークン、そして Node.js（Express）での実装例とセキュリティの注意点を解説します。</p>
+      <p class="meta">もとにしたノート：30_トークン/01_セッション・トークン基礎、30_トークン/02_セッションとトークンとは</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>セッションは「テーブル番号」、トークンは「会員証」</strong>です。セッション方式ではサーバーが情報を持ち、ユーザーには番号だけを渡します。トークン方式では情報そのものを署名付きの札に書いて渡し、サーバーは何も覚えずに札を検証します。セッションは <strong>取り消しやすい</strong>、トークンは <strong>サーバーを増やしやすい</strong> のが長所です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>セッションとトークンとは何か</h2>
+    <p>セッションとトークンは、Web アプリケーションでユーザーの <strong>認証状態</strong>（ログインしているかどうか、誰なのか）を管理するための重要な仕組みです。</p>
+    <ul>
+      <li><strong>セッション（Session）</strong>：サーバー側で管理される一時的なデータです。ユーザーがログインしてからログアウトするまでの「会話の続き」を管理する仕組みです。</li>
+      <li><strong>トークン（Token）</strong>：認証情報を含む文字列で、クライアント側（ブラウザやアプリ）で管理されます。ユーザーの認証情報を表す「証明書」のようなもので、紙のチケットやクーポン券をイメージすると分かりやすいです。</li>
+    </ul>
+    <p>そもそも HTTP は 1 回ごとのやりとりを覚えていない仕組みなので、こうした工夫が必要になります。その背景は <a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a> を参照してください。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>セッション＝テーブル番号</h4>
+        <ul>
+          <li>お店が「テーブル 5 番」と記録する</li>
+          <li>お客様は「テーブル 5 番」という番号だけを受け取る</li>
+          <li>実際の情報（注文内容など）はお店側に保存される</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>トークン＝会員証</h4>
+        <ul>
+          <li>会員証には名前や会員番号が書かれている</li>
+          <li>会員証を見れば、誰であるかが分かる</li>
+          <li>会員証自体に情報が含まれている</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 レストランと遊園地で流れをたどる</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>セッション：レストランでの食事</h4>
+        <ol>
+          <li><strong>入店（ログイン）</strong>：店員があなたを認識してテーブルに案内する。これが「セッション開始」</li>
+          <li><strong>食事中（ログイン状態）</strong>：店員はあなたがどのテーブルにいるか覚えていて、注文を取ったり料理を運んだりする。これが「セッション継続中」</li>
+          <li><strong>退店（ログアウト）</strong>：会計を済ませて店を出る。これが「セッション終了」</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h4>トークン：遊園地の入場チケット</h4>
+        <ol>
+          <li><strong>チケット購入（ログイン）</strong>：入場チケットを受け取る。これが「トークン発行」</li>
+          <li><strong>アトラクション利用（API 呼び出し）</strong>：チケットを見せて乗る。係員はチケットを見て入場権を確認する。これが「トークン検証」</li>
+          <li><strong>期限切れ</strong>：チケットには有効期限があり、切れると使えなくなる。新しいチケットが必要になる</li>
+        </ol>
+      </div>
+    </div>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="セッション方式ではブラウザは番号だけを持ち、サーバーがセッションストアの表を引いてユーザーを特定する。トークン方式ではブラウザが中身と署名を含むトークンを持ち、サーバーは鍵で署名を検証するだけで表は引かない">
+      <defs>
+        <marker id="arw301a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="26" class="d-text-bold">セッション方式（ステートフル）</text>
+      <rect x="20" y="40" width="160" height="80" rx="8" class="d-box"/>
+      <text x="100" y="72" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="100" y="96" text-anchor="middle" class="d-text-sub">session_id=abc123</text>
+      <rect x="260" y="40" width="160" height="80" rx="8" class="d-box-accent"/>
+      <text x="340" y="72" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="340" y="96" text-anchor="middle" class="d-text-sub">番号で表を引く</text>
+      <rect x="500" y="40" width="200" height="80" rx="8" class="d-box"/>
+      <text x="600" y="72" text-anchor="middle" class="d-text-bold">セッションストア</text>
+      <text x="600" y="96" text-anchor="middle" class="d-text-sub">abc123 → ユーザー42</text>
+      <path d="M180,80 L258,80" class="d-line" marker-end="url(#arw301a)"/>
+      <text x="219" y="70" text-anchor="middle" class="d-text-sub">番号</text>
+      <path d="M420,80 L498,80" class="d-line" marker-end="url(#arw301a)"/>
+      <text x="459" y="70" text-anchor="middle" class="d-text-sub">照会</text>
+
+      <text x="20" y="176" class="d-text-bold">トークン方式（ステートレス）</text>
+      <rect x="20" y="190" width="160" height="80" rx="8" class="d-box"/>
+      <text x="100" y="222" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="100" y="246" text-anchor="middle" class="d-text-sub">JWT（中身＋署名）</text>
+      <rect x="260" y="190" width="160" height="80" rx="8" class="d-box-accent"/>
+      <text x="340" y="222" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="340" y="246" text-anchor="middle" class="d-text-sub">署名を検証するだけ</text>
+      <rect x="500" y="190" width="200" height="80" rx="8" class="d-box-good"/>
+      <text x="600" y="222" text-anchor="middle" class="d-text-bold">鍵（サーバーだけが持つ）</text>
+      <text x="600" y="246" text-anchor="middle" class="d-text-sub">表は引かない</text>
+      <path d="M180,230 L258,230" class="d-line" marker-end="url(#arw301a)"/>
+      <text x="219" y="220" text-anchor="middle" class="d-text-sub">札ごと</text>
+      <path d="M420,230 L498,230" class="d-line-dash"/>
+      <text x="459" y="220" text-anchor="middle" class="d-text-sub">使う</text>
+    </svg>
+    <figcaption>図1：セッションは「番号だけ渡して情報はサーバーに置く」、トークンは「情報を札に書いて渡し、サーバーは検証だけする」</figcaption>
+    </figure>
+
+    <h2 id="sec-2"><span class="num">2.</span>セッション方式</h2>
+    <p>ユーザーがログインすると、サーバーは <strong>セッション ID</strong>（ユーザーを見分けるための、推測できない番号）を作り、その ID とユーザー情報をサーバー側に保存します。ブラウザには ID だけを渡し、通常は <strong>Cookie</strong>（ブラウザが自動で送り返す小さなデータ）に入れておきます。Cookie の詳しい仕組みは <a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a>、ログインの流れは <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a> で扱います。</p>
+
+    <h3 id="sec-2-1">2.1 セッションの仕組み</h3>
+    <ol class="steps">
+      <li>ユーザーがログインする</li>
+      <li>サーバーがセッション ID を生成する（例：<code>"abc123"</code>）</li>
+      <li>サーバー側に保存する：<code>{ "abc123": { userId: 1, username: "yamada" } }</code></li>
+      <li>セッション ID を Cookie でクライアントに送る</li>
+      <li>次回のリクエストで、ブラウザがセッション ID を送る</li>
+      <li>サーバーがセッション ID からユーザー情報を取り出す</li>
+    </ol>
+
+    <h3 id="sec-2-2">2.2 セッションの特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>特徴</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>長所</td><td><strong>サーバー側で状態を管理</strong></td><td>データはサーバーに保存され、クライアントには ID だけが送られる。機密情報がクライアントに渡らないのでセキュリティが高い</td></tr>
+        <tr><td>長所</td><td><strong>サーバー側で無効化できる</strong></td><td>ログアウトや乗っ取りが分かったとき、サーバーの記録を消せばすぐに使えなくなる</td></tr>
+        <tr><td>短所</td><td><strong>サーバーの資源を使う</strong></td><td>メモリやデータベースなどの保存場所が必要</td></tr>
+        <tr><td>短所</td><td><strong>スケーラビリティに課題</strong></td><td>サーバーを増やすと、どのサーバーからも同じ記録を見られるようにする必要がある（2.4）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-3">2.3 セッションの実装例（express-session）</h3>
+    <p>Node.js の Web フレームワーク Express では、<code>express-session</code> というライブラリでセッションを扱えます。</p>
+<pre><code>const express = require('express');
+const session = require('express-session');
+const app = express();
+
+// セッションの設定
+app.use(session({
+  secret: 'your-secret-key', // セッションIDの署名に使用
+  resave: false,             // セッションが変更されていなくても再保存しない
+  saveUninitialized: false,  // 初期化されていないセッションを保存しない
+  cookie: {
+    secure: true,                // HTTPSのみ
+    httpOnly: true,              // JavaScriptからアクセス不可
+    maxAge: 24 * 60 * 60 * 1000, // 24時間
+    sameSite: 'strict'           // CSRF攻撃対策
+  },
+  // セッションストア（デフォルトはメモリ、本番環境ではRedisなどを使う）
+  store: new MemoryStore()
+}));
+
+// ログイン処理
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+
+  // 認証処理
+  const user = await authenticateUser(username, password);
+
+  if (user) {
+    // セッションにユーザー情報を保存
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    req.session.email = user.email;
+
+    res.json({ message: 'ログイン成功' });
+  } else {
+    res.status(401).json({ error: '認証に失敗しました' });
+  }
+});
+
+// 認証が必要なエンドポイント
+app.get('/api/profile', (req, res) =&gt; {
+  // セッションからユーザー情報を取得
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'ログインが必要です' });
+  }
+
+  res.json({
+    userId: req.session.userId,
+    username: req.session.username,
+    email: req.session.email
+  });
+});
+
+// ログアウト処理
+app.post('/api/logout', (req, res) =&gt; {
+  req.session.destroy((err) =&gt; {
+    if (err) {
+      return res.status(500).json({ error: 'ログアウトに失敗しました' });
+    }
+    res.json({ message: 'ログアウトしました' });
+  });
+});</code></pre>
+    <p><code>secure</code>・<code>httpOnly</code>・<code>sameSite</code> などの Cookie 属性の意味は <a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a> を参照してください。</p>
+
+    <h3 id="sec-2-4">2.4 セッションストアとサーバーが増えたとき</h3>
+    <p><strong>セッションストア</strong> はセッションを保存する場所です。初期設定のメモリ保存は、サーバーを再起動すると消え、サーバーが複数台あると共有できません。本番環境では、メモリではなくデータベースや <strong>Redis</strong>（高速に読み書きできるデータの置き場）を使います。</p>
+<pre><code>// Redisを使ったセッションストア
+const RedisStore = require('connect-redis')(session);
+const redis = require('redis');
+const client = redis.createClient();
+
+app.use(session({
+  store: new RedisStore({ client }),
+  secret: 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000
+  }
+}));</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 240" role="img" aria-label="セッション方式では3台のサーバーがすべて共有ストアを参照する必要がある。トークン方式では各サーバーが自分の手元の鍵でトークンを検証でき、共有の表は要らない">
+      <defs>
+        <marker id="arw301b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">セッション方式</text>
+      <rect x="20" y="40" width="110" height="44" rx="8" class="d-box"/>
+      <text x="75" y="67" text-anchor="middle" class="d-text">サーバー1</text>
+      <rect x="20" y="100" width="110" height="44" rx="8" class="d-box"/>
+      <text x="75" y="127" text-anchor="middle" class="d-text">サーバー2</text>
+      <rect x="20" y="160" width="110" height="44" rx="8" class="d-box"/>
+      <text x="75" y="187" text-anchor="middle" class="d-text">サーバー3</text>
+      <rect x="200" y="90" width="140" height="64" rx="8" class="d-box-accent"/>
+      <text x="270" y="117" text-anchor="middle" class="d-text-bold">共有ストア</text>
+      <text x="270" y="139" text-anchor="middle" class="d-text-sub">Redis など</text>
+      <path d="M130,62 C165,62 170,112 198,116" class="d-line" marker-end="url(#arw301b)"/>
+      <path d="M130,122 L198,122" class="d-line" marker-end="url(#arw301b)"/>
+      <path d="M130,182 C165,182 170,132 198,128" class="d-line" marker-end="url(#arw301b)"/>
+
+      <text x="390" y="24" class="d-text-bold">トークン方式</text>
+      <rect x="390" y="40" width="180" height="44" rx="8" class="d-box"/>
+      <text x="480" y="67" text-anchor="middle" class="d-text">サーバー1：鍵で検証</text>
+      <rect x="390" y="100" width="180" height="44" rx="8" class="d-box"/>
+      <text x="480" y="127" text-anchor="middle" class="d-text">サーバー2：鍵で検証</text>
+      <rect x="390" y="160" width="180" height="44" rx="8" class="d-box"/>
+      <text x="480" y="187" text-anchor="middle" class="d-text">サーバー3：鍵で検証</text>
+      <rect x="590" y="90" width="120" height="64" rx="8" class="d-box-good"/>
+      <text x="650" y="117" text-anchor="middle" class="d-text-bold">共有の表</text>
+      <text x="650" y="139" text-anchor="middle" class="d-text-sub">いらない</text>
+      <text x="360" y="230" text-anchor="middle" class="d-text-sub">どちらも成り立つ。違いは「状態をサーバー側で持ち続けるかどうか」</text>
+    </svg>
+    <figcaption>図2：サーバーが複数台になったとき。セッション方式は共有ストアが必要、トークン方式は各サーバーが手元で検証できる</figcaption>
+    </figure>
+    <div class="callout tip">
+      <p class="callout-title">セッション方式が悪いわけではない</p>
+      <p>複数台の問題は Redis などの共有ストアで解決できます。ただし「状態をサーバー側で管理し続ける」点は変わりません。ここがトークン方式（とくに JWT）が生まれた出発点です。詳しくは <a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a> で扱います。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>トークン方式</h2>
+    <p>トークンは認証情報を含む文字列で、ユーザー情報や権限情報が入っています。最も一般的な形式が <strong>JWT（JSON Web Token、ジョット）</strong> です。トークンには <strong>署名</strong>（作った本人しか作れない印）が含まれており、改ざんを見つけられます。</p>
+
+    <h3 id="sec-3-1">3.1 トークンの仕組み</h3>
+    <ol class="steps">
+      <li>ユーザーがログインする</li>
+      <li>サーバーが JWT を生成する（ユーザー情報を含む）</li>
+      <li>トークンをクライアントに送る</li>
+      <li>クライアントがトークンを保存する（localStorage、sessionStorage など）</li>
+      <li>次回のリクエストで、トークンを送る（多くは <code>Authorization: Bearer トークン</code> ヘッダー）</li>
+      <li>サーバーがトークンを検証し、ユーザー情報を取り出す</li>
+    </ol>
+    <p>保存場所によって安全性が変わります。どこに置くべきかは <a href="30-4_トークンの保存場所.html">トークンの保存場所</a> で詳しく扱います。</p>
+
+    <h3 id="sec-3-2">3.2 JWT の構造（あらまし）</h3>
+    <p>JWT は <code>header.payload.signature</code> の 3 つの部分でできています。各部分の意味、クレームの種類、正しい検証の手順は <a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a> で解説します。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>1. Header（ヘッダー）</h4>
+<pre><code>{
+  "alg": "HS256",
+  "typ": "JWT"
+}</code></pre>
+      </div>
+      <div class="card">
+        <h4>2. Payload（ペイロード）</h4>
+<pre><code>{
+  "userId": 1,
+  "username": "yamada",
+  "email": "yamada@example.com",
+  "iat": 1234567890,
+  "exp": 1234654290
+}</code></pre>
+      </div>
+      <div class="card">
+        <h4>3. Signature（署名）</h4>
+<pre><code>HMACSHA256(
+  base64UrlEncode(header)
+  + "." +
+  base64UrlEncode(payload),
+  secret
+)</code></pre>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">ペイロードは誰でも読める</p>
+      <p>JWT の中身は暗号化されておらず、Base64URL という置き換えをしただけです。上の例のようにメールアドレスを入れると、トークンを手にした人には読めてしまいます。秘密の情報は入れないようにします（<a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>）。</p>
+    </div>
+
+    <h3 id="sec-3-3">3.3 トークンの特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>特徴</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>長所</td><td><strong>サーバー側で状態を保持しない</strong></td><td>ステートレス（状態を持たない）なので、サーバーは表を引かずに検証できる</td></tr>
+        <tr><td>長所</td><td><strong>スケーラビリティが高い</strong></td><td>サーバー間で情報を共有する必要がない</td></tr>
+        <tr><td>長所</td><td><strong>複数のサービス間で共有しやすい</strong></td><td>同じ鍵（公開鍵）で、別のサービスも検証できる</td></tr>
+        <tr><td>短所</td><td><strong>漏洩すると悪用される</strong></td><td>トークンを盗まれると、その人になりすまされる</td></tr>
+        <tr><td>短所</td><td><strong>期限まで無効化しにくい</strong></td><td>一度発行すると、サーバーが覚えていないので途中で取り消しにくい</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-4">3.4 トークンの実装例（jsonwebtoken）</h3>
+    <p>サーバー側では <code>jsonwebtoken</code> ライブラリで、ログイン時にトークンを作り（<code>jwt.sign</code>）、リクエストのたびに検証します（<code>jwt.verify</code>）。</p>
+<pre><code>const express = require('express');
+const jwt = require('jsonwebtoken');
+const app = express();
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// ログイン処理
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+
+  // 認証処理
+  const user = await authenticateUser(username, password);
+
+  if (user) {
+    // JWTトークンを生成
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        username: user.username,
+        email: user.email
+      },
+      JWT_SECRET,
+      {
+        expiresIn: '24h' // 24時間で有効期限切れ
+      }
+    );
+
+    res.json({ token, user: { id: user.id, username: user.username } });
+  } else {
+    res.status(401).json({ error: '認証に失敗しました' });
+  }
+});
+
+// トークンを検証するミドルウェア
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader &amp;&amp; authHeader.split(' ')[1]; // "Bearer TOKEN"
+
+  if (!token) {
+    return res.status(401).json({ error: 'トークンが必要です' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) =&gt; {
+    if (err) {
+      return res.status(403).json({ error: '無効なトークンです' });
+    }
+
+    req.user = user; // ユーザー情報をリクエストオブジェクトに追加
+    next();
+  });
+}
+
+// 認証が必要なエンドポイント
+app.get('/api/profile', authenticateToken, (req, res) =&gt; {
+  // req.userにユーザー情報が含まれている
+  res.json({
+    userId: req.user.userId,
+    username: req.user.username,
+    email: req.user.email
+  });
+});</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">ミドルウェアとは</p>
+      <p><strong>ミドルウェア</strong> は、本来の処理の手前に差し込む共通処理です。<code>authenticateToken</code> を通ったリクエストだけが <code>/api/profile</code> の本体にたどり着きます。なお、無効なトークンに 403 を返している例ですが、「名乗れていない」ことを表す 401 を返す作りもよく使われます（401 と 403 の違いは <a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</p>
+    </div>
+
+    <h3 id="sec-3-5">3.5 クライアント側でのトークン使用</h3>
+<pre><code>// ログイン
+async function login(username, password) {
+  const response = await fetch('/api/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ username, password }),
+  });
+
+  const { token } = await response.json();
+
+  // トークンを保存
+  localStorage.setItem('token', token);
+
+  return token;
+}
+
+// トークンを使ってAPIを呼び出す
+async function fetchProfile() {
+  const token = localStorage.getItem('token');
+
+  const response = await fetch('/api/profile', {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (response.status === 401) {
+    // トークンが無効な場合、再ログイン
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+    return;
+  }
+
+  const profile = await response.json();
+  return profile;
+}</code></pre>
+    <p>ここでは分かりやすさのために localStorage に保存していますが、localStorage は XSS（悪意のあるスクリプトを埋め込まれる攻撃）で読み取られる危険があります（8.3 と <a href="30-4_トークンの保存場所.html">トークンの保存場所</a>）。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>セッションとトークンの違い</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>セッション</th><th>トークン（JWT）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>保存場所</strong></td><td>サーバー側</td><td>クライアント側</td></tr>
+        <tr><td><strong>データの場所</strong></td><td>サーバー側</td><td>トークン内（エンコードされている）</td></tr>
+        <tr><td><strong>状態</strong></td><td>ステートフル（サーバーに状態を保存）</td><td>ステートレス（サーバーに状態を保存しない）</td></tr>
+        <tr><td><strong>スケーラビリティ</strong></td><td>低い（サーバー間で共有が必要）</td><td>高い（サーバー間で共有不要）</td></tr>
+        <tr><td><strong>セキュリティ</strong></td><td>高い（機密情報がクライアントに送られない）</td><td>中程度（トークンが盗まれるリスク）</td></tr>
+        <tr><td><strong>ログアウト</strong></td><td>簡単（サーバー側で削除）</td><td>難しい（トークンを無効化する仕組みが必要）</td></tr>
+        <tr><td><strong>有効期限の管理</strong></td><td>サーバー側で管理</td><td>トークン内に含まれる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>セッションとトークンの使い分け</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>セッションが適している場合</h4>
+        <ol>
+          <li><strong>従来の Web アプリケーション</strong>：サーバーサイドレンダリング（SSR、サーバーで HTML を組み立てて返す作り）。セッション管理が簡単</li>
+          <li><strong>セキュリティが最優先</strong>：機密情報を扱う。トークンの盗難リスクを避けたい</li>
+          <li><strong>ログアウトの即時反映が必要</strong>：サーバー側で消せばすぐ効くので、トークンの無効化の仕組みが不要</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h4>トークンが適している場合</h4>
+        <ol>
+          <li><strong>モバイルアプリ</strong>：クライアント側で管理しやすい</li>
+          <li><strong>マイクロサービス</strong>（機能ごとに小さなサービスに分ける作り）：複数のサーバー間で認証情報を共有でき、ステートレスに設計できる</li>
+          <li><strong>SPA</strong>（Single Page Application、1 枚のページを JavaScript で書き換えて動く作り）：クライアント側で状態を管理し、API 中心に設計する</li>
+          <li><strong>スケーラビリティが重要</strong>：サーバー間でセッションを共有する必要がない</li>
+        </ol>
+      </div>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>トークンの 3 つの種類</h2>
+    <p>トークン方式では、役割の違う 3 種類のトークンがよく登場します。ここでは全体像をつかみ、アクセストークンとリフレッシュトークンの設計の詳細は <a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a> で扱います。</p>
+
+    <h3 id="sec-6-1">6.1 アクセストークン</h3>
+    <p><strong>アクセストークン</strong> は、API やリソースにアクセスするための「通行証」です。会社の入館証にたとえると、入館証があればオフィスに入れて、会議室や特定のフロアに入る権限も入館証に含まれており、有効期限が切れると使えなくなります。</p>
+    <ul>
+      <li><strong>用途</strong>：API リクエストの認証</li>
+      <li><strong>有効期限</strong>：通常は <strong>短い</strong>（15 分〜1 時間程度）</li>
+      <li><strong>含まれる情報</strong>：ユーザー ID、権限（スコープ）、有効期限など</li>
+      <li><strong>保存場所</strong>：クライアント側（メモリ、ローカルストレージなど。<a href="30-4_トークンの保存場所.html">トークンの保存場所</a>）</li>
+      <li>長所：短い有効期限でセキュリティが高く、漏洩しても被害を小さく抑えられる。短所：頻繁に更新が必要</li>
+    </ul>
+<pre><code>// APIリクエスト時にアクセストークンを使用
+fetch('https://api.example.com/user/profile', {
+  headers: {
+    'Authorization': 'Bearer ' + accessToken
+  }
+})
+
+// アクセストークンの生成（15分で有効期限切れ）
+const accessToken = jwt.sign(
+  { userId: user.id },
+  JWT_SECRET,
+  { expiresIn: '15m' }
+);</code></pre>
+
+    <h3 id="sec-6-2">6.2 リフレッシュトークン</h3>
+    <p><strong>リフレッシュトークン</strong> は、アクセストークンの期限が切れたときに新しいアクセストークンをもらうための「交換券」です。図書館の貸出カードにたとえられます。</p>
+    <ol class="steps">
+      <li><strong>初回ログイン</strong>：貸出カード（リフレッシュトークン）を受け取る。長期間有効</li>
+      <li><strong>本を借りる（API アクセス）</strong>：カードを見せて、一時的な利用券（アクセストークン）を受け取る</li>
+      <li><strong>利用券の期限切れ</strong>：カードを見せて、新しい利用券をもらう</li>
+      <li><strong>カードの期限切れ</strong>：もう一度図書館に行き、新しいカードを作る（再ログイン）</li>
+    </ol>
+    <ul>
+      <li><strong>有効期限</strong>：通常は <strong>長い</strong>（数日〜数週間、場合によっては数か月）</li>
+      <li><strong>含まれる情報</strong>：ユーザー ID、トークン ID など</li>
+      <li><strong>保存場所</strong>：クライアント側の安全な場所（HttpOnly Cookie 推奨）</li>
+      <li>長所：ユーザーは頻繁にログインしなくてよい。漏洩した場合はサーバー側で無効化できる。短所：長期間有効なので漏洩すると危険が大きく、安全に保存する必要がある</li>
+    </ul>
+<pre><code>// リフレッシュトークンの生成（7日間で有効期限切れ）
+const refreshToken = jwt.sign(
+  { userId: user.id, type: 'refresh' },
+  JWT_SECRET,
+  { expiresIn: '7d' }
+);
+
+// アクセストークンの更新
+app.post('/api/refresh', (req, res) =&gt; {
+  const { refreshToken } = req.body;
+
+  jwt.verify(refreshToken, JWT_SECRET, (err, decoded) =&gt; {
+    if (err || decoded.type !== 'refresh') {
+      return res.status(403).json({ error: '無効なリフレッシュトークンです' });
+    }
+
+    // 新しいアクセストークンを発行
+    const newAccessToken = jwt.sign(
+      { userId: decoded.userId },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    res.json({ accessToken: newAccessToken });
+  });
+});</code></pre>
+    <p>使い回しの検知やローテーション（使うたびに新しいものと取り替える）など、安全な設計は <a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a> で解説します。</p>
+
+    <h3 id="sec-6-3">6.3 ID トークン</h3>
+    <p><strong>ID トークン</strong> は、ユーザーが「誰であるか」を証明する「身分証明書」です。運転免許証には名前・生年月日・住所が書かれていて、見れば誰か分かります。ただし免許証だけで車の鍵が開くわけではありません。API を使うにはアクセストークンが必要です。</p>
+    <ul>
+      <li><strong>用途</strong>：ユーザーの身元確認</li>
+      <li><strong>有効期限</strong>：通常は短い（アクセストークンと同程度）</li>
+      <li><strong>含まれる情報</strong>：ユーザー ID、名前、メールアドレス、認証時刻など</li>
+      <li><strong>使用場面</strong>：OAuth 2.0 や OpenID Connect（OAuth 2.0 にログインの仕組みを足した規格）。詳しくは <a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">OAuth2.0の仕組み</a></li>
+      <li>長所：身元情報を含み、署名されているので改ざんを検出でき、複数のサービス間でユーザー情報を共有しやすい。短所：アクセストークンとは別物なので混同しやすい</li>
+    </ul>
+<pre><code>// IDトークンからユーザー情報を取得
+const userInfo = decodeIdToken(idToken);
+console.log(userInfo.name);  // ユーザー名
+console.log(userInfo.email); // メールアドレス
+console.log(userInfo.sub);   // ユーザーID</code></pre>
+
+    <h3 id="sec-6-4">6.4 3 つのトークンの関係</h3>
+    <ol class="steps">
+      <li>ユーザーがログインする</li>
+      <li>3 つのトークンが発行される：アクセストークン（短期限）、リフレッシュトークン（長期限）、ID トークン（短期限）</li>
+      <li>アクセストークンで API にアクセスする（ID トークンでユーザー情報を取得する）</li>
+      <li>アクセストークンの期限が切れる</li>
+      <li>リフレッシュトークンで新しいアクセストークンを取得する</li>
+      <li>リフレッシュトークンの期限が切れる → 再ログインが必要</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>アクセストークン</th><th>リフレッシュトークン</th><th>ID トークン</th></tr></thead>
+      <tbody>
+        <tr><td><strong>用途</strong></td><td>API アクセス</td><td>アクセストークン更新</td><td>ユーザー識別</td></tr>
+        <tr><td><strong>有効期限</strong></td><td>短い（15 分〜1 時間）</td><td>長い（数日〜数週間）</td><td>短い（15 分〜1 時間）</td></tr>
+        <tr><td><strong>含まれる情報</strong></td><td>ユーザー ID、権限</td><td>ユーザー ID、トークン ID</td><td>ユーザー情報</td></tr>
+        <tr><td><strong>使用頻度</strong></td><td>高い（毎回の API 呼び出し）</td><td>低い（期限切れ時のみ）</td><td>中（ログイン時、ユーザー情報取得時）</td></tr>
+        <tr><td><strong>保存場所</strong></td><td>メモリ、ローカルストレージ</td><td>HttpOnly Cookie 推奨</td><td>メモリ、ローカルストレージ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>実際の使用例（クライアント側の流れ）</h2>
+    <p>3 種類のトークンを使うクライアント側の処理を、ログイン → API アクセス → 更新 → ユーザー情報の取得の順に見ます。</p>
+
+    <h3 id="sec-7-1">7.1 ログインフロー</h3>
+<pre><code>// 1. ユーザーがログイン
+async function login(username, password) {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password })
+  });
+
+  const data = await response.json();
+
+  // 3つのトークンを受け取る
+  const accessToken = data.accessToken;   // アクセストークン
+  const refreshToken = data.refreshToken; // リフレッシュトークン
+  const idToken = data.idToken;           // IDトークン
+
+  // 安全に保存
+  localStorage.setItem('accessToken', accessToken);
+  // リフレッシュトークンはHttpOnly Cookieに保存（サーバー側で設定）
+
+  return { accessToken, refreshToken, idToken };
+}</code></pre>
+
+    <h3 id="sec-7-2">7.2 API アクセス（期限切れなら更新して再試行）</h3>
+<pre><code>// 2. アクセストークンを使ってAPIにアクセス
+async function getUserProfile() {
+  const accessToken = localStorage.getItem('accessToken');
+
+  const response = await fetch('/api/user/profile', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+
+  if (response.status === 401) {
+    // アクセストークンが期限切れ
+    await refreshTokens();
+    // 再試行
+    return getUserProfile();
+  }
+
+  return await response.json();
+}</code></pre>
+
+    <h3 id="sec-7-3">7.3 トークンリフレッシュ</h3>
+<pre><code>// 3. リフレッシュトークンで新しいアクセストークンを取得
+async function refreshTokens() {
+  const response = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    credentials: 'include' // Cookieにリフレッシュトークンが含まれる
+  });
+
+  const data = await response.json();
+
+  // 新しいアクセストークンを保存
+  localStorage.setItem('accessToken', data.accessToken);
+
+  return data.accessToken;
+}</code></pre>
+    <p><code>credentials: 'include'</code> は「Cookie も一緒に送る」という指定です。別オリジン（別のドメインなど）の API に Cookie を送る場合の注意は <a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">CORSエラーの対処法とCookie</a> を参照してください。</p>
+
+    <h3 id="sec-7-4">7.4 ユーザー情報の取得</h3>
+<pre><code>// 4. IDトークンからユーザー情報を取得
+function getUserInfo(idToken) {
+  // JWTをデコード（実際の実装ではライブラリを使用）
+  const payload = JSON.parse(atob(idToken.split('.')[1]));
+
+  return {
+    userId: payload.sub,
+    name: payload.name,
+    email: payload.email
+  };
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">デコードは「読むだけ」</p>
+      <p>この関数は署名を確かめずに中身を読んでいるだけです。画面に名前を表示する程度なら構いませんが、<strong>サーバー側で「誰か」「何をしてよいか」を決めるときは、必ず署名を検証してから</strong> 使います（<a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>）。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>サーバー側の完全な実装とセキュリティの注意点</h2>
+
+    <h3 id="sec-8-1">8.1 完全な実装例</h3>
+    <p>セッション方式とトークン方式それぞれで、ログイン・認証の確認・プロフィール取得・ログアウトをひととおり書いた例です（開くと表示されます）。</p>
+    <details>
+      <summary>セッションを使った実装（Redis ストア付き）</summary>
+      <div class="body">
+<pre><code>const express = require('express');
+const session = require('express-session');
+const RedisStore = require('connect-redis')(session);
+const redis = require('redis');
+const app = express();
+
+const client = redis.createClient();
+
+app.use(express.json());
+app.use(session({
+  store: new RedisStore({ client }),
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'strict'
+  }
+}));
+
+// ログイン
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+  const user = await authenticateUser(username, password);
+
+  if (user) {
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    res.json({ message: 'ログイン成功' });
+  } else {
+    res.status(401).json({ error: '認証に失敗しました' });
+  }
+});
+
+// 認証ミドルウェア
+function requireAuth(req, res, next) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'ログインが必要です' });
+  }
+  next();
+}
+
+// プロフィール取得
+app.get('/api/profile', requireAuth, async (req, res) =&gt; {
+  const user = await getUserById(req.session.userId);
+  res.json(user);
+});
+
+// ログアウト
+app.post('/api/logout', (req, res) =&gt; {
+  req.session.destroy();
+  res.json({ message: 'ログアウトしました' });
+});</code></pre>
+        <p>ログイン成功時にセッション ID を作り直さないと「セッション固定化」という攻撃を受けることがあります。<a href="40-1_セッション管理の不備.html">セッション管理の不備</a> を参照してください。</p>
+      </div>
+    </details>
+    <details>
+      <summary>トークンを使った実装（アクセストークン＋リフレッシュトークン）</summary>
+      <div class="body">
+<pre><code>const express = require('express');
+const jwt = require('jsonwebtoken');
+const app = express();
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+
+app.use(express.json());
+
+// ログイン
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+  const user = await authenticateUser(username, password);
+
+  if (user) {
+    // アクセストークンとリフレッシュトークンを生成
+    const accessToken = jwt.sign(
+      { userId: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    const refreshToken = jwt.sign(
+      { userId: user.id, type: 'refresh' },
+      JWT_REFRESH_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // リフレッシュトークンはデータベースに保存（ログアウト時に無効化するため）
+    await saveRefreshToken(user.id, refreshToken);
+
+    res.json({
+      accessToken,
+      refreshToken,
+      user: { id: user.id, username: user.username }
+    });
+  } else {
+    res.status(401).json({ error: '認証に失敗しました' });
+  }
+});
+
+// トークン検証ミドルウェア
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader &amp;&amp; authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'トークンが必要です' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) =&gt; {
+    if (err) {
+      return res.status(403).json({ error: '無効なトークンです' });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// プロフィール取得
+app.get('/api/profile', authenticateToken, async (req, res) =&gt; {
+  const user = await getUserById(req.user.userId);
+  res.json(user);
+});
+
+// アクセストークンの更新
+app.post('/api/refresh', async (req, res) =&gt; {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(401).json({ error: 'リフレッシュトークンが必要です' });
+  }
+
+  // データベースでリフレッシュトークンを検証
+  const isValid = await validateRefreshToken(refreshToken);
+  if (!isValid) {
+    return res.status(403).json({ error: '無効なリフレッシュトークンです' });
+  }
+
+  jwt.verify(refreshToken, JWT_REFRESH_SECRET, (err, decoded) =&gt; {
+    if (err) {
+      return res.status(403).json({ error: '無効なリフレッシュトークンです' });
+    }
+
+    // 新しいアクセストークンを発行
+    const newAccessToken = jwt.sign(
+      { userId: decoded.userId, username: decoded.username },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    res.json({ accessToken: newAccessToken });
+  });
+});
+
+// ログアウト
+app.post('/api/logout', async (req, res) =&gt; {
+  const { refreshToken } = req.body;
+
+  // リフレッシュトークンを無効化
+  await invalidateRefreshToken(refreshToken);
+
+  res.json({ message: 'ログアウトしました' });
+});</code></pre>
+        <p>ポイントは、アクセストークンとリフレッシュトークンで <strong>別の秘密</strong>（<code>JWT_SECRET</code> と <code>JWT_REFRESH_SECRET</code>）を使うこと、リフレッシュトークンを <strong>データベースにも記録</strong> してログアウト時に無効化できるようにしていることです。トークン方式の「取り消しにくい」という弱点を、リフレッシュトークンの側だけサーバーで覚えることで補っています。</p>
+      </div>
+    </details>
+
+    <h3 id="sec-8-2">8.2 セッションのセキュリティ</h3>
+    <span class="code-label good">推奨設定</span>
+<pre><code>app.use(session({
+  secret: process.env.SESSION_SECRET, // 環境変数から取得
+  cookie: {
+    secure: true,      // HTTPSのみ
+    httpOnly: true,    // JavaScriptからアクセス不可
+    sameSite: 'strict' // CSRF攻撃対策
+  },
+  // 本番環境ではRedisなどの外部ストアを使用
+  store: new RedisStore({ client })
+}));</code></pre>
+    <p>秘密の値はコードに直接書かず、環境変数から読みます。<code>sameSite</code> が防ぐ CSRF（ログイン中の利用者に意図しない操作をさせる攻撃）については <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を参照してください。</p>
+
+    <h3 id="sec-8-3">8.3 トークンのセキュリティ</h3>
+    <span class="code-label good">推奨設定：強い秘密・短い期限・発行者と受信者の確認</span>
+<pre><code>const token = jwt.sign(
+  payload,
+  process.env.JWT_SECRET, // 強力なシークレットキー
+  {
+    expiresIn: '15m',     // 短い有効期限
+    issuer: 'myapp.com',  // 発行者
+    audience: 'myapp.com' // 受信者
+  }
+);
+
+// トークンの検証
+jwt.verify(token, process.env.JWT_SECRET, {
+  issuer: 'myapp.com',
+  audience: 'myapp.com'
+}, (err, decoded) =&gt; {
+  // 検証処理
+});</code></pre>
+    <p><code>issuer</code>（発行者）と <code>audience</code>（受け取り手）を検証時にも確かめると、別のサービス向けに発行されたトークンを受け付けずに済みます。検証で確かめる項目の全体は <a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a> にまとめています。</p>
+
+    <h3 id="sec-8-4">8.4 トークンの保存方法</h3>
+    <div class="grid c2">
+      <div>
+        <span class="code-label bad">間違い：localStorage は XSS 攻撃のリスク</span>
+<pre><code>localStorage.setItem('token', token);</code></pre>
+      </div>
+      <div>
+        <span class="code-label good">推奨：HttpOnly Cookie に保存</span>
+<pre><code>res.cookie('token', token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict'
+});
+
+// または、メモリに保存
+// （ページを閉じると消える）
+let token = null; // グローバル変数に保存</code></pre>
+      </div>
+    </div>
+    <p>XSS 自体の仕組みは <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSSの基本</a>、保存場所ごとの長所と短所の比較は <a href="30-4_トークンの保存場所.html">トークンの保存場所</a> で解説します。</p>
+
+    <h3 id="sec-8-5">8.5 セキュリティのベストプラクティス</h3>
+    <ul>
+      <li>アクセストークンは <strong>短い有効期限</strong> にする</li>
+      <li>リフレッシュトークンは <strong>HttpOnly Cookie</strong> に保存する</li>
+      <li>トークンは <strong>HTTPS</strong> で送信する</li>
+      <li>トークンが漏洩した場合は <strong>すぐに無効化</strong> する</li>
+      <li><strong>定期的にログアウト</strong> してトークンを無効化する</li>
+    </ul>
+
+    <h2 id="sec-9"><span class="num">9.</span>ハイブリッドアプローチ</h2>
+    <p>セッションとトークンを組み合わせることもできます。次の例では、ログイン時に作った JWT をサーバー側のセッションに入れておき、リクエストのたびにセッションとトークンの両方を確かめます。</p>
+<pre><code>// セッションにトークンを保存
+app.post('/api/login', async (req, res) =&gt; {
+  const user = await authenticateUser(username, password);
+
+  if (user) {
+    // JWTトークンを生成
+    const token = jwt.sign(
+      { userId: user.id },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // セッションにトークンを保存
+    req.session.token = token;
+    req.session.userId = user.id;
+
+    res.json({ message: 'ログイン成功' });
+  }
+});
+
+// トークンとセッションの両方を検証
+function authenticate(req, res, next) {
+  // セッションを確認
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'ログインが必要です' });
+  }
+
+  // トークンを検証
+  const token = req.session.token;
+  jwt.verify(token, JWT_SECRET, (err, decoded) =&gt; {
+    if (err) {
+      return res.status(403).json({ error: '無効なトークンです' });
+    }
+    req.user = decoded;
+    next();
+  });
+}</code></pre>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>セッション</th><th>トークン（JWT）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>たとえ</strong></td><td>テーブル番号</td><td>会員証</td></tr>
+        <tr><td><strong>管理する場所</strong></td><td>サーバー側</td><td>クライアント側</td></tr>
+        <tr><td><strong>セキュリティ</strong></td><td>高い（機密情報がクライアントに送られない）</td><td>盗まれると悪用される。期限を短く</td></tr>
+        <tr><td><strong>ログアウト</strong></td><td>簡単（サーバー側で削除）</td><td>難しい（無効化の仕組みが必要）</td></tr>
+        <tr><td><strong>スケーラビリティ</strong></td><td>低い（共有ストアが必要）</td><td>高い（共有不要）</td></tr>
+        <tr><td><strong>向いている場面</strong></td><td>従来の Web アプリ、セキュリティ最優先</td><td>モバイルアプリ、マイクロサービス、SPA</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>セッション</strong>：サーバー側で状態を管理する仕組み</li>
+      <li><strong>アクセストークン</strong>：API にアクセスするための通行証（短期限）</li>
+      <li><strong>リフレッシュトークン</strong>：アクセストークンを更新するための交換券（長期限）</li>
+      <li><strong>ID トークン</strong>：ユーザーが誰であるかを証明する身分証明書</li>
+    </ul>
+
+    <h2 id="sec-11"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. セッション方式とトークン方式で、ユーザーの情報はそれぞれどこにありますか？</summary>
+      <div class="body"><p>セッション方式ではサーバー側（セッションストア）にあり、ブラウザはセッション ID という番号だけを持ちます。トークン方式では情報そのものがトークンの中に入っていて、クライアント側が持ちます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. サーバーを 3 台に増やしたとき、セッション方式では何が問題になり、どう解決しますか？</summary>
+      <div class="body"><p>どのサーバーに来ても同じセッションの記録を見られる必要があります。Redis などの共有ストアにセッションを保存して解決します。ただし状態をサーバー側で持ち続けることは変わりません。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 「ログアウトしたら即座に使えなくしたい」場合、セッションとトークンのどちらが簡単ですか？</summary>
+      <div class="body"><p>セッションです。サーバー側の記録を消せばすぐに使えなくなります。トークンはサーバーが覚えていないため、期限まで有効なままになりやすく、無効化の仕組み（失効リストやリフレッシュトークンの記録など）が別に必要です。</p></div>
+    </details>
+    <details>
+      <summary>Q4. アクセストークンと ID トークンの違いは何ですか？</summary>
+      <div class="body"><p>アクセストークンは「API にアクセスする権利」を示す通行証、ID トークンは「ユーザーが誰であるか」を示す身分証明書です。免許証（ID トークン）だけでは車（API）は動かせません。</p></div>
+    </details>
+    <details>
+      <summary>Q5. リフレッシュトークンはなぜ必要なのですか？</summary>
+      <div class="body"><p>アクセストークンの有効期限を短くしてセキュリティを高めつつ、ユーザーに頻繁なログインを強いないためです。期限が切れたら、長期間有効なリフレッシュトークンで新しいアクセストークンを受け取ります。</p></div>
+    </details>
+    <details>
+      <summary>Q6. トークンを localStorage に保存することの問題点と、代わりの保存先は？</summary>
+      <div class="body"><p>XSS で悪意のあるスクリプトが動くと、localStorage の中身は読み取られてしまいます。代わりに JavaScript から読めない HttpOnly Cookie に入れるか、ページを閉じると消えるメモリ（変数）に置きます。</p></div>
+    </details>
+    <details>
+      <summary>Q7. <code>atob(idToken.split('.')[1])</code> で読んだ中身を、サーバーでの権限判定に使ってよいですか？</summary>
+      <div class="body"><p>いけません。これは署名を確かめずに読んでいるだけなので、書き換えられたトークンでもそのまま読めてしまいます。サーバーで判断に使うのは、署名を検証した後の中身だけです。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：74_セッション管理/30_トークン/01_セッション・トークン基礎</li>
+      <li>ノート：74_セッション管理/30_トークン/02_セッションとトークンとは</li>
+      <li>OAuth 2.0 https://oauth.net/2/</li>
+      <li>OpenID Connect https://openid.net/connect/</li>
+      <li>JWT (JSON Web Token) https://jwt.io/</li>
+      <li>関連ページ：<a href="30-2_JWTの構造と検証.html">JWTの構造と検証</a>、<a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、<a href="30-4_トークンの保存場所.html">トークンの保存場所</a>、<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a>、<a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth2.0の仕組み</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-2_セッションとCookieによるログイン.html"><span class="lbl">← 前のページ</span>セッションとCookieによるログイン</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-2_JWTの構造と検証.html"><span class="lbl">次のページ →</span>JWTの構造と検証</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

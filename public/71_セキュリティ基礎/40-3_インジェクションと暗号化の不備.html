@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>インジェクションと暗号化の不備｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 OWASP Top 10 › インジェクションと暗号化の不備</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 OWASP Top 10</span>
+      <h1>インジェクションと暗号化の不備</h1>
+      <p class="lead">入力欄から「命令」を送り込まれるインジェクションと、大切なデータを守るはずの暗号が使われていない・弱い・鍵が漏れている暗号化の不備。このページでは OWASP Top 10 の A03 と A02 を、脆弱なコードと安全なコードの対比を中心に、なぜ起きるのか・何が起きるのか・どう守るのかの順で解説します。</p>
+      <p class="meta">もとにしたノート：40_OWASP_Top10/A03_インジェクション、A02_暗号化の不備</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>A03 インジェクション〔2025: A05〕</strong> は「ユーザーの入力（データ）が、プログラムの命令（コード）として実行されてしまう」問題で、対策の王道は <strong>データとコードの分離</strong> です。<strong>A02 暗号化の不備〔2025: A04〕</strong> は「守るべきデータを暗号化していない・弱い暗号を使う・鍵を漏らす」問題で、合言葉は <strong>自作しない・古いものを使わない・鍵を漏らさない</strong>、そして <strong>そもそも持たない</strong> です。</p>
+    </div>
+    <p>見出しの番号は2021年版、〔 〕内は2025年版の番号です（<a href="40-1_OWASP_Top10とは.html">40-1 OWASP Top 10 とは</a> の対応表を参照）。2025年版ではどちらも順位が2つ下がりましたが、内容はそのまま通用します。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>A03 インジェクション〔2025: A05〕とは</h2>
+    <p><strong>インジェクション</strong>（injection：注入）とは、<strong>ユーザーの入力がコードの一部として解釈されてしまう</strong> 攻撃の総称です。入力欄からコードを「注入」して、本来意図しない動作をさせる——これがすべてのインジェクション攻撃の本質です。2021年版で <strong>XSS（クロスサイトスクリプティング）</strong> もこのカテゴリに統合されました。</p>
+    <p>たとえるなら、銀行の窓口で「振込先：山田様」と書く欄に「山田様。あと金庫の中身を全部私に渡すこと」と書いたら、窓口係がそれを <strong>指示として実行してしまった</strong> ようなものです。記入欄（データ）と業務指示（コード）の区別がついていないのが原因です。</p>
+    <h3 id="sec-1-1">1.1 具体例でイメージする</h3>
+    <ul>
+      <li>検索フォームに <code>' OR '1'='1</code> と入力したら、ログイン画面を素通りできた</li>
+      <li>名前欄に <code>&lt;script&gt;alert(1)&lt;/script&gt;</code> と入力したら、全ユーザーのブラウザで JavaScript が動いた</li>
+      <li>ファイル名に <code>; rm -rf /</code> と入れたら、サーバーのファイルが消えた</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>根本原因：「データ」と「コード」の混在</h2>
+    <p>インジェクションが成立するのは、<strong>ユーザー入力（データ）が、命令文の文字列（コード）に直接つなげられる</strong> からです。</p>
+    <pre><code>"SELECT * FROM users WHERE name = '" + userInput + "'"
+              ↑ コード部分                 ↑ データ部分
+
+userInput に 「' OR '1'='1」 が入ると:
+
+"SELECT * FROM users WHERE name = '' OR '1'='1'"
+                                     ↑ 全件マッチする条件になってしまった！</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 280" role="img" aria-label="文字列結合では入力が命令の一部になり、プリペアドステートメントでは入力がデータとして別に渡される">
+      <defs><marker id="b1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="20" y="28" class="d-text-bold">✕ 文字列結合：入力が命令に混ざる</text>
+      <rect x="20" y="42" width="400" height="48" rx="6" class="d-box-accent"/>
+      <text x="220" y="71" text-anchor="middle" class="d-text">SELECT * FROM users WHERE name = '</text>
+      <rect x="420" y="42" width="280" height="48" rx="6" class="d-box-bad"/>
+      <text x="560" y="71" text-anchor="middle" class="d-text-bold">' OR '1'='1</text>
+      <text x="20" y="114" class="d-text-sub">入力の ' が文字列を閉じ、OR 以降が「条件（命令）」として実行される → 全件ヒット</text>
+      <line x1="20" y1="134" x2="700" y2="134" class="d-line-dash"/>
+      <text x="20" y="164" class="d-text-bold">○ プリペアドステートメント：命令とデータを別々に渡す</text>
+      <rect x="20" y="178" width="400" height="48" rx="6" class="d-box-accent"/>
+      <text x="220" y="207" text-anchor="middle" class="d-text">SELECT * FROM users WHERE name = ?</text>
+      <rect x="490" y="178" width="210" height="48" rx="6" class="d-box-good"/>
+      <text x="595" y="207" text-anchor="middle" class="d-text">' OR '1'='1</text>
+      <line x1="488" y1="202" x2="424" y2="202" class="d-line" marker-end="url(#b1)"/>
+      <text x="455" y="194" text-anchor="middle" class="d-text-sub">値</text>
+      <text x="20" y="252" class="d-text-sub">入力は「? に入る値」としてだけ扱われ、命令の一部にはならない → 名前が ' OR '1'='1 の人を探すだけ</text>
+    </svg>
+    <figcaption>図：命令（青）とデータ（赤・緑）を混ぜるか、分けるか。分ければ攻撃文字列もただの値になる</figcaption>
+    </figure>
+    <div class="callout key">
+      <p class="callout-title">防御の基本原則</p>
+      <p><strong>「データをコードとして実行させない」</strong>。インジェクションの種類はたくさんありますが、対策はすべてこの一文に行き着きます。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>主なインジェクションの種類</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>どこに注入するか</th><th>何が起きるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SQL インジェクション</strong>（SQLi）</td><td>データベースへの問い合わせ文（SQL）</td><td>全ユーザー情報の取得、認証の回避など</td></tr>
+        <tr><td><strong>OS コマンドインジェクション</strong></td><td>サーバーで実行するシェルコマンド</td><td>サーバーのファイル削除・乗っ取りなど</td></tr>
+        <tr><td><strong>XSS</strong>（クロスサイトスクリプティング）</td><td>Web ページの HTML</td><td>他ユーザーのブラウザで悪意ある JS が動き、Cookie などが盗まれる</td></tr>
+        <tr><td><strong>LDAP インジェクション</strong></td><td>LDAP（社内のユーザー台帳などを検索する仕組み）への問い合わせ</td><td>認証の回避などに悪用</td></tr>
+        <tr><td><strong>NoSQL インジェクション</strong></td><td>MongoDB などの NoSQL データベースへの問い合わせ</td><td>条件をすり替えて全件マッチ・ログイン突破</td></tr>
+        <tr><td><strong>テンプレートインジェクション</strong>（SSTI）</td><td>サーバー側のテンプレートエンジン</td><td>サーバー上でコードが実行される。<code>&#123;&#123;7*7&#125;&#125;</code> が <code>49</code> と表示されることで検知される</td></tr>
+        <tr><td><strong>XML インジェクション / XXE</strong></td><td>XML の外部エンティティ（外部ファイルを読み込む機能）</td><td>サーバー内のファイルを読み出される等</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-3-1">3.1 種類ごとの「危険な書き方」</h3>
+    <span class="code-label bad">✕ SQL インジェクション</span>
+    <pre><code>const sql = `SELECT * FROM users WHERE email = '${email}'`;
+// email に ' OR '1'='1' -- を入れられると全ユーザー情報が返る</code></pre>
+    <span class="code-label bad">✕ コマンドインジェクション</span>
+    <pre><code>exec(`convert ${filename} output.png`);
+// filename に image.jpg; rm -rf / を入れられるとサーバーのファイルが消える</code></pre>
+    <span class="code-label bad">✕ XSS</span>
+    <pre><code>document.getElementById('name').innerHTML = userInput;
+// userInput に &lt;script&gt;fetch('/api/cookie?c='+document.cookie)&lt;/script&gt; を入れられると
+// 他ユーザーのクッキーが盗まれる</code></pre>
+    <span class="code-label bad">✕ NoSQL インジェクション</span>
+    <pre><code>db.users.find({ username: req.body.username, password: req.body.password });
+// req.body に { username: {$ne: null}, password: {$ne: null} } を送ると
+// 「usernameがnullでない AND passwordがnullでない」= 全件マッチしてログイン可能</code></pre>
+    <p>NoSQL の例は、文字列ではなく <strong>オブジェクト（条件式）</strong> を送り込むのがポイントです。「SQL を使っていないから大丈夫」ではありません。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>SQL インジェクション：脆弱なコードと安全なコード</h2>
+    <span class="code-label bad">✕ 脆弱：文字列結合で SQL を組み立てる</span>
+    <pre><code>const email = req.body.email; // ユーザー入力
+const sql = `SELECT * FROM users WHERE email = '${email}'`;
+const result = await db.query(sql);</code></pre>
+    <p>攻撃：<code>email = "' OR '1'='1' --"</code> を送る → 全ユーザーが返ります（<code>--</code> は SQL のコメント記号で、後ろに続く部分を無効にします）。</p>
+    <span class="code-label good">○ 安全①：プリペアドステートメント（パラメータ化クエリ）</span>
+    <pre><code>// データとコードを分離
+const sql = 'SELECT * FROM users WHERE email = ?';
+const result = await db.query(sql, [email]); // emailはデータとして扱われる</code></pre>
+    <p><code>?</code>（プレースホルダ：値の入る「穴」）にはめ込まれる値は <strong>データとしてしか</strong> 扱われないので、そこに <code>' OR '1'='1'</code> が来ても命令としては解釈されません。</p>
+    <span class="code-label good">○ 安全②：ORM を使う</span>
+    <pre><code>// Prisma
+const user = await prisma.user.findUnique({ where: { email } });
+
+// Sequelize
+const user = await User.findOne({ where: { email } });</code></pre>
+    <p>ORM（データベース操作をプログラムのオブジェクトとして書ける仕組み）の多くは内部でプリペアドステートメントを使うため、<strong>デフォルトで安全</strong> です。</p>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「ORM なら何をしても安全」</p>
+      <p>ORM にも、生の SQL 文字列を書ける機能があります。そこで文字列結合をすれば同じように危険です。安全なのは <strong>パラメータ化された使い方をしている間だけ</strong> です。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>XSS：脆弱なコードと安全なコード</h2>
+    <p><strong>XSS</strong>（クロスサイトスクリプティング）は、Web ページに悪意ある JavaScript を埋め込み、<strong>そのページを見た他のユーザーのブラウザで実行させる</strong> 攻撃です。ログイン状態を表す Cookie を盗まれれば、なりすましにつながります（<a href="40-2_アクセス制御と認証の失敗.html">40-2</a> のセッションハイジャック）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>XSS の種類</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>反射型</strong></td><td>攻撃用の URL を踏ませて、その場で実行させる</td></tr>
+        <tr><td><strong>蓄積型（格納型）</strong></td><td>掲示板の投稿などとして DB に保存され、他のユーザーが閲覧したときに実行される</td></tr>
+        <tr><td><strong>DOM ベース</strong></td><td>サーバーを経由せず、ブラウザ側の JS がページを書き換える過程で発生する</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ 脆弱：innerHTML に直接代入</span>
+    <pre><code>document.getElementById('profile').innerHTML = `こんにちは ${userName}さん`;
+// userName に &lt;img src=x onerror="fetch('/api/steal?c='+document.cookie)"&gt; を入れられると発火</code></pre>
+    <span class="code-label good">○ 安全①：textContent を使う</span>
+    <pre><code>document.getElementById('profile').textContent = `こんにちは ${userName}さん`;</code></pre>
+    <p><code>textContent</code> は中身を HTML として解釈せず、ただの文字として表示するので安全です。</p>
+    <span class="code-label good">○ 安全②：フレームワークの自動エスケープに任せる</span>
+    <pre><code>// React: 自動的にエスケープされる
+&lt;div&gt;{userName}&lt;/div&gt;</code></pre>
+    <span class="code-label bad">✕ 脆弱：自動エスケープを自分で無効化する</span>
+    <pre><code>// dangerouslySetInnerHTML は名前のとおり危険
+&lt;div dangerouslySetInnerHTML=&#123;&#123; __html: userInput &#125;&#125; /&gt;</code></pre>
+    <p>React・Vue・Angular などは <strong>デフォルトでエスケープ</strong>（<code>&lt;</code> などの特殊文字を無害な表記に置き換えること）してくれます。わざわざ無効化する書き方は避けましょう。</p>
+    <span class="code-label good">○ 安全③：CSP（Content Security Policy）で多重防御</span>
+    <pre><code>Content-Security-Policy: default-src 'self'; script-src 'self'</code></pre>
+    <p>CSP はブラウザに「このページで実行してよいスクリプトの出どころ」を伝えるヘッダーです。万一 XSS が混入しても、外部スクリプトの実行や <code>eval</code> を禁止して被害を抑えられます。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>コマンドインジェクション：脆弱なコードと安全なコード</h2>
+    <span class="code-label bad">✕ 脆弱：シェル経由で文字列を実行</span>
+    <pre><code>import { exec } from 'child_process';
+exec(`ping ${host}`, callback); // host に ";rm -rf /" が入るとアウト</code></pre>
+    <span class="code-label good">○ 安全：引数を配列で渡す（シェルを通さない）</span>
+    <pre><code>import { execFile } from 'child_process';
+execFile('ping', [host], callback); // hostは引数として扱われ、シェル解釈されない</code></pre>
+    <p><code>exec</code> は文字列をシェル（コマンドを解釈するプログラム）に渡すため、<code>;</code> で区切られた2つ目の命令まで実行されます。<code>execFile</code> は引数を「ただの値」として渡すので、<code>;</code> も単なる文字です。</p>
+    <div class="callout tip">
+      <p class="callout-title">原則</p>
+      <p><strong>シェルを経由しない</strong>、<strong>引数は配列で渡す</strong>、<strong>実行してよいコマンド自体をホワイトリスト（許可リスト）にする</strong>。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>インジェクションの防御の原則</h2>
+    <ol class="steps">
+      <li><strong>パラメータ化（分離）</strong><br>データとコードを必ず分ける。プリペアドステートメント、パラメータ化クエリ、引数配列を使う。<strong>これが本命の対策</strong> です。</li>
+      <li><strong>エスケープ（出力時の無害化）</strong><br>HTML / JS / URL / SQL など、出力先の文脈に応じて特殊文字を無害化する。</li>
+      <li><strong>入力検証（ホワイトリスト方式）</strong><br>「許可するものを列挙する」発想で検証する。ブラックリスト（禁止するものを列挙）は抜けやすい。</li>
+      <li><strong>最小権限</strong><br>アプリが使う DB ユーザーの権限は必要最小限に。アプリ用ユーザーに <code>DROP TABLE</code>（テーブル削除）権限を与えない。</li>
+      <li><strong>WAF・CSP・SRI による多重防御</strong><br>WAF（Web Application Firewall）で怪しいリクエストをブロック、CSP で XSS の影響を制限、SRI（Subresource Integrity）で外部スクリプトの改ざんを検知。</li>
+    </ol>
+    <h3 id="sec-7-1">7.1 エスケープの基本形</h3>
+    <pre><code>// HTMLエスケープの基本
+function escapeHtml(str) {
+  return str
+    .replace(/&amp;/g, '&amp;amp;')
+    .replace(/&lt;/g, '&amp;lt;')
+    .replace(/&gt;/g, '&amp;gt;')
+    .replace(/"/g, '&amp;quot;')
+    .replace(/'/g, '&amp;#39;');
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">自前エスケープは最後の手段</p>
+      <p>エスケープは文脈（HTML の本文・属性・JS・URL）ごとに必要な処理が違い、自作すると漏れが出やすいです。<strong>フレームワークやライブラリに任せるのが基本</strong> です。</p>
+    </div>
+    <h3 id="sec-7-2">7.2 ホワイトリストで入力を検証する</h3>
+    <span class="code-label good">○ 許可：英数字とハイフンのみ</span>
+    <pre><code>if (!/^[a-zA-Z0-9-]+$/.test(input)) throw new Error('Invalid input');</code></pre>
+    <p>入力検証はあくまで補助です。「検証したから文字列結合しても大丈夫」とはせず、<strong>分離（パラメータ化）と組み合わせる</strong> のが <a href="20-2_深層防御.html">深層防御</a> の考え方です。</p>
+    <h3 id="sec-7-3">7.3 インジェクションのチェックリスト</h3>
+    <ul>
+      <li>SQL 実行時、文字列結合していないか？ プリペアドステートメント／ORM を使っているか？</li>
+      <li><code>innerHTML</code> に外部入力を直接代入していないか？</li>
+      <li><code>exec</code>、<code>eval</code>、<code>system</code> にユーザー入力を混ぜていないか？</li>
+      <li>入力検証はホワイトリスト方式か？</li>
+      <li>フレームワークの自動エスケープを無効化していないか？</li>
+      <li>CSP ヘッダーを設定しているか？</li>
+      <li>DB ユーザーは最小権限か？</li>
+    </ul>
+    <p>XSS や SQL インジェクションの詳しい対策は、72_Web脆弱性対策 で詳しく扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>A02 暗号化の不備〔2025: A04〕とは</h2>
+    <p><strong>暗号化の不備</strong> とは、パスワードやクレジットカード番号などの「大切なデータ」を守るべき場面で、<strong>暗号化していない</strong>、<strong>弱い暗号を使っている</strong>、<strong>鍵の管理を間違えている</strong> 問題です。旧名は「機密データの露出」（Sensitive Data Exposure）で、2021年版で「露出という結果」ではなく「暗号化の失敗という原因」に注目した名前に変わりました。</p>
+    <p>暗号化は、手紙を鍵付きの箱に入れて送るようなものです。箱がなければ途中で読まれ（暗号化していない）、おもちゃの南京錠なら簡単に壊され（弱い暗号）、鍵を箱に貼り付けていれば意味がありません（鍵管理のミス）。</p>
+    <h3 id="sec-8-1">8.1 具体例でイメージする</h3>
+    <ul>
+      <li>パスワードが <strong>平文</strong>（暗号化もハッシュ化もしていない、そのままの文字）で DB に保存されている</li>
+      <li>クレジットカード番号が <strong>http</strong>（暗号化なし）で送信される</li>
+      <li>古い方式（MD5、SHA-1、DES）でハッシュ化・暗号化されている</li>
+      <li>暗号鍵がソースコードに直書きされ、GitHub に公開されてしまった</li>
+    </ul>
+    <h3 id="sec-8-2">8.2 守るべき「機密データ」</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分類</th><th>具体例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証情報</strong></td><td>パスワード、API キー、秘密鍵、セッショントークン</td></tr>
+        <tr><td><strong>個人情報（PII）</strong></td><td>氏名・住所・電話番号・マイナンバー・生年月日</td></tr>
+        <tr><td><strong>金融情報</strong></td><td>クレジットカード番号、銀行口座</td></tr>
+        <tr><td><strong>医療情報</strong></td><td>病歴、処方箋</td></tr>
+        <tr><td><strong>業務データ</strong></td><td>顧客リスト、契約情報、社内文書</td></tr>
+      </tbody>
+    </table></div>
+    <p>GDPR（EU の個人データ保護規則）、個人情報保護法、PCI-DSS（クレジットカード業界の基準）、HIPAA（米国の医療情報の法律）など、法規制で <strong>暗号化が求められる</strong> データもあります。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>データの「3つの状態」と暗号化</h2>
+    <p>データは、置かれている状態によって守り方が違います。</p>
+    <figure>
+    <svg viewBox="0 0 720 220" role="img" aria-label="データの3つの状態：転送中・使用中・保存中と、それぞれの守り方">
+      <defs><marker id="b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="40" width="210" height="120" rx="8" class="d-box-accent"/>
+      <text x="125" y="70" text-anchor="middle" class="d-text-bold">転送中（In Transit）</text>
+      <text x="125" y="96" text-anchor="middle" class="d-text-sub">ネットワークを流れている</text>
+      <text x="125" y="128" text-anchor="middle" class="d-text-bold">TLS（HTTPS）</text>
+      <text x="125" y="146" text-anchor="middle" class="d-text-sub">TLS 1.2以上、理想は1.3</text>
+      <rect x="255" y="40" width="210" height="120" rx="8" class="d-box"/>
+      <text x="360" y="70" text-anchor="middle" class="d-text-bold">使用中（In Use）</text>
+      <text x="360" y="96" text-anchor="middle" class="d-text-sub">サーバーのメモリ上</text>
+      <text x="360" y="128" text-anchor="middle" class="d-text-bold">TEE など</text>
+      <text x="360" y="146" text-anchor="middle" class="d-text-sub">機密性が極めて高い用途のみ</text>
+      <rect x="490" y="40" width="210" height="120" rx="8" class="d-box-good"/>
+      <text x="595" y="70" text-anchor="middle" class="d-text-bold">保存中（At Rest）</text>
+      <text x="595" y="96" text-anchor="middle" class="d-text-sub">DB・ディスク上</text>
+      <text x="595" y="128" text-anchor="middle" class="d-text-bold">ストレージ暗号化</text>
+      <text x="595" y="146" text-anchor="middle" class="d-text-sub">TDE・ディスク暗号化・KMS</text>
+      <line x1="230" y1="100" x2="251" y2="100" class="d-line" marker-end="url(#b2)"/>
+      <line x1="465" y1="100" x2="486" y2="100" class="d-line" marker-end="url(#b2)"/>
+      <text x="125" y="190" text-anchor="middle" class="d-text-sub">ブラウザ → サーバー</text>
+      <text x="360" y="190" text-anchor="middle" class="d-text-sub">アプリが処理する</text>
+      <text x="595" y="190" text-anchor="middle" class="d-text-sub">保存・バックアップ</text>
+      <text x="360" y="214" text-anchor="middle" class="d-text-sub">データの旅のどの区間でも「むき出し」にしない</text>
+    </svg>
+    <figcaption>図：データの3つの状態と、それぞれの代表的な守り方</figcaption>
+    </figure>
+    <div class="grid c3">
+      <div class="card">
+        <h4>1. 転送中（In Transit）</h4>
+        <ul>
+          <li><code>http://</code> ではなく <strong><code>https://</code></strong></li>
+          <li>TLS 1.2 以上（理想は 1.3）</li>
+          <li>自己署名ではなく正規の証明書（Let's Encrypt 等で無料取得可）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. 使用中（In Use）</h4>
+        <p>メモリ上のデータは通常守りにくいですが、機密性が極めて高い用途では <strong>TEE</strong>（Trusted Execution Environment：CPU 内の隔離された安全な実行領域）や <strong>Confidential Computing</strong> を使います。</p>
+      </div>
+      <div class="card">
+        <h4>3. 保存中（At Rest）</h4>
+        <ul>
+          <li>DB の透過的暗号化（TDE）</li>
+          <li>ディスク全体の暗号化（BitLocker、FileVault、LUKS）</li>
+          <li>クラウドの暗号化（AWS KMS、GCP KMS など）</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>暗号化：脆弱なコードと安全なコード</h2>
+    <h3 id="sec-10-1">10.1 パスワードを平文で保存しない</h3>
+    <span class="code-label bad">✕ 脆弱：平文で保存</span>
+    <pre><code>// 絶対にやってはいけない
+db.users.insert({ email, password: 'mypassword123' });</code></pre>
+    <p>DB が漏れたら、全員のパスワードがそのまま読まれます。使い回している人は他のサービスまで乗っ取られます。</p>
+    <span class="code-label good">○ 安全：パスワード用の強いハッシュで保存</span>
+    <pre><code>import bcrypt from 'bcrypt';
+
+const hashed = await bcrypt.hash(password, 12); // コスト12
+db.users.insert({ email, password: hashed });</code></pre>
+    <p>パスワードには <code>bcrypt</code>・<code>scrypt</code>・<code>Argon2</code> を使います。MD5、SHA-1、SHA-256 単体は <strong>パスワード用途では不適切</strong> です（高速すぎて総当たりされる）。詳しくは <a href="40-2_アクセス制御と認証の失敗.html">40-2 のパスワード保存</a> を参照してください。</p>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「ハッシュ化＝暗号化」</p>
+      <p><strong>暗号化</strong> は鍵があれば元に戻せる（復号できる）変換、<strong>ハッシュ化</strong> は元に戻せない一方向の変換です。パスワードは「元に戻す必要がない」ので、暗号化ではなく <strong>パスワード用のハッシュ</strong> で保存します。</p>
+    </div>
+    <h3 id="sec-10-2">10.2 弱い暗号を使わない</h3>
+    <span class="code-label bad">✕ 脆弱：古い暗号（DES・ECB モード）</span>
+    <pre><code># DES、3DES、RC4、MD5、SHA-1 は非推奨
+cipher = DES.new(key, DES.MODE_ECB)</code></pre>
+    <span class="code-label good">○ 安全：標準的な強い暗号（AES-256-GCM）</span>
+    <pre><code># 対称暗号: AES-256-GCM
+# ハッシュ: SHA-256, SHA-3
+# 鍵交換・署名: RSA-2048以上, ECDSA P-256以上
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+aesgcm = AESGCM(key)  # keyは256ビット
+ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data)</code></pre>
+    <h3 id="sec-10-3">10.3 鍵をソースコードに書かない</h3>
+    <span class="code-label bad">✕ 脆弱：暗号鍵の直書き</span>
+    <pre><code>const SECRET_KEY = 'my-super-secret-key-12345'; // GitHubに公開されたら終了</code></pre>
+    <span class="code-label good">○ 安全：秘密情報管理の仕組みから読み込む</span>
+    <pre><code>// 環境変数や Secrets Manager / Vault から取得する
+const SECRET_KEY = process.env.SECRET_KEY;</code></pre>
+    <ul>
+      <li>環境変数</li>
+      <li>AWS Secrets Manager / HashiCorp Vault / GCP Secret Manager</li>
+      <li><code>.env</code> ファイル（ただし <code>.gitignore</code> に必ず入れる）</li>
+    </ul>
+    <h3 id="sec-10-4">10.4 独自の暗号を作らない</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>✕ 独自の暗号アルゴリズムを作る</h4>
+        <p>「自分で考えた最強の暗号」は、ほぼ確実に破られます。</p>
+      </div>
+      <div class="card">
+        <h4>○ 標準ライブラリ・標準アルゴリズムを使う</h4>
+        <p>自作せず、<strong>広くレビューされ枯れている（長く使われて問題が出尽くした）ライブラリ</strong> を使いましょう。</p>
+      </div>
+    </div>
+    <h3 id="sec-10-5">10.5 安全な乱数を使う</h3>
+    <p>トークンや鍵の生成など、セキュリティ用途では <strong>暗号論的乱数生成器</strong>（CSPRNG：予測できないように作られた乱数）を使います。</p>
+    <span class="code-label bad">✕ 脆弱：Math.random() は予測可能</span>
+    <pre><code>const token = Math.random().toString(36).slice(2);</code></pre>
+    <span class="code-label good">○ 安全：crypto.randomBytes() を使う</span>
+    <pre><code>import crypto from 'crypto';
+const token = crypto.randomBytes(32).toString('hex');</code></pre>
+
+    <h2 id="sec-11"><span class="num">11.</span>推奨される暗号方式の早見表</h2>
+    <p>もとのノートの記載時点（2024年時点）の推奨です。暗号の推奨は年々変わるので、定期的に最新情報を確認しましょう。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>推奨</th><th>非推奨</th></tr></thead>
+      <tbody>
+        <tr><td>パスワード保存</td><td><strong>○</strong> Argon2id、bcrypt、scrypt</td><td><strong>✕</strong> MD5、SHA-1、SHA-256単体</td></tr>
+        <tr><td>対称暗号</td><td><strong>○</strong> AES-256-GCM、ChaCha20-Poly1305</td><td><strong>✕</strong> DES、3DES、RC4、AES-ECB</td></tr>
+        <tr><td>ハッシュ</td><td><strong>○</strong> SHA-256、SHA-3、BLAKE2</td><td><strong>✕</strong> MD5、SHA-1</td></tr>
+        <tr><td>公開鍵署名</td><td><strong>○</strong> Ed25519、ECDSA P-256、RSA-2048以上</td><td><strong>✕</strong> RSA-1024以下、DSA</td></tr>
+        <tr><td>TLS</td><td><strong>○</strong> TLS 1.3、TLS 1.2</td><td><strong>✕</strong> SSL 3.0以前、TLS 1.0/1.1</td></tr>
+        <tr><td>乱数</td><td><strong>○</strong> <code>crypto.randomBytes</code>、<code>secrets</code></td><td><strong>✕</strong> <code>Math.random()</code>、<code>rand()</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>暗号化の防御の原則</h2>
+    <ol class="steps">
+      <li><strong>不要なデータは持たない</strong><br>「そもそも保存しない」が最強の対策です。たとえばクレジットカード番号は自社で保存せず、<strong>決済代行サービス（Stripe 等）</strong> に任せるのが安全です（<a href="20-1_最小権限とデータ最小化.html">データ最小化</a>）。</li>
+      <li><strong>必要なデータは必ず暗号化</strong><br>保存時・転送時の両方で暗号化します。バックアップも忘れずに。</li>
+      <li><strong>暗号鍵の管理を徹底</strong><br>鍵をコードに埋め込まない／鍵は定期的にローテーション（交換）する／鍵の保存先と暗号化したデータは別の場所に置く。</li>
+      <li><strong>安全な乱数を使う</strong><br>セキュリティ用途では CSPRNG（<code>crypto.randomBytes</code> など）。</li>
+      <li><strong>通信は常に HTTPS</strong><br>HSTS（<code>Strict-Transport-Security</code>）ヘッダーで、ブラウザに「このサイトには必ず HTTPS で接続せよ」と指示します。</li>
+    </ol>
+    <pre><code>Strict-Transport-Security: max-age=31536000; includeSubDomains; preload</code></pre>
+
+    <h2 id="sec-13"><span class="num">13.</span>2026年の事例から学ぶ</h2>
+    <p>もとのノートに追記された、2026年の情報漏洩事例を「暗号化・保存」の観点で整理したものです（事例全体は <a href="50-5_サプライチェーン攻撃と2026年の事例.html">50-5 サプライチェーン攻撃と2026年の事例</a> などで扱います）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>事例</th><th>暗号化・保存の観点</th></tr></thead>
+      <tbody>
+        <tr><td>タイムズカー（約660万アカウント）</td><td>パスワードは <strong>復元できない形式</strong> で保存されていた（良い点）。一方で <strong>運転免許証などの画像</strong> 約160万件も対象に含まれた</td></tr>
+        <tr><td>KDDI メール基盤</td><td>約762万人分の <strong>パスワード</strong> が漏えい</td></tr>
+        <tr><td>米国防総省 DMDC（海外）</td><td><strong>暗号化していない</strong> 個人情報をファイル共有システムに置いていた</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout bad">
+      <p class="callout-title">教訓</p>
+      <ul>
+        <li><strong>ディスク暗号化（保存時の暗号化）だけでは足りない</strong>。アプリや正規アカウント経由で読まれると、復号されたデータがそのまま出ていく。本人確認書類や口座番号は <strong>アプリ層で項目ごとに暗号化</strong> し、鍵は KMS で管理して、復号できるサービスを限る（エンベロープ暗号化：データを暗号化した鍵を、さらに別の鍵で暗号化して管理する方式）</li>
+        <li>パスワードは bcrypt / Argon2 で保存していれば、漏れても元のパスワードを割り出されにくい</li>
+        <li><strong>変更できない情報</strong>（免許証画像・生年月日）は、暗号化より先に「持たない」ことを考える</li>
+      </ul>
+    </div>
+    <h3 id="sec-13-1">13.1 暗号化のチェックリスト</h3>
+    <ul>
+      <li>パスワードは bcrypt / Argon2 でハッシュ化しているか？</li>
+      <li>HTTPS（TLS 1.2 以上）を全ページで使っているか？</li>
+      <li>古い暗号方式（MD5・SHA-1・DES 等）を使っていないか？</li>
+      <li>暗号鍵をソースコードに書いていないか？</li>
+      <li>秘密鍵や API キーは秘密情報管理サービスで管理しているか？</li>
+      <li>保存しているデータは、本当に必要なものだけか？</li>
+      <li>バックアップも暗号化されているか？</li>
+    </ul>
+
+    <h2 id="sec-14"><span class="num">14.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>インジェクションの本質は <strong>データとコードの混在</strong>。SQL・コマンド・XSS・NoSQL など種類は多いが原因は同じ</li>
+        <li>対策の王道は <strong>分離</strong>（プリペアドステートメント・ORM・引数配列）。出力時は <strong>エスケープ</strong>（フレームワーク任せ）、入力時は <strong>ホワイトリスト検証</strong>、さらに CSP・WAF・最小権限で多重防御</li>
+        <li>暗号化はデータの <strong>転送中・保存中・使用中</strong> の3状態で考える</li>
+        <li>パスワードは <strong>bcrypt / Argon2</strong>、それ以外は <strong>AES-256-GCM</strong> などの標準的な暗号を使う</li>
+        <li>三原則は <strong>自作しない・古いものを使わない・鍵を漏らさない</strong>。そして「そもそも保存しない」が最もリスクを減らす</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-15"><span class="num">15.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. SQL インジェクションの最も確実な対策は何ですか？ 入力から「'」を取り除くだけでは駄目ですか？</summary>
+      <div class="body"><p>最も確実なのは <strong>プリペアドステートメント（パラメータ化クエリ）</strong> や ORM で、データとコードを分離することです。特定の文字を取り除く方式（ブラックリスト）は抜け道が出やすく、それだけに頼るのは危険です。入力検証は補助として組み合わせます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. ユーザー名を画面に表示するとき、innerHTML と textContent のどちらを使うべきですか？</summary>
+      <div class="body"><p><strong><code>textContent</code></strong> です。<code>innerHTML</code> は文字列を HTML として解釈するため、<code>&lt;img onerror=...&gt;</code> のような入力で JavaScript が実行されます（XSS）。React なら <code>{userName}</code> のように通常の書き方をすれば自動でエスケープされます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 「DB のディスクを暗号化しているから、個人情報の漏洩対策は十分」と言えますか？</summary>
+      <div class="body"><p>言えません。ディスク暗号化はディスクそのものの盗難などには効きますが、<strong>アプリや正規アカウント経由で読まれると復号済みのデータが出ていきます</strong>。重要な項目はアプリ層で個別に暗号化して鍵を KMS で管理し、そもそも不要なデータは持たないことが大切です。</p></div>
+    </details>
+    <details>
+      <summary>Q4. ログイン用トークンを Math.random() で作ってはいけないのはなぜですか？</summary>
+      <div class="body"><p><code>Math.random()</code> は暗号用に作られておらず、<strong>出力を予測できる</strong> 可能性があるためです。セキュリティ用途では <code>crypto.randomBytes()</code>（Node.js）や <code>secrets</code>（Python）などの暗号論的乱数生成器を使います。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>OWASP Top 10:2021 A02 Cryptographic Failures ／ A03 Injection：<a href="https://owasp.org/Top10/">https://owasp.org/Top10/</a></li>
+      <li>OWASP Top 10:2025：<a href="https://top10.owasp.org/2025/">https://top10.owasp.org/2025/</a></li>
+      <li>OWASP Cheat Sheet Series（SQL Injection Prevention / Cross Site Scripting Prevention / Cryptographic Storage / Password Storage）</li>
+      <li>関連ノート：10_2026年_国内情報漏洩の動向と対策、05_データ最小化</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-2_アクセス制御と認証の失敗.html"><span class="lbl">← 前のページ</span>アクセス制御と認証の失敗</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-4_安全でない設計・設定ミス・古い部品.html"><span class="lbl">次のページ →</span>安全でない設計・設定ミス・古い部品</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

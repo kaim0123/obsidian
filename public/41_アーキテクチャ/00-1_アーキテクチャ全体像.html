@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アーキテクチャ全体像｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">00 全体像 › アーキテクチャ全体像</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>アーキテクチャ全体像</h1>
+      <p class="lead">アーキテクチャという分野全体を、ひとつながりの話として理解するためのページです。定義・法則・品質特性・スタイルの選び方・文書化・進化と組織・2020年代の論点までを一通りたどり、このノート群（41_アーキテクチャ）のフォルダ構成とどう対応しているかも図で整理します。</p>
+      <p class="meta">もとにしたノート：00_全体像/00_解説_アーキテクチャ体系.md、00_全体像/MOC_アーキテクチャ体系.md（フォルダ構成・置き場フロー・★比較表）</p>
+    </div>
+
+    <!-- ===== 本文ここから（h2 に id を付ける。h2/h3 から目次が自動生成される） ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><a href="00-0_目次.html">目次</a>が「どこに何があるか」の地図だとすれば、このページは <strong>アーキテクチャという分野全体を、ひとつながりの話として理解する</strong> ための解説です。各分野の個別ページに進む前に、まずここで全体の筋を通しておきます。</p>
+    <p>読み終えたときに、次の5つの問いに自分の言葉で答えられることを目標にします。</p>
+    <ol class="steps">
+      <li><strong>アーキテクチャとは何か</strong>（設計と何が違うのか）</li>
+      <li><strong>何を基準に良し悪しを判断するのか</strong>（品質特性）</li>
+      <li><strong>どんな「型（スタイル）」があり、どう選ぶのか</strong></li>
+      <li><strong>決めたことをどう残し、どう育てていくのか</strong>（ADR・C4・arc42、進化と組織）</li>
+      <li><strong>2020年代にどんな揺り戻しや新しい論点が出てきたか</strong></li>
+    </ol>
+    <p>あわせて、このノート群（41_アーキテクチャ）の <strong>フォルダ構成</strong> と、新しいノートを <strong>どこに置くか迷ったときの判断フロー</strong> も図にまとめています。フォルダ構成そのものが「アーキテクチャの全体像」を表すように作られているので、地図として使ってください。</p>
+    <div class="callout key">
+      <p class="callout-title">このページの読み方</p>
+      <p>2〜3章で「定義と法則」という前提をそろえ、4〜5章で全体マップとフォルダの対応を確認します。6〜9章が「判断の物差し → 構造の型 → 決めて残す → 育てる」という本筋で、10〜11章が歴史と最新の論点です。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>アーキテクチャとは何か — 3つの定義</h2>
+    <p>アーキテクチャには「これが唯一の正解」という定義はありません。代表的な3つの見方を押さえておくと、輪郭がはっきりします。</p>
+
+    <h3 id="sec-2-1">2-1. 規格の定義（ISO/IEC/IEEE 42010）</h3>
+    <blockquote><p>システムの環境の中での、そのシステムの<strong>根本的な概念または性質</strong>。それは<strong>要素</strong>・<strong>関係</strong>、そして<strong>設計と進化の原則</strong>に表れる。</p></blockquote>
+    <ul>
+      <li>ポイントは「<strong>すべて</strong>」ではなく「<strong>根本的なもの</strong>」だという点です。細部まで含めた設計全体ではなく、システムの性格を決める部分だけがアーキテクチャです。</li>
+      <li>「要素・関係・原則」の3つは、<a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a>で扱う3要素（コンポーネント・関係性・原則と制約）と同じ構図です。</li>
+      <li>42010 はほかに <strong>ステークホルダー（利害関係者）・関心事（Concern）・ビュー・ビューポイント</strong> という言葉も定めています。「その図や文書は、誰の、どんな関心に答えるものか」を意識せよ、という考え方で、後述する C4 モデルや arc42 の土台になっています。</li>
+    </ul>
+
+    <h3 id="sec-2-2">2-2. 実務家の定義（Ralph Johnson ／ Martin Fowler）</h3>
+    <blockquote><p>アーキテクチャとは「<strong>重要なもの</strong>、それが何であれ」。<br>言い換えると「<strong>変更が難しいと感じられるもの</strong>」。</p></blockquote>
+    <ul>
+      <li>Fowler の論文 <em>Who Needs an Architect?</em>（IEEE Software, 2003）で広まった見方です。</li>
+      <li>「後から変えにくいので、早めに正しく決めておきたい判断」の集まりがアーキテクチャだ、という捉え方です。</li>
+      <li>ここから <strong>「アーキテクトの重要な仕事は、不可逆性を取り除いてアーキテクチャを減らすことだ」</strong> という逆説的な結論が出てきます。たとえば DB を抽象化して差し替え可能にすれば、「どの DB を使うか」という判断を「重要でないもの（後から変えられるもの）」に変えられます。</li>
+    </ul>
+
+    <h3 id="sec-2-3">2-3. 『ソフトウェアアーキテクチャの基礎』の定義（Richards &amp; Ford）</h3>
+    <p>Mark Richards と Neal Ford は、アーキテクチャを次の <strong>4つの次元</strong> の組み合わせとして捉えます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>次元</th><th>中身</th><th>このノート群での置き場</th></tr></thead>
+      <tbody>
+        <tr><td><strong>構造</strong>（Structure）</td><td>どのスタイルで組むか（レイヤード、マイクロサービス…）</td><td>20 ／ 30 ／ 40</td></tr>
+        <tr><td><strong>アーキテクチャ特性</strong>（Characteristics）</td><td>成功の基準となる品質（スケーラビリティ、可用性…）</td><td>10（12_品質特性）</td></tr>
+        <tr><td><strong>アーキテクチャ決定</strong>（Decisions）</td><td>守るべきルール（「UI 層から DB を直接呼ばない」など）</td><td>60</td></tr>
+        <tr><td><strong>設計原則</strong>（Design Principles）</td><td>守るのが望ましい指針（「サービス間は非同期を優先」など）</td><td>10 ／ 48_原則（41 の外）</td></tr>
+      </tbody>
+    </table></div>
+    <p>この定義の主張は、<strong>「構造の図だけ描いてもアーキテクチャを説明したことにはならない。なぜその構造なのか（特性）と、どう守らせるのか（決定・原則）まで含めて初めてアーキテクチャになる」</strong> というものです。決定は「必ず守るルール」、原則は「できれば守る指針」という強さの違いがある点にも注意してください。</p>
+
+    <h3 id="sec-2-4">2-4. 設計との違い</h3>
+    <p>アーキテクチャと設計の間に明確な線は引けませんが、目安は次のとおりです（詳しくは<a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>アーキテクチャ</th><th>設計</th></tr></thead>
+      <tbody>
+        <tr><td>範囲</td><td>システム全体・複数チーム</td><td>1つのモジュール・クラス</td></tr>
+        <tr><td>変更コスト</td><td>高い（後から変えにくい）</td><td>比較的低い</td></tr>
+        <tr><td>主な問い</td><td>「<strong>何で</strong>分けるか」「<strong>なぜ</strong>そうするか」</td><td>「<strong>どう</strong>書くか」</td></tr>
+        <tr><td>失敗したとき</td><td>作り直しに近い</td><td>リファクタリングで直せる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>アーキテクチャの法則</h2>
+    <p>Richards &amp; Ford は、この分野の考え方を短い「法則」にまとめています。すべてのページに通じる前提なので、最初に覚えておきましょう。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>法則</th><th>内容</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>第1法則</strong></td><td>ソフトウェアアーキテクチャのすべてはトレードオフである</td><td>「常に正しいスタイル」はない。何かを得れば何かを失う（<a href="12-3_トレードオフと原則.html">トレードオフとアーキテクチャに効く原則</a>）</td></tr>
+        <tr><td><strong>第2法則</strong></td><td>「どうやって（How）」より「なぜ（Why）」が重要</td><td>構造そのものより、選んだ理由の方が後になって価値を持つ。これが ADR の存在理由</td></tr>
+        <tr><td><strong>第3法則</strong>（第2版で追加）</td><td>アーキテクチャ上の決定は二択ではなく、両極端の間のスペクトラム上にある</td><td>「モノリスかマイクロサービスか」ではなく「どの程度分けるか」で考える</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">「It depends」は逃げ口上ではない</p>
+      <p>「それは状況次第（It depends）」という答えは、アーキテクトの逃げ口上ではありません。<strong>何に依存するのかを言語化すること</strong>こそがアーキテクトの仕事だ、というのがこの法則群のメッセージです。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>全体マップ — ズームレベルで整理する</h2>
+    <p>41_アーキテクチャのノート群は、<strong>扱う範囲の大きさ（ズームレベル）</strong> でフォルダを分けています。これは C4 モデルの考え方と対応しています。</p>
+
+    <h3 id="sec-4-1">4-1. C4 モデルの4レベル</h3>
+    <p>C4 モデルは Simon Brown が提唱した、アーキテクチャ図を「地図アプリのズーム」のように描き分ける方法です。国全体の地図から市街地図、建物の間取りへと拡大していくように、同じシステムを4段階の細かさで描きます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>レベル</th><th>何を描くか</th><th>主な読み手</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. コンテキスト</strong>（System Context）</td><td>対象システムと、利用者・外部システムとの関係</td><td>非エンジニアを含む全員</td></tr>
+        <tr><td><strong>2. コンテナ</strong>（Container）</td><td>動かすために必要な実行単位（Web アプリ、API、DB、キュー、サーバーレス関数…）</td><td>開発者・運用者</td></tr>
+        <tr><td><strong>3. コンポーネント</strong>（Component）</td><td>1つのコンテナの中の主要な部品（インターフェースの裏にある実装のまとまり）</td><td>そのコンテナの開発者</td></tr>
+        <tr><td><strong>4. コード</strong>（Code）</td><td>クラス・関数・テーブル</td><td>通常は描かない（必要ならコードから自動生成）</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>ここでいう「コンテナ」は Docker のコンテナではなく、<strong>「動いていないとシステムが成り立たない実行単位」</strong> という意味です。</li>
+      <li>実務では <strong>レベル1・2だけ描けば十分</strong> なことが多いとされます。レベル3・4はコードを変更するたびに古くなりやすいためです。</li>
+    </ul>
+
+    <h3 id="sec-4-2">4-2. フォルダとの対応</h3>
+    <p>C4 の各レベルと、このノート群のフォルダの対応を図にすると次のようになります。左の列がズームの縦軸、右の列がどのレベルにも横から効くフォルダです。</p>
+    <figure>
+    <svg viewBox="0 0 760 440" role="img" aria-label="C4 のズームレベルと 41_アーキテクチャのフォルダの対応">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="40" y="20" width="430" height="72" rx="8" class="d-box"/>
+      <text x="255" y="42" text-anchor="middle" class="d-text-sub">広い：システムの外と中</text>
+      <text x="255" y="64" text-anchor="middle" class="d-text-bold">C4 L1 コンテキスト</text>
+      <text x="255" y="83" text-anchor="middle" class="d-text-sub">システムと利用者・外部システムの関係</text>
+      <line x1="255" y1="92" x2="255" y2="128" class="d-line" marker-end="url(#arw1)"/>
+      <text x="265" y="115" class="d-text-sub">ズームイン</text>
+      <rect x="70" y="130" width="370" height="72" rx="8" class="d-box-accent"/>
+      <text x="255" y="152" text-anchor="middle" class="d-text-sub">中：プロセス・サービス間</text>
+      <text x="255" y="174" text-anchor="middle" class="d-text-bold">C4 L2 コンテナ</text>
+      <text x="255" y="193" text-anchor="middle" class="d-text-sub">40_システム・分散 ／ 30_フロントエンド構成</text>
+      <line x1="255" y1="202" x2="255" y2="238" class="d-line" marker-end="url(#arw1)"/>
+      <text x="265" y="225" class="d-text-sub">ズームイン</text>
+      <rect x="100" y="240" width="310" height="72" rx="8" class="d-box-good"/>
+      <text x="255" y="262" text-anchor="middle" class="d-text-sub">狭い：1つのアプリの中</text>
+      <text x="255" y="284" text-anchor="middle" class="d-text-bold">C4 L3 コンポーネント</text>
+      <text x="255" y="303" text-anchor="middle" class="d-text-sub">20_アプリ内部構造</text>
+      <line x1="255" y1="312" x2="255" y2="348" class="d-line" marker-end="url(#arw1)"/>
+      <text x="265" y="335" class="d-text-sub">ズームイン</text>
+      <rect x="130" y="350" width="250" height="72" rx="8" class="d-box"/>
+      <text x="255" y="372" text-anchor="middle" class="d-text-sub">さらに狭い：コード</text>
+      <text x="255" y="394" text-anchor="middle" class="d-text-bold">C4 L4 コード</text>
+      <text x="255" y="413" text-anchor="middle" class="d-text-sub">42〜44 設計・パターン（41 の外）</text>
+
+      <rect x="520" y="20" width="225" height="64" rx="8" class="d-box-purple"/>
+      <text x="532" y="42" class="d-text-bold">60_意思決定・文書化</text>
+      <text x="532" y="60" class="d-text-sub">ADR・C4・arc42</text>
+      <text x="532" y="76" class="d-text-sub">決めて残す</text>
+      <line x1="520" y1="52" x2="472" y2="52" class="d-line-dash"/>
+
+      <rect x="520" y="110" width="225" height="64" rx="8" class="d-box-warn"/>
+      <text x="532" y="132" class="d-text-bold">10_基礎</text>
+      <text x="532" y="150" class="d-text-sub">特性・トレードオフ・結合</text>
+      <text x="532" y="166" class="d-text-sub">判断の物差し：どのレベルでも使う</text>
+      <line x1="520" y1="142" x2="442" y2="160" class="d-line-dash"/>
+
+      <rect x="520" y="200" width="225" height="64" rx="8" class="d-box-purple"/>
+      <text x="532" y="222" class="d-text-bold">70_進化と組織</text>
+      <text x="532" y="240" class="d-text-sub">負債・適応度関数・コンウェイ</text>
+      <text x="532" y="256" class="d-text-sub">時間の軸と人の軸</text>
+      <line x1="520" y1="232" x2="442" y2="185" class="d-line-dash"/>
+
+      <rect x="520" y="300" width="225" height="64" rx="8" class="d-box-warn"/>
+      <text x="532" y="322" class="d-text-bold">50_横断的関心事</text>
+      <text x="532" y="340" class="d-text-sub">認証・観測性・設定</text>
+      <text x="532" y="356" class="d-text-sub">全レベルを貫く仕組み</text>
+      <line x1="520" y1="332" x2="412" y2="280" class="d-line-dash"/>
+    </svg>
+    <figcaption>図：C4 のズームレベル（左）とフォルダの対応。右のフォルダは点線でつながるレベルを中心に、全体に横から効く</figcaption>
+    </figure>
+    <div class="grid c3">
+      <div class="card accent"><h4>縦軸（ズーム）</h4><p>20（1つのアプリの中）→ 30・40（プロセス・サービス間）→ コンテキスト（システムの外と中）と、範囲が広がっていきます。</p></div>
+      <div class="card warn"><h4>横に効くもの</h4><p>10（判断の物差し）と 50（全体を貫く仕組み）は、どのズームレベルでも出てきます。</p></div>
+      <div class="card purple"><h4>時間と人の軸</h4><p>60（決めて残す）と 70（育てる・組織と合わせる）は、構造そのものではなく、構造を決めて維持するための軸です。</p></div>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>フォルダ構成と置き場のルール</h2>
+    <p>41_アーキテクチャは、<strong>ソフトウェアを「どう組み立てるか」という大きな構造と、その判断</strong> を扱うノート群です。骨格は C4 モデル・arc42 にならった <strong>範囲の大きさ（ズームレベル）別</strong>、スタイルの比較方法は『ソフトウェアアーキテクチャの基礎』の <strong>アーキテクチャ特性の★評価</strong> を取り入れています。</p>
+
+    <h3 id="sec-5-1">5-1. フォルダ構成</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>役割</th><th>このサイトの入口</th></tr></thead>
+      <tbody>
+        <tr><td>00_全体像</td><td>全体の入口（MOC）・年表・旧カリキュラム目次</td><td><a href="00-0_目次.html">目次</a> ／ <a href="00-2_アーキテクチャ年表.html">アーキテクチャ年表</a> ／ <a href="00-3_スタイル比較ツール.html">スタイル比較ツール</a></td></tr>
+        <tr><td>10_基礎</td><td>アーキテクチャ思考 ／ 品質特性・非機能要件・トレードオフ ／ モジュール性・結合</td><td><a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a></td></tr>
+        <tr><td>20_アプリ内部構造</td><td>1つのアプリの中の構造：レイヤー ／ MVC 系 ／ クリーン・ヘキサ・オニオン ／ 依存性の管理</td><td><a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード</a></td></tr>
+        <tr><td>30_フロントエンド構成</td><td>レンダリング方式（CSR・SSR・SSG・ISR）／ BFF ／ マイクロフロントエンド</td><td><a href="30-1_レンダリング方式.html">レンダリング方式</a></td></tr>
+        <tr><td>40_システム・分散</td><td>複数のプロセス・サービスにまたがる構造：モノリス〜マイクロサービス ／ イベント駆動 ／ SAGA ／ API ゲートウェイ</td><td><a href="40-1_分散とスタイル.html">分散とスタイル</a></td></tr>
+        <tr><td>50_横断的関心事</td><td>認証認可の境界 ／ 観測性 ／ 設定・シークレット・フィーチャーフラグ</td><td><a href="50-1_横断的関心事と認証認可.html">横断的関心事と認証・認可の境界</a></td></tr>
+        <tr><td>60_意思決定・文書化</td><td>ADR ／ リスク分析 ／ 図解（C4・arc42）／ レビュー観点</td><td><a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a></td></tr>
+        <tr><td>70_進化と組織</td><td>技術的負債 ／ 進化的アーキテクチャ・適応度関数 ／ コンウェイの法則</td><td><a href="70-1_技術的負債.html">技術的負債と意図的な暫定案</a></td></tr>
+        <tr><td>90_参考資料</td><td>書籍・研修・動画のクリップ</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-2">5-2. 運用ルールと兄弟フォルダとの分担</h3>
+    <ul>
+      <li>10〜70 には、<strong>フレームワークや言語に依存しない設計の考え方と判断</strong> を書きます。</li>
+      <li>20・40 の「スタイル」ノートは、下の <strong>共通テンプレート</strong> で書き、スタイル比較表に★を追記します。</li>
+      <li>次のテーマは兄弟フォルダが本拠地です。41 には「アーキテクチャ上どこに置くか」だけを書きます。</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地（41 の外）</th></tr></thead>
+      <tbody>
+        <tr><td>SOLID・DRY などの設計原則</td><td>48_原則</td></tr>
+        <tr><td>DDD（戦略・戦術）・オブジェクト指向</td><td>42_ソフトウェア設計</td></tr>
+        <tr><td>パッケージ・モジュール分割の実務</td><td>43_モジュール設計</td></tr>
+        <tr><td>GoF デザインパターン</td><td>44_クラス設計・デザインパターン</td></tr>
+        <tr><td>API 設計</td><td>45_API設計</td></tr>
+        <tr><td>バックエンドの実装構造（Controller / Service / Repository）</td><td>34_Backend</td></tr>
+        <tr><td>React / Next.js 固有の構成</td><td>32_React ／ 33_Next.js ／ 47_フロントエンド設計</td></tr>
+        <tr><td>DB 設計・データモデル</td><td>68_データアーキテクチャ</td></tr>
+        <tr><td>可観測性の実装</td><td>65_可観測性</td></tr>
+        <tr><td>認証・認可の仕組み</td><td>73_認証認可 ／ 74_セッション管理</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-3">5-3. どこに置くか迷ったら</h3>
+    <p>新しいノートを書くとき、置き場に迷ったら上から順に問いに答えていきます。最初に「特定の FW・製品の話か」をふるい落とし、そのあとはズームの小さい順（1つのアプリ → 複数サービス）、最後に横断・決定・進化の軸を確認する順番になっています。</p>
+    <figure>
+    <svg viewBox="0 0 760 700" role="img" aria-label="ノートの置き場を決める判断フロー">
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="16" width="320" height="40" rx="20" class="d-box"/>
+      <text x="180" y="41" text-anchor="middle" class="d-text-bold">新しいノート</text>
+      <line x1="180" y1="56" x2="180" y2="84" class="d-line" marker-end="url(#arw2)"/>
+
+      <rect x="20" y="86" width="320" height="48" rx="8" class="d-box-accent"/>
+      <text x="180" y="115" text-anchor="middle" class="d-text">特定の FW・製品の書き方？</text>
+      <line x1="340" y1="110" x2="568" y2="110" class="d-line" marker-end="url(#arw2)"/>
+      <text x="360" y="102" class="d-text-sub">はい</text>
+      <rect x="570" y="86" width="175" height="48" rx="8" class="d-box"/>
+      <text x="657" y="106" text-anchor="middle" class="d-text-bold">各 FW・製品の</text>
+      <text x="657" y="125" text-anchor="middle" class="d-text-sub">フォルダ（41 の外）</text>
+      <line x1="180" y1="134" x2="180" y2="164" class="d-line" marker-end="url(#arw2)"/>
+      <text x="190" y="154" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="166" width="320" height="56" rx="8" class="d-box-accent"/>
+      <text x="180" y="189" text-anchor="middle" class="d-text">アーキテクチャとは何か・</text>
+      <text x="180" y="209" text-anchor="middle" class="d-text">品質・結合の考え方？</text>
+      <line x1="340" y1="194" x2="568" y2="194" class="d-line" marker-end="url(#arw2)"/>
+      <text x="360" y="186" class="d-text-sub">はい</text>
+      <rect x="570" y="170" width="175" height="48" rx="8" class="d-box-good"/>
+      <text x="657" y="199" text-anchor="middle" class="d-text-bold">10_基礎</text>
+      <line x1="180" y1="222" x2="180" y2="252" class="d-line" marker-end="url(#arw2)"/>
+      <text x="190" y="242" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="254" width="320" height="48" rx="8" class="d-box-accent"/>
+      <text x="180" y="283" text-anchor="middle" class="d-text">1つのアプリの中の構造？</text>
+      <line x1="340" y1="278" x2="373" y2="278" class="d-line" marker-end="url(#arw2)"/>
+      <text x="342" y="270" class="d-text-sub">はい</text>
+      <rect x="375" y="250" width="160" height="56" rx="8" class="d-box-accent"/>
+      <text x="455" y="273" text-anchor="middle" class="d-text">画面側の配信・</text>
+      <text x="455" y="293" text-anchor="middle" class="d-text">描画方式？</text>
+      <line x1="535" y1="278" x2="568" y2="278" class="d-line" marker-end="url(#arw2)"/>
+      <text x="538" y="270" class="d-text-sub">はい</text>
+      <rect x="570" y="254" width="175" height="48" rx="8" class="d-box-good"/>
+      <text x="657" y="283" text-anchor="middle" class="d-text-bold">30_フロントエンド構成</text>
+      <path d="M455,306 V346 H568" class="d-line" marker-end="url(#arw2)"/>
+      <text x="463" y="334" class="d-text-sub">いいえ</text>
+      <rect x="570" y="322" width="175" height="48" rx="8" class="d-box-good"/>
+      <text x="657" y="351" text-anchor="middle" class="d-text-bold">20_アプリ内部構造</text>
+      <line x1="180" y1="302" x2="180" y2="392" class="d-line" marker-end="url(#arw2)"/>
+      <text x="190" y="352" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="394" width="320" height="48" rx="8" class="d-box-accent"/>
+      <text x="180" y="423" text-anchor="middle" class="d-text">複数サービス・プロセス間？</text>
+      <line x1="340" y1="418" x2="568" y2="418" class="d-line" marker-end="url(#arw2)"/>
+      <text x="360" y="410" class="d-text-sub">はい</text>
+      <rect x="570" y="394" width="175" height="48" rx="8" class="d-box-good"/>
+      <text x="657" y="423" text-anchor="middle" class="d-text-bold">40_システム・分散</text>
+      <line x1="180" y1="442" x2="180" y2="472" class="d-line" marker-end="url(#arw2)"/>
+      <text x="190" y="462" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="474" width="320" height="48" rx="8" class="d-box-accent"/>
+      <text x="180" y="503" text-anchor="middle" class="d-text">全体に横断する仕組み？</text>
+      <line x1="340" y1="498" x2="568" y2="498" class="d-line" marker-end="url(#arw2)"/>
+      <text x="360" y="490" class="d-text-sub">はい</text>
+      <rect x="570" y="474" width="175" height="48" rx="8" class="d-box-good"/>
+      <text x="657" y="503" text-anchor="middle" class="d-text-bold">50_横断的関心事</text>
+      <line x1="180" y1="522" x2="180" y2="552" class="d-line" marker-end="url(#arw2)"/>
+      <text x="190" y="542" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="554" width="320" height="48" rx="8" class="d-box-accent"/>
+      <text x="180" y="583" text-anchor="middle" class="d-text">決定の記録・図解・レビュー？</text>
+      <line x1="340" y1="578" x2="568" y2="578" class="d-line" marker-end="url(#arw2)"/>
+      <text x="360" y="570" class="d-text-sub">はい</text>
+      <rect x="570" y="554" width="175" height="48" rx="8" class="d-box-good"/>
+      <text x="657" y="583" text-anchor="middle" class="d-text-bold">60_意思決定・文書化</text>
+      <line x1="180" y1="602" x2="180" y2="632" class="d-line" marker-end="url(#arw2)"/>
+      <text x="190" y="622" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="634" width="320" height="48" rx="8" class="d-box-good"/>
+      <text x="180" y="663" text-anchor="middle" class="d-text-bold">70_進化と組織</text>
+    </svg>
+    <figcaption>図：どこに置くか迷ったときの判断フロー（上から順に問いに答える）</figcaption>
+    </figure>
+
+    <h3 id="sec-5-4">5-4. スタイルノートの共通テンプレート</h3>
+    <p>20・40 に置く「スタイル」のノートは、比べやすいように次の見出しで書きそろえます。このサイトの各スタイルのページも、おおむねこの順番で構成しています。</p>
+<pre><code>## 生まれた背景（どんな課題があったか）
+## 構造（登場する部品と依存の向き・図）
+## アーキテクチャ特性の★評価（比較表と同じ軸）
+## 向いている場面 / 向いていない場面
+## 関連（前後のスタイル・原則・実装例）</code></pre>
+
+    <h2 id="sec-6"><span class="num">6.</span>判断の物差し — アーキテクチャ特性（品質特性）</h2>
+    <p>アーキテクチャを選ぶ基準は「機能（何ができるか）」ではなく、<strong>「どれだけうまくできるか」＝品質特性（非機能要件）</strong> です。同じ機能はどのスタイルでも実現できますが、品質特性はスタイルによって大きく変わります。</p>
+
+    <h3 id="sec-6-1">6-1. Richards &amp; Ford の3分類</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分類</th><th>例</th><th>典型的な問い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>運用特性</strong></td><td>可用性、性能、スケーラビリティ、弾力性、信頼性、回復性</td><td>本番で止まらず速く動くか</td></tr>
+        <tr><td><strong>構造特性</strong></td><td>保守性、拡張性、テスト容易性、デプロイ容易性、移植性</td><td>作り続けやすいか</td></tr>
+        <tr><td><strong>横断特性</strong></td><td>セキュリティ、アクセシビリティ、法規制対応、プライバシー</td><td>全体として守るべき制約を満たすか</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">全部を最大にしようとしない</p>
+      <p>特性同士は衝突します。セキュリティを上げると性能が落ち、スケーラビリティを上げるとシンプルさが落ちる、といった具合です。書籍では <strong>重要な特性を3つ程度に絞る</strong> ことを勧めています（<a href="12-1_品質特性と非機能要件.html">品質特性と非機能要件・特性の見つけ方</a>）。</p>
+    </div>
+
+    <h3 id="sec-6-2">6-2. 国際規格 ISO/IEC 25010:2023 の9特性</h3>
+    <p>2023年に改訂された製品品質モデルは、次の9特性で構成されています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特性</th><th>ざっくり言うと</th><th>2011年版からの変化</th></tr></thead>
+      <tbody>
+        <tr><td>機能適合性</td><td>必要な機能がそろっているか</td><td>—</td></tr>
+        <tr><td>性能効率性</td><td>資源に対して速いか</td><td>—</td></tr>
+        <tr><td>互換性</td><td>他システムと共存・連携できるか</td><td>—</td></tr>
+        <tr><td><strong>インタラクション能力</strong></td><td>使いやすいか（包括性なども含む）</td><td>旧「使用性」を改称・拡張</td></tr>
+        <tr><td>信頼性</td><td>故障せず動き続けるか（無欠陥性を追加）</td><td>一部副特性を追加</td></tr>
+        <tr><td>セキュリティ</td><td>守られているか（耐性を追加）</td><td>—</td></tr>
+        <tr><td>保守性</td><td>直しやすいか</td><td>—</td></tr>
+        <tr><td><strong>柔軟性</strong></td><td>環境変化に適応できるか（スケーラビリティを含む）</td><td>旧「移植性」を改称・拡張</td></tr>
+        <tr><td><strong>安全性</strong></td><td>人や環境に危害を与えないか</td><td><strong>新設</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>Richards &amp; Ford の分類は「アーキテクトがスタイルを選ぶための実務的な語彙」、ISO 25010 は「品質を漏れなく議論するための共通語彙」と使い分けると便利です。</p>
+
+    <h3 id="sec-6-3">6-3. 特性を「測れる形」にする</h3>
+    <p>「高可用性」のような言葉のままでは、判断も検証もできません。次のように <strong>シナリオや数値</strong> に落とし込みます（詳しくは<a href="12-2_品質特性シナリオと計測.html">品質特性シナリオと計測</a>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 曖昧な表現</th><th>○ 測れる表現</th></tr></thead>
+      <tbody>
+        <tr><td>速いこと</td><td>ピーク時 1,000 req/s で 95 パーセンタイル 300ms 以内</td></tr>
+        <tr><td>止まらないこと</td><td>月間稼働率 99.9%、障害時 30 分以内に復旧</td></tr>
+        <tr><td>変更しやすいこと</td><td>新しい決済手段の追加が 1 チーム・1 スプリントで済む</td></tr>
+      </tbody>
+    </table></div>
+    <p>この「測れる形」が、9章で扱う <strong>適応度関数</strong> によって、そのまま自動チェックの対象になります。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>構造の型 — アーキテクチャスタイルの地図</h2>
+
+    <h3 id="sec-7-1">7-1. 2本の軸で整理する</h3>
+    <p>すべてのスタイルは、次の2つの軸でおおよそ位置づけられます。</p>
+    <ol>
+      <li><strong>分割の軸</strong>：技術で分けるか（UI ／ ロジック ／ DB）、ドメインで分けるか（注文 ／ 在庫 ／ 会計）</li>
+      <li><strong>デプロイ単位</strong>：1つにまとめるか（モノリシック）、複数に分けるか（分散）</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>技術で分割</th><th>ドメインで分割</th></tr></thead>
+      <tbody>
+        <tr><th>1つのデプロイ単位</th><td>レイヤード、パイプライン、マイクロカーネル</td><td>モジュラーモノリス</td></tr>
+        <tr><th>複数のデプロイ単位</th><td>イベント駆動、スペースベース</td><td>サービスベース、マイクロサービス</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card accent"><h4>技術で分割</h4><p>同じ技術を持つ人が集まりやすく、最初は分かりやすい構成です。ただし、1つの業務変更が全層に波及しやすいという弱点があります。</p></div>
+      <div class="card good"><h4>ドメインで分割</h4><p>業務の変更が1か所に閉じやすく、チームとも対応させやすい構成です（→ <a href="70-3_コンウェイの法則とTeamTopologies.html">コンウェイの法則</a>）。</p></div>
+    </div>
+
+    <h3 id="sec-7-2">7-2. アプリ内部構造（20）とシステム構造（40）は別の話</h3>
+    <p>よく混同されますが、<strong>クリーンアーキテクチャとマイクロサービスは対立する選択肢ではありません</strong>。答えている問いが違います。</p>
+    <ul>
+      <li><strong>20_アプリ内部構造</strong>：1つのデプロイ単位の <strong>中身</strong> をどう分けるか（レイヤード、MVC、クリーン・ヘキサゴナル・オニオン）</li>
+      <li><strong>40_システム・分散</strong>：システムを <strong>いくつのデプロイ単位</strong> に分けるか（モノリス〜マイクロサービス）</li>
+    </ul>
+    <p>「マイクロサービスの1つ1つの中身をヘキサゴナルで書く」のように、<strong>組み合わせて使うのが普通</strong> です。</p>
+
+    <h3 id="sec-7-3">7-3. スタイル比較表と★評価の読み方</h3>
+    <p>MOC にある比較表（★1〜5）は『ソフトウェアアーキテクチャの基礎』の評価に基づいています。★が多いほどその特性に優れます（「手軽さ・コスト」は★が多いほど安い）。重み付けして比べたい場合は<a href="00-3_スタイル比較ツール.html">スタイル比較ツール</a>を使ってください。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>スタイル</th><th class="c">置き場</th><th>分割の軸</th><th>手軽さ・コスト</th><th>シンプルさ</th><th>デプロイ容易性</th><th>テスト容易性</th><th>拡張性（スケール）</th><th>耐障害性</th><th>進化しやすさ</th></tr></thead>
+      <tbody>
+        <tr><td>レイヤード</td><td class="c">20</td><td>技術</td><td class="stars">★★★★★</td><td class="stars">★★★★★</td><td class="stars">★</td><td class="stars">★★</td><td class="stars">★</td><td class="stars">★</td><td class="stars">★</td></tr>
+        <tr><td>クリーン・ヘキサ・オニオン</td><td class="c">20</td><td>技術（依存の向き）</td><td class="stars">★★★</td><td class="stars">★★</td><td class="stars">★</td><td class="stars">★★★★</td><td class="stars">★</td><td class="stars">★</td><td class="stars">★★★</td></tr>
+        <tr><td>モジュラーモノリス</td><td class="c">40</td><td>ドメイン</td><td class="stars">★★★★★</td><td class="stars">★★★★</td><td class="stars">★★</td><td class="stars">★★★</td><td class="stars">★</td><td class="stars">★</td><td class="stars">★★★</td></tr>
+        <tr><td>マイクロカーネル</td><td class="c">40</td><td>技術 ／ ドメイン</td><td class="stars">★★★★★</td><td class="stars">★★★★</td><td class="stars">★★★</td><td class="stars">★★★</td><td class="stars">★</td><td class="stars">★</td><td class="stars">★★★</td></tr>
+        <tr><td>サービスベース</td><td class="c">40</td><td>ドメイン</td><td class="stars">★★★★</td><td class="stars">★★★</td><td class="stars">★★★★</td><td class="stars">★★★★</td><td class="stars">★★★</td><td class="stars">★★★★</td><td class="stars">★★★</td></tr>
+        <tr><td>イベント駆動</td><td class="c">40</td><td>技術</td><td class="stars">★★★</td><td class="stars">★</td><td class="stars">★★★</td><td class="stars">★★</td><td class="stars">★★★★★</td><td class="stars">★★★★★</td><td class="stars">★★★★★</td></tr>
+        <tr><td>スペースベース</td><td class="c">40</td><td>技術</td><td class="stars">★★</td><td class="stars">★</td><td class="stars">★★★</td><td class="stars">★</td><td class="stars">★★★★★</td><td class="stars">★★★</td><td class="stars">★★★</td></tr>
+        <tr><td>マイクロサービス</td><td class="c">40</td><td>ドメイン</td><td class="stars">★</td><td class="stars">★</td><td class="stars">★★★★</td><td class="stars">★★★★</td><td class="stars">★★★★★</td><td class="stars">★★★★</td><td class="stars">★★★★★</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">出典：『ソフトウェアアーキテクチャの基礎』初版の評価表。クリーン・ヘキサ・オニオンは書籍に評価がないため独自の目安、モジュラーモノリス（第2版の新章）も目安です。</p>
+    <p>この表を読むときのコツは次の3つです。</p>
+    <ul>
+      <li><strong>★の合計で比べない</strong>。自分のシステムで重要な3特性の列だけを見ます。</li>
+      <li>表の上のほう（レイヤード・モジュラーモノリス）は <strong>手軽さ・シンプルさ</strong> が高く、下のほう（イベント駆動・マイクロサービス）は <strong>スケール・耐障害性・進化しやすさ</strong> が高くなっています。これは「第1法則：すべてはトレードオフ」をそのまま可視化したものです。</li>
+      <li>迷ったら <strong>★が低くてもシンプルな方から始め、必要になってから分散側へ移る</strong>（次項）のが基本です。</li>
+    </ul>
+
+    <h3 id="sec-7-4">7-4. 選び方のフロー（目安）</h3>
+    <p>新しいシステムのスタイルを選ぶときの出発点として、次のフローが使えます。上から順に「はい」が続くほど分散寄りのスタイルになります。</p>
+    <figure>
+    <svg viewBox="0 0 760 650" role="img" aria-label="アーキテクチャスタイルの選び方フロー">
+      <defs><marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="16" width="320" height="40" rx="20" class="d-box"/>
+      <text x="180" y="41" text-anchor="middle" class="d-text-bold">新しいシステム</text>
+      <line x1="180" y1="56" x2="180" y2="84" class="d-line" marker-end="url(#arw3)"/>
+
+      <rect x="20" y="86" width="320" height="56" rx="8" class="d-box-accent"/>
+      <text x="180" y="109" text-anchor="middle" class="d-text">チームは複数？</text>
+      <text x="180" y="129" text-anchor="middle" class="d-text">ドメインは大きい？</text>
+      <line x1="340" y1="114" x2="418" y2="114" class="d-line" marker-end="url(#arw3)"/>
+      <text x="352" y="106" class="d-text-sub">いいえ</text>
+      <rect x="420" y="86" width="320" height="56" rx="8" class="d-box-good"/>
+      <text x="580" y="109" text-anchor="middle" class="d-text-bold">レイヤード or モジュラーモノリス</text>
+      <text x="580" y="129" text-anchor="middle" class="d-text-sub">中身はクリーン／ヘキサで依存を整理</text>
+      <line x1="180" y1="142" x2="180" y2="184" class="d-line" marker-end="url(#arw3)"/>
+      <text x="190" y="168" class="d-text-sub">はい</text>
+
+      <rect x="20" y="186" width="320" height="56" rx="8" class="d-box-accent"/>
+      <text x="180" y="209" text-anchor="middle" class="d-text">部分ごとに独立して</text>
+      <text x="180" y="229" text-anchor="middle" class="d-text">デプロイ・スケールしたい？</text>
+      <line x1="340" y1="214" x2="418" y2="214" class="d-line" marker-end="url(#arw3)"/>
+      <text x="352" y="206" class="d-text-sub">いいえ</text>
+      <rect x="420" y="186" width="320" height="56" rx="8" class="d-box-good"/>
+      <text x="580" y="209" text-anchor="middle" class="d-text-bold">モジュラーモノリス</text>
+      <text x="580" y="229" text-anchor="middle" class="d-text-sub">境界だけ先に引く</text>
+      <line x1="180" y1="242" x2="180" y2="284" class="d-line" marker-end="url(#arw3)"/>
+      <text x="190" y="268" class="d-text-sub">はい</text>
+
+      <rect x="20" y="286" width="320" height="56" rx="8" class="d-box-accent"/>
+      <text x="180" y="309" text-anchor="middle" class="d-text">CI/CD・監視・トレースは</text>
+      <text x="180" y="329" text-anchor="middle" class="d-text">整っている？</text>
+      <line x1="340" y1="314" x2="418" y2="314" class="d-line" marker-end="url(#arw3)"/>
+      <text x="352" y="306" class="d-text-sub">いいえ</text>
+      <rect x="420" y="286" width="320" height="56" rx="8" class="d-box-good"/>
+      <text x="580" y="309" text-anchor="middle" class="d-text-bold">サービスベース</text>
+      <text x="580" y="329" text-anchor="middle" class="d-text-sub">粗い分割＋共有 DB から</text>
+      <line x1="180" y1="342" x2="180" y2="384" class="d-line" marker-end="url(#arw3)"/>
+      <text x="190" y="368" class="d-text-sub">はい</text>
+
+      <rect x="20" y="386" width="320" height="56" rx="8" class="d-box-good"/>
+      <text x="180" y="409" text-anchor="middle" class="d-text-bold">マイクロサービス</text>
+      <text x="180" y="429" text-anchor="middle" class="d-text-sub">＋必要に応じてイベント駆動</text>
+
+      <line x1="580" y1="142" x2="580" y2="186" class="d-line-dash"/>
+      <line x1="580" y1="242" x2="580" y2="286" class="d-line-dash"/>
+      <path d="M180,442 V466 H300 V488" class="d-line" marker-end="url(#arw3)"/>
+      <path d="M580,342 V466 H460 V488" class="d-line" marker-end="url(#arw3)"/>
+      <text x="380" y="471" text-anchor="middle" class="d-text-sub">どれを選んでも最後に確認</text>
+
+      <rect x="220" y="490" width="320" height="56" rx="8" class="d-box-accent"/>
+      <text x="380" y="523" text-anchor="middle" class="d-text">極端な瞬間負荷がある？</text>
+      <path d="M300,546 V566 H180 V584" class="d-line" marker-end="url(#arw3)"/>
+      <text x="236" y="561" class="d-text-sub">はい</text>
+      <path d="M460,546 V566 H580 V584" class="d-line" marker-end="url(#arw3)"/>
+      <text x="494" y="561" class="d-text-sub">いいえ</text>
+      <rect x="20" y="586" width="320" height="48" rx="8" class="d-box-warn"/>
+      <text x="180" y="615" text-anchor="middle" class="d-text-bold">一部にスペースベース／キャッシュ層</text>
+      <rect x="420" y="586" width="320" height="48" rx="8" class="d-box-purple"/>
+      <text x="580" y="615" text-anchor="middle" class="d-text-bold">ADR に理由を記録</text>
+    </svg>
+    <figcaption>図：スタイル選びの出発点。右列の点線は「どの結果からも最後の確認へ進む」ことを表す</figcaption>
+    </figure>
+    <div class="callout key">
+      <p class="callout-title">フローは出発点にすぎない</p>
+      <p>実際には品質特性の優先順位・予算・組織の成熟度で判断します。そして、スペースベースを足した場合も含めて、最終的に <strong>選んだ理由を ADR に残すこと</strong> が本体です（第2法則）。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>決めて残す — 意思決定と文書化（60）</h2>
+    <p>アーキテクチャの価値の多くは「なぜそうしたか」にあります（第2法則）。それを残すための代表的な道具が、ADR・C4 モデル・arc42 の3つです。</p>
+
+    <h3 id="sec-8-1">8-1. ADR（Architecture Decision Record）</h3>
+    <p>Michael Nygard が 2011 年に提唱した、<strong>1つの決定を1つの短い文書に残す</strong> 方法です（<a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a>）。たとえば次のように書きます。</p>
+<pre><code># ADR-007: 注文サービスと在庫サービスの連携を非同期イベントにする
+## ステータス
+承認済み（2026-10-01）
+## コンテキスト
+在庫サービスの応答遅延が注文確定を止める障害が月2回発生している…
+## 決定
+注文確定時に OrderPlaced イベントを発行し、在庫は非同期に引き当てる。
+## 結果
+- 良い: 在庫側の障害が注文受付に波及しない
+- 悪い: 在庫不足が後から判明するケースの補償処理（SAGA）が必要になる</code></pre>
+    <ul>
+      <li><strong>動機</strong>：新しく来た人が過去の決定に対して「盲目的に受け入れるか、盲目的に変えるか」の二択に追い込まれるのを防ぎます。</li>
+      <li>長大な設計書は読まれませんが、短い ADR はコードと一緒にリポジトリで管理でき、実際に読まれます。</li>
+      <li>「結果」に良い面と悪い面の両方を書くのがポイントです。上の例の「SAGA が必要になる」は<a href="40-4_データ所有権とSAGA.html">データ所有権・分散トランザクション・SAGA</a>につながります。</li>
+      <li>Thoughtworks の Technology Radar でも長く「Adopt（採用推奨）」に置かれている定番の手法です。</li>
+    </ul>
+
+    <h3 id="sec-8-2">8-2. C4 モデル（図）</h3>
+    <p>4章で見た4レベルで図を描き分けます。図には <strong>凡例・タイトル・矢印のラベル（何を、どのプロトコルで送るか）</strong> を必ず付けるのが C4 の流儀です（<a href="60-2_C4モデルとarc42.html">図と文書化（C4 モデル・arc42）</a>）。</p>
+
+    <h3 id="sec-8-3">8-3. arc42（文書テンプレート）</h3>
+    <p>arc42 は 2005 年からある、技術に依存しない <strong>12章構成</strong> のアーキテクチャ文書テンプレートです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="c">#</th><th>章</th><th>中身</th></tr></thead>
+      <tbody>
+        <tr><td class="c">1</td><td>導入と目標</td><td>要求の要点、<strong>品質目標トップ3</strong>、ステークホルダー</td></tr>
+        <tr><td class="c">2</td><td>制約</td><td>守らなければならない技術・組織・法律上の制約</td></tr>
+        <tr><td class="c">3</td><td>コンテキストとスコープ</td><td>外部システム・利用者との境界（≒ C4 L1）</td></tr>
+        <tr><td class="c">4</td><td>解決戦略</td><td>中心となるアイデアと方針</td></tr>
+        <tr><td class="c">5</td><td>ビルディングブロックビュー</td><td>静的な構造を階層的に分解（≒ C4 L2・L3）</td></tr>
+        <tr><td class="c">6</td><td>ランタイムビュー</td><td>重要なシナリオでの動き</td></tr>
+        <tr><td class="c">7</td><td>デプロイメントビュー</td><td>インフラと配置</td></tr>
+        <tr><td class="c">8</td><td>横断的コンセプト</td><td>全体に効く仕組み（→ 50_横断的関心事）</td></tr>
+        <tr><td class="c">9</td><td>アーキテクチャ決定</td><td>重要な決定（→ ADR を並べる）</td></tr>
+        <tr><td class="c">10</td><td>品質要求</td><td>品質ツリーと品質シナリオ（→ 6-3）</td></tr>
+        <tr><td class="c">11</td><td>リスクと技術的負債</td><td>既知の問題（→ 70）</td></tr>
+        <tr><td class="c">12</td><td>用語集</td><td>専門用語</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">3つの道具の組み合わせ</p>
+      <p><strong>C4 で描き、arc42 の枠に入れ、決定は ADR で残す</strong> という組み合わせが実務でよく使われます。このノート群のフォルダ構成（10 品質 ／ 50 横断 ／ 60 決定 ／ 70 負債）も、arc42 の章立て（10章・8章・9章・11章）とほぼ対応しています。</p>
+    </div>
+
+    <h3 id="sec-8-4">8-4. 誰が決めるか — 分散型の意思決定</h3>
+    <p>近年は「アーキテクトが全部決める」スタイルから、<strong>アーキテクチャ・アドバイス・プロセス</strong> のような分散型の進め方も注目されています（Thoughtworks Technology Radar）。これは「誰でも決定してよいが、影響を受ける人と専門家には必ず助言を求め、その結果を ADR に残す」という進め方です。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>育てる — 進化と組織（70）</h2>
+    <p>アーキテクチャは一度決めて終わりではありません。<strong>時間とともに劣化し、組織とともに変わる</strong> ものです。</p>
+
+    <h3 id="sec-9-1">9-1. 技術的負債</h3>
+    <p>意図的な暫定案（「今は速さを優先し、後で直す」）は正当な判断です。しかし <strong>記録と返済計画がないと「ただの劣化」になります</strong>（<a href="70-1_技術的負債.html">技術的負債と意図的な暫定案</a>）。arc42 の第11章や ADR の「結果」に書いておくのが実務的です。</p>
+
+    <h3 id="sec-9-2">9-2. 進化的アーキテクチャと適応度関数</h3>
+    <p>Neal Ford・Rebecca Parsons・Patrick Kua の『進化的アーキテクチャ』が提唱した考え方です（<a href="70-2_進化的アーキテクチャと適応度関数.html">進化的アーキテクチャと適応度関数</a>）。</p>
+    <blockquote><p><strong>アーキテクチャ適応度関数</strong>：あるアーキテクチャ特性が保たれているかを、<strong>客観的に評価する仕組み</strong>。</p></blockquote>
+    <ul>
+      <li>例：「ドメイン層はインフラ層に依存しない」を ArchUnit などのテストで CI 上で検査する</li>
+      <li>例：「API の p95 レイテンシ 300ms 以内」を監視で常時チェックする</li>
+      <li>例：「サービス間の循環依存ゼロ」を静的解析で検出する</li>
+      <li>分類：<strong>トリガー型</strong>（CI などで実行）と <strong>継続型</strong>（本番監視）、<strong>原子的</strong>（1つの特性を見る）と <strong>全体的</strong>（複数特性の組み合わせを見る）などがあります。</li>
+    </ul>
+    <p>6-3 で「測れる形」にした品質特性を、<strong>自動で守り続ける</strong> ための仕組みです。ADR が「決定を残す」役割なら、適応度関数は「決定を守らせる」役割を担います。</p>
+
+    <h3 id="sec-9-3">9-3. コンウェイの法則と Team Topologies</h3>
+    <blockquote><p>システムの構造は、それを設計した組織のコミュニケーション構造を写したものになる（コンウェイの法則）。</p></blockquote>
+    <ul>
+      <li>逆に、<strong>望むアーキテクチャに合わせてチームを組む</strong> のが「逆コンウェイ戦略」です（<a href="70-3_コンウェイの法則とTeamTopologies.html">コンウェイの法則と Team Topologies</a>）。</li>
+      <li>『Team Topologies』（Skelton &amp; Pais）は、これを実践するための4つのチーム型を示しました。</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チーム型</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td>ストリームアラインド</td><td>1つの価値の流れ（業務・顧客体験）を端から端まで担当する主役</td></tr>
+        <tr><td>プラットフォーム</td><td>CI/CD・認証・観測性などをセルフサービスで提供し、他チームの <strong>認知負荷</strong> を下げる</td></tr>
+        <tr><td>イネイブリング</td><td>新しい技術・やり方を他チームに教えて自立させる</td></tr>
+        <tr><td>コンプリケイテッド・サブシステム</td><td>高度な専門知識が必要な部分（数理最適化・映像処理など）を担当</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout bad">
+      <p class="callout-title">コンウェイの法則に逆らっている状態</p>
+      <p>「マイクロサービスにしたのにチームが1つしかない」「チームは分かれたのにモノリスを全員で触っている」は、どちらもコンウェイの法則に逆らっている状態です。</p>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>歴史の流れ — 何が何を解決してきたか</h2>
+    <p>詳しくは<a href="00-2_アーキテクチャ年表.html">アーキテクチャ年表</a>で扱います。ここでは大きな流れだけを示します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>時期</th><th>出来事</th><th>何を解決しようとしたか</th></tr></thead>
+      <tbody>
+        <tr><td>1970年代以前</td><td>スパゲッティコード</td><td>（出発点。役割の分離がない）</td></tr>
+        <tr><td>1979</td><td>MVC</td><td>UI の分離</td></tr>
+        <tr><td>1990年代</td><td>3層・レイヤード</td><td>サーバー側の責務分離</td></tr>
+        <tr><td>2003〜2012</td><td>DDD ／ ヘキサゴナル ／ オニオン ／ クリーン</td><td>ドメインを中心に置き、依存を内向きにする</td></tr>
+        <tr><td>2000年代〜2010年代</td><td>SOA → イベント駆動</td><td>システム間の疎結合</td></tr>
+        <tr><td>2014</td><td>マイクロサービス</td><td>独立デプロイ・チームの自律</td></tr>
+        <tr><td>2015〜</td><td>Monolith First ／ モジュラーモノリス</td><td>分散の代償への揺り戻し</td></tr>
+        <tr><td>2020年代</td><td>セルベース ／ プラットフォームエンジニアリング ／ AI エージェント</td><td>障害の影響範囲の限定、運用負荷の軽減、新しい構成要素への対応</td></tr>
+      </tbody>
+    </table></div>
+    <p>一貫しているテーマは <strong>「変更の影響範囲を小さくする」</strong> ことです。分ける単位が「関数 → 層 → ドメイン → サービス → チーム」と大きくなってきた、と捉えると流れがつかめます。</p>
+    <figure>
+    <svg viewBox="0 0 760 160" role="img" aria-label="分ける単位の拡大">
+      <defs><marker id="arw4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="52" width="100" height="56" rx="8" class="d-box"/>
+      <text x="60" y="78" text-anchor="middle" class="d-text-bold">関数</text>
+      <text x="60" y="97" text-anchor="middle" class="d-text-sub">手続き</text>
+      <line x1="110" y1="80" x2="133" y2="80" class="d-line" marker-end="url(#arw4)"/>
+      <rect x="135" y="46" width="120" height="68" rx="8" class="d-box-accent"/>
+      <text x="195" y="78" text-anchor="middle" class="d-text-bold">層</text>
+      <text x="195" y="97" text-anchor="middle" class="d-text-sub">MVC・3層</text>
+      <line x1="255" y1="80" x2="278" y2="80" class="d-line" marker-end="url(#arw4)"/>
+      <rect x="280" y="40" width="130" height="80" rx="8" class="d-box-good"/>
+      <text x="345" y="78" text-anchor="middle" class="d-text-bold">ドメイン</text>
+      <text x="345" y="97" text-anchor="middle" class="d-text-sub">DDD・クリーン</text>
+      <line x1="410" y1="80" x2="433" y2="80" class="d-line" marker-end="url(#arw4)"/>
+      <rect x="435" y="34" width="140" height="92" rx="8" class="d-box-warn"/>
+      <text x="505" y="78" text-anchor="middle" class="d-text-bold">サービス</text>
+      <text x="505" y="97" text-anchor="middle" class="d-text-sub">マイクロサービス</text>
+      <line x1="575" y1="80" x2="598" y2="80" class="d-line" marker-end="url(#arw4)"/>
+      <rect x="600" y="28" width="150" height="104" rx="8" class="d-box-purple"/>
+      <text x="675" y="78" text-anchor="middle" class="d-text-bold">チーム</text>
+      <text x="675" y="97" text-anchor="middle" class="d-text-sub">Team Topologies</text>
+    </svg>
+    <figcaption>図：「変更の影響範囲を小さくする」ために分ける単位が大きくなってきた</figcaption>
+    </figure>
+
+    <h2 id="sec-11"><span class="num">11.</span>2020年代の論点</h2>
+
+    <h3 id="sec-11-1">11-1. 「マイクロサービス一辺倒」からの揺り戻し</h3>
+    <ul>
+      <li>Fowler は 2015 年の時点で、<strong>MonolithFirst</strong>（まずモノリスで作り、中をモジュールに分け、問題になってから切り出す）と <strong>マイクロサービス・プレミアム</strong>（分散そのものが追加のコストとリスクを生む）を指摘していました。</li>
+      <li>2023 年には、Amazon Prime Video の映像品質監視サービスが、サーバーレス／分散構成を <strong>1プロセスにまとめてインフラコストを約90%削減</strong> した事例が話題になりました。
+        <ul>
+          <li>ただしこれは <strong>1つのサービス内の構成変更</strong> であり、「マイクロサービスはダメ」という話ではありません。コンポーネント間で大量のデータを受け渡す処理を、ネットワーク越しに分けていたことが問題でした。</li>
+        </ul>
+      </li>
+      <li>『ソフトウェアアーキテクチャの基礎』第2版（2025）で <strong>モジュラーモノリスが独立した章</strong> として追加されたのも、この流れを反映しています。</li>
+    </ul>
+    <p>教訓は「モノリスに戻れ」ではなく <strong>第3法則（決定はスペクトラム）</strong> です。分割の粒度は、データの流れ・チーム・品質特性に合わせて調整するものです（<a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a>）。</p>
+
+    <h3 id="sec-11-2">11-2. セルベースアーキテクチャ</h3>
+    <p>システム全体を、<strong>アプリとデータをすべて含んだ独立したコピー（セル）</strong> に分割し、利用者をいずれかのセルに振り分ける方式です。AWS Well-Architected でも、障害の影響範囲（ブラスト半径）を限定する手法として解説されています。</p>
+    <ul>
+      <li>船の隔壁（バルクヘッド）と同じ発想で、1つのセルの障害や不良デプロイが全利用者に広がりません。</li>
+      <li>「機能で分ける」マイクロサービスとは直交する、「<strong>利用者（テナント）で分ける</strong>」軸の分割です。</li>
+      <li>向いているのは、止まると影響が極めて大きい超大規模システムや、厳しい RTO／RPO（目標復旧時間／目標復旧時点）が求められるシステムです。</li>
+    </ul>
+
+    <h3 id="sec-11-3">11-3. プラットフォームエンジニアリング</h3>
+    <p>Team Topologies のプラットフォームチームを具体化したもので、<strong>社内開発者向けプラットフォーム（IDP）</strong> を作って各チームの認知負荷を下げる取り組みです。分散アーキテクチャの運用コスト（マイクロサービス・プレミアム）を組織的に下げる手段とも言えます。</p>
+
+    <h3 id="sec-11-4">11-4. AI・LLM とアーキテクチャ</h3>
+    <p>AI とアーキテクチャの関係には、2つの方向があります。</p>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>(1) AI を組み込んだシステムのアーキテクチャ</h4>
+        <ul>
+          <li>Anthropic の <em>Building effective agents</em> は、LLM システムを <strong>ワークフロー</strong>（制御の流れをコードで決め、決まった箇所で LLM を呼ぶ）と <strong>エージェント</strong>（次に何をするかを LLM が環境からのフィードバックで決める）に分け、プロンプトチェーン・ルーティング・並列化・オーケストレーター＝ワーカーなどのパターンを示しました。</li>
+          <li>原則は <strong>「最もシンプルで確実に解ける構成を選び、本当に必要なときだけ自律性を上げる」</strong>。これは第1法則（トレードオフ）や MonolithFirst と同じ考え方です。</li>
+          <li>安全面では、巨大な単一エージェントより <strong>制約された小さなエージェントのパイプライン＋強い監視</strong> が望ましいとされ、ゼロトラスト・最小権限が前提条件になりつつあります（Thoughtworks Technology Radar）。</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h4>(2) AI がアーキテクチャを守る・壊す</h4>
+        <ul>
+          <li>コーディングエージェントが大量にコードを書く時代には、<strong>アーキテクチャの逸脱（ドリフト）</strong> が起きやすくなります。</li>
+          <li>対策として、参照実装を MCP サーバー経由でエージェントに見せる、<strong>適応度関数・アーキテクチャテストを CI に入れて自動で検出する</strong>、ADR をエージェントにも読ませる、といった取り組みが出てきています。</li>
+          <li>「人が読んで守るルール」から「<strong>機械が検査できるルール</strong>」へ移す価値が、AI によって一段と高まっています。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>有名企業が使っているスタイルが正解</td><td>規模・チーム・品質特性が違えば正解も違う（第1法則）</td></tr>
+        <tr><td>マイクロサービスは「進んだ」モノリス</td><td>別のトレードオフを選んだだけ。分散の代償（プレミアム）を払えるかが問題</td></tr>
+        <tr><td>クリーンアーキテクチャを入れれば保守性が上がる</td><td>小さなアプリでは層とインターフェースが増えて逆に読みにくくなる（<a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a>）</td></tr>
+        <tr><td>アーキテクチャは最初に全部決めるもの</td><td>変えにくい部分だけ早めに決め、残りは「後で決められる」ようにしておく（Fowler）</td></tr>
+        <tr><td>図があればアーキテクチャは説明できる</td><td>構造＋特性＋決定＋原則の4次元が必要（Richards &amp; Ford）</td></tr>
+        <tr><td>アーキテクチャは技術だけの問題</td><td>組織構造と表裏一体（コンウェイの法則）</td></tr>
+        <tr><td>クリーンアーキテクチャとマイクロサービスはどちらかを選ぶもの</td><td>答える問いが違う（中身の分け方と、デプロイ単位の数）。組み合わせて使うのが普通（7-2）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-13"><span class="num">13.</span>学習ロードマップ</h2>
+    <p>このサイトの各分野は、次の順に読むと前の知識が次で生きるように並んでいます。</p>
+    <figure>
+    <svg viewBox="0 0 760 310" role="img" aria-label="学習ロードマップ">
+      <defs><marker id="arw5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="20" width="170" height="60" rx="8" class="d-box-warn"/>
+      <text x="95" y="46" text-anchor="middle" class="d-text-bold">10_基礎</text>
+      <text x="95" y="66" text-anchor="middle" class="d-text-sub">定義・品質特性・結合</text>
+      <line x1="180" y1="50" x2="198" y2="50" class="d-line" marker-end="url(#arw5)"/>
+      <rect x="200" y="20" width="170" height="60" rx="8" class="d-box-good"/>
+      <text x="285" y="46" text-anchor="middle" class="d-text-bold">20_アプリ内部構造</text>
+      <text x="285" y="66" text-anchor="middle" class="d-text-sub">レイヤー→クリーン</text>
+      <line x1="370" y1="50" x2="388" y2="50" class="d-line" marker-end="url(#arw5)"/>
+      <rect x="390" y="20" width="170" height="60" rx="8" class="d-box-accent"/>
+      <text x="475" y="46" text-anchor="middle" class="d-text-bold">40_システム・分散</text>
+      <text x="475" y="66" text-anchor="middle" class="d-text-sub">モノリス→マイクロサービス</text>
+      <line x1="560" y1="50" x2="578" y2="50" class="d-line" marker-end="url(#arw5)"/>
+      <rect x="580" y="20" width="170" height="60" rx="8" class="d-box-warn"/>
+      <text x="665" y="46" text-anchor="middle" class="d-text-bold">50_横断的関心事</text>
+      <text x="665" y="66" text-anchor="middle" class="d-text-sub">認証・観測性・設定</text>
+      <line x1="285" y1="80" x2="285" y2="128" class="d-line" marker-end="url(#arw5)"/>
+      <rect x="200" y="130" width="170" height="60" rx="8" class="d-box-accent"/>
+      <text x="285" y="156" text-anchor="middle" class="d-text-bold">30_フロントエンド構成</text>
+      <text x="285" y="176" text-anchor="middle" class="d-text-sub">CSR／SSR／SSG</text>
+      <line x1="665" y1="80" x2="665" y2="128" class="d-line" marker-end="url(#arw5)"/>
+      <rect x="580" y="130" width="170" height="60" rx="8" class="d-box-purple"/>
+      <text x="665" y="156" text-anchor="middle" class="d-text-bold">60_意思決定・文書化</text>
+      <text x="665" y="176" text-anchor="middle" class="d-text-sub">ADR・C4・arc42</text>
+      <line x1="665" y1="190" x2="665" y2="238" class="d-line" marker-end="url(#arw5)"/>
+      <rect x="580" y="240" width="170" height="60" rx="8" class="d-box-purple"/>
+      <text x="665" y="266" text-anchor="middle" class="d-text-bold">70_進化と組織</text>
+      <text x="665" y="286" text-anchor="middle" class="d-text-sub">負債・適応度関数・組織</text>
+      <path d="M580,270 H95 V82" class="d-line-dash" marker-end="url(#arw5)"/>
+      <text x="340" y="262" text-anchor="middle" class="d-text-sub">実践で 10_基礎 に戻る</text>
+    </svg>
+    <figcaption>図：学習ロードマップ。20 から 30（画面側）と 40（システム側）に分かれ、最後は実践を通じて基礎に戻る</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><strong><a href="11-1_アーキテクチャとは・設計との違い.html">10 基礎</a></strong> — 物差し（品質特性・トレードオフ・結合）を手に入れる</li>
+      <li><strong><a href="21-1_層化・三層・レイヤード.html">20 アプリ内部構造</a></strong> — 身近な1つのアプリの中で「依存の向き」を体感する</li>
+      <li><strong><a href="30-1_レンダリング方式.html">30 フロントエンド構成</a></strong> — 画面側の配信方式という別のズームを知る</li>
+      <li><strong><a href="40-1_分散とスタイル.html">40 システム・分散</a></strong> — 分けることの利点と代償を学ぶ</li>
+      <li><strong><a href="50-1_横断的関心事と認証認可.html">50 横断的関心事</a></strong> — どのスタイルでも必ず出てくる共通課題</li>
+      <li><strong><a href="60-1_意思決定とADR.html">60 意思決定・文書化</a></strong> — 判断を残し、伝える</li>
+      <li><strong><a href="70-1_技術的負債.html">70 進化と組織</a></strong> — 時間と人の軸で考える</li>
+    </ol>
+    <p>並行して<a href="00-2_アーキテクチャ年表.html">アーキテクチャ年表</a>を読むと、「なぜそのスタイルが生まれたか」という背景がつながります。</p>
+
+    <h3 id="sec-13-1">まだ個別ノートがないテーマ（今後の候補）</h3>
+    <p>この解説で触れた次のテーマは、まだ個別のノートがありません。このサイトでは関連ページの中で補足しています。</p>
+    <ul>
+      <li>40：モジュラーモノリス ／ マイクロカーネル ／ サービスベース ／ スペースベース（／ セルベース）</li>
+      <li>60：リスク分析 ／ C4 モデル ／ arc42</li>
+      <li>70：適応度関数</li>
+    </ul>
+
+    <h2 id="sec-14"><span class="num">14.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>アーキテクチャとは「根本的なもの」「変更が難しいもの」であり、<strong>構造・特性・決定・原則</strong> の4次元で説明する。</li>
+        <li>3つの法則：<strong>すべてはトレードオフ</strong>、<strong>How より Why</strong>、<strong>決定はスペクトラム</strong>。</li>
+        <li>判断の物差しは <strong>品質特性</strong>。重要な3つ程度に絞り、<strong>測れる形</strong> にする。</li>
+        <li>スタイルは「技術かドメインか」「1つか複数か」の2軸で整理でき、<strong>シンプルな方から始めて必要になったら分散側へ</strong> 移る。</li>
+        <li>アプリ内部構造（20）とシステム構造（40）は別の問いで、組み合わせて使う。</li>
+        <li>決めたことは <strong>ADR・C4・arc42</strong> で残し、<strong>適応度関数</strong> で守らせ、<strong>チーム構造</strong> と合わせて育てる。</li>
+        <li>2020年代は分散一辺倒からの揺り戻し、セルベース、プラットフォームエンジニアリング、AI との関係が論点になっている。</li>
+      </ul>
+    </div>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li><strong>書籍</strong></li>
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』（原著 <em>Fundamentals of Software Architecture</em>, 2nd Edition, O'Reilly, 2025）— <a href="https://www.oreilly.com/library/view/fundamentals-of-software/9781098175504/">O'Reilly 書籍ページ</a> ／ <a href="https://www.oreilly.com/library/view/fundamentals-of-software/9781098175504/ch27.html">第27章 The Laws of Software Architecture, Revisited</a> ／ <a href="https://nealford.com/books/SAF2e.html">Neal Ford の紹介ページ</a></li>
+      <li>Neal Ford, Rebecca Parsons, Patrick Kua『進化的アーキテクチャ』（<em>Building Evolutionary Architectures</em>）— <a href="https://nealford.com/books/buildingevolutionaryarchitectures.html">nealford.com</a></li>
+      <li>Matthew Skelton, Manuel Pais『チームトポロジー』（<em>Team Topologies</em>）</li>
+      <li><strong>定義・規格</strong></li>
+      <li><a href="http://www.iso-architecture.org/ieee-1471/defining-architecture.html">ISO/IEC/IEEE 42010 — Defining "architecture"</a> ／ <a href="http://www.iso-architecture.org/42010/cm/">Conceptual Model</a></li>
+      <li><a href="https://quality.arc42.org/standards/iso-25010">ISO/IEC 25010 — quality.arc42.org</a> ／ <a href="https://www.sonarsource.com/resources/library/iso-iec-25010-explained/">ISO/IEC 25010 Explained（Sonar）</a></li>
+      <li>Martin Fowler, <a href="https://martinfowler.com/ieeeSoftware/whoNeedsArchitect.pdf">Who Needs an Architect?（IEEE Software, 2003, PDF）</a></li>
+      <li><strong>図・文書化</strong></li>
+      <li><a href="https://www.infoq.com/articles/C4-architecture-model/">The C4 Model for Software Architecture（InfoQ）</a></li>
+      <li><a href="https://arc42.org/overview/">arc42 Template Overview</a></li>
+      <li><a href="https://adr.github.io/">Architectural Decision Records（adr.github.io）</a></li>
+      <li><strong>進化・組織</strong></li>
+      <li><a href="https://www.infoq.com/articles/fitness-functions-architecture/">Fitness Functions for Your Architecture（InfoQ）</a></li>
+      <li><a href="https://continuous-architecture.org/practices/team-topologies/">Team Topologies（continuous-architecture.org）</a></li>
+      <li><strong>2020年代の論点</strong></li>
+      <li>Martin Fowler, <a href="https://martinfowler.com/bliki/MicroservicePremium.html">Microservice Premium</a> ／ <a href="https://martinfowler.com/microservices/">Microservices Guide</a> ／ <a href="https://martinfowler.com/articles/microservice-trade-offs.html">Microservice Trade-Offs</a></li>
+      <li><a href="https://virtualizationreview.com/articles/2023/05/08/serverless-vs-monolith.aspx?m=1">Prime Video Sparks Serverless Debate by Switching to Monolith（Virtualization Review, 2023）</a></li>
+      <li><a href="https://docs.aws.amazon.com/wellarchitected/latest/reducing-scope-of-impact-with-cell-based-architecture/what-is-a-cell-based-architecture.html">AWS Well-Architected: What is a cell-based architecture?</a></li>
+      <li><a href="https://www.thoughtworks.com/radar">Thoughtworks Technology Radar</a> ／ <a href="https://www.thoughtworks.com/en-us/radar/techniques/architecture-advice-process">Architecture advice process</a> ／ <a href="https://www.thoughtworks.com/content/dam/thoughtworks/documents/radar/2025/11/tr_technology_radar_vol_33_en.pdf">Vol.33（2025年11月, PDF）</a></li>
+      <li><a href="https://resources.anthropic.com/hubfs/Building%20Effective%20AI%20Agents-%20Architecture%20Patterns%20and%20Implementation%20Frameworks.pdf">Building Effective AI Agents — Architecture Patterns（Anthropic, PDF）</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="00-2_アーキテクチャ年表.html"><span class="lbl">次のページ →</span>アーキテクチャ年表</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

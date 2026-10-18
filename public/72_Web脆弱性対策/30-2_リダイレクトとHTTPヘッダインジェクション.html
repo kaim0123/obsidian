@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>リダイレクトとHTTPヘッダインジェクション｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 リクエスト偽造・リダイレクト › リダイレクトとHTTPヘッダインジェクション</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 リクエスト偽造・リダイレクト</span>
+      <h1>リダイレクトとHTTPヘッダインジェクション</h1>
+      <p class="lead">「ログイン後に元のページへ戻る」のような <strong>リダイレクト処理</strong> は、多くの Web アプリにあります。このページでは徳丸本第10章をもとに、リダイレクト処理にまつわる2つの脆弱性 ── 任意の外部サイトへ飛ばされてしまう <strong>オープンリダイレクト</strong> と、レスポンスヘッダに改行を混ぜられる <strong>HTTPヘッダインジェクション</strong> ── とその対策を解説します。</p>
+      <p class="meta">もとにしたノート：30_リクエスト偽造・リダイレクト/02_リダイレクト処理にまつわる脆弱性（徳丸本10章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>「リダイレクト先やレスポンスヘッダの値はサーバーが決める。ユーザー入力をそのまま <code>Location</code> などのヘッダに入れない」</strong> のが、この章の要点です。</p>
+    </div>
+
+    <p>URL・ドメインの検証は <a href="20-2_XSS発展編.html#sec-4">XSS発展編「リンク先のドメイン名のチェック」</a>（徳丸本第6章）で、HTTP ヘッダインジェクションの概要は第4章のノート（00_全体像/02_Webアプリの機能と脆弱性（徳丸本4章））で触れました。第10章では、<strong>リダイレクト処理</strong> にまつわる脆弱性と対策を詳しく見ていきます。</p>
+    <p><strong>リダイレクト</strong> とは、サーバーがブラウザに「このURLへ移動して」と指示して、別のページへ自動で移らせることです。サーバーはレスポンスのステータスコードを <code>302 Found</code> などにし、<strong><code>Location</code> ヘッダ</strong>（移動先の URL を伝えるレスポンスヘッダ）に行き先を書きます。PHP では <code>header('Location: ...')</code> でこのヘッダを出力します。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>オープンリダイレクト</h2>
+    <p><strong>オープンリダイレクト（Open Redirect）</strong> とは、Webアプリケーションが <strong>任意の外部 URL</strong> へリダイレクトしてしまう脆弱性です。「オープン（開いている）」は、行き先を誰でも自由に指定できてしまう、という意味です。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>正常なリダイレクト</h4>
+        <p>ログイン後、自サイトのマイページへ移動します。</p>
+      </div>
+      <div class="card">
+        <h4>オープンリダイレクト</h4>
+        <p>「example.com のリンク」に見せかけて、フィッシングサイトへ飛ばされます。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 脆弱なコード</h3>
+    <p>URL の <code>?url=</code> の部分（<strong>URL パラメータ</strong>。URL の末尾に付けてサーバーへ値を渡すしくみ）を、確認せずに <code>Location</code> ヘッダへ入れている例です。</p>
+    <span class="code-label bad">危険な例：ユーザー指定 URL へそのままリダイレクト（PHP）</span>
+<pre><code>// ❌ ユーザー指定 URL へそのままリダイレクト
+$url = $_GET['url'];
+header('Location: ' . $url);
+exit;</code></pre>
+<pre><code>https://example.com/redirect?url=https://evil.com/phishing
+  ↑ 信頼できるドメイン              ↑ 実際の行き先</code></pre>
+    <p>リンクの先頭は本物の <code>example.com</code> なので、URL を見ただけでは怪しいと気づきにくいのが問題です。</p>
+
+    <h3 id="sec-1-3">1.3 攻撃の流れ</h3>
+    <p><strong>フィッシング</strong>（本物を装って偽サイトへ誘導し、パスワードなどをだまし取る詐欺）の概要は <a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#phishing-intro">さまざまな脅威と対策の基本「フィッシング」</a> を参照してください。オープンリダイレクトは、その誘導役に使われます。</p>
+    <ol class="steps">
+      <li>攻撃者が悪意ある URL を作成<br><code>https://bank.com/redirect?url=https://evil-bank.com/login</code></li>
+      <li>被害者にメール・SNS で送る（「銀行からのお知らせ」等）</li>
+      <li>被害者が bank.com の URL をクリック（信頼してクリック）</li>
+      <li>bank.com が evil-bank.com へリダイレクト</li>
+      <li>偽のログインページで ID・パスワードを入力させられる</li>
+    </ol>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="攻撃者が送ったbank.comのURLを被害者がクリックすると、bank.comがevil-bank.comへリダイレクトし、偽のログイン画面で情報を盗まれる流れ">
+      <defs>
+        <marker id="arw302a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw302b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="10" y="30" width="150" height="110" rx="8" class="d-box-bad"/>
+      <text x="85" y="62" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="85" y="90" text-anchor="middle" class="d-text-sub">罠の URL を作り</text>
+      <text x="85" y="110" text-anchor="middle" class="d-text-sub">メール・SNS で送る</text>
+      <text x="177" y="72" text-anchor="middle" class="d-text-bold">①</text>
+      <line x1="160" y1="85" x2="194" y2="85" class="d-line-bad" marker-end="url(#arw302b)"/>
+      <rect x="196" y="30" width="150" height="110" rx="8" class="d-box"/>
+      <text x="271" y="62" text-anchor="middle" class="d-text-bold">被害者</text>
+      <text x="271" y="90" text-anchor="middle" class="d-text-sub">bank.com の URL</text>
+      <text x="271" y="110" text-anchor="middle" class="d-text-sub">なので信じてクリック</text>
+      <text x="363" y="72" text-anchor="middle" class="d-text-bold">②</text>
+      <line x1="346" y1="85" x2="380" y2="85" class="d-line" marker-end="url(#arw302a)"/>
+      <rect x="382" y="30" width="150" height="110" rx="8" class="d-box-accent"/>
+      <text x="457" y="62" text-anchor="middle" class="d-text-bold">bank.com</text>
+      <text x="457" y="90" text-anchor="middle" class="d-text-sub">url= の値をそのまま</text>
+      <text x="457" y="110" text-anchor="middle" class="d-text-sub">Location に入れる</text>
+      <text x="549" y="72" text-anchor="middle" class="d-text-bold">③</text>
+      <line x1="532" y1="85" x2="566" y2="85" class="d-line-bad" marker-end="url(#arw302b)"/>
+      <rect x="568" y="30" width="142" height="110" rx="8" class="d-box-bad"/>
+      <text x="639" y="62" text-anchor="middle" class="d-text-bold">evil-bank.com</text>
+      <text x="639" y="90" text-anchor="middle" class="d-text-sub">偽のログイン画面</text>
+      <text x="639" y="110" text-anchor="middle" class="d-text-sub">ID・パスワードを盗む</text>
+      <rect x="10" y="168" width="700" height="118" rx="8" class="d-box"/>
+      <text x="30" y="194" class="d-text-bold">被害者が受け取った URL</text>
+      <rect x="30" y="208" width="320" height="38" rx="6" class="d-box-good"/>
+      <text x="190" y="232" text-anchor="middle" class="d-text">https://bank.com/redirect?url=</text>
+      <rect x="360" y="208" width="330" height="38" rx="6" class="d-box-bad"/>
+      <text x="525" y="232" text-anchor="middle" class="d-text">https://evil-bank.com/login</text>
+      <text x="190" y="270" text-anchor="middle" class="d-text-sub">目に入る部分：信頼できるドメイン</text>
+      <text x="525" y="270" text-anchor="middle" class="d-text-sub">実際の行き先：攻撃者のサイト</text>
+    </svg>
+    <figcaption>図：本物のドメインの URL が「踏み台」になり、被害者は偽サイトへ運ばれる</figcaption>
+    </figure>
+
+    <h3 id="sec-1-4">1.4 被害</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>被害</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>フィッシング</strong></td><td>信頼ドメイン経由で偽サイトへ誘導</td></tr>
+        <tr><td><strong>OAuth 攻撃</strong></td><td>認可コード等の窃取（リダイレクト URI 悪用）</td></tr>
+        <tr><td><strong>マルウェア配布</strong></td><td>外部サイトへの誘導</td></tr>
+        <tr><td><strong>信頼の悪用</strong></td><td>正規サイトの URL が攻撃に利用される</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>OAuth</strong> は「Google でログイン」のように、別のサービスに認可を任せるしくみです。認可サーバーは、ログインが済んだ証拠として <strong>認可コード</strong> を <strong>リダイレクト URI</strong>（<code>redirect_uri</code>。認可後に戻ってくる先の URL）へ付けて返します。この戻り先がオープンリダイレクトで外部へ転送されると、認可コードが攻撃者の手に渡るおそれがあります（OAuth の詳細は 73_認証認可 フォルダで扱います）。<strong>マルウェア</strong> はウイルスなどの悪意あるソフトウェアのことです。</p>
+
+    <h3 id="sec-1-5">1.5 よくある実装箇所</h3>
+    <ul>
+      <li>ログイン後の「元のページへ戻る」</li>
+      <li>ログアウト後のリダイレクト</li>
+      <li>言語切替・モバイル版切替</li>
+      <li>広告・提携先リンク</li>
+      <li>「続きはこちら」ボタン</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>差し支えがない場合</h2>
+    <p>外部ドメインへのリダイレクトは <strong>すべて禁止</strong> すべきではありません。用途によっては <strong>問題ない場合</strong> があります。</p>
+
+    <h3 id="sec-2-1">2.1 差し支えがない（許容しうる）ケース</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ケース</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>自サイト内のみ</strong></td><td>同一ドメイン内のパスへリダイレクト</td></tr>
+        <tr><td><strong>明示的な外部リンク</strong></td><td>ユーザーが「外部サイトへ移動」と理解できる UI</td></tr>
+        <tr><td><strong>検証済みの提携先</strong></td><td>ホワイトリストに登録されたパートナー URL</td></tr>
+        <tr><td><strong>OAuth 等の標準フロー</strong></td><td>仕様に沿った redirect_uri の検証</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ホワイトリスト</strong>（許可リスト）とは、「これだけは許可する」という値をあらかじめ列挙しておき、それ以外をすべて拒否する方式です。</p>
+
+    <h3 id="sec-2-2">2.2 判断のポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>危険</h4>
+        <p>ユーザー入力や URL パラメータを <strong>検証なしで</strong> <code>Location</code> に設定している。</p>
+      </div>
+      <div class="card">
+        <h4>許容（対策済み）</h4>
+        <ul>
+          <li>遷移先が固定、またはホワイトリストで検証済み</li>
+          <li>ユーザーに外部遷移が明示されている</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>外部のドメインに遷移する仕様</h2>
+    <p>アプリケーションの <strong>仕様として</strong> 外部ドメインへ遷移する機能があります。</p>
+
+    <h3 id="sec-3-1">3.1 例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>機能</th><th>遷移先</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SNS 連携</strong></td><td>twitter.com, facebook.com</td></tr>
+        <tr><td><strong>決済</strong></td><td>決済代行会社のドメイン</td></tr>
+        <tr><td><strong>SSO / OAuth</strong></td><td>認可サーバーのドメイン</td></tr>
+        <tr><td><strong>提携サービス</strong></td><td>パートナー企業のサイト</td></tr>
+        <tr><td><strong>アプリストア</strong></td><td>App Store, Google Play</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>SSO</strong>（シングルサインオン）は、1回のログインで複数のサービスを使えるようにするしくみです。</p>
+
+    <h3 id="sec-3-2">3.2 設計上の注意</h3>
+    <p>外部遷移が仕様に含まれる場合でも、次を守ります。</p>
+    <ul>
+      <li>✅ 遷移先 URL はサーバー側で管理（固定 or ホワイトリスト）</li>
+      <li>✅ ユーザー入力をそのまま <code>Location</code> に使わない</li>
+      <li>❌ <code>?url=</code> パラメータで任意 URL を受け付けない</li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>外部ドメインに遷移することが自明である</h2>
+    <p>外部サイトへ移る場合、<strong>ユーザーがそれと分かる UI</strong> にすることが重要です。「自明」とは、説明されなくても見ればすぐ分かる、という意味です。</p>
+
+    <h3 id="sec-4-1">4.1 自明にする方法</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方法</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>確認画面</strong></td><td>「外部サイト（○○.com）へ移動します。よろしいですか？」</td></tr>
+        <tr><td><strong>アイコン表示</strong></td><td>外部リンクアイコン（↗）を付ける</td></tr>
+        <tr><td><strong>文言の明示</strong></td><td>「外部サイトへ移動します」</td></tr>
+        <tr><td><strong>中間ページ</strong></td><td>自サイトの警告ページを挟んでからリダイレクト</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">安全な例：中間ページ（HTML）</span>
+<pre><code>&lt;!-- 中間ページの例 --&gt;
+&lt;p&gt;これより外部サイト（partner.example.net）へ移動します。&lt;/p&gt;
+&lt;p&gt;example.com とは別のサイトです。個人情報の入力にはご注意ください。&lt;/p&gt;
+&lt;a href="/go/3"&gt;partner.example.net へ移動する&lt;/a&gt;
+&lt;!-- /go/3 はサーバー側で ID→URL に変換 --&gt;</code></pre>
+    <p>リンク先は URL そのものではなく <code>/go/3</code> という番号になっている点に注目してください。この「番号指定」の考え方は <a href="#sec-5-2">5.2</a> で詳しく扱います。</p>
+
+    <h3 id="sec-4-2">4.2 なぜ重要か</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>オープンリダイレクト ＋ 自明でない UI</h4>
+        <p>ユーザーは bank.com から来たと思い込む → フィッシング成功</p>
+      </div>
+      <div class="card">
+        <h4>対策済み ＋ 自明な UI</h4>
+        <p>ユーザーは外部サイトだと認識 → フィッシングリスク低減</p>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">注意</p>
+      <p>UI で自明にするだけでは <strong>オープンリダイレクト脆弱性は解消されません</strong>。次の章の技術的対策と併用します。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>オープンリダイレクトの対策</h2>
+    <p>オープンリダイレクト対策には、主に3つの方法があります。上から順に安全です。</p>
+    <ol>
+      <li>リダイレクト先の URL を固定にする</li>
+      <li>リダイレクト先の URL を直接指定せずに番号指定にする</li>
+      <li>リダイレクト先のドメイン名をチェックする</li>
+    </ol>
+
+    <h3 id="sec-5-1">5.1 リダイレクト先のURLを固定にする</h3>
+    <p><strong>最も安全な方法</strong> は、リダイレクト先 URL を <strong>サーバー側で固定</strong> することです。</p>
+    <span class="code-label good">安全な例：行き先を固定する（PHP）</span>
+<pre><code>// ✅ ログイン後は常にダッシュボードへ
+header('Location: /dashboard');
+exit;
+
+// ✅ ログアウト後は常にトップページへ
+header('Location: /');
+exit;</code></pre>
+
+    <h4>戻り先 URL が必要な場合</h4>
+    <p>「ログイン前に見ていたページへ戻す」など、戻り先を受け取りたい場合は、<strong>自サイト内のパスだけ</strong> を許可します。</p>
+    <span class="code-label bad">危険な例：任意 URL を受け付ける</span>
+<pre><code>// ❌ 任意 URL を受け付ける
+$returnUrl = $_GET['return'];
+header('Location: ' . $returnUrl);</code></pre>
+    <span class="code-label good">安全な例：自サイト内のパスのみ許可</span>
+<pre><code>// ✅ 自サイト内のパスのみ許可
+$returnUrl = $_GET['return'] ?? '/';
+if (!str_starts_with($returnUrl, '/') || str_starts_with($returnUrl, '//')) {
+    $returnUrl = '/';
+}
+header('Location: ' . $returnUrl);</code></pre>
+    <p><code>?? '/'</code> は「値がなければ <code>'/'</code> を使う」という意味です。<code>str_starts_with</code>（PHP 8 以降）は文字列が指定の文字で始まるかを調べる関数です。<code>//</code> で始まる URL は <strong>プロトコル相対 URL</strong> と呼ばれ、<code>//evil.com</code> は <code>https://evil.com</code> と同じ意味になるため、拒否しています（詳しくは <a href="20-2_XSS発展編.html#sec-4-4">XSS発展編「相対 URL の扱い」</a>）。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：<code>/\</code> で始まる値にも注意</p>
+      <p>多くのブラウザは <code>Location</code> の中のバックスラッシュ <code>\</code> を <code>/</code> と同じに扱うため、<code>/\evil.com</code> は <code>//evil.com</code> と同じく外部サイトへの移動になります。上のコードはこれを通してしまうので、<code>\</code> を含む値も拒否するか、<code>/</code> の次の文字が英数字であることを確認するなど、より厳しく判定してください。</p>
+<pre><code>// ✅ 2文字目に / や \ が来るものを拒否
+if (!preg_match('#\A/(?![/\\\\])#', $returnUrl)) {
+    $returnUrl = '/';
+}</code></pre>
+    </div>
+
+    <h4>ポイント</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ポイント</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>相対 URL の検証</strong></td><td><code>/</code> で始まり、<code>//</code> で始まらない</td></tr>
+        <tr><td><strong>絶対 URL 禁止</strong></td><td><code>http://</code> で始まる外部 URL は拒否</td></tr>
+        <tr><td><strong>デフォルト値</strong></td><td>不正な場合は安全な固定 URL へ</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>絶対 URL</strong> は <code>https://example.com/page</code> のようにスキームとドメインから書いた URL、<strong>相対 URL</strong> は <code>/page</code> のように今のサイトを基準にした URL です。</p>
+
+    <h3 id="sec-5-2">5.2 リダイレクト先のURLを直接指定せずに番号指定にする</h3>
+    <p>URL を直接パラメータで渡す代わりに、<strong>番号（ID）</strong> でサーバー側の URL リストから選択します。</p>
+    <h4>仕組み</h4>
+<pre><code>サーバー側のマッピング:
+  1 → https://partner-a.example.com
+  2 → https://partner-b.example.com
+  3 → https://help.example.com
+
+リクエスト: /redirect?id=2
+  → サーバーが ID=2 の URL へリダイレクト
+  → ユーザーは URL を直接指定できない</code></pre>
+    <p><strong>マッピング</strong> とは、「番号 → URL」のような対応表のことです。</p>
+    <span class="code-label good">安全な例：番号から URL を引く（PHP）</span>
+<pre><code>$redirectMap = [
+    1 =&gt; 'https://partner-a.example.com',
+    2 =&gt; 'https://partner-b.example.com',
+    3 =&gt; 'https://help.example.com',
+];
+
+$id = (int)($_GET['id'] ?? 0);
+if (!isset($redirectMap[$id])) {
+    header('Location: /');
+    exit;
+}
+header('Location: ' . $redirectMap[$id]);
+exit;</code></pre>
+    <p><code>(int)</code> は値を整数に変換する書き方で、数字以外の文字列が来ても <code>0</code> などになります。対応表にない番号ならトップページへ戻すので、攻撃者が行き先を自由に選ぶ余地がありません。</p>
+    <h4>メリット</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メリット</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>任意 URL 不可</strong></td><td>攻撃者が evil.com を指定できない</td></tr>
+        <tr><td><strong>管理が容易</strong></td><td>提携先変更はサーバー側リストを更新</td></tr>
+        <tr><td><strong>監査可能</strong></td><td>許可 URL がコードまたは DB で明示</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-3">5.3 リダイレクト先のドメイン名をチェックする</h3>
+    <p>URL をパラメータで受け取る必要がある場合、<strong>ドメイン名をホワイトリスト</strong> で検証します。<a href="20-2_XSS発展編.html#sec-4-2">XSS発展編「ドメイン名チェックの方法」</a>（第6章）でも触れた手法です。</p>
+    <h4>ホワイトリスト検証</h4>
+    <span class="code-label good">安全な例：スキームとホスト名を検証する（PHP）</span>
+<pre><code>function isAllowedRedirectUrl(string $url): bool {
+    $allowedHosts = ['example.com', 'www.example.com', 'partner.example.net'];
+
+    $parsed = parse_url($url);
+    if ($parsed === false || !isset($parsed['host'])) {
+        return false;
+    }
+
+    // スキーム検証
+    if (!in_array($parsed['scheme'] ?? '', ['https', 'http'], true)) {
+        return false;
+    }
+
+    // ホスト名検証（完全一致）
+    return in_array($parsed['host'], $allowedHosts, true);
+}
+
+$url = $_GET['url'] ?? '';
+if (!isAllowedRedirectUrl($url)) {
+    header('Location: /');
+    exit;
+}
+header('Location: ' . $url);
+exit;</code></pre>
+    <p><code>parse_url</code> は URL を <strong>スキーム</strong>（<code>https</code> などの先頭部分）・<strong>ホスト</strong>（<code>example.com</code> などのドメイン名）・パスなどの部品に分けて配列で返す PHP の関数です。<code>in_array(..., true)</code> の <code>true</code> は、型まで含めて厳密に比べる指定です。</p>
+
+    <h4>注意すべき bypass</h4>
+    <p><strong>bypass（バイパス）</strong> とは、チェックをすり抜ける手口のことです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手法</th><th>例</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>サブドメイン偽装</strong></td><td><code>example.com.evil.com</code></td><td>ホスト名の <strong>完全一致</strong></td></tr>
+        <tr><td><strong>プロトコル相対</strong></td><td><code>//evil.com</code></td><td><code>//</code> で始まる URL を拒否</td></tr>
+        <tr><td><strong>URL エンコード</strong></td><td><code>%2f%2fevil.com</code></td><td>デコード後に再検証</td></tr>
+        <tr><td><strong>@ 記号</strong></td><td><code>https://example.com@evil.com</code></td><td>parse_url で host を正しく取得</td></tr>
+        <tr><td><strong>javascript:</strong></td><td><code>javascript:alert(1)</code></td><td>スキームを https/http に限定</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>example.com.evil.com</code> は「example.com」という文字を含みますが、実際の持ち主は <code>evil.com</code> です。<code>https://example.com@evil.com</code> の <code>@</code> より前は「ユーザー名」として扱われ、実際の接続先は <code>evil.com</code> になります。<strong>URL エンコード</strong> は、特殊な文字を <code>%</code> ＋16進数で表す書き方で、<code>%2f</code> は <code>/</code> を表します。</p>
+
+    <h4>相対 URL の扱い</h4>
+<pre><code>// //evil.com は https://evil.com と同義
+if (str_starts_with($url, '//')) {
+    return false;  // 拒否
+}</code></pre>
+
+    <h2 id="sec-6"><span class="num">6.</span>HTTPヘッダ・インジェクション</h2>
+    <p><strong>HTTPヘッダインジェクション（HTTP Header Injection）</strong> は、ユーザー入力が <strong>HTTP レスポンスヘッダ</strong> に混入し、意図しないヘッダを注入する脆弱性です。<strong>レスポンスヘッダ</strong> とは、サーバーがブラウザへ返す応答のうち、本文の前に付く「付帯情報」の行のことです（<code>Location</code>、<code>Set-Cookie</code>、<code>Content-Type</code> など。代表的なものは <a href="10-5_セキュリティヘッダ.html">セキュリティヘッダ</a> も参照）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>分類</strong></td><td>インジェクション系（第4章）</td></tr>
+        <tr><td><strong>対象</strong></td><td>Location、Set-Cookie、Content-Type 等のレスポンスヘッダ</td></tr>
+      </tbody>
+    </table></div>
+    <p>「データのつもりの入力が、構造（ここではヘッダの区切り）として解釈される」という、インジェクション共通の原因については <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-2">インジェクションと暗号化の不備「データとコードの混在」</a> を参照してください。</p>
+
+    <h3 id="sec-6-1">6.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>正常</h4>
+        <p>サーバーが「このページへ移動して」と <code>Location</code> ヘッダを1つ送ります。</p>
+      </div>
+      <div class="card">
+        <h4>インジェクション</h4>
+        <p>入力に改行を混ぜ、<strong>追加のヘッダ</strong> や <strong>別のレスポンス</strong> を送らせます。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-6-2">6.2 脆弱なコード</h3>
+    <span class="code-label bad">危険な例：ユーザー入力を Location ヘッダに直接出力（PHP）</span>
+<pre><code>// ❌ ユーザー入力を Location ヘッダに直接出力
+$url = $_GET['url'];
+header('Location: ' . $url);</code></pre>
+    <p>オープンリダイレクトの脆弱なコードと同じ形です。同じ1行が、2つの脆弱性の原因になりえます。</p>
+
+    <h3 id="sec-6-3">6.3 攻撃入力</h3>
+<pre><code>url=/home%0d%0aSet-Cookie:%20admin=1
+
+%0d%0a = キャリッジリターン + ラインフィード（改行）</code></pre>
+    <p>HTTP のヘッダは1行に1つで、行の区切りは <strong>CR LF</strong>（<code>\r\n</code>）です。<strong>CR（キャリッジリターン）</strong> と <strong>LF（ラインフィード）</strong> は改行用の制御文字で、URL エンコードすると <code>%0d</code> と <code>%0a</code> になります。<code>%20</code> は半角スペースです。CR・LF の考え方は <a href="20-5_メールヘッダインジェクション.html#sec-2-1">メールヘッダインジェクション「メールの構造」</a> と同じです。</p>
+
+    <h3 id="sec-6-4">6.4 生成されるレスポンス</h3>
+<pre><code>HTTP/1.1 302 Found
+Location: /home
+Set-Cookie: admin=1
+
+→ 攻撃者が任意の Cookie を注入可能</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="urlパラメータに含まれた改行CR LFによって、Locationヘッダの後ろにSet-Cookieヘッダが1行追加される流れ">
+      <defs>
+        <marker id="arw302c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw302d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="20" width="310" height="130" rx="8" class="d-box-warn"/>
+      <text x="175" y="46" text-anchor="middle" class="d-text-bold">url パラメータの値</text>
+      <text x="40" y="78" class="d-text">/home</text>
+      <rect x="40" y="88" width="190" height="24" rx="4" class="d-box-bad"/>
+      <text x="135" y="105" text-anchor="middle" class="d-text-sub">改行 CR LF（%0d%0a）</text>
+      <text x="40" y="134" class="d-text">Set-Cookie: admin=1</text>
+      <line x1="175" y1="150" x2="175" y2="188" class="d-line" marker-end="url(#arw302c)"/>
+      <rect x="20" y="190" width="310" height="80" rx="8" class="d-box"/>
+      <text x="175" y="220" text-anchor="middle" class="d-text-bold">アプリ</text>
+      <text x="175" y="244" text-anchor="middle" class="d-text-sub">"Location: " ＋ 入力値 をそのまま出力</text>
+      <line x1="330" y1="230" x2="398" y2="230" class="d-line" marker-end="url(#arw302c)"/>
+      <rect x="400" y="20" width="300" height="250" rx="8" class="d-box-accent"/>
+      <text x="550" y="46" text-anchor="middle" class="d-text-bold">できあがるレスポンスヘッダ</text>
+      <rect x="420" y="62" width="260" height="34" rx="6" class="d-box"/>
+      <text x="432" y="84" class="d-text">HTTP/1.1 302 Found</text>
+      <rect x="420" y="104" width="260" height="34" rx="6" class="d-box"/>
+      <text x="432" y="126" class="d-text">Location: /home</text>
+      <rect x="420" y="146" width="260" height="34" rx="6" class="d-box-bad"/>
+      <text x="432" y="168" class="d-text-bold">Set-Cookie: admin=1</text>
+      <rect x="420" y="188" width="260" height="34" rx="6" class="d-box"/>
+      <text x="432" y="210" class="d-text-sub">（空行のあとに本文）</text>
+      <text x="550" y="250" text-anchor="middle" class="d-text-sub">改行の後ろが「別のヘッダ行」として扱われる</text>
+      <path d="M230,100 C300,100 340,163 418,163" class="d-line-bad" marker-end="url(#arw302d)"/>
+    </svg>
+    <figcaption>図：入力値に紛れた CR LF で行が分かれ、攻撃者の Set-Cookie 行が本物のヘッダとして追加される</figcaption>
+    </figure>
+    <p><strong><code>Set-Cookie</code></strong> は、ブラウザに Cookie（サイトがブラウザに保存させる小さなデータ）を保存させるヘッダです。攻撃者は被害者のブラウザに好きな Cookie を仕込めるため、たとえば攻撃者が用意したセッション ID を使わせる攻撃（セッション固定攻撃。74_セッション管理 で扱います）の足がかりになります。</p>
+
+    <div class="callout warn">
+      <p class="callout-title">補足：今の PHP の <code>header()</code> は改行を拒否します</p>
+      <p>PHP は 5.1.2 以降、<code>header()</code> に改行を含む値を渡すと「ヘッダは1行しか送れない」として警告を出し、そのヘッダを送りません。Node.js の標準 HTTP モジュールも、ヘッダ値に CR・LF があるとエラーにします。そのため、上の例は <strong>最近の PHP ではそのままは成立しません</strong>。ただし、古い環境・別の言語やフレームワーク・ヘッダを自前で組み立てる実装では今も起こりえますし、同じコードは <a href="#sec-1">オープンリダイレクト</a> としては脆弱なままです。「処理系が守ってくれるはず」に頼らず、次の章の対策を行ってください。</p>
+    </div>
+
+    <h3 id="sec-6-5">6.5 他の攻撃例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>注入先</th><th>攻撃</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Location</strong></td><td>リダイレクト + 追加ヘッダ</td></tr>
+        <tr><td><strong>Set-Cookie</strong></td><td>任意 Cookie の設定</td></tr>
+        <tr><td><strong>本文との混在</strong></td><td>ヘッダ後に HTML を注入（XSS 的効果）</td></tr>
+      </tbody>
+    </table></div>
+    <p>改行を2つ続けて送ると「ヘッダの終わり（空行）」と解釈され、その後ろに好きな HTML を本文として入れられます。これにより <a href="20-1_XSSの基本.html">XSS</a>（ページに攻撃者のスクリプトを埋め込む攻撃）と同じ効果が出ます。このように1つのレスポンスを分割・改変する攻撃は <strong>HTTP レスポンス分割</strong> とも呼ばれます。</p>
+
+    <h3 id="sec-6-6">6.6 関連：メールヘッダインジェクション</h3>
+    <p>メール送信機能で <strong>To / Subject 等</strong> に改行を混入させ、Bcc 等を追加する攻撃も同系統です（第4章）。詳しくは <a href="20-5_メールヘッダインジェクション.html">メールヘッダインジェクション</a> で解説しています。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>HTTPヘッダインジェクションの対策</h2>
+
+    <h3 id="sec-7-1">7.1 外部からのパラメータをHTTPレスポンスヘッダとして出力しない</h3>
+    <p><strong>根本対策</strong> は、外部入力を <strong>ヘッダ値として使わない</strong> ことです。<strong>外部入力</strong> とは、URL パラメータやフォームの値など、利用者（攻撃者を含む）が自由に送ってこられる値のことです。</p>
+    <span class="code-label bad">危険な例：ユーザー入力をヘッダに</span>
+<pre><code>// ❌ ユーザー入力をヘッダに
+header('Location: ' . $_GET['url']);
+header('Set-Cookie: theme=' . $_GET['theme']);</code></pre>
+    <span class="code-label good">安全な例：固定値または検証・変換済みの値のみ</span>
+<pre><code>// ✅ 固定値または検証・変換済みの値のみ
+header('Location: /dashboard');
+header('Set-Cookie: theme=light; HttpOnly; Secure');</code></pre>
+    <p><code>HttpOnly</code>（JavaScript から読めなくする）や <code>Secure</code>（HTTPS のときだけ送る）は Cookie の属性です。詳しくは <a href="10-3_CORSエラーの対処法とCookie.html#sec-6">CORSエラーの対処法とCookie「HttpOnly・Secure・SameSite」</a> を参照してください。</p>
+    <div class="callout key">
+      <p class="callout-title">原則</p>
+      <p>HTTP レスポンスヘッダの値 ＝ <strong>サーバー側で決定した固定値</strong>、または <strong>厳密に検証・サニタイズした値</strong>。ユーザー入力をそのままヘッダに載せません。</p>
+    </div>
+    <p><strong>サニタイズ</strong> とは、危険な文字を取り除いたり無害な形に変えたりすることです。</p>
+
+    <h3 id="sec-7-2">7.2 専用APIと改行チェック（両方実施）</h3>
+    <p>ヘッダ生成が必要な場合は、次の <strong>2つを両方</strong> 実施します。</p>
+
+    <h4>① リダイレクトやクッキー生成を専用 API に任せる</h4>
+    <p><strong>散在させず、専用の関数・クラスに集約</strong> し、検証ロジックを一箇所にまとめます。ここでの <strong>API</strong> は、決まった使い方で呼び出せる関数や部品のことです。</p>
+    <span class="code-label good">安全な例：リダイレクト・Cookie 設定の専用関数（PHP）</span>
+<pre><code>// リダイレクト専用関数
+function safeRedirect(string $url): void {
+    if (!isAllowedRedirectUrl($url)) {
+        $url = '/';
+    }
+    header('Location: ' . $url);
+    exit;
+}
+
+// Cookie 設定専用関数
+function setThemeCookie(string $theme): void {
+    $allowed = ['light', 'dark'];
+    if (!in_array($theme, $allowed, true)) {
+        $theme = 'light';
+    }
+    setcookie('theme', $theme, [
+        'httponly' =&gt; true,
+        'secure'   =&gt; true,
+        'samesite' =&gt; 'Strict',
+    ]);
+}</code></pre>
+    <p><code>isAllowedRedirectUrl</code> は <a href="#sec-5-3">5.3</a> の関数です。<code>setcookie</code> は PHP 標準の Cookie 設定関数で、値をエンコードしてヘッダを組み立ててくれます（配列でオプションを渡す書き方は PHP 7.3 以降）。</p>
+    <h4>メリット</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メリット</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>検証の一元化</strong></td><td>漏れ・バラつきを防ぐ</td></tr>
+        <tr><td><strong>レビュー容易</strong></td><td>セキュリティコードが一箇所</td></tr>
+        <tr><td><strong>テスト可能</strong></td><td>専用関数の単体テスト</td></tr>
+      </tbody>
+    </table></div>
+
+    <h4>② ヘッダ生成するパラメータの改行文字をチェック</h4>
+    <p>どうしても外部入力を使う場合、<strong>改行文字（CR/LF）を拒否</strong> します。第4章の制御文字チェックと同様です（メールヘッダでの同じ対策は <a href="20-5_メールヘッダインジェクション.html#sec-3-2">メールヘッダインジェクション「改行を含めないようチェックする」</a>）。</p>
+    <span class="code-label good">安全な例：CR・LF・NULL を含む値を拒否（PHP）</span>
+<pre><code>function containsHeaderInjectionChars(string $value): bool {
+    return preg_match('/[\r\n\x00]/', $value) === 1;
+}
+
+function safeRedirect(string $url): void {
+    if (containsHeaderInjectionChars($url)) {
+        $url = '/';
+    }
+    if (!isAllowedRedirectUrl($url)) {
+        $url = '/';
+    }
+    header('Location: ' . $url);
+    exit;
+}</code></pre>
+    <p><code>preg_match</code> は正規表現（文字列のパターン）に一致するかを調べる関数で、<code>/[\r\n\x00]/</code> は「CR・LF・NULL のどれかを含む」という意味です。</p>
+    <h4>チェック対象の文字</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>文字</th><th>コード</th><th>危険性</th></tr></thead>
+      <tbody>
+        <tr><td>CR</td><td><code>\r</code> (0x0D)</td><td>新しいヘッダ行の開始</td></tr>
+        <tr><td>LF</td><td><code>\n</code> (0x0A)</td><td>新しいヘッダ行の開始</td></tr>
+        <tr><td>NULL</td><td><code>\0</code> (0x00)</td><td>ヘッダの truncation</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>NULL</strong> は「文字列の終わり」を意味する特殊な文字で、処理系によってはここで値が切り捨てられます（<strong>truncation</strong> ＝切り詰め）。</p>
+
+    <h4>URL エンコードされた改行も注意</h4>
+<pre><code>入力: %0d%0aSet-Cookie: evil=1
+→ urldecode 後に改行チェックが必要</code></pre>
+<pre><code>$url = urldecode($_GET['url']);
+if (containsHeaderInjectionChars($url)) {
+    // 拒否
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：<code>$_GET</code> はすでにデコード済みです</p>
+      <p>PHP の <code>$_GET</code> に入る値は、URL エンコードが <strong>すでに1回デコードされた後</strong> のものです（<code>%0d%0a</code> は <code>$_GET</code> の時点で本物の CR LF になっています）。そのため、通常は <code>$_GET['url']</code> をそのまま改行チェックすれば十分で、さらに <code>urldecode</code> すると <strong>二重デコード</strong> になります。大切なのは「<strong>実際にヘッダへ出力する値そのもの</strong> をチェックする」ことです。デコードした値を検証したなら、出力するのも同じ値にしてください（<code>%250d</code> のように二重にエンコードされた値を、検証後にもう一度デコードして使うと、チェックをすり抜けます）。</p>
+    </div>
+
+    <h4>フレームワークの利用</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>環境</th><th>推奨</th></tr></thead>
+      <tbody>
+        <tr><td><strong>PHP</strong></td><td><code>header()</code> 前に検証、または Symfony Response 等</td></tr>
+        <tr><td><strong>Express.js</strong></td><td><code>res.redirect()</code> は比較的安全だが URL 検証は必要</td></tr>
+        <tr><td><strong>一般</strong></td><td>ヘッダ出力 API をラップして統一</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ラップする</strong> とは、元の関数を自分の関数で包み、必ず検証を通ってから呼ばれるようにすることです。Express の <code>res.redirect()</code> はヘッダインジェクションには比較的強いものの、<strong>行き先の検証（オープンリダイレクト対策）はしてくれない</strong> 点に注意します。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <h3 id="sec-8-1">8.1 オープンリダイレクト</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>オープンリダイレクト</td><td>任意 URL へ飛ばす脆弱性。フィッシングに悪用</td></tr>
+        <tr><td>差し支えない場合</td><td>検証済み・自サイト内・明示的 UI</td></tr>
+        <tr><td>外部ドメイン遷移</td><td>仕様としてあり得るが URL はサーバー管理</td></tr>
+        <tr><td>URL 固定</td><td>最も安全</td></tr>
+        <tr><td>番号指定</td><td>ID → URL マッピングで任意 URL を防ぐ</td></tr>
+        <tr><td>ドメイン名チェック</td><td>ホワイトリスト + bypass 対策</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-2">8.2 HTTPヘッダインジェクション</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>ヘッダインジェクション</td><td>改行で追加ヘッダを注入</td></tr>
+        <tr><td>根本対策</td><td>外部入力をヘッダ値に使わない</td></tr>
+        <tr><td>専用 API</td><td>リダイレクト・Cookie 生成を一元化</td></tr>
+        <tr><td>改行チェック</td><td><code>\r</code> <code>\n</code> <code>\0</code> を拒否（両方実施）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-3">8.3 対策の優先順位</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>オープンリダイレクト</h4>
+        <ol>
+          <li>リダイレクト先 URL を固定（最優先）</li>
+          <li>番号指定でサーバー側マッピング</li>
+          <li>どうしても URL 指定ならドメインホワイトリスト</li>
+          <li>外部遷移は UI で明示</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h4>HTTPヘッダインジェクション</h4>
+        <ol>
+          <li>外部入力をヘッダに載せない</li>
+          <li>専用 API に集約 + 改行文字チェック（両方）</li>
+          <li>制御文字・URL デコード後の再検証</li>
+        </ol>
+      </div>
+    </div>
+    <p>ノートは「次の章では、メール送信や OS コマンド呼び出しにまつわる脆弱性について学んでいきます」と結ばれています。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：次の章について</p>
+      <p>徳丸本の章立てでは、第10章の次の第11章は <strong>クッキー出力にまつわる脆弱性</strong>（74_セッション管理 フォルダで扱います）です。メール送信は第12章で <a href="20-5_メールヘッダインジェクション.html">メールヘッダインジェクション</a>、OS コマンド呼び出しは <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> で解説しています。このシリーズの次のページは、サーバーにリクエストを偽造させる <a href="30-3_SSRF.html">SSRF</a> です。リダイレクトは SSRF の内部アクセス制限をすり抜ける手口にも使われます。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. <code>https://bank.com/redirect?url=https://evil-bank.com/login</code> のような URL が、フィッシングに効果的なのはなぜですか？</summary>
+      <div class="body">
+        <p>URL の先頭が本物の <code>bank.com</code> なので、受け取った人は信頼してクリックしてしまうからです。bank.com が <code>url=</code> の値を検証せずにリダイレクトすると、被害者は気づかないまま偽サイト（evil-bank.com）へ運ばれ、ID・パスワードを入力させられます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. オープンリダイレクトの3つの対策を、安全な順に並べてください。</summary>
+      <div class="body">
+        <p>① リダイレクト先 URL を固定にする（最も安全）、② URL を直接指定させず番号指定にしてサーバー側の対応表から引く、③ どうしても URL を受け取るならドメイン名をホワイトリストで完全一致チェックする、の順です。UI で外部遷移を明示するのは補助で、それだけでは脆弱性は解消されません。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 戻り先として <code>/</code> で始まる値だけを許可しました。<code>//evil.com</code> を拒否しなければいけないのはなぜですか？</summary>
+      <div class="body">
+        <p><code>//</code> で始まる URL はプロトコル相対 URL で、<code>https://evil.com</code> と同じ意味になるからです。<code>/</code> で始まっていても自サイト内とは限りません（同様にブラウザによっては <code>/\evil.com</code> も外部扱いになります）。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. ホスト名のチェックで「文字列に example.com が含まれるか」と判定するのは、なぜ危険ですか？</summary>
+      <div class="body">
+        <p><code>example.com.evil.com</code> のように、攻撃者は自分のドメインに <code>example.com</code> を含めたサブドメインを作れるからです。<code>parse_url</code> でホスト名を取り出し、許可リストと <strong>完全一致</strong> で比べます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. <code>url=/home%0d%0aSet-Cookie:%20admin=1</code> が <code>header('Location: ' . $url)</code> に渡ると、何が起きますか？</summary>
+      <div class="body">
+        <p><code>%0d%0a</code>（CR LF）でヘッダの行が分かれ、<code>Location: /home</code> の次の行に <code>Set-Cookie: admin=1</code> が本物のヘッダとして追加されます。攻撃者は被害者のブラウザに任意の Cookie を設定できます（なお、最近の PHP の <code>header()</code> は改行を含む値を拒否しますが、環境に頼らず対策が必要です）。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. HTTPヘッダインジェクション対策で「両方実施」とされている2つは何ですか？ そもそもの根本対策は？</summary>
+      <div class="body">
+        <p>根本対策は <strong>外部入力をヘッダ値に使わない</strong> ことです。どうしてもヘッダを生成する場合は、① リダイレクトや Cookie 生成を専用の関数（API）に集約する、② ヘッダに使う値の改行文字（CR・LF、あわせて NULL）をチェックして拒否する、の両方を行います。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/30_リクエスト偽造・リダイレクト/02_リダイレクト処理にまつわる脆弱性（徳丸本10章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』第10章（SBクリエイティブ）</li>
+      <li>IPA「安全なウェブサイトの作り方」 https://www.ipa.go.jp/security/vuln/websecurity/about.html</li>
+      <li>OWASP Cheat Sheet Series「Unvalidated Redirects and Forwards Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html</li>
+      <li>PHP マニュアル「header」 https://www.php.net/manual/ja/function.header.php</li>
+      <li>RFC 9110「HTTP Semantics」（Location ヘッダ） https://www.rfc-editor.org/rfc/rfc9110</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-1_CSRF.html"><span class="lbl">← 前のページ</span>CSRF（クロスサイトリクエストフォージェリ）</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-3_SSRF.html"><span class="lbl">次のページ →</span>SSRF（サーバーサイドリクエストフォージェリ）</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

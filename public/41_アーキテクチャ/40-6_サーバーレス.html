@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サーバーレス｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">40 システム・分散 › サーバーレス</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 システム・分散</span>
+      <h1>サーバーレス</h1>
+      <p class="lead">サーバーレスは「サーバーをなくす」技術ではなく、構築・監視・パッチ適用・スケーリングといったサーバー管理をクラウドに任せ、必要なときだけ処理を動かす実行モデルです。このページでは、仕組み（イベントで起動し、終われば消える関数）、注目される理由、4つのメリットと5つの落とし穴、向いている場面と向かない場面、そして小さく始める方法を整理します。</p>
+      <p class="meta">もとにしたノート：40_システム・分散/サーバーレスとは？仕組みからメリット・落とし穴まで解説.md（YouTube 動画クリップの「詳しい要約」部分）</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>このページは、YouTube 動画「サーバーレスとは？仕組みからメリット・落とし穴まで解説」（IT技術屋のボヤキ、2026年2月公開）の要約をもとに、アーキテクチャの観点からの補足を加えたものです。</p>
+    <ul>
+      <li>サーバーレスとは何か（従来のサーバー運用との違い）</li>
+      <li>サーバーレスの仕組み（関数がイベントで起動し、データはマネージドサービスに置く）</li>
+      <li>なぜ注目されているのか</li>
+      <li>4つのメリット（インフラ管理不要・自動スケーリング・従量課金・開発スピード）</li>
+      <li>5つの落とし穴（コールドスタート・実行時間制限・デバッグ・ベンダーロックイン・コスト）</li>
+      <li>向いている場面と向かない場面、始め方</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">テーマ</p>
+      <p>サーバーレスは<strong>「サーバー管理をクラウドに任せる」仕組み</strong>であり、万能ではありません。<strong>向き不向きを理解して、合う部分から小さく選ぶ</strong>ものです。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>サーバーレスとは何か</h2>
+    <h3>2-1. 従来のサーバー運用で起きていたこと</h3>
+    <p>従来、アプリを動かすには、サーバーを構築し、OS をインストールし、ミドルウェアを設定し、アプリをデプロイする必要がありました。さらに、落ちないように監視し、セキュリティパッチを当て、負荷が増えたらスケーリングもしなければなりません。<strong>アプリを動かすために、アプリとは関係ない作業が大量に発生していた</strong>わけです。</p>
+    <p>サーバーレスは、これらの作業を<strong>クラウドに任せる</strong>仕組みです。名前は「サーバーレス（サーバーなし）」ですが、サーバーがなくなるわけではありません。サーバーは存在しますが、<strong>自分で管理する必要がなくなる</strong>のです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>作業</th><th>自前のサーバー（オンプレミス・仮想マシン）</th><th>サーバーレス</th></tr></thead>
+      <tbody>
+        <tr><td>サーバーの構築・OS インストール</td><td>自分</td><td>クラウド</td></tr>
+        <tr><td>ミドルウェア・ランタイムの設定</td><td>自分</td><td>クラウド（言語・バージョンを選ぶだけ）</td></tr>
+        <tr><td>セキュリティパッチの適用</td><td>自分</td><td>クラウド</td></tr>
+        <tr><td>監視・障害対応（サーバー自体）</td><td>自分</td><td>クラウド</td></tr>
+        <tr><td>スケーリング</td><td>自分（事前に台数を増やす）</td><td>クラウドが自動で行う</td></tr>
+        <tr><td>アプリのコード</td><td>自分</td><td>自分</td></tr>
+        <tr><td>課金</td><td>起動している時間に対して（使っていなくても）</td><td>実行した分だけ</td></tr>
+      </tbody>
+    </table></div>
+    <p>代表的なサービスは <strong>AWS Lambda</strong>、<strong>Google Cloud Functions</strong>（現在は Cloud Run functions として提供）、<strong>Azure Functions</strong> です。</p>
+
+    <h3>2-2. FaaS と BaaS</h3>
+    <p>サーバーレスという言葉は、広い意味では次の2種類をまとめて指します（Mike Roberts による martinfowler.com の記事「Serverless Architectures」の整理）。</p>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>FaaS（Function as a Service）</h4>
+        <p>自分で書いた<strong>関数（処理）</strong>を、イベントに応じてクラウドが実行してくれるサービス。AWS Lambda、Azure Functions など。動画で主に扱っているのはこちらです。</p>
+      </div>
+      <div class="card purple">
+        <h4>BaaS（Backend as a Service）</h4>
+        <p>DB・ストレージ・認証などの<strong>バックエンド機能</strong>を、サーバー管理なしで使えるサービス。DynamoDB、Firestore、S3、Firebase Authentication など。</p>
+      </div>
+    </div>
+    <p>実際のサーバーレス構成は、FaaS で処理を書き、データやファイルは BaaS（マネージドサービス）に置く、という組み合わせになります。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>サーバーレスの仕組み（実行モデル）</h2>
+    <h3>3-1. 必要なときだけ起動し、終わったら消える</h3>
+    <p>EC サイトで「注文が入ったら在庫を減らす」処理を考えます。従来なら、この処理を動かすサーバーを <strong>24 時間起動しておく</strong>必要がありました。注文がなくてもサーバーは動き続けます。サーバーレスでは、<strong>リクエスト（イベント）が来た瞬間だけ処理が起動</strong>し、処理が終わったら消えます。注文がなければ何も動いていません。</p>
+    <figure>
+    <svg viewBox="0 0 760 330" role="img" aria-label="サーバーレスの実行モデル：イベントで起動し、実行し、待機し、破棄される">
+      <defs>
+        <marker id="f6a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="f6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker>
+      </defs>
+      <text x="80" y="26" text-anchor="middle" class="d-text-accent">イベント（きっかけ）</text>
+      <rect x="10" y="44" width="140" height="36" rx="8" class="d-box-accent"/>
+      <text x="80" y="67" text-anchor="middle" class="d-text-sub">HTTP リクエスト</text>
+      <rect x="10" y="92" width="140" height="36" rx="8" class="d-box-accent"/>
+      <text x="80" y="115" text-anchor="middle" class="d-text-sub">ファイルの保存</text>
+      <rect x="10" y="140" width="140" height="36" rx="8" class="d-box-accent"/>
+      <text x="80" y="163" text-anchor="middle" class="d-text-sub">スケジュール</text>
+      <rect x="10" y="188" width="140" height="36" rx="8" class="d-box-accent"/>
+      <text x="80" y="211" text-anchor="middle" class="d-text-sub">キューのメッセージ</text>
+      <line x1="150" y1="62" x2="196" y2="110" class="d-line"/>
+      <line x1="150" y1="110" x2="196" y2="112" class="d-line"/>
+      <line x1="150" y1="158" x2="196" y2="114" class="d-line"/>
+      <line x1="150" y1="206" x2="196" y2="116" class="d-line"/>
+      <rect x="200" y="14" width="550" height="250" rx="12" class="d-box"/>
+      <text x="475" y="38" text-anchor="middle" class="d-text-accent">クラウド事業者の実行基盤（サーバー管理はお任せ）</text>
+      <rect x="215" y="86" width="115" height="56" rx="8" class="d-box-warn"/>
+      <text x="272" y="110" text-anchor="middle" class="d-text-bold">① 起動</text>
+      <text x="272" y="130" text-anchor="middle" class="d-text-sub">コールドスタート</text>
+      <rect x="350" y="86" width="115" height="56" rx="8" class="d-box-good"/>
+      <text x="407" y="110" text-anchor="middle" class="d-text-bold">② 実行</text>
+      <text x="407" y="130" text-anchor="middle" class="d-text-sub">関数のコード</text>
+      <rect x="485" y="86" width="115" height="56" rx="8" class="d-box"/>
+      <text x="542" y="110" text-anchor="middle" class="d-text-bold">③ 待機</text>
+      <text x="542" y="130" text-anchor="middle" class="d-text-sub">しばらく保持</text>
+      <rect x="620" y="86" width="115" height="56" rx="8" class="d-box-bad"/>
+      <text x="677" y="110" text-anchor="middle" class="d-text-bold">④ 破棄</text>
+      <text x="677" y="130" text-anchor="middle" class="d-text-sub">使われなければ</text>
+      <line x1="196" y1="114" x2="211" y2="114" class="d-line" marker-end="url(#f6a)"/>
+      <line x1="330" y1="114" x2="346" y2="114" class="d-line" marker-end="url(#f6a)"/>
+      <line x1="465" y1="114" x2="481" y2="114" class="d-line" marker-end="url(#f6a)"/>
+      <line x1="600" y1="114" x2="616" y2="114" class="d-line" marker-end="url(#f6a)"/>
+      <path d="M542,86 L542,62 L407,62 L407,82" class="d-line-accent" marker-end="url(#f6b)"/>
+      <text x="475" y="56" text-anchor="middle" class="d-text-sub">次のリクエストはすぐ実行（ウォームスタート）</text>
+      <text x="230" y="180" class="d-text-sub">同時にリクエストが来たら、インスタンスを並列に増やす（自動スケール）</text>
+      <rect x="230" y="194" width="90" height="34" rx="6" class="d-box-good"/>
+      <text x="275" y="216" text-anchor="middle" class="d-text-sub">関数 #1</text>
+      <rect x="330" y="194" width="90" height="34" rx="6" class="d-box-good"/>
+      <text x="375" y="216" text-anchor="middle" class="d-text-sub">関数 #2</text>
+      <rect x="430" y="194" width="90" height="34" rx="6" class="d-box-good"/>
+      <text x="475" y="216" text-anchor="middle" class="d-text-sub">関数 #3 …</text>
+      <rect x="560" y="186" width="175" height="54" rx="8" class="d-box-purple"/>
+      <text x="647" y="208" text-anchor="middle" class="d-text-sub">状態はここに残さない</text>
+      <text x="647" y="228" text-anchor="middle" class="d-text-sub">→ 外部の DB・ストレージへ</text>
+      <text x="380" y="300" text-anchor="middle" class="d-text-sub">課金は「実行した回数と時間」に対して。リクエストがなければほぼ 0</text>
+    </svg>
+    <figcaption>図：FaaS の実行モデル。イベントで起動し、実行後しばらく待機し、使われなければ破棄される</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><strong>イベントが届く</strong>：HTTP リクエスト、ファイルのアップロード、決まった時刻、キューへのメッセージなどが、関数を起動するきっかけ（トリガー）になります。</li>
+      <li><strong>起動</strong>：実行用の環境がなければ、クラウドが新しく用意してコードを読み込みます。この初回の準備にかかる時間が<strong>コールドスタート</strong>です。</li>
+      <li><strong>実行</strong>：関数のコードが処理を行い、結果を返したり、DB に書き込んだりします。</li>
+      <li><strong>待機と破棄</strong>：実行後の環境はしばらく保持され、続けて来たリクエストはすぐに処理されます（ウォームスタート）。使われない状態が続くと破棄されます。</li>
+    </ol>
+    <p>同時に多くのリクエストが来れば、クラウドは実行環境を並列に増やします。これが「何もしなくても勝手にスケールする」仕組みです。</p>
+
+    <h3>3-2. 処理が終わったら消えるなら、データはどこへ？</h3>
+    <p>サーバーレス（FaaS）は、あくまで<strong>処理を実行する部分</strong>の話です。データの保存先は別に用意します。ただし、その DB もサーバーを自分で管理しない<strong>マネージドサービス</strong>を使うことが多く、AWS なら DynamoDB、Google なら Firestore が代表例です。「サーバーを自分で管理しない」という考え方が、DB にも広がっているのです。</p>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="ECサイトの例：注文ボタンでLambdaが起動し、DynamoDBとS3に保存する">
+      <defs><marker id="f6c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="95" width="130" height="56" rx="8" class="d-box-accent"/>
+      <text x="85" y="119" text-anchor="middle" class="d-text-bold">注文ボタン</text>
+      <text x="85" y="139" text-anchor="middle" class="d-text-sub">ユーザー</text>
+      <rect x="230" y="85" width="170" height="76" rx="10" class="d-box-warn"/>
+      <text x="315" y="112" text-anchor="middle" class="d-text-bold">Lambda</text>
+      <text x="315" y="132" text-anchor="middle" class="d-text-sub">注文処理のロジック</text>
+      <text x="315" y="150" text-anchor="middle" class="d-text-sub">終わったら消える</text>
+      <rect x="490" y="40" width="200" height="66" rx="10" class="d-box-good"/>
+      <text x="590" y="66" text-anchor="middle" class="d-text-bold">DynamoDB</text>
+      <text x="590" y="88" text-anchor="middle" class="d-text-sub">注文を保存・在庫を減らす</text>
+      <rect x="490" y="140" width="200" height="66" rx="10" class="d-box-purple"/>
+      <text x="590" y="166" text-anchor="middle" class="d-text-bold">S3</text>
+      <text x="590" y="188" text-anchor="middle" class="d-text-sub">領収書 PDF を保存</text>
+      <line x1="150" y1="123" x2="226" y2="123" class="d-line" marker-end="url(#f6c)"/>
+      <line x1="400" y1="112" x2="486" y2="76" class="d-line" marker-end="url(#f6c)"/>
+      <line x1="400" y1="134" x2="486" y2="170" class="d-line" marker-end="url(#f6c)"/>
+      <text x="315" y="240" text-anchor="middle" class="d-text-sub">処理（Lambda）・データ（DynamoDB）・ファイル（S3）で役割を分けて組み合わせる</text>
+    </svg>
+    <figcaption>図：EC サイトの注文処理をサーバーレスで組んだ例</figcaption>
+    </figure>
+    <p>ユーザーが注文ボタンを押すと Lambda が起動して注文処理を実行し、DynamoDB に注文データを保存して在庫を減らし、S3 に領収書の PDF を保存します。処理が終われば Lambda は消えます。<strong>Lambda が処理のロジック、DynamoDB がデータの保存、S3 がファイルの保存</strong>というように、役割に合ったクラウドサービスを組み合わせて使うのがサーバーレスの基本形です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>なぜサーバーレスが注目されているのか</h2>
+    <p>従来のサーバー運用では、構築・監視・パッチ適用・障害対応・スケーリングを全部自分たちでやる必要があり、インフラエンジニアがいないと回りませんでした。特に<strong>小さなチームやスタートアップ</strong>にとって、この負担は大きなものです。エンジニアが3人しかいないのに1人がインフラの面倒を見ていて、本当はプロダクト開発に集中したいのにサーバーの障害対応に時間を取られる——という状況です。</p>
+    <p>サーバーレスなら、サーバーの構築も監視もクラウドが担うので、<strong>エンジニアはアプリケーションのコードだけに集中</strong>できます。これがスタートアップや少人数チームに支持される最大の理由です。動画では、Netflix、コカ・コーラ、iRobot など大企業でも採用が進んでいる例が挙げられており、規模に関係なくメリットがある技術だとされています。</p>
+    <p>アーキテクチャの観点で言えば、サーバーレスは「運用という非機能の仕事を、お金を払ってクラウドに外注する」選択です。分散システムの運用コスト（<a href="40-2_モノリスとマイクロサービス.html">マイクロサービス・プレミアム</a>）を下げる手段の1つとも言えます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>4つのメリット</h2>
+    <div class="grid c2">
+      <div class="card good">
+        <h4>1. インフラ管理が不要</h4>
+        <p>サーバーの構築・OS・パッチ・監視をクラウドに任せられる。チームの時間をプロダクト開発に回せる。</p>
+      </div>
+      <div class="card good">
+        <h4>2. 自動スケーリング</h4>
+        <p>アクセスが急増しても自動で対応する。従来は事前にサーバーを増やしておく必要があったが、テレビで紹介されてアクセスが殺到しても、クラウドが負荷に応じてリソースを調整する。</p>
+      </div>
+      <div class="card good">
+        <h4>3. 従量課金</h4>
+        <p>使った分だけ課金される。リクエストがなければコストはほぼ 0。平日の日中しか使わない社内システムなら、夜間・休日に 24 時間サーバーを動かしていた分が丸ごと節約できる。</p>
+      </div>
+      <div class="card good">
+        <h4>4. 開発スピードの向上</h4>
+        <p>インフラ設定に時間を取られず、すぐにコードを書き始められる。プロトタイプを素早く作りたいとき、アイデアを形にするまでが格段に速くなる。</p>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">補足：「落ちる心配がほぼない」の注意点</p>
+      <p>動画では「サーバーが落ちる心配がほぼない」と説明されていますが、正確には「サーバー自体の面倒を見なくてよい」ということです。同時実行数には上限（クォータ）があり、上限を超えるとリクエストが制限（スロットリング）されます。また、関数は自動でスケールしても、その先の DB や外部 API がついてこられずに詰まることがあります。スケールの上限と下流への影響は設計で確認しておきましょう。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>5つの落とし穴</h2>
+    <p>ここまで聞くと「全部サーバーレスにすればいい」と思えてきますが、そうではありません。</p>
+
+    <h3>6-1. コールドスタート</h3>
+    <p>サーバーレスでは、リクエストがないときは処理が停止しています。久しぶりにリクエストが来ると、起動に<strong>数百ミリ秒から、場合によっては数秒</strong>かかることがあります。普段は気にならなくても、<strong>リアルタイム性が求められるシステム</strong>では問題になります。</p>
+    <p class="small muted">補足：AWS Lambda には、あらかじめ実行環境を温めておく Provisioned Concurrency（プロビジョニングされた同時実行）や、起動を速くする SnapStart といった緩和策があります。ただし、温めておく分は常時課金されるため、従量課金のメリットとのトレードオフになります。</p>
+
+    <h3>6-2. 実行時間の制限</h3>
+    <p>AWS Lambda の場合、1回の処理は<strong>最大 15 分</strong>までです。15 分を超える処理は動かせないため、動画のエンコード、大量データの一括処理、機械学習のトレーニングといった長時間の処理には向いていません。</p>
+    <p class="small muted">補足：長い処理は、小さなステップに分けてワークフローサービス（AWS Step Functions など）でつなぐか、コンテナ（AWS Fargate など）やバッチ用サービスで動かすのが一般的です。</p>
+
+    <h3>6-3. デバッグの難しさ</h3>
+    <p>クラウド上で動くため、ローカル環境で完全に再現するのが大変です。ローカルとクラウドで挙動が違うこともあり、ログを追いかけるのも従来のアプリより手間がかかります。関数が細かく分かれるほど、1つのリクエストが複数の関数とサービスを渡り歩くので、分散トレーシングなどの<a href="50-2_観測性.html">観測性</a>の仕組みが重要になります。</p>
+
+    <h3>6-4. ベンダーロックイン</h3>
+    <p>AWS Lambda で作ったシステムを Google Cloud Functions に移すのは簡単ではありません。クラウドサービスごとにイベントの形式や設定・周辺サービスの仕様が違うため、書き直しが必要になります。一度選んだら乗り換えにくいと考えておくべきです。</p>
+    <p class="small muted">補足：業務ロジックをクラウド固有の API から切り離しておくと（ハンドラーは薄くし、中身は普通の関数やクラスにする）、移行や単体テストが楽になります。これは <a href="23-2_ヘキサゴナルアーキテクチャ.html">ヘキサゴナルアーキテクチャ</a> の「アダプター」の考え方そのものです。</p>
+
+    <h3>6-5. コストの罠</h3>
+    <p>少量のリクエストなら安く済みますが、リクエスト数が膨大になると、<strong>従来のサーバーより高くつく</strong>ことがあります。常に大量のリクエストが来るシステムなら、サーバーを立てたほうが安い場合もあります。サーバーレスが安いとは限りません。</p>
+    <div class="callout tip">
+      <p class="callout-title">関連する事例</p>
+      <p>2023 年には、Amazon Prime Video の映像品質監視サービスが、サーバーレス／分散構成を<strong>1プロセスにまとめてインフラコストを約90%削減</strong>した事例が話題になりました。コンポーネント間で大量のデータを受け渡す処理を、ネットワーク越しに細かく分けていたことが問題でした。「サーバーレスはダメ」という話ではなく、<strong>処理の性質に合った粒度を選ぶ</strong>ことの大切さを示す例です（<a href="40-2_モノリスとマイクロサービス.html">40-2</a>）。</p>
+    </div>
+
+    <h3>落とし穴のまとめ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>落とし穴</th><th>何が起きるか</th><th>主な対策・回避策</th></tr></thead>
+      <tbody>
+        <tr><td>コールドスタート</td><td>久しぶりのリクエストで数百ミリ秒〜数秒の遅延</td><td>事前に温める仕組み、軽いランタイム・小さなパッケージ、リアルタイム性が必要な処理には使わない</td></tr>
+        <tr><td>実行時間の制限</td><td>Lambda は1回最大 15 分</td><td>処理を分割してワークフローでつなぐ、長時間処理はコンテナ・バッチへ</td></tr>
+        <tr><td>デバッグの難しさ</td><td>ローカル再現が難しく、ログ追跡が手間</td><td>ロジックをクラウド API から分離して単体テスト、ログ・トレースの整備</td></tr>
+        <tr><td>ベンダーロックイン</td><td>他のクラウドへの移行に書き直しが必要</td><td>ハンドラーを薄くし、業務ロジックを分離しておく</td></tr>
+        <tr><td>コストの罠</td><td>大量・常時のリクエストでは割高になりうる</td><td>想定リクエスト数で試算し、常時高負荷ならサーバー・コンテナと比較する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>アーキテクチャから見たサーバーレス</h2>
+    <p>動画の内容を、41 アーキテクチャのほかのページとつなげて整理しておきます。</p>
+    <h3>7-1. 関数は「状態を持たない」前提で設計する</h3>
+    <p>実行環境はいつ破棄されるか分からず、同じ関数が並列に何個も動くため、<strong>関数の中に状態（セッションや一時ファイルなど）を残してはいけません</strong>。状態は DB やストレージに置きます。これが「処理とデータを分ける」構成になる理由です。</p>
+    <h3>7-2. イベント駆動との相性がよい</h3>
+    <p>「画像がアップロードされたらリサイズする」「ファイルが保存されたらメールを送る」というように、サーバーレスは「何かが起きたら処理を実行する」パターンと非常に相性がよい実行モデルです。そのため、<a href="40-3_同期API・メッセージ・イベント駆動.html">イベント駆動・メッセージ</a>で学んだ注意点——<strong>同じイベントが2回届いても壊れない冪等性</strong>、失敗したイベントのリトライやデッドレターキュー——がそのまま当てはまります。</p>
+    <h3>7-3. スタイルではなく「実行モデル」</h3>
+    <p>サーバーレスは、モノリスやマイクロサービスのような「システムをどう分けるか」のスタイルというより、「<strong>処理をどこで、どう動かすか</strong>」という実行モデル・運用モデルの選択です。サーバーレスで細かい関数をたくさん作れば、マイクロサービスやイベント駆動と同じ分散の難しさ（データ所有権・整合性・観測性）を抱えることになります（<a href="40-4_データ所有権とSAGA.html">40-4</a>）。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>向いている場面・向かない場面</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>向いている</th><th>向かない</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API のバックエンド</strong>：リクエストが来たら処理して結果を返す。サーバーレスの得意分野</td><td><strong>長時間の処理</strong>：動画処理、大規模なデータ変換（15 分の制限）</td></tr>
+        <tr><td><strong>イベント駆動の処理</strong>：画像のアップロード時にリサイズ、ファイル保存時にメール通知</td><td><strong>リアルタイム通信</strong>：チャットやオンラインゲームのような常時接続が必要なシステム（コールドスタートの問題もある）</td></tr>
+        <tr><td><strong>定期バッチ</strong>：毎朝 6 時のレポート生成、毎時のデータ集計など、15 分以内に終わる処理</td><td><strong>24 時間常に高負荷のシステム</strong>：大量のリクエストが来続けるなら、従来のサーバーのほうがコスパがよい場合がある</td></tr>
+        <tr><td><strong>MVP 開発</strong>：最小限の機能でサービスを立ち上げたいとき、インフラ設定に時間をかけずコードに集中できる</td><td></td></tr>
+      </tbody>
+    </table></div>
+    <p>サーバーレスには、はっきりした向き不向きがあります。特性を理解したうえで選ぶことが大切です。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>どう始めるか</h2>
+    <ol class="steps">
+      <li><strong>小さな処理から試す</strong>：いきなり本番システムをサーバーレスにする必要はありません。問い合わせフォームの送信処理、画像のリサイズ、定期的なデータ取得といった小さな処理を Lambda で動かしてみます。</li>
+      <li><strong>既存システムは一部から段階的に</strong>：全部を置き換える必要はありません。たとえば通知機能だけを Lambda に切り出し、メインのシステムはそのまま残します。いきなり全部をサーバーレスにしようとすると、落とし穴にはまる可能性があります。小さく始めて感覚をつかんでから広げるのが安全です。</li>
+      <li><strong>手を動かして学ぶ</strong>：学習には AWS の公式ドキュメントとハンズオンがおすすめです。Lambda のチュートリアルが充実しており、無料で試せる範囲も広くあります。ドキュメントを読むだけでなく、実際に動かして<strong>コールドスタートを体感し、ログを見て、コストを確認する</strong>と、向き不向きが肌感覚で分かるようになります。</li>
+    </ol>
+    <p>既存システムの一部を切り出していく進め方は、<a href="40-2_モノリスとマイクロサービス.html">40-2</a> で紹介したストラングラーフィグ（少しずつ置き換える）の考え方と同じです。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>サーバーレスはサーバーがない</td><td>サーバーは存在する。自分で管理する必要がなくなるだけ</td></tr>
+        <tr><td>サーバーレスは必ず安い</td><td>少量なら安いが、大量・常時のリクエストではサーバーより高くつくことがある</td></tr>
+        <tr><td>サーバーレスなら何でも動かせる</td><td>実行時間の制限（Lambda は最大 15 分）、常時接続の苦手さ、コールドスタートがある</td></tr>
+        <tr><td>サーバーレスにすれば運用がゼロになる</td><td>サーバー管理は不要になるが、ログ・監視・権限設定・コスト管理・冪等性の設計は残る</td></tr>
+        <tr><td>全部をサーバーレスにすべき</td><td>合う部分から小さく始め、向かない処理は従来のサーバーやコンテナと組み合わせる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページのポイント</p>
+      <ul>
+        <li>サーバーレスは「<strong>サーバー管理をクラウドに任せる</strong>」仕組み。サーバーがなくなるわけではない。</li>
+        <li>関数は<strong>イベントで起動し、終われば消える</strong>。データ保存はマネージド DB・ストレージと組み合わせる。</li>
+        <li>メリットは<strong>インフラ管理不要・自動スケーリング・従量課金・開発スピード</strong>の4つ。</li>
+        <li>落とし穴は<strong>コールドスタート・実行時間制限・デバッグの難しさ・ベンダーロックイン・コストの罠</strong>の5つ。万能ではない。</li>
+        <li>API・イベント処理・短いバッチ・MVP に向き、長時間処理・常時接続・常時高負荷には向かない。</li>
+        <li>全部をサーバーレスにせず、<strong>合う部分から小さく始める</strong>。</li>
+      </ul>
+    </div>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>IT技術屋のボヤキ「サーバーレスとは？仕組みからメリット・落とし穴まで解説」（YouTube, 2026-02-07） <a href="https://www.youtube.com/watch?v=Wouz-M3klIQ">https://www.youtube.com/watch?v=Wouz-M3klIQ</a></li>
+      <li>Mike Roberts「Serverless Architectures」（martinfowler.com） <a href="https://martinfowler.com/articles/serverless.html">https://martinfowler.com/articles/serverless.html</a></li>
+      <li>AWS Lambda 開発者ガイド <a href="https://docs.aws.amazon.com/lambda/latest/dg/welcome.html">https://docs.aws.amazon.com/lambda/latest/dg/welcome.html</a></li>
+      <li>AWS Lambda のクォータ <a href="https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html">https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-5_BFFとAPIゲートウェイ.html"><span class="lbl">← 前のページ</span>BFF・API ゲートウェイ・グレースフルデグレーデーション</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-1_横断的関心事と認証認可.html"><span class="lbl">次のページ →</span>横断的関心事と認証・認可の境界</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSRF（クロスサイトリクエストフォージェリ）｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 リクエスト偽造・リダイレクト › CSRF（クロスサイトリクエストフォージェリ）</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 リクエスト偽造・リダイレクト</span>
+      <h1>CSRF（クロスサイトリクエストフォージェリ）</h1>
+      <p class="lead">CSRF は、ログイン中の利用者に、本人が意図していないリクエスト（送金・設定変更など）を勝手に送らせる攻撃です。このページでは徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）第8章をもとに、CSRF の仕組み、XSS との違い、確認画面・hidden・セッション・ファイルアップロードといった場面ごとの落とし穴、そして CSRF トークン・パスワード再入力・Referer チェックによる対策を解説します。</p>
+      <p class="meta">もとにしたノート：30_リクエスト偽造・リダイレクト/01_CSRF（徳丸本8章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>ブラウザは、どのサイトから送られたリクエストでも、宛先サイトの Cookie を <strong>自動で付けて</strong> しまいます。そのためサーバーは「ログイン済みの本人から来た」とは分かっても、<strong>「本人が自分のサイトの画面で意図して送ったか」</strong> は分かりません。CSRF 対策とは、この「意図」を <strong>攻撃者が知り得ない秘密（CSRF トークン）</strong> などで確かめることです。</p>
+    </div>
+
+    <p><a href="20-1_XSSの基本.html">第5章</a> では XSS を、第1章ではセッション管理（74_セッション管理 で扱います）を学びました。第8章では <strong>CSRF（クロスサイトリクエストフォージェリ）</strong> の仕組みと対策を解説します。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>クロスサイトリクエストフォージェリ（CSRF）とは</h2>
+    <p><strong>CSRF（Cross-Site Request Forgery / クロスサイトリクエストフォージェリ）</strong> は、ログイン済みのユーザーに <strong>意図しないリクエストを送らせる</strong> 攻撃です。「フォージェリ（forgery）」は「偽造」という意味で、名前のとおり「別のサイトから（クロスサイト）、リクエストを偽造する」攻撃です。読み方は「シーサーフ」と呼ばれることもあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>別名</strong></td><td>クロスサイト・リクエストフォージェリ、One-Click Attack</td></tr>
+        <tr><td><strong>前提</strong></td><td>被害者が対象サイトに <strong>ログイン済み</strong>（Cookie が有効）</td></tr>
+        <tr><td><strong>攻撃方法</strong></td><td>別サイトから対象サイトへリクエストを送らせる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Cookie（クッキー）</strong> は、サイトがブラウザに保存させる小さなデータです。ログインすると、利用者を見分けるための <strong>セッション ID</strong>（ログイン状態を表す番号）が Cookie に入り、以後そのサイトへのリクエストには毎回この Cookie が自動で付きます。これが「ログイン状態が続く」仕組みです。</p>
+    <p>CSRF は、攻撃者が罠を仕掛け、被害者のブラウザに攻撃を実行させる <strong>受動的攻撃</strong> の一種です（<a href="10-1_受動的攻撃と同一オリジンポリシー.html#sec-1">受動的攻撃と同一オリジンポリシー</a> を参照）。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>正常な操作</h4>
+        <p>銀行サイトで自分の意志で「送金」ボタンを押す</p>
+      </div>
+      <div class="card">
+        <h4>CSRF</h4>
+        <p>別のサイトを見ているだけなのに、裏で銀行サイトへ「送金」リクエストが送られる</p>
+      </div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>被害者が bank.com にログイン（Cookie がブラウザに保存）</li>
+      <li>被害者が evil.com を閲覧</li>
+      <li>evil.com のページが bank.com へリクエストを送る</li>
+      <li>ブラウザが bank.com の Cookie を自動添付</li>
+      <li>bank.com は「ログイン済みユーザーの正規リクエスト」と判断</li>
+      <li>意図しない操作（送金・設定変更等）が実行される</li>
+    </ol>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="bank.comにログイン済みの被害者がevil.comを開くと、罠ページの自動送信フォームによってCookie付きの送金リクエストがbank.comへ送られ、送金が実行される流れ">
+      <defs>
+        <marker id="arw301a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw301b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="250" y="110" width="220" height="120" rx="8" class="d-box-accent"/>
+      <text x="360" y="138" text-anchor="middle" class="d-text-bold">被害者のブラウザ</text>
+      <rect x="270" y="152" width="180" height="30" rx="6" class="d-box"/>
+      <text x="360" y="172" text-anchor="middle" class="d-text-sub">bank.com の Cookie を保存中</text>
+      <text x="360" y="210" text-anchor="middle" class="d-text-sub">（ログイン済み）</text>
+
+      <rect x="20" y="20" width="190" height="80" rx="8" class="d-box-bad"/>
+      <text x="115" y="50" text-anchor="middle" class="d-text-bold">evil.com（罠サイト）</text>
+      <text x="115" y="74" text-anchor="middle" class="d-text-sub">自動送信フォームを仕込む</text>
+
+      <rect x="510" y="20" width="190" height="80" rx="8" class="d-box"/>
+      <text x="605" y="50" text-anchor="middle" class="d-text-bold">bank.com</text>
+      <text x="605" y="74" text-anchor="middle" class="d-text-sub">本物の銀行サイト</text>
+
+      <path d="M560,100 C560,135 520,150 472,150" class="d-line" marker-end="url(#arw301a)"/>
+      <text x="498" y="60" text-anchor="end" class="d-text-sub">① ログインして</text>
+      <text x="498" y="78" text-anchor="end" class="d-text-sub">Cookie を受け取る</text>
+
+      <path d="M248,140 C170,140 115,130 115,102" class="d-line" marker-end="url(#arw301a)"/>
+      <text x="150" y="160" text-anchor="middle" class="d-text-sub">② 罠ページを開く</text>
+      <path d="M115,100 C115,190 190,200 248,200" class="d-line-bad" marker-end="url(#arw301b)"/>
+      <text x="110" y="215" text-anchor="middle" class="d-text-sub">③ フォームが自動送信</text>
+
+      <path d="M470,200 C600,200 640,160 640,102" class="d-line-bad" marker-end="url(#arw301b)"/>
+      <text x="560" y="230" text-anchor="middle" class="d-text-bold">④ POST /transfer ＋ Cookie</text>
+
+      <rect x="150" y="260" width="420" height="54" rx="8" class="d-box-warn"/>
+      <text x="360" y="283" text-anchor="middle" class="d-text-bold">⑤ bank.com「Cookie が正しい＝本人の操作」と判断</text>
+      <text x="360" y="303" text-anchor="middle" class="d-text-sub">⑥ 本人が知らないうちに送金が実行される</text>
+    </svg>
+    <figcaption>図：被害者は evil.com を見ただけ。リクエストを作ったのは罠ページだが、Cookie はブラウザが自動で付ける</figcaption>
+    </figure>
+
+    <h3 id="sec-1-3">1.3 攻撃コードの例</h3>
+    <p>evil.com のページに、次のような HTML を仕込みます。<code>&lt;img&gt;</code> タグはページを開いただけで <code>src</code> の URL へ GET リクエストを送ります。<code>&lt;form&gt;</code> は <code>&lt;script&gt;</code> の <code>submit()</code> で、利用者がボタンを押さなくても自動で送信されます。<code>type="hidden"</code> は画面に表示されない入力欄です。</p>
+    <span class="code-label bad">攻撃者が罠サイトに仕込むコード</span>
+<pre><code>&lt;!-- evil.com のページに仕込む --&gt;
+
+&lt;!-- GET リクエスト（画像タグ） --&gt;
+&lt;img src="https://bank.com/transfer?to=attacker&amp;amount=100000" width="0" height="0"&gt;
+
+&lt;!-- POST リクエスト（自動送信フォーム） --&gt;
+&lt;form action="https://bank.com/transfer" method="POST" id="attack"&gt;
+  &lt;input type="hidden" name="to" value="attacker"&gt;
+  &lt;input type="hidden" name="amount" value="100000"&gt;
+&lt;/form&gt;
+&lt;script&gt;document.getElementById('attack').submit();&lt;/script&gt;</code></pre>
+    <p>画像タグは <code>width="0" height="0"</code> で見えなくしてあり、被害者は何も気づきません。</p>
+
+    <h3 id="sec-1-4">1.4 なぜ起きるか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要因</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Cookie の自動送信</strong></td><td>同一サイトへのリクエストに Cookie が付く（リクエストを作ったのが別サイトのページでも、宛先が bank.com なら bank.com の Cookie が付く）</td></tr>
+        <tr><td><strong>リクエスト元の未検証</strong></td><td>サーバーが「誰が意図して送ったか」を確認しない</td></tr>
+        <tr><td><strong>副作用のある GET</strong></td><td>GET で状態変更処理を行っている（設計上の問題）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>副作用</strong> とは、リクエストによってデータが書き換わること（登録・更新・削除・送金など）です。</p>
+    <div class="callout tip">
+      <p class="callout-title">同一オリジンポリシーでは防げない理由</p>
+      <p>ブラウザの <strong>同一オリジンポリシー</strong>（別のオリジンのデータを勝手に読ませない仕組み）が止めるのは、別サイトの <strong>レスポンスを読むこと</strong> です。<strong>リクエストを送ること自体</strong> は止めません。CSRF の攻撃者はレスポンスを読む必要がなく、送れれば目的を達成できるため、同一オリジンポリシーでは防げません。詳しくは <a href="10-1_受動的攻撃と同一オリジンポリシー.html#sec-3-5">同一オリジンポリシーが守るもの</a> を参照してください。同じ理由で、<a href="10-2_CORSの仕組み.html#sec-13">CORS の設定も CSRF 対策にはなりません</a>。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>CSRF 攻撃と XSS 攻撃の比較</h2>
+    <p>CSRF と <a href="20-1_XSSの基本.html">XSS</a> は混同されやすいですが、<strong>攻撃の仕組みと対策</strong> が異なります。</p>
+
+    <h3 id="sec-2-1">2.1 比較表</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>CSRF</th><th>XSS</th></tr></thead>
+      <tbody>
+        <tr><td><strong>目的</strong></td><td>意図しない <strong>リクエスト</strong> を送らせる</td><td>悪意ある <strong>スクリプト</strong> を実行させる</td></tr>
+        <tr><td><strong>前提</strong></td><td>ログイン済み（Cookie 有効）</td><td>入力が HTML に反映される脆弱性</td></tr>
+        <tr><td><strong>攻撃者の能力</strong></td><td>別サイトからリクエストを <strong>送る</strong></td><td>ページ内で <strong>JavaScript を実行</strong></td></tr>
+        <tr><td><strong>Cookie</strong></td><td>自動送信を <strong>悪用</strong></td><td><code>document.cookie</code> で <strong>窃取</strong></td></tr>
+        <tr><td><strong>主な対策</strong></td><td>CSRF トークン、SameSite Cookie</td><td>HTML エスケープ、CSP</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>SameSite Cookie</strong> は、別サイトから来たリクエストに Cookie を付けないようにする Cookie の属性です（9.3 で補足します）。<strong>CSP</strong> は、ページで実行してよいスクリプトをブラウザに指示する仕組みです（<a href="10-4_CSP.html">CSP</a> を参照）。</p>
+
+    <h3 id="sec-2-2">2.2 図解</h3>
+<pre><code>CSRF:
+  evil.com ──リクエスト──→ bank.com（Cookie 付き）
+  「ユーザーが意図した操作か？」をサーバーが確認していない
+
+XSS:
+  evil.com ではなく bank.com 上で
+  注入された &lt;script&gt; が実行される
+  → Cookie 窃取、ページ改ざん等</code></pre>
+    <p>CSRF の攻撃コードは <strong>evil.com の上</strong> で動き、bank.com のページの中身には手出しできません。XSS の攻撃コードは <strong>bank.com のページの中</strong> で動くため、bank.com の画面やデータを自由に読み書きできます。</p>
+
+    <h3 id="sec-2-3">2.3 組み合わせ攻撃</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パターン</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>XSS 単独</strong></td><td>スクリプトで直接 API を呼び出し、操作可能</td></tr>
+        <tr><td><strong>CSRF 単独</strong></td><td>スクリプト不要。フォームや img タグでリクエスト</td></tr>
+        <tr><td><strong>XSS + CSRF</strong></td><td>XSS で CSRF トークンを読み取り、CSRF 対策を突破</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout bad">
+      <p class="callout-title">重要：XSS があると CSRF 対策は無効になる</p>
+      <p>CSRF トークンは <strong>XSS があると無効化</strong> されます（トークンが JavaScript から読めるため）。XSS 対策も並行して必要です。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>確認画面がある場合の CSRF 攻撃</h2>
+    <p>「確認画面があるから安全」とは <strong>限りません</strong>。確認画面は CSRF を防ぐ仕組みではありません。</p>
+
+    <h3 id="sec-3-1">3.1 典型的なフロー</h3>
+<pre><code>入力画面 → 確認画面 → 完了画面
+  POST       POST       （DB更新）</code></pre>
+
+    <h3 id="sec-3-2">3.2 なぜ確認画面だけでは防げないか</h3>
+    <p>攻撃者は <strong>確認画面を経由せず</strong>、直接 POST リクエストを送れます。サーバーから見れば、届くのは「確定ボタンを押したときと同じ形のリクエスト」だけなので、確認画面を通ったかどうかは区別できません。</p>
+    <span class="code-label bad">攻撃者が evil.com に仕込むフォーム</span>
+<pre><code>&lt;!-- 攻撃者が evil.com に仕込むフォーム --&gt;
+&lt;form action="https://shop.com/order/confirm" method="POST"&gt;
+  &lt;input type="hidden" name="product_id" value="123"&gt;
+  &lt;input type="hidden" name="quantity" value="1"&gt;
+  &lt;input type="hidden" name="confirmed" value="1"&gt;
+  &lt;input type="submit" value="Click me"&gt;
+&lt;/form&gt;</code></pre>
+<pre><code>確認画面の役割:
+  ✅ ユーザーが内容を見直す（UX）
+  ❌ リクエストの正当性を保証する（セキュリティ）ではない</code></pre>
+    <p><strong>UX</strong>（ユーザーエクスペリエンス）は、使いやすさや使い心地のことです。</p>
+
+    <h3 id="sec-3-3">3.3 確認画面を CSRF 対策に使う場合</h3>
+    <p>確認画面の POST に <strong>CSRF トークン</strong>（10章で詳しく説明する、攻撃者が知り得ない秘密の値）を含め、サーバー側で検証する必要があります。</p>
+    <span class="code-label good">安全な例：確認画面のフォームにトークンを入れ、サーバーで検証（PHP）</span>
+<pre><code>// 確認画面のフォーム
+&lt;input type="hidden" name="csrf_token" value="&lt;?= $token ?&gt;"&gt;
+
+// サーバー側で検証
+if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    die('不正なリクエストです');
+}</code></pre>
+    <p><code>hash_equals</code> は2つの文字列が等しいかを安全に比べる PHP の関数です（理由は 10.4 で説明します）。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>Hidden パラメータでパラメータ受け渡ししている場合</h2>
+    <p>入力画面 → 確認画面 → 完了画面のように画面が続く <strong>多段階フォーム</strong> で、<strong>hidden パラメータ</strong>（<code>&lt;input type="hidden"&gt;</code> に入れて次の画面へ送る値）を使って値を引き継ぐ場合、CSRF のリスクがあります。</p>
+
+    <h3 id="sec-4-1">4.1 脆弱なパターン</h3>
+    <span class="code-label bad">危険な例：価格まで hidden で引き継いでいる</span>
+<pre><code>&lt;!-- 入力画面 → 確認画面へ --&gt;
+&lt;form method="POST" action="/order/confirm"&gt;
+  &lt;input type="hidden" name="product_id" value="123"&gt;
+  &lt;input type="hidden" name="price" value="1000"&gt;
+  &lt;input type="text" name="quantity" value="2"&gt;
+  &lt;button type="submit"&gt;確認&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+
+    <h3 id="sec-4-2">4.2 攻撃</h3>
+    <p>攻撃者は <strong>同じパラメータを含むフォーム</strong> を evil.com に作成し、自動送信できます。</p>
+    <span class="code-label bad">攻撃者が evil.com に仕込むフォーム</span>
+<pre><code>&lt;form action="https://shop.com/order/confirm" method="POST"&gt;
+  &lt;input type="hidden" name="product_id" value="999"&gt;
+  &lt;input type="hidden" name="price" value="1"&gt;
+  &lt;input type="hidden" name="quantity" value="100"&gt;
+&lt;/form&gt;
+&lt;script&gt;document.forms[0].submit();&lt;/script&gt;</code></pre>
+
+    <h3 id="sec-4-3">4.3 なぜ危険か</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Hidden は改ざん可能</strong></td><td>ブラウザの開発者ツール（ページの HTML を見たり書き換えたりできる機能）で値を変更できる</td></tr>
+        <tr><td><strong>CSRF で再現可能</strong></td><td>攻撃者が任意の hidden 値で POST できる</td></tr>
+        <tr><td><strong>価格等の信頼</strong></td><td>hidden の price を信頼してはいけない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-4">4.4 対策</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CSRF トークン</strong></td><td>リクエストの正当性を検証</td></tr>
+        <tr><td><strong>サーバー側で値を保持</strong></td><td>価格等は hidden ではなく <strong>セッション</strong>（サーバー側に利用者ごとの情報を一時保存する仕組み）や DB から取得</td></tr>
+        <tr><td><strong>重要値は hidden に載せない</strong></td><td>product_id のみ受け取り、price はサーバーで再取得</td></tr>
+      </tbody>
+    </table></div>
+    <p>「クライアント側の値を信じない」という考え方は、<a href="20-5_メールヘッダインジェクション.html#sec-4">メールヘッダインジェクション「Hidden パラメータによる宛先保持」</a> と同じです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>セッション変数によりパラメータ受け渡ししている場合</h2>
+    <p><strong>セッション変数</strong>（PHP の <code>$_SESSION</code> のように、サーバー側のセッションに保存する値）でパラメータを引き継ぐ方式は、hidden より安全ですが、<strong>CSRF 自体は防げません</strong>。</p>
+
+    <h3 id="sec-5-1">5.1 比較的安全なパターン</h3>
+    <span class="code-label good">比較的安全な例：値はセッションに置き、価格は DB から取る（PHP）</span>
+<pre><code>// 入力画面：セッションに保存
+$_SESSION['order'] = [
+    'product_id' =&gt; (int)$_POST['product_id'],
+    'quantity'   =&gt; (int)$_POST['quantity'],
+];
+header('Location: /order/confirm');
+
+// 確認画面：セッションから読み取り
+$order = $_SESSION['order'];
+$product = getProduct($order['product_id']);  // 価格は DB から取得</code></pre>
+    <p><code>(int)</code> は値を整数に変換する書き方、<code>header('Location: ...')</code> は指定した URL へブラウザを移動（リダイレクト）させる命令です。</p>
+
+    <h3 id="sec-5-2">5.2 メリット</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メリット</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>改ざん耐性</strong></td><td>クライアントから price を送らない</td></tr>
+        <tr><td><strong>Hidden より安全</strong></td><td>攻撃者が price を直接指定しにくい</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-3">5.3 残る CSRF リスク</h3>
+    <p>攻撃者が「確定」処理の POST だけを送れます。</p>
+    <span class="code-label bad">攻撃者が仕込むフォーム：パラメータなしで「確定」だけ送る</span>
+<pre><code>&lt;form action="https://shop.com/order/complete" method="POST"&gt;
+  &lt;!-- パラメータ不要。セッションに既存データがあれば処理される --&gt;
+&lt;/form&gt;
+&lt;script&gt;document.forms[0].submit();&lt;/script&gt;</code></pre>
+    <p>被害者のセッションに <strong>正当な注文データ</strong> がある場合（例：確認画面まで進んで手を止めている）、攻撃者が「確定」だけ CSRF できる可能性があります。</p>
+
+    <h3 id="sec-5-4">5.4 対策</h3>
+    <ul>
+      <li><strong>確定処理にも CSRF トークン</strong> を必須にする</li>
+      <li>セッション引き継ぎは <strong>値の改ざん防止</strong>、CSRF トークンは <strong>意図した操作の確認</strong></li>
+    </ul>
+    <p>つまり、両者は守っているものが違うので、どちらか一方で済ませることはできません。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>ファイルアップロードフォームでの CSRF 攻撃</h2>
+    <p><strong>ファイルアップロード</strong> も CSRF の対象になります。<code>enctype="multipart/form-data"</code>（ファイルを送るときに使うフォームの送信形式）でも同様です。</p>
+
+    <h3 id="sec-6-1">6.1 攻撃の例</h3>
+    <span class="code-label bad">攻撃者が evil.com に仕込むアップロードフォーム</span>
+<pre><code>&lt;!-- evil.com：自動送信するアップロードフォーム --&gt;
+&lt;form action="https://docs.example.com/upload" method="POST"
+      enctype="multipart/form-data" id="upload"&gt;
+  &lt;input type="file" name="file" id="file"&gt;
+&lt;/form&gt;
+&lt;script&gt;
+  // ファイル選択は同一オリジン制限があり、完全自動化は難しい場合も
+  // ただし、攻撃者が用意したファイルをユーザー操作で送らせる等の手法あり
+  document.getElementById('upload').submit();
+&lt;/script&gt;</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：ファイルアップロードの CSRF も完全に自動化できます</p>
+      <p>コード中のコメントにある「ファイル選択の制限」は、正確には同一オリジンポリシーではなく、<strong>スクリプトから <code>&lt;input type="file"&gt;</code> に利用者のファイルを勝手にセットできない</strong> というブラウザの制限です。ただし攻撃者は利用者のファイルを使う必要がなく、<strong>自分で用意した中身</strong> を JavaScript の <code>FormData</code> / <code>Blob</code> で作り、<code>fetch(url, { method: 'POST', body: formData, credentials: 'include' })</code> のように送れます。レスポンスは読めませんが、送信は成功します（徳丸本でもこの方法による攻撃が紹介されています）。そのため「自動化は難しい」と考えて対策を省略してはいけません。</p>
+    </div>
+
+    <h3 id="sec-6-2">6.2 リスク</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>リスク</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>不正ファイルのアップロード</strong></td><td>ログイン済みユーザー権限でファイルを配置</td></tr>
+        <tr><td><strong>Web シェルの配置</strong></td><td>実行可能なスクリプトをアップロード（<strong>Web シェル</strong>：ブラウザからサーバーを遠隔操作できるようにする不正プログラム）</td></tr>
+        <tr><td><strong>設定変更と組み合わせ</strong></td><td>アップロード先や権限の変更と連鎖</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-3">6.3 対策</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CSRF トークン</strong></td><td>アップロードフォームにも必須</td></tr>
+        <tr><td><strong>Content-Type 検証</strong></td><td>許可するファイル形式を限定</td></tr>
+        <tr><td><strong>保存先の制御</strong></td><td>Web ルート外（URL で直接アクセスできない場所）、実行権限なし</td></tr>
+        <tr><td><strong>SameSite Cookie</strong></td><td>クロスサイトからの Cookie 送信を制限</td></tr>
+      </tbody>
+    </table></div>
+    <p>アップロード機能そのものの脆弱性（ファイルの種類の偽装など）は、<a href="40-2_ファイルアップロード.html">ファイルアップロード</a> のページで扱います。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>CSRF 対策の基本方針</h2>
+    <p>CSRF 対策の基本方針は次の2点です。</p>
+    <ol class="steps">
+      <li>CSRF 対策が必要なページを区別する</li>
+      <li>正規利用者の意図したリクエストであることを確認する</li>
+    </ol>
+    <p>1つ目は 8章、2つ目は 9章〜12章で説明します。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>CSRF 対策の必要なページを区別する</h2>
+    <p>すべてのページに CSRF 対策が必要なわけではありません。<strong>状態を変更する処理</strong> を対象にします。</p>
+
+    <h3 id="sec-8-1">8.1 対策が必要な操作</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>例</th><th>CSRF 対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>作成</strong></td><td>投稿、注文、ユーザー登録</td><td>✅ 必要</td></tr>
+        <tr><td><strong>更新</strong></td><td>プロフィール変更、設定変更</td><td>✅ 必要</td></tr>
+        <tr><td><strong>削除</strong></td><td>記事削除、アカウント削除</td><td>✅ 必要</td></tr>
+        <tr><td><strong>送金・決済</strong></td><td>振込、購入確定</td><td>✅ 必要 + 再認証</td></tr>
+        <tr><td><strong>参照のみ</strong></td><td>一覧表示、詳細表示</td><td>△ 通常不要</td></tr>
+        <tr><td><strong>検索（GET）</strong></td><td>キーワード検索</td><td>△ GET で副作用がなければ低リスク</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>再認証</strong> とは、ログイン済みでも重要な操作の直前にもう一度パスワードなどで本人確認することです（11章）。参照だけのページは、攻撃者がリクエストを送らせても結果（レスポンス）を読めないため、通常は被害になりません。</p>
+
+    <h3 id="sec-8-2">8.2 判断基準</h3>
+<pre><code>CSRF 対策が必要:
+  → リクエストが「副作用」を持つ（データが変わる）
+  → 認証済みユーザーの権限で実行される
+
+CSRF 対策が不要（または優先度低）:
+  → 参照のみ（GET でデータ変更なし）
+  → 公開 API（認証不要）</code></pre>
+
+    <h3 id="sec-8-3">8.3 GET で状態変更しない</h3>
+    <span class="code-label bad">危険な例：GET で削除</span>
+<pre><code>// ❌ 危険：GET で削除
+&lt;a href="/delete?id=123"&gt;削除&lt;/a&gt;
+// → CSRF 攻撃が img タグ1つで可能</code></pre>
+    <span class="code-label good">安全な例：POST + CSRF トークン</span>
+<pre><code>// ✅ 安全：POST + CSRF トークン
+&lt;form method="POST" action="/delete"&gt;
+  &lt;input type="hidden" name="id" value="123"&gt;
+  &lt;input type="hidden" name="csrf_token" value="&lt;?= $token ?&gt;"&gt;
+  &lt;button type="submit"&gt;削除&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+    <p>POST にしただけでは 1.3 の自動送信フォームで攻撃できるため、<strong>POST と CSRF トークンはセット</strong> で使います。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>正規利用者の意図したリクエストであることを確認する</h2>
+    <p>CSRF 対策の本質は、<strong>「このリクエストは、ユーザーが自サイト上で意図して送ったものか」</strong> をサーバー側で確認することです。</p>
+
+    <h3 id="sec-9-1">9.1 確認方法</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方法</th><th>信頼性</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CSRF トークン</strong></td><td>高</td><td>秘密トークンの一致を検証</td></tr>
+        <tr><td><strong>SameSite Cookie</strong></td><td>中〜高</td><td>クロスサイト Cookie 送信を制限</td></tr>
+        <tr><td><strong>Referer チェック</strong></td><td>低〜中</td><td>リクエスト元 URL を確認</td></tr>
+        <tr><td><strong>パスワード再入力</strong></td><td>高</td><td>重要操作で本人確認</td></tr>
+        <tr><td><strong>カスタムヘッダ</strong></td><td>高</td><td><code>X-Requested-With</code> 等（API 向け）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>カスタムヘッダ</strong> 方式は、「独自のリクエストヘッダが付いたリクエストだけ受け付ける」方法です。フォームや img タグでは独自ヘッダを付けられず、JavaScript で別オリジンから独自ヘッダを付けようとすると <a href="10-2_CORSの仕組み.html#sec-7">プリフライトリクエスト</a>（本番の前にサーバーへ許可を問い合わせる事前確認）が発生し、サーバーが許可しない限り送られません。そのため、CORS で別オリジンを広く許可していないことが前提です。</p>
+
+    <h3 id="sec-9-2">9.2 多層防御</h3>
+    <p>1つの対策に頼らず、複数を重ねます（考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> を参照）。</p>
+<pre><code>SameSite Cookie（第1の防御線）
+    +
+CSRF トークン（第2の防御線）
+    +
+重要操作ではパスワード再入力（第3の防御線）</code></pre>
+
+    <h3 id="sec-9-3">9.3 補足：本の出版後に広まった防御</h3>
+    <div class="callout tip">
+      <p class="callout-title">ブラウザ側の仕組みも CSRF を防ぐ方向に進んでいます</p>
+      <ul>
+        <li><strong>SameSite=Lax の既定化</strong>：Chrome などでは、SameSite 属性を書かない Cookie を <code>Lax</code>（別サイトからの POST や img などでは Cookie を送らず、リンクをたどる通常の画面遷移では送る）として扱います。ただしすべてのブラウザの既定ではなく、<strong>Lax でも GET での画面遷移には Cookie が付く</strong> ため、「GET で状態変更しない」は引き続き必須です。SameSite の細かい使い分けは 74_セッション管理 で扱います（概要は <a href="10-3_CORSエラーの対処法とCookie.html#sec-6">Cookie はどう付いていくのか</a>）。</li>
+        <li><strong>Origin ヘッダのチェック</strong>：POST などのリクエストには、送信元のオリジン（例：<code>https://evil.com</code>）を表す <code>Origin</code> ヘッダが付きます。これが自サイトでなければ拒否します。Referer より送られる場面が多く、パス（URL の後半）を含まないためプライバシー設定で消されにくいのが利点です。</li>
+        <li><strong>Fetch Metadata（<code>Sec-Fetch-Site</code>）</strong>：最近のブラウザは、リクエストが同じサイトから来たか（<code>same-origin</code> / <code>same-site</code>）、別サイトから来たか（<code>cross-site</code>）をこのヘッダで知らせます。JavaScript から偽造できないため、<code>cross-site</code> の状態変更リクエストを拒否する判定に使えます。</li>
+      </ul>
+      <p>いずれも <strong>CSRF トークンを置き換えるものではなく、重ねて使う防御</strong> と考えてください。</p>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>秘密情報（トークン）の埋め込み</h2>
+    <p><strong>CSRF トークン</strong> は、CSRF 対策の <strong>最も重要で標準的な手法</strong> です。<strong>トークン</strong> とは、サーバーが発行する推測できないランダムな文字列のことです。</p>
+
+    <h3 id="sec-10-1">10.1 仕組み</h3>
+    <ol class="steps">
+      <li>サーバーがランダムなトークンを生成</li>
+      <li>セッションに保存</li>
+      <li>フォームに hidden フィールドとして埋め込む</li>
+      <li>送信時にトークンも POST される</li>
+      <li>サーバーがセッションのトークンと一致するか検証</li>
+      <li>一致しなければ拒否</li>
+    </ol>
+
+    <h3 id="sec-10-2">10.2 実装例（PHP）</h3>
+    <span class="code-label good">トークン生成</span>
+<pre><code>// トークン生成
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$token = $_SESSION['csrf_token'];</code></pre>
+    <p><code>random_bytes(32)</code> は暗号論的に安全な（予測できない）乱数を 32 バイト作る関数、<code>bin2hex</code> はそれを 16 進数の文字列（64文字）に変換する関数です。</p>
+    <span class="code-label good">フォームに埋め込み</span>
+<pre><code>&lt;!-- フォームに埋め込み --&gt;
+&lt;form method="POST" action="/transfer"&gt;
+  &lt;input type="hidden" name="csrf_token" value="&lt;?= htmlspecialchars($token) ?&gt;"&gt;
+  &lt;!-- その他のフィールド --&gt;
+  &lt;button type="submit"&gt;送金&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+    <p><code>htmlspecialchars</code> は HTML エスケープを行う関数です（<a href="20-1_XSSの基本.html#sec-9">htmlspecialchars 関数</a> を参照）。</p>
+    <span class="code-label good">検証</span>
+<pre><code>// 検証
+if (!isset($_POST['csrf_token']) ||
+    !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    http_response_code(403);
+    die('不正なリクエストです');
+}</code></pre>
+    <p><code>http_response_code(403)</code> は「アクセス禁止（403 Forbidden）」のステータスコードを返す命令です。</p>
+
+    <h3 id="sec-10-3">10.3 なぜ有効か</h3>
+<pre><code>evil.com のページから bank.com へ POST しても:
+  → evil.com は bank.com の CSRF トークンを知らない
+  → 正しいトークンを送れない
+  → サーバーが拒否 ✅</code></pre>
+    <p>evil.com が bank.com のフォームページを読み込んでトークンを盗もうとしても、<a href="10-1_受動的攻撃と同一オリジンポリシー.html#sec-3">同一オリジンポリシー</a> によってレスポンスは読めません。「送れるが読めない」という性質を、逆に守りに利用しているわけです。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="正規の画面からのPOSTはセッションと同じトークンを持つので受理され、evil.comからのPOSTはトークンを知らないので403で拒否される比較図">
+      <defs>
+        <marker id="arw301c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw301d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="20" width="220" height="90" rx="8" class="d-box-good"/>
+      <text x="130" y="48" text-anchor="middle" class="d-text-bold">bank.com の送金画面</text>
+      <text x="130" y="72" text-anchor="middle" class="d-text-sub">hidden: csrf_token=a91f…</text>
+      <text x="130" y="92" text-anchor="middle" class="d-text-sub">（サーバーが埋め込んだ値）</text>
+
+      <rect x="20" y="160" width="220" height="90" rx="8" class="d-box-bad"/>
+      <text x="130" y="188" text-anchor="middle" class="d-text-bold">evil.com の罠フォーム</text>
+      <text x="130" y="212" text-anchor="middle" class="d-text-sub">csrf_token が分からない</text>
+      <text x="130" y="232" text-anchor="middle" class="d-text-sub">（読み取りは同一オリジンポリシーで不可）</text>
+
+      <rect x="300" y="80" width="170" height="110" rx="8" class="d-box-accent"/>
+      <text x="385" y="108" text-anchor="middle" class="d-text-bold">bank.com サーバー</text>
+      <text x="385" y="132" text-anchor="middle" class="d-text-sub">セッションのトークン</text>
+      <text x="385" y="150" text-anchor="middle" class="d-text-sub">a91f… と比較</text>
+      <text x="385" y="172" text-anchor="middle" class="d-text-sub">（hash_equals）</text>
+
+      <line x1="240" y1="65" x2="310" y2="95" class="d-line" marker-end="url(#arw301c)"/>
+      <line x1="240" y1="205" x2="310" y2="175" class="d-line-bad" marker-end="url(#arw301d)"/>
+
+      <rect x="530" y="30" width="170" height="70" rx="8" class="d-box-good"/>
+      <text x="615" y="60" text-anchor="middle" class="d-text-bold">一致 → 受理</text>
+      <text x="615" y="82" text-anchor="middle" class="d-text-sub">送金を実行</text>
+      <rect x="530" y="170" width="170" height="70" rx="8" class="d-box-bad"/>
+      <text x="615" y="200" text-anchor="middle" class="d-text-bold">不一致 → 403</text>
+      <text x="615" y="222" text-anchor="middle" class="d-text-sub">処理しない</text>
+      <line x1="470" y1="110" x2="528" y2="70" class="d-line" marker-end="url(#arw301c)"/>
+      <line x1="470" y1="160" x2="528" y2="200" class="d-line-bad" marker-end="url(#arw301d)"/>
+    </svg>
+    <figcaption>図：Cookie はどちらにも付くが、トークンは正規の画面にしかない。サーバーはトークンの一致で「意図」を見分ける</figcaption>
+    </figure>
+
+    <h3 id="sec-10-4">10.4 トークンの要件</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要件</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>推測困難</strong></td><td><code>random_bytes()</code> 等で生成</td></tr>
+        <tr><td><strong>セッションごと</strong></td><td>ユーザー・セッション単位で管理</td></tr>
+        <tr><td><strong>重要操作ごと</strong></td><td>ワンタイムトークン（1回使ったら無効になるトークン）も可能</td></tr>
+        <tr><td><strong>比較は定数時間</strong></td><td><code>hash_equals()</code> でタイミング攻撃を防ぐ</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>タイミング攻撃</strong> とは、比較にかかる時間のわずかな差（先頭から何文字目まで一致していたかで処理時間が変わる）を測って、正解を1文字ずつ推測する攻撃です。<strong>定数時間の比較</strong> は、一致・不一致にかかわらず同じ時間で比べるため、この手がかりを与えません。</p>
+
+    <h3 id="sec-10-5">10.5 Ajax / API での利用</h3>
+    <p><strong>Ajax</strong> は、画面を切り替えずに JavaScript からサーバーと通信する方法です。フォームを使わない場合は、トークンを HTML の <code>&lt;meta&gt;</code> タグなどに置いておき、リクエストヘッダに入れて送ります（<code>meta</code> タグへの埋め込み方は <a href="20-2_XSS発展編.html">XSS発展編</a> にも例があります）。</p>
+    <span class="code-label good">トークンをヘッダに付けて送る（JavaScript）</span>
+<pre><code>// メタタグや Cookie からトークンを取得
+const token = document.querySelector('meta[name="csrf-token"]').content;
+
+fetch('/api/transfer', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': token
+  },
+  body: JSON.stringify({ to: 'xxx', amount: 1000 })
+});</code></pre>
+    <p><code>fetch</code> は JavaScript でリクエストを送る標準の関数です。サーバー側では、<code>X-CSRF-Token</code> ヘッダの値をセッションのトークンと比較します。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>パスワード再入力</h2>
+    <p><strong>送金・パスワード変更・アカウント削除</strong> など、特に重要な操作では <strong>パスワードの再入力</strong> を求めます。</p>
+
+    <h3 id="sec-11-1">11.1 仕組み</h3>
+    <ol class="steps">
+      <li>ユーザーが「アカウント削除」をクリック</li>
+      <li>確認画面でパスワード入力を要求</li>
+      <li>サーバーがパスワードを検証</li>
+      <li>正しければ処理を実行</li>
+    </ol>
+
+    <h3 id="sec-11-2">11.2 なぜ有効か</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>理由</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>攻撃者が知らない情報</strong></td><td>パスワードは evil.com から取得できない</td></tr>
+        <tr><td><strong>ユーザー意図の確認</strong></td><td>能動的な入力が必要</td></tr>
+        <tr><td><strong>CSRF トークンと併用</strong></td><td>より強固な防御</td></tr>
+      </tbody>
+    </table></div>
+    <p>パスワード再入力は、CSRF だけでなく、席を外した隙に他人に操作される場合や、セッションを乗っ取られた場合の被害も抑えます。</p>
+
+    <h3 id="sec-11-3">11.3 実装例</h3>
+    <span class="code-label good">安全な例：トークン＋パスワード再入力のフォーム</span>
+<pre><code>&lt;form method="POST" action="/account/delete"&gt;
+  &lt;input type="hidden" name="csrf_token" value="&lt;?= $token ?&gt;"&gt;
+  &lt;p&gt;アカウントを削除するにはパスワードを入力してください。&lt;/p&gt;
+  &lt;input type="password" name="password" required&gt;
+  &lt;button type="submit"&gt;削除する&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+    <span class="code-label good">サーバー側でパスワードを検証（PHP）</span>
+<pre><code>// パスワード検証
+if (!password_verify($_POST['password'], $user['password_hash'])) {
+    die('パスワードが正しくありません');
+}
+// 削除処理...</code></pre>
+    <p><code>password_verify</code> は、入力されたパスワードと、保存してある <strong>パスワードハッシュ</strong>（パスワードを元に戻せない形に変換した値）が対応しているかを確かめる PHP の関数です。パスワードの保存方法は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> を参照してください。</p>
+
+    <h3 id="sec-11-4">11.4 適用場面</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>再入力</th></tr></thead>
+      <tbody>
+        <tr><td>送金・決済</td><td>✅ 推奨</td></tr>
+        <tr><td>パスワード変更</td><td>✅ 推奨</td></tr>
+        <tr><td>アカウント削除</td><td>✅ 推奨</td></tr>
+        <tr><td>メールアドレス変更</td><td>✅ 推奨</td></tr>
+        <tr><td>プロフィール更新</td><td>△ 任意</td></tr>
+        <tr><td>記事投稿</td><td>△ CSRF トークンで十分なことが多い</td></tr>
+      </tbody>
+    </table></div>
+    <p>毎回パスワードを求めると利用者の負担が大きいため、被害が大きい操作に絞って使います。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>Referer のチェック</h2>
+    <p><strong>Referer（Referrer）ヘッダ</strong> を検証し、リクエストが <strong>自サイトから</strong> 送られたか確認する方法です。Referer は、ブラウザが「どのページからこのリクエストが来たか」を伝えるリクエストヘッダです（HTTP の仕様上、綴りが「Referrer」ではなく「Referer」になっています）。</p>
+
+    <h3 id="sec-12-1">12.1 仕組み</h3>
+<pre><code>POST /transfer HTTP/1.1
+Host: bank.com
+Referer: https://bank.com/transfer/form
+         ↑ リクエスト元の URL</code></pre>
+    <span class="code-label">Referer チェックの例（PHP）</span>
+<pre><code>// Referer チェック
+$referer = $_SERVER['HTTP_REFERER'] ?? '';
+$allowed = 'https://bank.com';
+if (strpos($referer, $allowed) !== 0) {
+    die('不正なリクエスト元です');
+}</code></pre>
+    <p><code>strpos($referer, $allowed) !== 0</code> は「Referer が <code>https://bank.com</code> で始まっていなければ」という意味です。</p>
+    <div class="callout warn">
+      <p class="callout-title">注意：この前方一致チェックはすり抜けられます</p>
+      <p>上のコードは「<code>https://bank.com</code> で始まるか」だけを見ているため、攻撃者が <code>https://bank.com.evil.com/</code> のようなドメインを用意すると、Referer が <code>https://bank.com.evil.com/trap.html</code> となってチェックを通ってしまいます。比較する値は <strong>末尾のスラッシュまで含めて</strong> <code>'https://bank.com/'</code> にするか、URL を分解してオリジン（スキーム＋ホスト＋ポート）が完全に一致するかを確かめてください。</p>
+<pre><code>$allowed = 'https://bank.com/';   // 末尾の / まで含めて前方一致
+if (strpos($referer, $allowed) !== 0) {
+    http_response_code(403);
+    die('不正なリクエスト元です');
+}</code></pre>
+    </div>
+
+    <h3 id="sec-12-2">12.2 メリット・デメリット</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メリット</th><th>デメリット</th></tr></thead>
+      <tbody>
+        <tr><td>実装が比較的簡単</td><td>Referer が <strong>送信されない</strong> 場合がある</td></tr>
+        <tr><td>補助的防御として有効</td><td>プライバシー設定で省略される</td></tr>
+        <tr><td></td><td>偽造の可能性（ブラウザ依存）</td></tr>
+        <tr><td></td><td><strong>単独では不十分</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>なお、現在の一般的なブラウザでは、罠ページの JavaScript から Referer を自由に書き換えることはできません。「偽造の可能性」は、古いブラウザやプラグインの不具合に依存する話です。より実際的な問題は「送られない場合がある」ことで、Referer がないリクエストを拒否すると正規の利用者まで弾いてしまい、許可すると攻撃者に抜け道を与えてしまいます。</p>
+
+    <h3 id="sec-12-3">12.3 Referer が送られないケース</h3>
+    <ul>
+      <li>HTTPS → HTTP への遷移</li>
+      <li><code>Referrer-Policy: no-referrer</code> の設定（<code>Referrer-Policy</code> は Referer をどこまで送るかを指定するヘッダです。<a href="10-5_セキュリティヘッダ.html">セキュリティヘッダ</a> を参照）</li>
+      <li>ブックマークからの直接アクセス</li>
+      <li>一部ブラウザ拡張</li>
+    </ul>
+
+    <h3 id="sec-12-4">12.4 位置づけ</h3>
+<pre><code>Referer チェック = 保険的・補助的対策
+CSRF トークン    = 根本対策（必須）</code></pre>
+    <p><strong>推奨：</strong> CSRF トークンを主とし、Referer チェックは <strong>追加防御</strong> として利用します。</p>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>CSRF</td><td>ログイン済みユーザーに意図しないリクエストを送らせる</td></tr>
+        <tr><td>XSS との違い</td><td>CSRF=リクエスト送信、XSS=スクリプト実行</td></tr>
+        <tr><td>確認画面</td><td>UX 用。CSRF 対策にはならない</td></tr>
+        <tr><td>Hidden パラメータ</td><td>改ざん・CSRF で再現可能。信頼してはいけない</td></tr>
+        <tr><td>セッション引き継ぎ</td><td>改ざん防止に有効だが CSRF は別対策が必要</td></tr>
+        <tr><td>ファイルアップロード</td><td>CSRF トークン必須</td></tr>
+        <tr><td>対策対象</td><td>副作用のある操作（POST 等）</td></tr>
+        <tr><td>CSRF トークン</td><td><strong>最も重要な対策</strong></td></tr>
+        <tr><td>パスワード再入力</td><td>重要操作の追加防御</td></tr>
+        <tr><td>Referer チェック</td><td>補助的対策</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-13-1">13.1 CSRF 対策チェックリスト</h3>
+    <ul>
+      <li>□ 状態変更処理は POST を使用（GET で変更しない）</li>
+      <li>□ フォームに CSRF トークンを埋め込み、サーバーで検証</li>
+      <li>□ Cookie に SameSite 属性を設定（Strict または Lax）</li>
+      <li>□ 価格・権限等は hidden ではなくサーバー側で管理</li>
+      <li>□ 送金・削除等の重要操作はパスワード再入力</li>
+      <li>□ Referer チェックは補助として（任意）</li>
+      <li>□ XSS 対策も並行（CSRF トークンは XSS で無効化される）</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <p>Cookie は「誰か」を示しますが、「本人が意図したか」は示しません。<strong>副作用のある処理には、攻撃者が知り得ない CSRF トークンを必ず添えさせ、サーバーで検証する</strong> のが CSRF 対策の中心です。</p>
+    </div>
+    <p>ノートでは「次の章では、セッション管理の脆弱性やその他の Web アプリケーションの問題について学んでいきます」と続きます。このサイトでは、セッション管理は 74_セッション管理 で扱います。30 リクエスト偽造・リダイレクトの続きとしては、次のページの <a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトとHTTPヘッダインジェクション</a> へ進んでください。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 利用者は evil.com を見ただけなのに、なぜ bank.com は「本人のリクエスト」と判断してしまうのですか？</summary>
+      <div class="body">
+        <p>ブラウザは、リクエストを作ったのがどのサイトのページであっても、宛先が bank.com なら bank.com の Cookie（セッション ID）を自動で付けて送るからです。サーバーは Cookie が正しいことしか確認していないため、本人が意図して送ったかどうかを区別できません。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 同一オリジンポリシーがあるのに、CSRF が防げないのはなぜですか？</summary>
+      <div class="body">
+        <p>同一オリジンポリシーが止めるのは別オリジンの <strong>レスポンスを読むこと</strong> で、<strong>リクエストを送ること</strong> は止めないからです。CSRF は送れさえすれば成立するため、サーバー側で CSRF トークンなどの対策が必要です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 「入力 → 確認 → 完了」の確認画面があれば CSRF は防げますか？</summary>
+      <div class="body">
+        <p>防げません。攻撃者は確認画面を経由せず、確定処理への POST を直接送れます。確認画面は利用者が内容を見直すための UX であり、確定処理（とその手前の画面）の POST にも CSRF トークンを入れて検証する必要があります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. 注文データを hidden ではなくセッション変数で引き継ぐようにしました。これで CSRF 対策は不要になりますか？</summary>
+      <div class="body">
+        <p>不要になりません。セッション変数は price などの <strong>値の改ざん</strong> を防ぎますが、被害者のセッションに正当な注文データがあれば、攻撃者はパラメータなしで「確定」の POST だけを送らせられます。確定処理にも CSRF トークンが必要です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. CSRF トークンが有効なのはなぜですか？ また、XSS があると無効になるのはなぜですか？</summary>
+      <div class="body">
+        <p>トークンはサーバーが正規の画面にだけ埋め込む推測困難な値で、evil.com は同一オリジンポリシーによりそのページを読めないため、正しいトークンを送れないからです。一方 XSS があると、攻撃スクリプトが bank.com のページ内で動くので、トークンを JavaScript で読み取って一緒に送れてしまいます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. Referer チェックだけで CSRF 対策を済ませてはいけないのはなぜですか？</summary>
+      <div class="body">
+        <p>HTTPS から HTTP への遷移、<code>Referrer-Policy: no-referrer</code>、ブックマーク、ブラウザ拡張などで Referer が送られない場合があり、確実に判定できないからです。また、<code>strpos</code> による前方一致で <code>https://bank.com</code> と比べると <code>https://bank.com.evil.com</code> を通してしまうなど、実装の落とし穴もあります。Referer チェックは CSRF トークンに重ねる補助的対策です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. 削除処理を <code>&lt;a href="/delete?id=123"&gt;</code> のような GET で作ると、なぜ危険なのですか？</summary>
+      <div class="body">
+        <p>罠ページに <code>&lt;img src="https://example.com/delete?id=123"&gt;</code> を1つ置くだけで、ページを開いた被害者のブラウザから削除リクエストが送られてしまうからです。状態を変更する処理は POST にし、CSRF トークンを検証します。SameSite=Lax でも GET の画面遷移には Cookie が付くため、この原則は変わりません。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/30_リクエスト偽造・リダイレクト/01_CSRF（徳丸本8章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』第8章（SBクリエイティブ）</li>
+      <li>IPA「安全なウェブサイトの作り方」 https://www.ipa.go.jp/security/vuln/websecurity/about.html</li>
+      <li>OWASP「Cross-Site Request Forgery Prevention Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html</li>
+      <li>MDN「SameSite cookies」 https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie#samesitesamesite-value</li>
+      <li>MDN「Sec-Fetch-Site」 https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Sec-Fetch-Site</li>
+      <li>PHP マニュアル「hash_equals」 https://www.php.net/manual/ja/function.hash-equals.php</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-7_プロンプトインジェクション.html"><span class="lbl">← 前のページ</span>プロンプトインジェクション</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-2_リダイレクトとHTTPヘッダインジェクション.html"><span class="lbl">次のページ →</span>リダイレクトとHTTPヘッダインジェクション</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

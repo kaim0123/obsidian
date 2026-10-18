@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>脆弱性管理とランサムウェア対策｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 運用・監視・インシデント › 脆弱性管理とランサムウェア対策</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 運用・監視・インシデント</span>
+      <h1>脆弱性管理とランサムウェア対策</h1>
+      <p class="lead">2026年に国内で最も多く使われた侵入口は、VPN 機器やリモートデスクトップの「すでに知られている穴」でした。このページでは、その穴をふさぎ続ける運用である <strong>脆弱性管理</strong> と、穴から入ってくる代表的な攻撃である <strong>ランサムウェア</strong> の手口・止め方・バックアップ・初動対応を、初めての人にも分かるように順を追って解説します。</p>
+      <p class="meta">もとにしたノート：50_運用・監視・インシデント / 07_脆弱性管理（境界機器・パッチ運用）、08_ランサムウェア対策</p>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>脆弱性管理</strong> は「家じゅうの窓と扉を一覧にして、壊れた鍵を期限までに直し続けること」。<strong>ランサムウェア</strong> は、その壊れた鍵から入り込み、家財に鍵をかけて「開けてほしければ金を払え」と脅す泥棒です。泥棒には決まった段取りがあるので、<strong>どこか1段で止めれば被害は大きく減ります</strong>。そして最後の砦が「泥棒に壊されないバックアップ」です。</p>
+    </div>
+
+    <h2 id="why"><span class="num">1.</span>なぜ今、脆弱性管理が大事なのか</h2>
+    <p><strong>脆弱性（ぜいじゃくせい）</strong> とは、ソフトウェアや機器の「弱点」「穴」のことです。<strong>脆弱性管理</strong> とは、自分たちが持っている IT 資産（パソコン・サーバー・ネットワーク機器・クラウドサービスなど）の脆弱性を見つけ、優先度をつけ、期限内に直し続ける <strong>運用</strong> のことを指します。一度やれば終わりではなく、毎月・毎週まわし続ける仕事です。</p>
+    <p>このページで特に注目するのは、<strong>境界機器</strong> です。境界機器とは、会社のネットワークとインターネットの「境目」に立つ機器のことで、VPN 装置（社外から社内に安全につなぐための装置）、ファイアウォール（通信の門番）、ファイル転送製品などが当てはまります。家にたとえると <strong>玄関や勝手口</strong> にあたり、インターネットのどこからでも直接たたける場所にあるため、真っ先に狙われます。</p>
+
+    <div class="grid c3">
+      <div class="card">
+        <h4>VPN が約5割</h4>
+        <p>2026年上半期の国内ランサムウェア被害で、経路が分かったもののうち <strong>VPN 機器が約5割、RDP が4分の1</strong>（警察庁）。</p>
+      </div>
+      <div class="card">
+        <h4>脆弱性の悪用 31%</h4>
+        <p>世界の漏洩でも、入口は <strong>脆弱性の悪用（31%）</strong> が、盗まれた認証情報を初めて上回りました（Verizon DBIR 2026）。</p>
+      </div>
+      <div class="card">
+        <h4>悪用までが早い</h4>
+        <p>脆弱性が公表されてから悪用されるまでの期間が短くなり、悪用ツールも <strong>自動化</strong> されています。</p>
+      </div>
+    </div>
+    <p>ライブラリ（プログラムの部品）の古さについては <a href="40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a> で扱いました。このページでは、<strong>境界機器</strong> と <strong>組織としての運用</strong> を中心に見ていきます。</p>
+
+    <h2 id="cycle"><span class="num">2.</span>脆弱性管理のサイクル</h2>
+    <p>脆弱性管理は、次の5つのステップをぐるぐる回す仕事です。病院の健康診断にたとえると「受診者の名簿を作る → 最新の病気の情報を集める → 重症の人から診る → 治療する → 治ったか・合併症がないか確かめる」という流れです。</p>
+    <figure>
+      <svg viewBox="0 0 720 230" role="img" aria-label="脆弱性管理の5ステップのサイクル">
+        <defs>
+          <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+          <marker id="arB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        </defs>
+        <rect x="8" y="40" width="118" height="78" rx="10" class="d-box-accent"/>
+        <text x="67" y="72" text-anchor="middle" class="d-text-bold">1. 資産の把握</text>
+        <text x="67" y="96" text-anchor="middle" class="d-text-sub">一覧・ASM・SBOM</text>
+        <rect x="154" y="40" width="118" height="78" rx="10" class="d-box"/>
+        <text x="213" y="72" text-anchor="middle" class="d-text-bold">2. 情報収集</text>
+        <text x="213" y="96" text-anchor="middle" class="d-text-sub">ベンダー・JVN・KEV</text>
+        <rect x="300" y="40" width="118" height="78" rx="10" class="d-box-warn"/>
+        <text x="359" y="72" text-anchor="middle" class="d-text-bold">3. 優先度判断</text>
+        <text x="359" y="96" text-anchor="middle" class="d-text-sub">悪用×外部公開</text>
+        <rect x="446" y="40" width="118" height="78" rx="10" class="d-box-good"/>
+        <text x="505" y="72" text-anchor="middle" class="d-text-bold">4. 修正・緩和</text>
+        <text x="505" y="96" text-anchor="middle" class="d-text-sub">パッチ／緩和策</text>
+        <rect x="592" y="40" width="118" height="78" rx="10" class="d-box-bad"/>
+        <text x="651" y="72" text-anchor="middle" class="d-text-bold">5. 確認・調査</text>
+        <text x="651" y="96" text-anchor="middle" class="d-text-sub">侵害の痕跡を探す</text>
+        <line x1="126" y1="79" x2="152" y2="79" class="d-line" marker-end="url(#arA)"/>
+        <line x1="272" y1="79" x2="298" y2="79" class="d-line" marker-end="url(#arA)"/>
+        <line x1="418" y1="79" x2="444" y2="79" class="d-line" marker-end="url(#arA)"/>
+        <line x1="564" y1="79" x2="590" y2="79" class="d-line" marker-end="url(#arA)"/>
+        <path d="M651,118 L651,170 L67,170 L67,122" class="d-line" marker-end="url(#arB)"/>
+        <text x="359" y="194" text-anchor="middle" class="d-text-bold">終わりはない：新しい機器・新しい脆弱性が出るたびに回し続ける</text>
+        <text x="359" y="22" text-anchor="middle" class="d-text-sub">「持っていることを知らない機器は直せない」ので、出発点は必ず資産の把握</text>
+      </svg>
+      <figcaption>図：脆弱性管理のサイクル。5番目の「侵害の痕跡の調査」が見落とされやすい</figcaption>
+    </figure>
+
+    <h3 id="step1">2.1 資産の把握 ― 持っているものを全部知る</h3>
+    <p><strong>持っていることを知らない機器は直せません</strong>。家の窓の数を知らなければ、どれが開けっぱなしかも分からないのと同じです。</p>
+    <ul>
+      <li>機器・OS・ミドルウェア・SaaS の一覧を作ります。この一覧を管理する仕組みを <strong>CMDB</strong>（構成管理データベース）と呼びます。<strong>バージョンとサポート期限</strong> も一緒に記録します。</li>
+      <li><strong>ASM</strong>（Attack Surface Management：攻撃対象領域の管理）で、インターネットから見えている自社の資産を <strong>外から定期的にスキャン</strong> します。泥棒の目線で自分の家を外から一周してみるイメージで、忘れられた検証用サーバーや古い VPN が見つかります。</li>
+      <li>ソフトウェアは <strong>SBOM</strong>（ソフトウェア部品表）で中身を把握します。食品の原材料表示のように「どの部品が入っているか」の一覧です。</li>
+    </ul>
+
+    <h3 id="step2">2.2 脆弱性情報の収集 ― どこから「穴の情報」を得るか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>情報源</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>ベンダーのセキュリティアドバイザリ</td><td>使っている製品のメーカーが出す公式情報。<strong>メール通知に登録</strong> しておく</td></tr>
+        <tr><td>JVN ／ JPCERT/CC の注意喚起</td><td>国内向けの脆弱性情報と、悪用が確認されたものについての注意喚起</td></tr>
+        <tr><td><strong>CISA KEV</strong>（Known Exploited Vulnerabilities）</td><td>米国 CISA が公開する、<strong>実際に悪用が確認された</strong> 脆弱性の一覧。優先度の判断で最も役に立つ</td></tr>
+        <tr><td>EPSS</td><td>その脆弱性が今後30日以内に悪用される確率の予測値</td></tr>
+      </tbody>
+    </table></div>
+    <p>用語メモ：<strong>CVE</strong> は脆弱性1つ1つに付く通し番号、<strong>CVSS</strong> は脆弱性の深刻度を 0〜10 点で表す採点方式です（→ <a href="10-3_セキュリティの専門用語.html">セキュリティの専門用語</a>）。</p>
+
+    <h3 id="step3">2.3 優先度の判断 ― 「悪用されているか」「外から届くか」</h3>
+    <p>脆弱性は毎日たくさん見つかります。CVSS の点数だけで「7点以上は全部すぐ直す」と決めると、対応すべきものが多すぎて回りません。そこで重く見るのが次の2点です。</p>
+    <ul>
+      <li><strong>実際に悪用されているか</strong>（KEV に載っている、JPCERT/CC の注意喚起が出ている）</li>
+      <li><strong>インターネットから届く場所にあるか</strong>（玄関の鍵なのか、奥の部屋の引き出しの鍵なのか）</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>条件</th><th>対応期限の例</th></tr></thead>
+      <tbody>
+        <tr><td>KEV 掲載または注意喚起あり、<strong>かつ</strong> インターネットに公開された機器</td><td><strong>48〜72 時間以内</strong></td></tr>
+        <tr><td>CVSS 9.0 以上で外部公開</td><td><strong>7日以内</strong></td></tr>
+        <tr><td>CVSS 7.0 以上</td><td><strong>30日以内</strong></td></tr>
+        <tr><td>それ以外</td><td><strong>通常の定期メンテナンスで</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>期限は組織ごとに決めます。大事なのは決めて終わりにせず、<strong>SLA（約束した対応期限）として守れているかを測る</strong> ことです。「KEV 掲載の脆弱性を期限内に直せた割合」のように数字で追いかけます。</p>
+
+    <h3 id="step4">2.4 修正・緩和 ― すぐ直せないときの応急処置</h3>
+    <ul>
+      <li>業務の都合でパッチ（修正プログラム）をすぐ当てられないときは、<strong>緩和策</strong> をとります。たとえば、管理画面を外部から見えなくする、該当する機能を止める、接続元の IP アドレスを制限する、などです。鍵の交換が届くまで、とりあえずドアにチェーンをかけておくイメージです。</li>
+      <li><strong>サポートが終わった製品（EOL：End of Life）</strong> には、もうパッチが出ません。更新計画を立てて置き換えます。2026年のタイムズカーの事例では、サポートが終わった Java フレームワーク Seasar2 を使っていたという指摘がありました（ただし漏洩との因果関係は未確認です）。</li>
+    </ul>
+
+    <h3 id="step5">2.5 確認と侵害痕跡の調査 ― 見落とされやすい最後の一手</h3>
+    <div class="callout warn">
+      <p class="callout-title">パッチを当てても、すでに入られているかもしれない</p>
+      <p>脆弱性が公表される前から悪用されていた場合、パッチで穴をふさいでも、<strong>攻撃者が作ったアカウントやバックドア（裏口）は家の中に残ります</strong>。鍵を替えても、泥棒が作った合鍵や開けておいた窓はそのまま、という状態です。境界機器の重大な脆弱性に対応したら、次も行います。</p>
+      <ul>
+        <li>ベンダーや JPCERT/CC が公開している <strong>IoC（Indicator of Compromise：侵害の痕跡）</strong> と自社のログ・機器を照らし合わせる</li>
+        <li>機器に保存されていた <strong>認証情報（VPN アカウント、LDAP 連携のパスワードなど）をリセット</strong> する</li>
+        <li>見覚えのない管理者アカウントや設定変更がないか確かめる</li>
+      </ul>
+    </div>
+
+    <h2 id="zeroday"><span class="num">3.</span>ゼロデイへの考え方</h2>
+    <p><strong>ゼロデイ脆弱性</strong> とは、メーカーもまだ把握しておらず、修正パッチが存在しない（修正までの猶予が「0日」の）脆弱性のことです。2026年の KDDI の事例では、ベンダーも把握していないゼロデイ脆弱性が使われました（5/16 に被害が始まり、6/17 に把握）。</p>
+    <p>ゼロデイは、どれだけパッチ運用を頑張っても <strong>防げません</strong>。だからこそ「入られる前提」の備えが必要です。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>届くデータを小さくする</h4>
+        <p>入られても持ち出せる量を減らす。→ <a href="20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a></p>
+      </div>
+      <div class="card">
+        <h4>異常を早く見つける</h4>
+        <p>ログと監視で、侵入後の怪しい動きに気づく。→ <a href="40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a></p>
+      </div>
+      <div class="card">
+        <h4>境界機器を減らす</h4>
+        <p>VPN をインターネットに公開しない ZTNA への移行も選択肢。→ <a href="20-3_ゼロトラスト.html">ゼロトラスト</a></p>
+      </div>
+    </div>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント</p>
+      <p>とはいえ、2026年の被害の多くはゼロデイでは <strong>ありません</strong>。警察庁のまとめでは、ランサムウェアの主な入口は <strong>放置された既知の脆弱性と漏えいした認証情報</strong> でした。まずは「知られている穴を期限内にふさぐ」が最優先で、ゼロデイ対策はその上に重ねるものです。</p>
+    </div>
+
+    <h2 id="ransom"><span class="num">4.</span>ランサムウェアとは</h2>
+    <p><strong>ランサムウェア</strong> は、組織のデータを暗号化して（鍵をかけて）使えなくし、元に戻すことと引き換えに身代金（ransom）を要求する攻撃です。IPA「情報セキュリティ10大脅威」組織編で何年も <strong>1位</strong> が続いています。2026年上半期の国内被害は <strong>123件</strong> で、半期として過去最多でした（警察庁）。</p>
+    <div class="callout key"><p>「<strong>侵入 → 社内に広がる → バックアップを壊す → 暗号化と窃取 → 脅迫</strong>」という段取りのある攻撃。どこか1段で止めれば被害は大きく減る。</p></div>
+
+    <h3 id="ransom-feature">4.1 いまのランサムウェアの特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特徴</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>二重恐喝</strong></td><td>暗号化する前にデータを盗み、「払わなければ公開する」と脅す。<strong>バックアップから戻せても、漏洩は残る</strong></td></tr>
+        <tr><td><strong>ノーウェアランサム</strong></td><td>暗号化すらせず、盗んだデータの公開だけで脅す手口</td></tr>
+        <tr><td><strong>RaaS</strong>（Ransomware as a Service）</td><td>ランサムウェアの開発者と、実際に攻撃する実行役（アフィリエイト）が分業する「ビジネス」。侵入口を売る「アクセスブローカー」もいる</td></tr>
+        <tr><td><strong>人が操作する攻撃</strong></td><td>自動で広がるワームではなく、攻撃者が社内ネットワークを手作業で調べ、AD（社内の利用者・権限をまとめて管理する Active Directory）やバックアップを狙う</td></tr>
+        <tr><td><strong>ゼロデイは不要</strong></td><td>主な入口は <strong>放置された既知の脆弱性と漏えいした認証情報</strong>（警察庁）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「バックアップがあれば大丈夫」</p>
+      <p>二重恐喝やノーウェアランサムでは、データはすでに <strong>盗まれて</strong> います。バックアップで業務は戻せても、情報漏洩はなかったことにできません。<strong>窃取（持ち出し）に気づく仕組み</strong> も必要です。</p>
+    </div>
+
+    <h2 id="route"><span class="num">5.</span>侵入経路と、各段階で止める対策</h2>
+    <h3 id="route-stats">5.1 侵入経路（2026年上半期・警察庁）</h3>
+    <p>経路が判明した有効回答36件の内訳です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>経路</th><th>件数</th></tr></thead>
+      <tbody>
+        <tr><td>VPN 機器</td><td>18件（約50%）</td></tr>
+        <tr><td>リモートデスクトップ（RDP）</td><td>9件</td></tr>
+        <tr><td>その他</td><td>9件</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>VPN と RDP だけで約4分の3</strong> を占めます。RDP（Remote Desktop Protocol）は、離れた場所から Windows の画面を操作する仕組みです。どちらも「社外から社内に入る扉」なので、ここが壊れていると直接入られます。一方、メールの添付ファイルからの感染は減っています。</p>
+
+    <h3 id="stages">5.2 攻撃の段取りと止めどころ</h3>
+    <figure>
+      <svg viewBox="0 0 720 420" role="img" aria-label="ランサムウェア攻撃の5段階と各段階の対策">
+        <defs>
+          <marker id="arC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+          <marker id="arD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        </defs>
+        <text x="160" y="26" text-anchor="middle" class="d-text-bold">攻撃者の段取り</text>
+        <text x="520" y="26" text-anchor="middle" class="d-text-bold">ここで止める対策</text>
+
+        <rect x="30" y="44" width="260" height="56" rx="8" class="d-box-bad"/>
+        <text x="160" y="67" text-anchor="middle" class="d-text-bold">1. 初期侵入</text>
+        <text x="160" y="88" text-anchor="middle" class="d-text-sub">VPNの穴・漏れたID・公開RDP</text>
+        <rect x="350" y="44" width="340" height="56" rx="8" class="d-box-good"/>
+        <text x="520" y="67" text-anchor="middle" class="d-text-bold">パッチ期限・VPNにMFA</text>
+        <text x="520" y="88" text-anchor="middle" class="d-text-sub">RDPを外に出さない・不要アカウント削除</text>
+
+        <rect x="30" y="116" width="260" height="56" rx="8" class="d-box-bad"/>
+        <text x="160" y="139" text-anchor="middle" class="d-text-bold">2. 権限昇格・横展開</text>
+        <text x="160" y="160" text-anchor="middle" class="d-text-sub">ADの管理者権限を奪う</text>
+        <rect x="350" y="116" width="340" height="56" rx="8" class="d-box-good"/>
+        <text x="520" y="139" text-anchor="middle" class="d-text-bold">管理者の階層分離・最小権限</text>
+        <text x="520" y="160" text-anchor="middle" class="d-text-sub">Tierモデル・LAPS・ネットワーク分割</text>
+
+        <rect x="30" y="188" width="260" height="56" rx="8" class="d-box-bad"/>
+        <text x="160" y="211" text-anchor="middle" class="d-text-bold">3. 防御の無効化</text>
+        <text x="160" y="232" text-anchor="middle" class="d-text-sub">EDR停止・バックアップ削除</text>
+        <rect x="350" y="188" width="340" height="56" rx="8" class="d-box-good"/>
+        <text x="520" y="211" text-anchor="middle" class="d-text-bold">EDRの改ざん防止</text>
+        <text x="520" y="232" text-anchor="middle" class="d-text-sub">バックアップは別の認証基盤・別アカウントに</text>
+
+        <rect x="30" y="260" width="260" height="56" rx="8" class="d-box-bad"/>
+        <text x="160" y="283" text-anchor="middle" class="d-text-bold">4. データ窃取</text>
+        <text x="160" y="304" text-anchor="middle" class="d-text-sub">外部ストレージへ大量送信</text>
+        <rect x="350" y="260" width="340" height="56" rx="8" class="d-box-good"/>
+        <text x="520" y="283" text-anchor="middle" class="d-text-bold">外向き通信の監視・制限</text>
+        <text x="520" y="304" text-anchor="middle" class="d-text-sub">DLP（持ち出し防止）</text>
+
+        <rect x="30" y="332" width="260" height="56" rx="8" class="d-box-bad"/>
+        <text x="160" y="355" text-anchor="middle" class="d-text-bold">5. 暗号化・脅迫</text>
+        <text x="160" y="376" text-anchor="middle" class="d-text-sub">一斉に暗号化して脅迫文を置く</text>
+        <rect x="350" y="332" width="340" height="56" rx="8" class="d-box-good"/>
+        <text x="520" y="355" text-anchor="middle" class="d-text-bold">書き換え不可のバックアップ</text>
+        <text x="520" y="376" text-anchor="middle" class="d-text-sub">復元テスト済みなら業務を戻せる</text>
+
+        <line x1="160" y1="100" x2="160" y2="114" class="d-line" marker-end="url(#arC)"/>
+        <line x1="160" y1="172" x2="160" y2="186" class="d-line" marker-end="url(#arC)"/>
+        <line x1="160" y1="244" x2="160" y2="258" class="d-line" marker-end="url(#arC)"/>
+        <line x1="160" y1="316" x2="160" y2="330" class="d-line" marker-end="url(#arC)"/>
+        <line x1="348" y1="72" x2="294" y2="72" class="d-line" marker-end="url(#arD)"/>
+        <line x1="348" y1="144" x2="294" y2="144" class="d-line" marker-end="url(#arD)"/>
+        <line x1="348" y1="216" x2="294" y2="216" class="d-line" marker-end="url(#arD)"/>
+        <line x1="348" y1="288" x2="294" y2="288" class="d-line" marker-end="url(#arD)"/>
+        <line x1="348" y1="360" x2="294" y2="360" class="d-line" marker-end="url(#arD)"/>
+        <text x="360" y="410" text-anchor="middle" class="d-text-sub">どの段で止めても、その先の被害は起きない（＝多層防御）</text>
+      </svg>
+      <figcaption>図：ランサムウェアの5段階。左が攻撃者の行動、右がその段階を止める対策</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>攻撃者がすること</th><th>止める対策</th></tr></thead>
+      <tbody>
+        <tr><td>1. 初期侵入</td><td>VPN の脆弱性を突く、漏れた ID でログイン、公開 RDP に総当たり</td><td>パッチ SLA（2章）、VPN に <strong>MFA</strong>（多要素認証）、RDP をインターネットに出さない、使っていないアカウントの削除</td></tr>
+        <tr><td>2. 横展開</td><td>認証情報を盗んで AD の管理者権限を取る</td><td>管理者アカウントの階層分離（<strong>Tier モデル</strong>）、<strong>LAPS</strong>（端末ごとに異なるローカル管理者パスワードを自動管理する仕組み）、<a href="20-1_最小権限とデータ最小化.html">最小権限</a>、ネットワーク分割</td></tr>
+        <tr><td>3. 防御の無効化</td><td><strong>EDR</strong>（端末の不審な動きを検知・対応するソフト）を止め、バックアップや VSS（Windows のシャドウコピー）を削除する</td><td>EDR の改ざん防止機能、<strong>バックアップを別の認証基盤・別アカウントに置く</strong></td></tr>
+        <tr><td>4. 窃取</td><td>クラウドストレージなどへ大量に送る</td><td>外向き通信の監視・制限（<a href="40-6_ログ不足・SSRF・例外処理.html">ログとモニタリング</a>）、<strong>DLP</strong>（情報の持ち出しを検知・防止する仕組み）</td></tr>
+        <tr><td>5. 暗号化</td><td>一斉に暗号化して脅迫文を置く</td><td>イミュータブル（書き換え不可）なバックアップから復元（DR 訓練と RTO・RPO の話）</td></tr>
+      </tbody>
+    </table></div>
+    <p>段階ごとに別の守りを重ねる考え方は <a href="20-2_深層防御.html">深層防御</a> そのものです。1枚の壁に頼らず、何枚もの網を張っておけば、どれかに引っかかります。</p>
+
+    <h2 id="backup"><span class="num">6.</span>バックアップの考え方</h2>
+    <p>ランサムウェアは <strong>バックアップも狙います</strong>。本番システムと同じ AD 権限で消せるバックアップは、泥棒が合鍵で開けられる金庫と同じで、<strong>ないのと同じ</strong> です。</p>
+    <h3 id="rule32110">6.1 3-2-1-1-0 ルール</h3>
+    <div class="grid c3">
+      <div class="card"><h4>3</h4><p>コピーを <strong>3つ</strong> 持つ（本番＋バックアップ2つ）</p></div>
+      <div class="card"><h4>2</h4><p><strong>2種類</strong> の媒体に保存する</p></div>
+      <div class="card"><h4>1</h4><p><strong>1つ</strong> は別の場所に置く</p></div>
+      <div class="card"><h4>1</h4><p><strong>1つはオフラインか書き換え不可</strong>（イミュータブル）にする</p></div>
+      <div class="card"><h4>0</h4><p><strong>復元テストでエラー0</strong> を確かめる</p></div>
+    </div>
+    <h3 id="backup-points">6.2 そのほかの大事な点</h3>
+    <ul>
+      <li><strong>認証を分ける</strong>：バックアップの管理は、本番の AD とは別のアカウントや別のクラウドアカウントで行う。本番の管理者権限が奪われても、バックアップには手が届かないようにする。</li>
+      <li><strong>復元にかかる時間を測る</strong>：全台を戻すのに何日かかるかを知らないと、RTO（目標復旧時間：何時間以内に戻すかの目標）は絵に描いた餅になる。</li>
+      <li><strong>クラウド事業者が被害に遭うこともある</strong>：2026年には IDCF クラウドの基盤そのものが被害を受け、495の組織に影響した。事業者のバックアップとは別に、<strong>自分たちでもバックアップを持つ</strong>。</li>
+    </ul>
+    <span class="code-label bad">✕ 危ないバックアップ</span>
+    <pre><code>本番サーバー ──(同じドメイン管理者で)──▶ バックアップサーバー
+→ 管理者権限を奪われた時点で、バックアップも一緒に削除・暗号化される</code></pre>
+    <span class="code-label good">○ 壊されにくいバックアップ</span>
+    <pre><code>本番サーバー ──(別アカウント・別認証基盤)──▶ 書き換え不可の保管先（別の場所）
+→ 本番が乗っ取られても、保持期間中は誰にも消せない ＋ 定期的に復元テスト</code></pre>
+
+    <h2 id="response"><span class="num">7.</span>被害に遭ったときの初動と、被害の実態</h2>
+    <h3 id="first-steps">7.1 初動の4ステップ</h3>
+    <ol class="steps">
+      <li><strong>ネットワークから切り離す</strong>。ただし <strong>電源は切らない</strong>。メモリ上に残っている証拠が消えてしまうため。</li>
+      <li>被害範囲を確かめ、<strong>認証情報を一斉にリセット</strong> する（特に AD の管理者と VPN）。</li>
+      <li>経営層・法務と相談する。<strong>警察と JPCERT/CC に相談</strong> し、個人情報が含まれていれば <strong>個人情報保護委員会に報告</strong> する。</li>
+      <li>身代金は <strong>支払わないのが原則</strong>。支払っても復号できる保証はなく、データの公開も止まらない。</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「とりあえず電源を落とせば安全」</p>
+      <p>電源を切ると、攻撃者がどう動いたかを示すメモリ上の証拠が失われます。広がりを止めたいなら、まず <strong>LAN ケーブルを抜く・Wi-Fi を切る</strong> などで通信を断ちます。</p>
+    </div>
+
+    <h3 id="damage">7.2 被害の実態（2026年上半期・警察庁）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>復旧費用</td><td>35件中21件（約6割）が <strong>1,000万円以上</strong>、4件が <strong>1億円以上</strong></td></tr>
+        <tr><td>復旧期間</td><td>48件中、1か月以内に戻ったのは23件。13件は公表時点でも復旧中</td></tr>
+        <tr><td>被害を受けた組織</td><td>約6割が <strong>中小企業</strong>。委託先として大企業や自治体に波及することもある（例：両毛システムズ → 伊勢崎市など）</td></tr>
+      </tbody>
+    </table></div>
+    <p>委託先から広がる被害については、次のページ <a href="50-5_サプライチェーン攻撃と2026年の事例.html">サプライチェーン攻撃と2026年の事例</a> で詳しく扱います。</p>
+
+    <h2 id="checklist"><span class="num">8.</span>チェックリスト</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>脆弱性管理</h4>
+        <ul>
+          <li>インターネットに公開している機器を、すべて一覧にしているか？</li>
+          <li>各機器のバージョンとサポート期限を把握しているか？</li>
+          <li>ベンダーと JPCERT/CC の情報を受け取る仕組みがあるか？</li>
+          <li>KEV に載った脆弱性の対応期限を決めているか？</li>
+          <li>パッチ適用の SLA を測っているか？</li>
+          <li>重大な脆弱性への対応後、侵害の痕跡を調べ、認証情報をリセットしているか？</li>
+          <li>EOL の製品の更新計画があるか？</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ランサムウェア対策</h4>
+        <ul>
+          <li>VPN・FW などの境界機器はすべて最新で、サポート期間内か？</li>
+          <li>VPN と管理画面に MFA を必須にしているか？</li>
+          <li>RDP をインターネットに直接公開していないか？</li>
+          <li>使っていないアカウントや保守用アカウントを棚卸ししているか？</li>
+          <li>AD の管理者権限を日常業務と分けているか？</li>
+          <li>バックアップは本番の認証情報では消せないか？</li>
+          <li>実際に復元テストをして、所要時間を測ったか？</li>
+          <li>EDR を全端末とサーバーに入れているか？</li>
+          <li>ランサムウェアを想定した机上訓練をしたか？</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="related"><span class="num">9.</span>関連ページ</h2>
+    <ul>
+      <li><a href="40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a> — ライブラリの古さと SBOM</li>
+      <li><a href="20-2_深層防御.html">深層防御</a> — 段階ごとに守りを重ねる考え方</li>
+      <li><a href="20-3_ゼロトラスト.html">ゼロトラスト</a> — VPN に頼らない接続（ZTNA）</li>
+      <li><a href="50-3_セキュアな運用とログ出力.html">セキュアな運用とログ出力</a> — 侵入後の動きに気づくためのログ</li>
+      <li><a href="50-5_サプライチェーン攻撃と2026年の事例.html">サプライチェーン攻撃と2026年の事例</a> — 委託先からの波及と2026年の事例全体</li>
+      <li>（他フォルダのノート：インシデント対応の基本フロー、DR訓練とRTO・RPO）</li>
+    </ul>
+
+    <h2 id="summary"><span class="num">10.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>2026年の最大の入口は <strong>VPN・RDP と既知の脆弱性・漏れた認証情報</strong>。ゼロデイが主役ではない</li>
+        <li>脆弱性管理は <strong>資産の把握 → 情報収集 → 優先度 → 修正 → 痕跡調査</strong> のサイクルを回し続ける運用</li>
+        <li>優先度は CVSS の点数より <strong>KEV（悪用実績）とインターネット公開の有無</strong> を重視し、期限（SLA）を測る</li>
+        <li>パッチを当てたら終わりではなく、<strong>すでに侵入されていないか</strong> を確かめ、認証情報をリセットする</li>
+        <li>ランサムウェアは段取りのある攻撃。<strong>どこか1段で止める</strong> 多層防御が効く</li>
+        <li>バックアップは <strong>書き換え不可・認証を分離・復元テスト済み</strong> が条件。ただし二重恐喝があるので、窃取の検知も必要</li>
+      </ul>
+    </div>
+
+    <h2 id="quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. CVSS 7.5 の社内専用サーバーの脆弱性と、KEV に載っている VPN 機器の脆弱性。先に直すべきはどちら？</summary>
+      <div class="body">
+        <p><strong>VPN 機器のほうです。</strong> KEV に載っている＝実際に悪用されている、かつ VPN はインターネットから直接届く境界機器です。優先度は点数だけでなく「悪用されているか」「外から届くか」で判断し、例では 48〜72 時間以内の対応にあたります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 境界機器の重大な脆弱性にパッチを当てました。これで対応完了と言えますか？</summary>
+      <div class="body">
+        <p><strong>言えません。</strong> 公表前から悪用されていた場合、攻撃者が作ったアカウントやバックドアが残っている可能性があります。IoC との照合、機器に保存されていた認証情報（VPN アカウントや LDAP 連携パスワード）のリセット、見覚えのない管理者アカウントや設定変更の確認まで行って完了です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 毎日バックアップを取っています。これでランサムウェアへの備えは十分ですか？</summary>
+      <div class="body">
+        <p><strong>不十分なことが多いです。</strong> ①本番と同じ管理者権限で消せるバックアップは攻撃者に削除される、②復元テストをしていないと本当に戻せるか・何日かかるか分からない、③二重恐喝ではデータがすでに盗まれているので、戻せても漏洩は残る――の3点を確認しましょう。書き換え不可・認証の分離・復元テストに加え、外向き通信の監視で窃取に気づく仕組みも必要です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. ランサムウェアに感染した端末を見つけました。最初にすることは？</summary>
+      <div class="body">
+        <p><strong>ネットワークから切り離します（電源は切らない）。</strong> 電源を切るとメモリ上の証拠が消えてしまいます。そのうえで被害範囲を確かめ、AD 管理者や VPN の認証情報をリセットし、経営層・法務、警察・JPCERT/CC に相談します。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>警察庁「令和8年上半期におけるサイバー空間をめぐる脅威の情勢等について」（ノート内の国内ランサムウェア統計の出典）</li>
+      <li><a href="https://blog.cbsec.jp/entry/2026/09/28/083024">サイバーセキュリティナビ: 警察庁 令和8年上半期のまとめ</a></li>
+      <li><a href="https://www.verizon.com/business/ja-jp/resources/reports/dbir/">Verizon 2026年度 データ漏洩/侵害調査報告書 (DBIR)</a></li>
+      <li><a href="https://www.ipa.go.jp/security/10threats/10threats2026.html">IPA 情報セキュリティ10大脅威 2026</a></li>
+      <li>CISA Known Exploited Vulnerabilities Catalog（KEV）／ JVN ／ JPCERT/CC 注意喚起</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-3_セキュアな運用とログ出力.html"><span class="lbl">← 前のページ</span>セキュアな運用とログ出力</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-5_サプライチェーン攻撃と2026年の事例.html"><span class="lbl">次のページ →</span>サプライチェーン攻撃と2026年の事例</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

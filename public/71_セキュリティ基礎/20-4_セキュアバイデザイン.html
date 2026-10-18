@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セキュアバイデザイン｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 設計原則 › セキュアバイデザイン</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+<div class="hero">
+      <span class="eyebrow">20 設計原則</span>
+      <h1>セキュアバイデザイン（Secure by Design）</h1>
+      <p class="lead">セキュリティを「完成してから付け足すもの」ではなく、「最初から仕様に含めるもの」として扱う考え方です。なぜ設計段階でなければならないのか、半世紀前から受け継がれる10の設計原則、初期設定を安全にする「セキュア・バイ・デフォルト」、シフトレフトと DevSecOps による開発プロセスへの組み込み、設計時に自問すべき質問までを解説します。</p>
+      <p class="meta">もとにしたノート：20_設計原則/04_セキュアバイデザイン</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>「セキュリティは"後付け"ではなく"仕様"」</strong>。家を建ててから壁に穴を開けて配線するより、設計図の段階で配線を決めておくほうが安く確実です。セキュリティも同じで、設計の段階で組み込み、さらに <strong>初期設定のままで安全</strong>（セキュア・バイ・デフォルト）な状態で提供します。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>セキュアバイデザインとは</h2>
+    <p><strong>セキュアバイデザイン</strong>（Secure by Design）とは、</p>
+    <div class="callout key"><p><strong>設計段階からセキュリティを組み込む</strong></p></div>
+    <p>という開発の考え方です。<strong>後からセキュリティを追加するのではなく</strong>、最初から安全な設計を前提にします。</p>
+    <p>似た言葉に <strong>セキュア・バイ・デフォルト</strong>（Secure by Default：初期設定が安全）があり、両者はセットで使われます。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>セキュアバイデザイン</h4>
+        <p><strong>作り方</strong> の話。設計の段階で脅威を考え、安全な仕組みを組み込む。家でいえば、設計図の段階で耐震構造や鍵の位置を決めておくこと。</p>
+      </div>
+      <div class="card">
+        <h4>セキュア・バイ・デフォルト</h4>
+        <p><strong>届け方</strong> の話。利用者が何も設定しなくても安全な状態で提供する。家でいえば、引き渡しの時点で鍵がかかっていること。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ「設計段階で」必要なのか</h2>
+    <h3 id="sec-2-1">2.1 後から直すほど高くつく</h3>
+    <p>ソフトウェア開発では、<strong>問題は見つかるのが遅いほど、直すコストが大きく膨らむ</strong> と言われます。ノートでは、よく引用される IBM System Science Institute のデータとして次の目安を挙げています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>見つかったタイミング</th><th>修正コスト（相対値）</th></tr></thead>
+      <tbody>
+        <tr><td>設計段階</td><td>1</td></tr>
+        <tr><td>コーディング段階</td><td>5〜6倍</td></tr>
+        <tr><td>テスト段階</td><td>10倍</td></tr>
+        <tr><td>本番リリース後</td><td>30〜100倍</td></tr>
+      </tbody>
+    </table></div>
+    <p>正確な倍率は状況によって変わりますが、「遅く見つかるほど高くつく」という傾向は広く共有されています。セキュリティの欠陥も同じで、<strong>設計の欠陥はコードで後から補ってもほとんど直らず、作り直し</strong> になりがちです。</p>
+
+    <h3 id="sec-2-2">2.2 「設計の穴」はコードでは防げない</h3>
+    <p>OWASP Top 10 の <strong>A04「安全でない設計」</strong> が強調しているように、<strong>設計そのものに穴があると、コードをいくらきれいに書いても防げません</strong>（→ <a href="40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a>）。</p>
+    <ul>
+      <li><strong>パスワードリセットの本人確認が弱い</strong>：コードにバグが1つもなくても、仕組みとして乗っ取られてしまう</li>
+      <li><strong>業務ロジックでクーポンやポイントを二重に使える</strong>：これはコードのバグではなく、仕様の問題</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">たとえるなら</p>
+      <p>銀行の窓口で「電話で名前と生年月日を言えば、誰でも暗証番号を再設定できる」という <strong>ルール</strong> になっていたら、窓口の係員がどれだけ正確に仕事をしても、なりすましは防げません。直すべきは係員の手際（コード）ではなく、ルール（設計）です。</p>
+    </div>
+
+    <h3 id="sec-2-3">2.3 セキュリティを「機能」として最初から定義する</h3>
+    <p>「ログイン機能を作る」ではなく、<strong>「ログイン + MFA + レート制限 + 監査ログ を作る」</strong> と最初から要件に書きます。こうすれば、後付けでの漏れがなくなります。</p>
+    <span class="code-label bad">✕ 後付けになる要件</span>
+    <pre><code>要件：ログイン機能を作る
+（セキュリティはリリース前のテストで見る）</code></pre>
+    <span class="code-label good">○ 最初から仕様に含めた要件</span>
+    <pre><code>要件：ログイン機能を作る
+  - MFA に対応する
+  - 同一アカウント・同一IPへのレート制限
+  - ログイン成功・失敗を監査ログに残す（パスワードは記録しない）</code></pre>
+
+    <h2 id="sec-3"><span class="num">3.</span>CISA が示す3つの原則</h2>
+    <p>米国の <strong>CISA</strong>（Cybersecurity and Infrastructure Security Agency：米国のサイバーセキュリティ・社会インフラ防護の政府機関）は、2023年にセキュアバイデザインに関するガイダンスを公表しました。主な原則は次の3つです。</p>
+    <ol class="steps">
+      <li><strong>製造者（開発者）が責任を負う</strong>：「利用者が設定を頑張って安全にする」のではなく、<strong>開発者側が安全な状態で提供する</strong></li>
+      <li><strong>透明性を保つ</strong>：脆弱性の情報、パッチの提供状況、サポート終了の予定などを <strong>積極的に公開</strong> する</li>
+      <li><strong>セキュア・バイ・デフォルトを徹底する</strong>：初期状態でセキュリティ機能は <strong>ON</strong>、危険な機能は <strong>OFF</strong>（必要な人が明示的に有効にする）。デフォルトパスワードを廃止し、強いパスワードを求める</li>
+    </ol>
+
+    <h2 id="sec-4"><span class="num">4.</span>古典的な10の設計原則（Saltzer と Schroeder）</h2>
+    <p>1975年に Saltzer と Schroeder が論文で示した設計原則は、半世紀たった今でも有効です。<a href="20-1_最小権限とデータ最小化.html">最小権限</a> もこの中の1つです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>原則</th><th>意味</th><th>身近なたとえ・例</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>機構の経済性</strong><br><span>Economy of Mechanism</span></td><td>設計はシンプルに。複雑なセキュリティ機構はバグを生む</td><td>複雑すぎる鍵は、かけ忘れや故障の元</td></tr>
+        <tr><td>2</td><td><strong>フェイルセーフなデフォルト</strong><br><span>Fail-safe Defaults</span></td><td>デフォルトは <strong>拒否</strong>。許可は明示的に</td><td>名簿に載っている人だけ入れる（下のコード例）</td></tr>
+        <tr><td>3</td><td><strong>完全な仲介</strong><br><span>Complete Mediation</span></td><td><strong>すべての</strong> アクセスを毎回チェックする。チェック結果を使い回さない（使い回すなら失効を慎重に管理）</td><td>一度見せた入館証で、その後ずっと素通りにしない</td></tr>
+        <tr><td>4</td><td><strong>オープンデザイン</strong><br><span>Open Design</span></td><td>仕組みを公開しても安全であるべき。「隠しているから安全」（security through obscurity）は脆い</td><td>錠前の構造が知られていても、鍵がなければ開かない</td></tr>
+        <tr><td>5</td><td><strong>特権の分離</strong><br><span>Separation of Privilege</span></td><td>重要な操作には <strong>複数の条件</strong> を求める</td><td>MFA、承認フロー、分割した鍵（金庫を2人の鍵でしか開けられない）</td></tr>
+        <tr><td>6</td><td><strong>最小権限</strong><br><span>Least Privilege</span></td><td>必要最小限の権限だけを与える</td><td>→ <a href="20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a></td></tr>
+        <tr><td>7</td><td><strong>共通機構の最小化</strong><br><span>Least Common Mechanism</span></td><td>利用者の間で共有する仕組みを最小にする。共有部分は攻撃の通り道になる</td><td>全住人共用の1本の合鍵は、1人が落とすと全員が困る</td></tr>
+        <tr><td>8</td><td><strong>心理的受容性</strong><br><span>Psychological Acceptability</span></td><td>使いにくい対策は回避されて無意味になる。<strong>使いやすい安全</strong> を目指す</td><td>面倒すぎるパスワード規則 → 付箋に書いて貼られる</td></tr>
+        <tr><td>9</td><td><strong>作業係数</strong><br><span>Work Factor</span></td><td>攻撃にかかるコストを、守る資産の価値より大きくする</td><td>中身より高くつく金庫破りは割に合わない</td></tr>
+        <tr><td>10</td><td><strong>侵害の記録</strong><br><span>Compromise Recording</span></td><td>侵害されたときに <strong>ログで追跡できる</strong> ようにする（防げなくても、気づける）</td><td>防犯カメラの録画</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-1">4.1 フェイルセーフなデフォルトをコードで見る</h3>
+    <p>2つ目の原則は、コードの書き方に直結します。<strong>「ダメなものを列挙して弾く」のではなく、「良いものだけを通す」</strong> 書き方にします。</p>
+    <span class="code-label bad">✕ 悪い：デフォルトで許可</span>
+    <pre><code>if is_blocked(user): return deny()
+return allow()  # 例外的なケースを見落とすと悪用される</code></pre>
+    <span class="code-label good">○ 良い：デフォルトで拒否</span>
+    <pre><code>if is_allowed(user): return allow()
+return deny()  # 知らない状態は安全側に倒す</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="デフォルト許可とデフォルト拒否の違い。想定外の入力がどちらに流れるか">
+      <defs><marker id="arw20f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="175" y="24" text-anchor="middle" class="d-text-bold">✕ デフォルト許可</text>
+      <rect x="95" y="40" width="160" height="40" rx="8" class="d-box-warn"/>
+      <text x="175" y="65" text-anchor="middle" class="d-text">想定外の利用者</text>
+      <rect x="95" y="110" width="160" height="40" rx="8" class="d-box"/>
+      <text x="175" y="135" text-anchor="middle" class="d-text">禁止リストにある？</text>
+      <rect x="125" y="180" width="100" height="36" rx="8" class="d-box-bad"/>
+      <text x="175" y="203" text-anchor="middle" class="d-text-bold">許可</text>
+      <line x1="175" y1="80" x2="175" y2="108" class="d-line" marker-end="url(#arw20f)"/>
+      <line x1="175" y1="150" x2="175" y2="178" class="d-line" marker-end="url(#arw20f)"/>
+      <text x="185" y="170" class="d-text-sub">ない</text>
+      <text x="245" y="203" class="d-text-sub">見落としが穴に</text>
+      <line x1="360" y1="20" x2="360" y2="220" class="d-line-dash"/>
+      <text x="545" y="24" text-anchor="middle" class="d-text-bold">○ デフォルト拒否</text>
+      <rect x="465" y="40" width="160" height="40" rx="8" class="d-box-warn"/>
+      <text x="545" y="65" text-anchor="middle" class="d-text">想定外の利用者</text>
+      <rect x="465" y="110" width="160" height="40" rx="8" class="d-box"/>
+      <text x="545" y="135" text-anchor="middle" class="d-text">許可リストにある？</text>
+      <rect x="495" y="180" width="100" height="36" rx="8" class="d-box-good"/>
+      <text x="545" y="203" text-anchor="middle" class="d-text-bold">拒否</text>
+      <line x1="545" y1="80" x2="545" y2="108" class="d-line" marker-end="url(#arw20f)"/>
+      <line x1="545" y1="150" x2="545" y2="178" class="d-line" marker-end="url(#arw20f)"/>
+      <text x="555" y="170" class="d-text-sub">ない</text>
+      <text x="610" y="203" class="d-text-sub">安全側</text>
+    </svg>
+    <figcaption>図：想定していなかった相手が来たとき、どちらに倒れるかが違う</figcaption>
+    </figure>
+
+    <h2 id="sec-5"><span class="num">5.</span>セキュア・バイ・デフォルトの例</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>✕ よくある悪い例</h4>
+        <ul>
+          <li>データベースの初期パスワードが <code>admin / admin</code></li>
+          <li>ルーターが <code>admin / 1234</code> のまま出荷</li>
+          <li>新しく作った保存場所（バケット）が、最初から誰でも見られる</li>
+          <li>メッセージアプリの通信暗号化が、設定画面でONにしないと有効にならない</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>○ 良い例</h4>
+        <ul>
+          <li><strong>Bitwarden</strong> などのパスワードマネージャー：強いマスターパスワードが必須</li>
+          <li><strong>Signal</strong>：すべてのメッセージが最初からエンドツーエンド暗号化（送り手と受け手以外は読めない）</li>
+          <li><strong>AWS S3</strong>（現在）：Block Public Access（公開をまとめて禁止する設定）を有効にするのが推奨</li>
+          <li><strong>iOS</strong>：最初からディスク全体が暗号化され、アプリはサンドボックス（隔離された区画）で動く</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「設定項目を用意したから、安全にするのは利用者の責任」</p>
+      <p>多くの利用者は初期設定のまま使います。危険な初期設定で出荷すれば、その危険はそのまま世の中に広がります。CISA の原則どおり、<strong>安全にする責任は作る側にあります</strong>。設定ミスの問題は <a href="40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a> でも扱います。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>開発プロセスに組み込む</h2>
+    <h3 id="sec-6-1">6.1 シフトレフト</h3>
+    <p>開発の流れを左から右へ「計画 → 設計 → 実装 → テスト → 運用」と並べたとき、セキュリティの取り組みを <strong>より早い段階（左側）へ移す</strong> ことを <strong>シフトレフト</strong>（Shift Left）と呼びます。従来はテスト以降で対応していたものを、計画・設計の段階から始めます。</p>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="シフトレフト：セキュリティの取り組みを開発の早い段階に移す">
+      <defs><marker id="arw20g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="arw20h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="90" width="110" height="44" rx="8" class="d-box-good"/>
+      <text x="75" y="117" text-anchor="middle" class="d-text-bold">計画</text>
+      <rect x="160" y="90" width="110" height="44" rx="8" class="d-box-good"/>
+      <text x="215" y="117" text-anchor="middle" class="d-text-bold">設計</text>
+      <rect x="300" y="90" width="110" height="44" rx="8" class="d-box"/>
+      <text x="355" y="117" text-anchor="middle" class="d-text-bold">実装</text>
+      <rect x="440" y="90" width="110" height="44" rx="8" class="d-box-warn"/>
+      <text x="495" y="117" text-anchor="middle" class="d-text-bold">テスト</text>
+      <rect x="580" y="90" width="110" height="44" rx="8" class="d-box-warn"/>
+      <text x="635" y="117" text-anchor="middle" class="d-text-bold">運用</text>
+      <line x1="130" y1="112" x2="158" y2="112" class="d-line" marker-end="url(#arw20g)"/>
+      <line x1="270" y1="112" x2="298" y2="112" class="d-line" marker-end="url(#arw20g)"/>
+      <line x1="410" y1="112" x2="438" y2="112" class="d-line" marker-end="url(#arw20g)"/>
+      <line x1="550" y1="112" x2="578" y2="112" class="d-line" marker-end="url(#arw20g)"/>
+      <text x="565" y="84" text-anchor="middle" class="d-text-sub">従来：ここで初めて対応</text>
+      <path d="M 520 60 C 420 20, 260 20, 160 60" class="d-line" marker-end="url(#arw20h)"/>
+      <text x="340" y="30" text-anchor="middle" class="d-text-bold">シフトレフト</text>
+      <text x="145" y="165" text-anchor="middle" class="d-text-sub">脅威モデリング・セキュリティ要件</text>
+      <text x="145" y="185" text-anchor="middle" class="d-text-sub">→ 直すコストが一番小さい</text>
+      <text x="565" y="165" text-anchor="middle" class="d-text-sub">見つかっても作り直しになりがち</text>
+    </svg>
+    <figcaption>図：セキュリティの取り組みを左（早い段階）へ移すのがシフトレフト</figcaption>
+    </figure>
+
+    <h3 id="sec-6-2">6.2 セキュアSDLC：各段階で何をするか</h3>
+    <p><strong>SDLC</strong>（Software Development Life Cycle）はソフトウェア開発の一連の流れのこと。その各段階にセキュリティの活動を組み込んだものを <strong>セキュアSDLC</strong> と呼びます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フェーズ</th><th>セキュリティの活動</th></tr></thead>
+      <tbody>
+        <tr><td><strong>要件定義</strong></td><td>悪用ケース（攻撃者ならこの機能をどう悪用するか）の洗い出し、セキュリティ要件の定義</td></tr>
+        <tr><td><strong>設計</strong></td><td>脅威モデリング、アーキテクチャレビュー（→ <a href="30-1_脅威モデリングとデータフロー図.html">脅威モデリングとデータフロー図</a>）</td></tr>
+        <tr><td><strong>実装</strong></td><td>セキュアコーディング、コードレビュー</td></tr>
+        <tr><td><strong>ビルド</strong></td><td>SAST（ソースコードを解析して弱点を探す）、SCA（使っているライブラリの既知の脆弱性を調べる）、シークレットスキャン（パスワードや鍵の混入を探す）</td></tr>
+        <tr><td><strong>テスト</strong></td><td>DAST（動いているアプリに外から攻撃を試す）、ペネトレーションテスト（専門家による侵入テスト）</td></tr>
+        <tr><td><strong>デプロイ</strong></td><td>IaC スキャン（インフラ設定コードの検査）、コンテナスキャン</td></tr>
+        <tr><td><strong>運用</strong></td><td>WAF、監視、インシデント対応</td></tr>
+        <tr><td><strong>改善</strong></td><td>ポストモーテム（事故の振り返り）、教訓の反映</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-3">6.3 DevSecOps：パイプラインで自動チェック</h3>
+    <p><strong>DevSecOps</strong> は、開発（Dev）と運用（Ops）の間にセキュリティ（Sec）を組み込み、CI/CD パイプライン（テストやデプロイを自動で行う流れ）に <strong>自動のセキュリティチェック</strong> を入れる考え方です。</p>
+    <span class="code-label">例：GitHub Actions に組み込んだチェック</span>
+    <pre><code>- name: SAST
+  uses: github/codeql-action/analyze@v3
+
+- name: Dependency scan
+  run: npm audit --audit-level=high
+
+- name: Secret scan
+  uses: trufflesecurity/trufflehog@main
+
+- name: Container scan
+  run: trivy image myapp:latest</code></pre>
+    <p>人が毎回思い出さなくても、コードを変更するたびに機械が確認してくれるのがポイントです。ツールの詳細は <a href="50-2_セキュリティ監視とツール.html">セキュリティ監視とツール</a> も参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>設計するときに自問すべきこと</h2>
+    <p>新しい機能を設計するときは、次の質問に答えられるか確認します。答えられない質問が、そのまま設計の穴の候補です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>入力について</h4>
+        <ul>
+          <li>どこから入力が来るか？</li>
+          <li>信頼できるか？ できないならどう検証するか？</li>
+          <li>サイズ・型・形式の制限は？</li>
+          <li>許可リスト（ホワイトリスト）型の検証か？</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>認証・認可について</h4>
+        <ul>
+          <li>誰がアクセスできる機能か？</li>
+          <li>所有者かどうかのチェックは？</li>
+          <li>特権操作に追加の認証を求めるか？</li>
+          <li>セッションのタイムアウトは？</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>データについて</h4>
+        <ul>
+          <li>どんな機密度のデータを扱うか？</li>
+          <li>暗号化は？（転送中・保存中）</li>
+          <li>ログに機密情報が出ないか？</li>
+          <li>保管期間と削除のルールは？（→ <a href="20-1_最小権限とデータ最小化.html">データ最小化</a>）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>エラーと例外</h4>
+        <ul>
+          <li>エラー時、どこに何を出すか？</li>
+          <li>内部情報が漏れていないか？</li>
+          <li>攻撃の痕跡がログに残るか？</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>悪用シナリオ</h4>
+        <ul>
+          <li>どんな悪用があり得るか？</li>
+          <li>同時実行・二重実行に耐えるか？</li>
+          <li>レート制限は必要か？</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>依存関係</h4>
+        <ul>
+          <li>外部ライブラリは安全か？ 更新されているか？</li>
+          <li>外部APIを信頼しすぎていないか？</li>
+          <li>サプライチェーンのリスクは？</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>OWASP や関連フレームワークとの関係</h2>
+    <h3 id="sec-8-1">8.1 OWASP Top 10 との関係</h3>
+    <p>Webアプリの代表的なリスクをまとめた <strong>OWASP Top 10</strong> の2021年版で、<strong>A04「安全でない設計」</strong> が新しく加わりました。これは、設計段階でのセキュリティの重要性が広く認められたことを示しています（→ <a href="40-1_OWASP_Top10とは.html">OWASP Top 10 とは</a>）。</p>
+    <p>セキュアバイデザインは、OWASP の全項目に対する <strong>予防策</strong> として働きます。A01〜A10 のどれも、設計時に考慮していれば防げたケースが多くあります。</p>
+    <h3 id="sec-8-2">8.2 関連フレームワーク</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フレームワーク</th><th>概要</th></tr></thead>
+      <tbody>
+        <tr><td><strong>OWASP SAMM</strong>（Software Assurance Maturity Model）</td><td>セキュアSDLCの成熟度モデル。組織の現状を評価し、次のステップを示す</td></tr>
+        <tr><td><strong>BSIMM</strong>（Building Security In Maturity Model）</td><td>実際の企業の取り組み事例をもとにした成熟度評価</td></tr>
+        <tr><td><strong>Microsoft SDL</strong>（Security Development Lifecycle）</td><td>Microsoft が自社製品に適用しているセキュアSDLC。業界の標準的な手本</td></tr>
+        <tr><td><strong>NIST SSDF</strong>（Secure Software Development Framework）</td><td>NIST SP 800-218 として2022年に公表。米国政府の調達で求められる</td></tr>
+      </tbody>
+    </table></div>
+    <p>また、セキュアバイデザインは単独で完結するものではなく、<a href="30-1_脅威モデリングとデータフロー図.html">脅威モデリング</a>・<a href="20-1_最小権限とデータ最小化.html">最小権限</a>・<a href="20-2_深層防御.html">深層防御</a>・<a href="20-3_ゼロトラスト.html">ゼロトラスト</a> と連携して実現します。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>チェックリスト</h2>
+    <ul>
+      <li>新機能の設計時に脅威モデリングをしているか？</li>
+      <li>セキュリティ要件を明示的に定義しているか？</li>
+      <li>デフォルト設定が安全な状態か？</li>
+      <li>CI/CD パイプラインにセキュリティチェックが組み込まれているか？</li>
+      <li>SAST / DAST / SCA を実施しているか？</li>
+      <li>開発者はセキュアコーディングの訓練を受けているか？</li>
+      <li>インシデント対応計画は準備されているか？</li>
+      <li>セキュリティに関わる設計判断を記録（ADR＝設計判断の記録文書 など）しているか？</li>
+    </ul>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>セキュアバイデザインは <strong>「設計段階から安全を組み込む」</strong> 考え方</li>
+        <li><strong>後付けは高コスト</strong>。設計の欠陥はコードでは防げない</li>
+        <li><strong>セキュア・バイ・デフォルト</strong>（初期設定が安全）も合わせて徹底し、安全にする責任は作る側が負う</li>
+        <li>Saltzer と Schroeder の古典原則（デフォルト拒否・完全な仲介・特権の分離など）は今も有効</li>
+        <li><strong>シフトレフト</strong> と <strong>DevSecOps</strong> で開発プロセスに組み込む</li>
+        <li>脅威モデリング・最小権限・深層防御・ゼロトラストと連携して実現する</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. セキュアバイデザインとセキュア・バイ・デフォルトの違いは？</summary>
+      <div class="body"><p>セキュアバイデザインは <strong>作り方</strong>（設計段階から安全な仕組みを組み込む）、セキュア・バイ・デフォルトは <strong>届け方</strong>（利用者が何も設定しなくても安全な初期状態で提供する）の話です。両者はセットで使われます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 「パスワードリセットで、登録メールアドレスを知っていれば誰でも再設定できる」仕様。コードレビューを丁寧にすれば防げますか？</summary>
+      <div class="body"><p><strong>防げません。</strong> コードが仕様どおり正しく動いていても、仕様そのものが弱いため乗っ取りが可能です。これは「設計の穴」（OWASP A04 安全でない設計）であり、本人確認の仕組みを設計から見直す必要があります。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 次のコードは「フェイルセーフなデフォルト」になっていますか？ <code>if is_blocked(user): return deny()</code> のあとに <code>return allow()</code></summary>
+      <div class="body"><p><strong>なっていません。</strong> 禁止リストに載っていない相手はすべて許可される「デフォルト許可」です。想定外の利用者や状態を見落とすと、そのまま通ってしまいます。<code>if is_allowed(user): return allow()</code> のあとに <code>return deny()</code> と書き、知らない状態は拒否に倒します。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>J. H. Saltzer, M. D. Schroeder "The Protection of Information in Computer Systems"（1975年）</li>
+      <li>CISA "Secure by Design" ガイダンス（2023年）</li>
+      <li>NIST SP 800-218 "Secure Software Development Framework (SSDF)"（2022年）</li>
+      <li>OWASP Top 10 2021（A04 安全でない設計）、OWASP SAMM、BSIMM、Microsoft SDL</li>
+      <li>ノート：71_セキュリティ基礎/20_設計原則/04_セキュアバイデザイン</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-3_ゼロトラスト.html"><span class="lbl">← 前のページ</span>ゼロトラスト</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-1_脅威モデリングとデータフロー図.html"><span class="lbl">次のページ →</span>脅威モデリングとデータフロー図</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

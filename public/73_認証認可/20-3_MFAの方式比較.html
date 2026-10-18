@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MFAの方式比較｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 パスワード・MFA・パスキー › MFAの方式比較</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 パスワード・MFA・パスキー</span>
+      <h1>MFAの方式比較</h1>
+      <p class="lead">MFA（多要素認証）は、パスワードが漏れてもログインされないための仕組みです。ただし <strong>方式によって防げる攻撃が大きく違います</strong>。SMS・TOTP・プッシュ通知・セキュリティキー・パスキーの強さを比べ、MFA を突破する攻撃、選び方、回復手段の設計までを整理します。</p>
+      <p class="meta">もとにしたノート：20_パスワード・MFA・パスキー/03_MFAの方式比較</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>認証の 3 要素と「多要素」の正しい意味</li>
+        <li>MFA の方式ごとの、フィッシングへの強さ・手間・コストの違い</li>
+        <li>中間者フィッシング（AiTM）・MFA 疲れ・SIM スワップなど、MFA を突破する攻撃</li>
+        <li>利用者の種類ごとの方式の選び方</li>
+        <li>回復手段とステップアップ認証の設計、対策の優先順位</li>
+      </ul>
+    </div>
+    <p>TOTP・SMS の実装コードは、50_実装 フォルダの「二要素認証（2FA）機能」のノートにあります（解説ページは準備中です）。TOTP の仕組みそのものは <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-3-2">パスワード・MFA・暗号化の基礎 3.2</a> で説明しています。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>認証の 3 要素</h2>
+    <p>認証に使う証拠は 3 種類に分けられます。考え方は <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-3-1">パスワード・MFA・暗号化の基礎 3.1</a> でも紹介しました。ここでは、それぞれの <strong>弱点</strong> に注目します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>例</th><th>弱点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>知識</strong>（知っているもの）</td><td>パスワード、PIN、秘密の質問</td><td>漏えい・推測・使い回し</td></tr>
+        <tr><td><strong>所持</strong>（持っているもの）</td><td>スマホ、セキュリティキー、IC カード</td><td>紛失・盗難・SIM の乗っ取り</td></tr>
+        <tr><td><strong>生体</strong>（本人そのもの）</td><td>指紋、顔</td><td>変更できない。端末の中で使うのが基本</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>多要素</strong> は「別の種類の要素」を組み合わせることです。パスワード ＋ 秘密の質問は、どちらも知識要素なので多要素ではありません。</li>
+      <li>パスキーの指紋・顔認証は、生体情報をサーバーに送りません。<strong>端末（所持）のロックを外すためだけ</strong> に使います（詳しくは <a href="20-4_パスキーとWebAuthn.html">パスキーとWebAuthn</a>）。</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>方式の比較</h2>
+    <p>代表的な MFA の方式を、<strong>フィッシング</strong>（本物そっくりの偽サイトに誘い込んで情報を入力させる手口）への耐性を中心に比べます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>フィッシングへの耐性</th><th>主な攻撃</th><th>利用者の手間</th><th>導入コスト</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SMS のワンタイムコード</strong></td><td>✕</td><td>SIM スワップ、偽サイトでのコードの横取り、SMS の盗み見</td><td>少ない</td><td>送信料がかかる</td></tr>
+        <tr><td><strong>メールのワンタイムコード</strong></td><td>✕</td><td>メールアカウントの乗っ取り、横取り</td><td>少ない</td><td>安い</td></tr>
+        <tr><td><strong>TOTP</strong>（認証アプリ）</td><td>✕</td><td>偽サイトで入力させて横取り</td><td>普通</td><td>安い</td></tr>
+        <tr><td><strong>プッシュ通知で承認</strong></td><td>△</td><td>通知を大量に送り、うっかり承認させる（MFA 疲れ）</td><td>少ない</td><td>製品が必要</td></tr>
+        <tr><td><strong>プッシュ ＋ 番号の照合</strong></td><td>△</td><td>偽サイトで表示された番号をそのまま入れさせる</td><td>普通</td><td>製品が必要</td></tr>
+        <tr><td><strong>セキュリティキー</strong>（FIDO2）</td><td>◎</td><td>物理的な盗難</td><td>普通（キーを持ち歩く）</td><td>キーの配布</td></tr>
+        <tr><td><strong>パスキー</strong>（FIDO2）</td><td>◎</td><td>端末やクラウドのアカウントの乗っ取り</td><td>少ない</td><td>安い</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>FIDO2</strong> は、公開鍵暗号を使ってパスワードなしで認証するための標準規格です。セキュリティキーとパスキーはどちらもこの規格に基づいています。</p>
+    <div class="callout key">
+      <p class="callout-title">ポイント</p>
+      <p>ワンタイムコードは「人が画面に打ち込む」ので、<strong>偽サイトに打ち込んでも気づけません</strong>。FIDO2（セキュリティキー・パスキー）だけは、ブラウザが <strong>接続先のドメイン</strong> を確かめてから署名するので、偽サイトでは使えません。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>MFA を突破する攻撃</h2>
+    <p>MFA を入れても、攻撃者はさまざまな方法で回り込もうとします。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃</th><th>手口</th><th>効く方式</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>中間者フィッシング</strong>（AiTM）</td><td>偽サイトが本物のサイトへの中継役になり、パスワードとコードを入力させ、<strong>ログイン後のセッション Cookie を盗む</strong></td><td>SMS・メール・TOTP・プッシュ</td><td>FIDO2 にする</td></tr>
+        <tr><td><strong>MFA 疲れ</strong></td><td>パスワードを入手した攻撃者が承認通知を大量に送り、うっかり「承認」させる</td><td>プッシュ</td><td>番号の照合、通知回数の制限、身に覚えのない通知を報告させる</td></tr>
+        <tr><td><strong>SIM スワップ</strong></td><td>携帯会社をだまして電話番号を自分の SIM に移す</td><td>SMS</td><td>SMS を MFA に使わない</td></tr>
+        <tr><td><strong>ヘルプデスクへのなりすまし</strong></td><td>「スマホをなくした」とサポートに連絡し、MFA を外してもらう</td><td>すべて</td><td>回復の手続きを厳しくする（<a href="#sec-5">5 章</a>）</td></tr>
+        <tr><td><strong>セッションの乗っ取り</strong></td><td>MFA の後に発行された Cookie やトークンを盗む</td><td>すべて（FIDO2 でも）</td><td>セッションの寿命・端末との結び付け・異常検知（74_セッション管理 で扱います）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>AiTM</strong>（Adversary-in-the-Middle）は「通信の間に攻撃者が入り込む」という意味です。<strong>セッション Cookie</strong> は、ログインした後の「ログイン済み」の状態をブラウザが覚えておくための値で、これを盗まれると MFA を通らずに本人として振る舞われてしまいます。MFA 疲れの流れと対策は <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-4">パスワード・MFA・暗号化の基礎 4 章</a> に図があるので、ここでは AiTM を図で見てみます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 360" role="img" aria-label="上段：ワンタイムコードの場合、利用者が偽サイトにパスワードとコードを入力し、偽サイトがそのまま本物サイトに転送して、発行されたセッションCookieを攻撃者が盗む。下段：パスキーの場合、偽サイトが署名を求めても、ブラウザが接続先のドメインが違うことを確認して署名しないため、中継するものがない">
+      <defs>
+        <marker id="arw2031a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw2031b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+
+      <text x="20" y="22" class="d-text-bold">A. ワンタイムコード（SMS・メール・TOTP など）</text>
+      <rect x="20" y="36" width="130" height="70" rx="8" class="d-box"/>
+      <text x="85" y="66" text-anchor="middle" class="d-text-bold">利用者</text>
+      <text x="85" y="88" text-anchor="middle" class="d-text-sub">偽サイトと気づかない</text>
+
+      <rect x="295" y="36" width="130" height="70" rx="8" class="d-box-bad"/>
+      <text x="360" y="66" text-anchor="middle" class="d-text-bold">偽サイト</text>
+      <text x="360" y="88" text-anchor="middle" class="d-text-sub">攻撃者の中継役</text>
+
+      <rect x="570" y="36" width="130" height="70" rx="8" class="d-box"/>
+      <text x="635" y="66" text-anchor="middle" class="d-text-bold">本物サイト</text>
+      <text x="635" y="88" text-anchor="middle" class="d-text-sub">example.com</text>
+
+      <path d="M150,62 L293,62" class="d-line" marker-end="url(#arw2031a)"/>
+      <text x="222" y="54" text-anchor="middle" class="d-text-sub">① パスワード＋コード</text>
+      <path d="M425,62 L568,62" class="d-line-bad" marker-end="url(#arw2031b)"/>
+      <text x="497" y="54" text-anchor="middle" class="d-text-sub">② そのまま転送</text>
+      <path d="M570,90 L427,90" class="d-line-bad" marker-end="url(#arw2031b)"/>
+      <text x="497" y="110" text-anchor="middle" class="d-text-sub">③ セッション Cookie</text>
+
+      <rect x="180" y="122" width="360" height="30" rx="6" class="d-box-bad"/>
+      <text x="360" y="142" text-anchor="middle" class="d-text-bold">④ Cookie を盗み、MFA 済みの本人になりすます</text>
+
+      <path d="M20,166 L700,166" class="d-line-dash"/>
+
+      <text x="20" y="192" class="d-text-bold">B. パスキー・セキュリティキー（FIDO2）</text>
+      <rect x="20" y="206" width="130" height="70" rx="8" class="d-box-accent"/>
+      <text x="85" y="236" text-anchor="middle" class="d-text-bold">ブラウザ・端末</text>
+      <text x="85" y="258" text-anchor="middle" class="d-text-sub">鍵は example.com 用</text>
+
+      <rect x="295" y="206" width="130" height="70" rx="8" class="d-box-bad"/>
+      <text x="360" y="236" text-anchor="middle" class="d-text-bold">偽サイト</text>
+      <text x="360" y="258" text-anchor="middle" class="d-text-sub">example-login.com</text>
+
+      <rect x="570" y="206" width="130" height="70" rx="8" class="d-box"/>
+      <text x="635" y="236" text-anchor="middle" class="d-text-bold">本物サイト</text>
+      <text x="635" y="258" text-anchor="middle" class="d-text-sub">example.com</text>
+
+      <path d="M295,232 L152,232" class="d-line" marker-end="url(#arw2031a)"/>
+      <text x="222" y="224" text-anchor="middle" class="d-text-sub">① 署名を要求</text>
+      <path d="M425,241 L568,241" class="d-line-dash"/>
+      <text x="497" y="233" text-anchor="middle" class="d-text-sub">中継できる署名がない</text>
+
+      <rect x="20" y="294" width="520" height="54" rx="8" class="d-box-good"/>
+      <text x="280" y="317" text-anchor="middle" class="d-text-bold">② ブラウザが接続先のドメインを確認</text>
+      <text x="280" y="337" text-anchor="middle" class="d-text-sub">example-login.com は example.com ではない → 署名しない（人が気づかなくても止まる）</text>
+    </svg>
+    <figcaption>図：人が打ち込むコードは中継されるが、FIDO2 の署名はドメインに結び付いているので偽サイトでは作れない</figcaption>
+    </figure>
+
+    <p>2026 年の具体的な事例は、50_実装 フォルダの「二要素認証（2FA）機能」のノートの追記にまとめています。電話でだまして MFA デバイスを登録させる手口は <a href="../../71_セキュリティ基礎/00_全体像/20-3_ゼロトラスト.html#sec-10-1">ゼロトラスト 10.1</a> でも紹介しています。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>選び方</h2>
+    <p>守る相手の権限の強さに合わせて方式を選びます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対象</th><th>推奨</th></tr></thead>
+      <tbody>
+        <tr><td><strong>管理者・開発者・経理など、権限の強い人</strong></td><td>セキュリティキーかパスキーを <strong>必須</strong> にする</td></tr>
+        <tr><td><strong>社員全体</strong></td><td>パスキー（または FIDO2 対応の認証製品）。移行するまでは番号の照合つきのプッシュ</td></tr>
+        <tr><td><strong>一般の利用者（BtoC）</strong></td><td>パスキーを勧め、TOTP も選べるようにする。SMS は最後の手段</td></tr>
+        <tr><td><strong>規制がある業種</strong></td><td>金融庁や業界の指針で、フィッシングに強い方式が求められているか確認する</td></tr>
+      </tbody>
+    </table></div>
+    <p>米国の標準化機関 NIST の指針（SP 800-63B）でも、SMS の利用は <strong>制限付き</strong> の扱いで、より強い方式への移行が勧められています。社内システム全体での方式の選び方は <a href="10-4_社内システム向け認証方式の選び方.html">社内システム向け認証方式の選び方</a> も参考にしてください。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>回復手段の設計（いちばん弱いところ）</h2>
+    <p>MFA の強さは、<strong>MFA を外す手続きの強さ</strong> で決まります。強い方式を入れても、回復がメール 1 通で済むなら、攻撃者はそちらを狙います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手段</th><th>注意点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>バックアップコード</strong></td><td>1 回ずつしか使えない。ハッシュで保存する。使ったら通知する</td></tr>
+        <tr><td><strong>2 つ目のセキュリティキー・パスキー</strong></td><td>登録時に 2 つ以上の登録を勧める</td></tr>
+        <tr><td><strong>サポートによる本人確認</strong></td><td>社員なら上長の承認やビデオ通話での確認。電話だけで外さない</td></tr>
+        <tr><td><strong>待ち時間を置く</strong></td><td>MFA の解除やメールアドレスの変更は、すぐ反映せず、元の連絡先に通知して数日待つ（50_実装 フォルダの「アカウント管理（徳丸本22章）」のノート）</td></tr>
+      </tbody>
+    </table></div>
+    <p>バックアップコードをハッシュで保存する理由は、パスワードと同じです（<a href="20-2_パスワードの安全な保存.html">パスワードの安全な保存</a>）。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>追加の確認（ステップアップ認証）</h2>
+    <p>ログイン時だけでなく、<strong>危険な操作の直前</strong> にもう一度確認する設計です。</p>
+    <ul>
+      <li>対象：送金、パスワード・メールアドレスの変更、MFA の解除、管理画面の操作</li>
+      <li>普段と違う国・端末・時間帯からのアクセスでだけ MFA を求める <strong>リスクベース認証</strong> と組み合わせると、手間を減らせます。</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>対策の優先順位</h2>
+    <ol class="steps">
+      <li>権限の強いアカウントから、FIDO2（セキュリティキー・パスキー）を必須にする</li>
+      <li>プッシュ方式なら番号の照合と回数制限を入れる。SMS はやめていく</li>
+      <li>回復手段（バックアップコード・サポートの手続き）を MFA と同じ強さにする</li>
+      <li>危険な操作の前にステップアップ認証をする</li>
+      <li>MFA の後のセッションも守る（寿命・異常検知）</li>
+    </ol>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>一言で言うと</th></tr></thead>
+      <tbody>
+        <tr><td>多要素</td><td>「別の種類」の要素を組み合わせる。知識 ＋ 知識は多要素ではない</td></tr>
+        <tr><td>SMS・メール・TOTP</td><td>人が打ち込むので、偽サイトに中継されると防げない</td></tr>
+        <tr><td>プッシュ通知</td><td>MFA 疲れに注意。番号の照合と回数制限で補う</td></tr>
+        <tr><td>FIDO2（セキュリティキー・パスキー）</td><td>ブラウザがドメインを確認するので、フィッシングに強い</td></tr>
+        <tr><td>回復手段</td><td>MFA の強さは「外す手続き」の強さで決まる</td></tr>
+        <tr><td>ステップアップ認証</td><td>危険な操作の直前にもう一度確認する</td></tr>
+        <tr><td>セッション</td><td>MFA の後に発行される Cookie も守る必要がある</td></tr>
+      </tbody>
+    </table></div>
+    <p>次のページでは、フィッシングに強い方式の本命であるパスキーの仕組みを見ていきます。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>理解度チェック</h2>
+    <details><summary>Q1. 「パスワード ＋ 秘密の質問」は多要素認証と言えますか？</summary><div class="body"><p>言えません。どちらも <strong>知識要素</strong>（知っているもの）だからです。多要素認証は、知識・所持・生体のうち <strong>別の種類</strong> を組み合わせる必要があります。</p></div></details>
+    <details><summary>Q2. TOTP（認証アプリ）を使っていても、中間者フィッシング（AiTM）を防げないのはなぜですか？</summary><div class="body"><p>コードは人が画面に打ち込むものなので、偽サイトに打ち込んでも利用者は気づけません。偽サイトはパスワードとコードを本物のサイトにそのまま転送し、ログイン後に発行された <strong>セッション Cookie</strong> を盗みます。</p></div></details>
+    <details><summary>Q3. パスキーやセキュリティキー（FIDO2）がフィッシングに強い理由は何ですか？</summary><div class="body"><p>ブラウザが <strong>接続先のドメイン</strong> を確かめてから署名するからです。偽サイトのドメインでは本物のサイト用の署名が作られないので、中継する材料がありません。</p></div></details>
+    <details><summary>Q4. 強い MFA を導入したのに、回復手続きが「登録メールアドレスへのリンク 1 通」だけです。何が問題で、どう直しますか？</summary><div class="body"><p>攻撃者は強い MFA ではなく、弱い回復手続きを狙います。バックアップコード（1 回限り・ハッシュで保存・使用時に通知）、2 つ目のキーやパスキーの登録、サポートでの厳しい本人確認、解除やメール変更に待ち時間を置いて元の連絡先に通知する、といった方法で MFA と同じ強さにします。</p></div></details>
+    <details><summary>Q5. FIDO2 を使っていても防げない攻撃は何ですか？</summary><div class="body"><p><strong>セッションの乗っ取り</strong> です。MFA の後に発行された Cookie やトークンを盗まれると、方式に関係なく本人として扱われます。セッションの寿命・端末との結び付け・異常検知で守ります。ほかに、ヘルプデスクへのなりすましもすべての方式に効きます。</p></div></details>
+    <details><summary>Q6. ステップアップ認証とは何ですか？どんな操作に使いますか？</summary><div class="body"><p>ログイン時だけでなく、<strong>危険な操作の直前</strong> にもう一度本人確認をする設計です。送金、パスワード・メールアドレスの変更、MFA の解除、管理画面の操作などに使います。リスクベース認証と組み合わせると手間を減らせます。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html">OWASP Multifactor Authentication Cheat Sheet</a></li>
+      <li><a href="https://www.cisa.gov/resources-tools/resources/implementing-phishing-resistant-mfa">CISA: Implementing Phishing-Resistant MFA</a></li>
+      <li>関連ページ：<a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="20-4_パスキーとWebAuthn.html">パスキーとWebAuthn</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#human">人を狙う攻撃 — フィッシングとソーシャルエンジニアリング</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="20-2_パスワードの安全な保存.html"><span class="lbl">← 前のページ</span>パスワードの安全な保存</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-4_パスキーとWebAuthn.html"><span class="lbl">次のページ →</span>パスキーとWebAuthn</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

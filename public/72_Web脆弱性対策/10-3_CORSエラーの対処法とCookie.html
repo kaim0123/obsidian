@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CORSエラーの対処法とCookie｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 ブラウザのセキュリティモデル › CORSエラーの対処法とCookie</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 ブラウザのセキュリティモデル</span>
+      <h1>CORSエラーの対処法とCookie</h1>
+      <p class="lead">開発中に必ず一度は出会う「blocked by CORS policy」。このページでは、よくあるエラーメッセージの読み方と原因、Express・Next.js・Flask・FastAPI での直し方、開発環境でのプロキシ、そして Cookie などの認証情報を付けて CORS を使うときのルールと落とし穴を解説します。「とりあえず全部許可」で直すと脆弱性になる理由も、危険な例と安全な例で比べます。</p>
+      <p class="meta">もとにしたノート：10_ブラウザのセキュリティモデル/05_CORSエラーの対処法・08_CORSとCookie（ねる前エンジニアリング）・02_CORS（徳丸本3章）・07_CORS入門（プログラミングチュートリアル）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>CORSエラーは <strong>サーバー側で「許可の札」（レスポンスヘッダ）を正しく返す</strong> ことで直します。ただし Cookie を付ける通信では <strong><code>*</code>（全部許可）は使えず、許可するオリジンを具体的に絞る</strong> 必要があります。届いた Origin をそのまま返すような「何でも許可」は、それ自体が脆弱性です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>おさらい：CORSエラーとは何か</h2>
+    <p>CORS（Cross-Origin Resource Sharing／オリジン間リソース共有）の基本の仕組みは <a href="10-2_CORSの仕組み.html">CORSの仕組み</a> で解説しました。ここでは対処法に必要な点だけを振り返ります。</p>
+    <ul>
+      <li><strong>オリジン</strong> とは「スキーム（<code>https</code> など）＋ドメイン＋ポート番号」の組み合わせです。どれか1つでも違えば別オリジンです（→ <a href="10-1_受動的攻撃と同一オリジンポリシー.html">受動的攻撃と同一オリジンポリシー</a>）。</li>
+      <li>ブラウザが止めているのは送信そのものではなく、<strong>別オリジンのレスポンスを JavaScript が「読むこと」</strong> です。</li>
+      <li>CORS は、サーバーが <code>Access-Control-Allow-Origin</code> などのヘッダで出す <strong>「許可の札」</strong> を見て、ブラウザが例外的に読ませる仕組みです。</li>
+      <li>条件によっては、本番のリクエストの前に <strong>プリフライト</strong>（<code>OPTIONS</code> メソッドによる事前の問い合わせ）が送られます。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">エラーを見たら最初に思い出すこと</p>
+      <p>CORSエラーのとき、<strong>サーバーは正常にレスポンスを返していることが多い</strong> です。ブラウザが JavaScript への受け渡しをブロックしているだけなので、curl や Postman で同じ URL を叩くと普通に成功します。だから直す場所は <strong>フロントエンドのコードではなく、サーバーが返すヘッダ</strong> です。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>よくあるCORSエラーと原因</h2>
+    <p>ブラウザの開発者ツールのコンソールに出るメッセージには、原因がそのまま書かれています。まずは英文のキーワードを読み取りましょう。</p>
+
+    <h3 id="sec-2-1">2.1 エラーメッセージ1：No 'Access-Control-Allow-Origin' header</h3>
+<pre><code>Access to fetch at 'https://api.example.com/users' from origin 'https://myapp.com'
+has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present
+on the requested resource.</code></pre>
+    <p><strong>原因</strong>：サーバーが <code>Access-Control-Allow-Origin</code> ヘッダを返していない。<br><strong>解決策</strong>：サーバー側で CORS ヘッダを設定する（→ <a href="#sec-3">3. サーバー側での対処法</a>）。</p>
+
+    <h3 id="sec-2-2">2.2 エラーメッセージ2：Credentials flag is true</h3>
+<pre><code>Access to fetch at 'https://api.example.com/users' from origin 'https://myapp.com'
+has been blocked by CORS policy: The value of the 'Access-Control-Allow-Origin' header
+in the response must not be the wildcard '*' when the request's credentials mode is 'include'.</code></pre>
+    <p><strong>原因</strong>：<code>credentials: 'include'</code>（Cookie などを付けて送る設定）を使っているのに、<code>Access-Control-Allow-Origin</code> が <code>*</code> になっている。<br><strong>解決策</strong>：具体的なオリジンを指定する（→ <a href="#sec-5">5. 認証情報を含むリクエスト</a>）。</p>
+
+    <h3 id="sec-2-3">2.3 エラーメッセージ3：Method not allowed</h3>
+<pre><code>Access to fetch at 'https://api.example.com/users' from origin 'https://myapp.com'
+has been blocked by CORS policy: Method PUT is not allowed by Access-Control-Allow-Methods.</code></pre>
+    <p><strong>原因</strong>：使おうとしている HTTP メソッドが許可されていない。<br><strong>解決策</strong>：<code>Access-Control-Allow-Methods</code> に該当メソッドを追加する。</p>
+    <p>同じ仲間に、<code>Request header field Authorization is not allowed by Access-Control-Allow-Headers.</code> というエラーもあります。この場合は <code>Access-Control-Allow-Headers</code> に <code>Authorization</code> を追加します（各ヘッダの意味は <a href="10-2_CORSの仕組み.html">CORSの仕組み</a> を参照）。</p>
+
+    <h3 id="sec-2-4">2.4 メッセージから直し方を引く</h3>
+    <figure>
+    <svg viewBox="0 0 720 340" role="img" aria-label="CORSエラーのメッセージのキーワードから、サーバー側で直すヘッダを選ぶ流れ">
+      <defs><marker id="arw103a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="210" y="10" width="300" height="44" rx="8" class="d-box-bad"/>
+      <text x="360" y="37" text-anchor="middle" class="d-text-bold">コンソールに CORS エラー</text>
+      <line x1="360" y1="54" x2="360" y2="78" class="d-line" marker-end="url(#arw103a)"/>
+      <rect x="210" y="80" width="300" height="44" rx="8" class="d-box-accent"/>
+      <text x="360" y="107" text-anchor="middle" class="d-text-bold">メッセージのキーワードを読む</text>
+      <path d="M360,124 L360,146 M95,146 L635,146" class="d-line"/>
+      <line x1="95" y1="146" x2="95" y2="172" class="d-line" marker-end="url(#arw103a)"/>
+      <line x1="275" y1="146" x2="275" y2="172" class="d-line" marker-end="url(#arw103a)"/>
+      <line x1="455" y1="146" x2="455" y2="172" class="d-line" marker-end="url(#arw103a)"/>
+      <line x1="635" y1="146" x2="635" y2="172" class="d-line" marker-end="url(#arw103a)"/>
+      <rect x="12" y="174" width="166" height="62" rx="8" class="d-box"/>
+      <text x="95" y="199" text-anchor="middle" class="d-text-sub">No 'Access-Control-</text>
+      <text x="95" y="219" text-anchor="middle" class="d-text-sub">Allow-Origin' header</text>
+      <rect x="192" y="174" width="166" height="62" rx="8" class="d-box"/>
+      <text x="275" y="199" text-anchor="middle" class="d-text-sub">must not be the</text>
+      <text x="275" y="219" text-anchor="middle" class="d-text-sub">wildcard '*'</text>
+      <rect x="372" y="174" width="166" height="62" rx="8" class="d-box"/>
+      <text x="455" y="199" text-anchor="middle" class="d-text-sub">Method PUT is</text>
+      <text x="455" y="219" text-anchor="middle" class="d-text-sub">not allowed</text>
+      <rect x="552" y="174" width="166" height="62" rx="8" class="d-box"/>
+      <text x="635" y="199" text-anchor="middle" class="d-text-sub">Request header field</text>
+      <text x="635" y="219" text-anchor="middle" class="d-text-sub">… is not allowed</text>
+      <line x1="95" y1="236" x2="95" y2="262" class="d-line" marker-end="url(#arw103a)"/>
+      <line x1="275" y1="236" x2="275" y2="262" class="d-line" marker-end="url(#arw103a)"/>
+      <line x1="455" y1="236" x2="455" y2="262" class="d-line" marker-end="url(#arw103a)"/>
+      <line x1="635" y1="236" x2="635" y2="262" class="d-line" marker-end="url(#arw103a)"/>
+      <rect x="12" y="264" width="166" height="62" rx="8" class="d-box-good"/>
+      <text x="95" y="289" text-anchor="middle" class="d-text">Allow-Origin を返す</text>
+      <text x="95" y="309" text-anchor="middle" class="d-text-sub">本番の応答にも付ける</text>
+      <rect x="192" y="264" width="166" height="62" rx="8" class="d-box-good"/>
+      <text x="275" y="289" text-anchor="middle" class="d-text">具体的なオリジン</text>
+      <text x="275" y="309" text-anchor="middle" class="d-text-sub">＋ Allow-Credentials</text>
+      <rect x="372" y="264" width="166" height="62" rx="8" class="d-box-good"/>
+      <text x="455" y="289" text-anchor="middle" class="d-text">Allow-Methods</text>
+      <text x="455" y="309" text-anchor="middle" class="d-text-sub">にメソッドを追加</text>
+      <rect x="552" y="264" width="166" height="62" rx="8" class="d-box-good"/>
+      <text x="635" y="289" text-anchor="middle" class="d-text">Allow-Headers</text>
+      <text x="635" y="309" text-anchor="middle" class="d-text-sub">にヘッダを追加</text>
+    </svg>
+    <figcaption>図：エラーメッセージのキーワードごとに、サーバーで直すヘッダが決まる</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メッセージのキーワード</th><th>原因</th><th>直すところ（サーバー側）</th></tr></thead>
+      <tbody>
+        <tr><td><code>No 'Access-Control-Allow-Origin' header</code></td><td>許可ヘッダを返していない</td><td><code>Access-Control-Allow-Origin</code> を返す</td></tr>
+        <tr><td><code>must not be the wildcard '*'</code></td><td>Cookie 付きなのに <code>*</code></td><td>具体的なオリジン＋<code>Access-Control-Allow-Credentials: true</code></td></tr>
+        <tr><td><code>Method PUT is not allowed</code></td><td>メソッドが許可されていない</td><td><code>Access-Control-Allow-Methods</code> に追加</td></tr>
+        <tr><td><code>Request header field … is not allowed</code></td><td>リクエストヘッダが許可されていない</td><td><code>Access-Control-Allow-Headers</code> に追加</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>サーバー側での対処法</h2>
+    <p>CORS の許可を出すのはサーバーです。言語やフレームワークごとに、よく使う書き方を見ていきます。多くのフレームワークには CORS 用の <strong>ミドルウェア</strong>（すべてのリクエストの前後に共通処理を差し込む部品）があり、それを使うのが基本です。</p>
+
+    <h3 id="sec-3-1">3.1 Node.js（Express）：方法1 cors パッケージを使う（推奨）</h3>
+<pre><code>npm install cors</code></pre>
+<pre><code>const express = require('express');
+const cors = require('cors');
+const app = express();
+
+// 全てのオリジンを許可（開発環境のみ）
+app.use(cors());
+
+// 特定のオリジンのみ許可
+app.use(cors({
+  origin: 'https://myapp.com',
+  credentials: true
+}));
+
+// 複数のオリジンを許可
+app.use(cors({
+  origin: ['https://myapp.com', 'https://www.myapp.com'],
+  credentials: true
+}));</code></pre>
+    <p>上の3つは「書き方の選択肢」を並べたもので、実際にはどれか1つを使います。<code>origin</code> に配列を渡すと、cors パッケージがリクエストの <code>Origin</code> ヘッダと照らし合わせ、<strong>一致したものだけ</strong> を <code>Access-Control-Allow-Origin</code> に入れて返してくれます（このヘッダには値を1つしか書けないため）。</p>
+
+    <h3 id="sec-3-2">3.2 Node.js（Express）：方法2 手動でヘッダを設定する</h3>
+<pre><code>const express = require('express');
+const app = express();
+
+// 全てのリクエストに適用
+app.use((req, res, next) =&gt; {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+});
+
+// プリフライトリクエストの処理
+app.options('*', (req, res) =&gt; {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.sendStatus(204);
+});</code></pre>
+    <p>手動で書く場合は、<strong>プリフライト（OPTIONS）への応答</strong> と <strong>本番リクエストへの応答</strong> の両方にヘッダが必要な点に注意します。204 は「成功したが本文はない」というステータスコードです。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：Express 5 では <code>app.options('*', …)</code> がエラーになる</p>
+      <p>上のコードは Express 4 の書き方です。Express 5 ではルートのパス指定のルールが変わり、<code>'*'</code> 単体は使えません（<code>'/{*splat}'</code> のような名前付きワイルドカードを使います）。迷ったら cors パッケージに任せるのが確実です。</p>
+    </div>
+
+    <h3 id="sec-3-3">3.3 Next.js（API Routes）</h3>
+<pre><code>// pages/api/users.js または app/api/users/route.js
+export default function handler(req, res) {
+  // CORSヘッダーを設定
+  res.setHeader('Access-Control-Allow-Origin', 'https://myapp.com');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  // プリフライトリクエストの処理
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  // 実際の処理
+  if (req.method === 'GET') {
+    res.status(200).json({ message: 'Success' });
+  }
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">注意：この書き方は pages/api（Pages Router）専用です</p>
+      <p><code>handler(req, res)</code> の形は <code>pages/api/</code> 用です。<code>app/api/…/route.js</code>（App Router）では、メソッド名の関数を export し、<code>Response</code> を返す書き方になります。</p>
+<pre><code>// app/api/users/route.js（App Router の場合）
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://myapp.com',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+export function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders });
+}
+
+export function GET() {
+  return Response.json({ message: 'Success' }, { headers: corsHeaders });
+}</code></pre>
+    </div>
+
+    <h3 id="sec-3-4">3.4 Python（Flask）</h3>
+<pre><code>pip install flask-cors</code></pre>
+<pre><code>from flask import Flask
+from flask_cors import CORS
+
+app = Flask(__name__)
+
+# 全てのオリジンを許可
+CORS(app)
+
+# 特定のオリジンのみ許可
+CORS(app, origins=['https://myapp.com'])
+
+# より詳細な設定
+CORS(app,
+     origins=['https://myapp.com'],
+     methods=['GET', 'POST', 'PUT', 'DELETE'],
+     allow_headers=['Content-Type', 'Authorization'],
+     supports_credentials=True)</code></pre>
+
+    <h3 id="sec-3-5">3.5 Python（FastAPI）</h3>
+<pre><code>from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# CORSミドルウェアを追加
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['https://myapp.com'],  # 許可するオリジン
+    allow_credentials=True,
+    allow_methods=['GET', 'POST', 'PUT', 'DELETE'],
+    allow_headers=['Content-Type', 'Authorization'],
+)</code></pre>
+    <p>どのフレームワークでも、設定する項目は同じ4つ（<strong>オリジン・認証情報・メソッド・ヘッダ</strong>）です。名前が少しずつ違うだけなので、表で対応を確認しておきましょう。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>設定項目</th><th>Express（cors）</th><th>Flask（flask-cors）</th><th>FastAPI</th></tr></thead>
+      <tbody>
+        <tr><td>許可するオリジン</td><td><code>origin</code></td><td><code>origins</code></td><td><code>allow_origins</code></td></tr>
+        <tr><td>認証情報（Cookie）</td><td><code>credentials</code></td><td><code>supports_credentials</code></td><td><code>allow_credentials</code></td></tr>
+        <tr><td>メソッド</td><td><code>methods</code></td><td><code>methods</code></td><td><code>allow_methods</code></td></tr>
+        <tr><td>リクエストヘッダ</td><td><code>allowedHeaders</code></td><td><code>allow_headers</code></td><td><code>allow_headers</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>クライアント側での対処法（開発環境）</h2>
+    <p>本来の解決はサーバー側ですが、開発中に一時的に回避する方法もあります。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>方法1：ブラウザの拡張機能（非推奨）</h4>
+        <p>開発中のみ使う場合に限り、CORS Unblock などの拡張機能でブラウザのチェックを外す方法があります。</p>
+        <p><strong>本番環境では使いません。</strong> 利用者のブラウザには入っていないので、根本的な解決にはなりません。</p>
+      </div>
+      <div class="card">
+        <h4>方法2：プロキシサーバーを使う</h4>
+        <p><strong>プロキシ</strong>（間に立って通信を中継するサーバー）を使い、ブラウザからは同じオリジンにリクエストしているように見せます。</p>
+      </div>
+    </div>
+    <p>Next.js の場合、<code>next.config.js</code> の <code>rewrites</code> でプロキシを設定できます。</p>
+<pre><code>// next.config.js
+module.exports = {
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'https://api.example.com/:path*',
+      },
+    ];
+  },
+};</code></pre>
+    <p>これにより、ブラウザは <code>/api/…</code>（自分と同じオリジン）にリクエストし、Next.js のサーバーが裏で <code>https://api.example.com</code> に中継します。<strong>同じオリジンからのリクエストとして扱われる</strong> ため、CORS は発生しません。CORS はブラウザだけのルールで、サーバー同士の通信には関係しないからです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>認証情報（Cookie）を含むリクエスト</h2>
+    <p><strong>認証情報（Credentials）</strong> とは、<strong>Cookie</strong>、<strong>Authorization ヘッダ</strong>、<strong>TLS クライアント証明書</strong> など、リクエストに付いていく認証用のデータのことです。ログイン状態を Cookie で保っている API を別オリジンから呼ぶときに、この設定が必要になります。</p>
+
+    <h3 id="sec-5-1">5.1 デフォルトの動作</h3>
+    <p>クロスオリジン（別オリジンへ）の <code>fetch()</code> では、セキュリティのため <strong>Cookie は自動送信されません</strong>。</p>
+<pre><code>// デフォルト: credentials = 'same-origin'
+fetch('https://api.example.com/profile');
+// → api.example.com の Cookie は送られない</code></pre>
+
+    <h3 id="sec-5-2">5.2 認証情報を含める設定：クライアントとサーバーの両方が必要</h3>
+    <p><strong>クライアント側</strong>：<code>fetch</code> に <code>credentials</code> を指定します。</p>
+<pre><code>fetch('https://api.example.com/users', {
+  credentials: 'include'  // クッキーを含める
+});
+
+// または
+fetch('https://api.example.com/users', {
+  credentials: 'same-origin'  // 同じオリジンの場合のみ
+});</code></pre>
+    <p><strong>サーバー側</strong>：次の2つのヘッダを返します。</p>
+<pre><code>Access-Control-Allow-Origin: https://myapp.com   ← * は使えない
+Access-Control-Allow-Credentials: true</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>credentials の値</th><th>動作</th></tr></thead>
+      <tbody>
+        <tr><td><code>omit</code></td><td>認証情報を送らない</td></tr>
+        <tr><td><code>same-origin</code></td><td>同一オリジンのときだけ送る（<strong>デフォルト</strong>）</td></tr>
+        <tr><td><code>include</code></td><td>クロスオリジンでも送る</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="credentials include のリクエストに Cookie が付き、サーバーが具体的なオリジンと Allow-Credentials を返すと、ブラウザが JavaScript にレスポンスを渡す">
+      <defs><marker id="arw103b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="10" width="170" height="230" rx="8" class="d-box-accent"/>
+      <text x="95" y="38" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="95" y="58" text-anchor="middle" class="d-text-sub">https://myapp.com の画面</text>
+      <text x="95" y="120" text-anchor="middle" class="d-text-sub">fetch(…, {</text>
+      <text x="95" y="138" text-anchor="middle" class="d-text-sub">credentials: 'include'</text>
+      <text x="95" y="156" text-anchor="middle" class="d-text-sub">})</text>
+      <rect x="540" y="10" width="170" height="230" rx="8" class="d-box"/>
+      <text x="625" y="38" text-anchor="middle" class="d-text-bold">API サーバー</text>
+      <text x="625" y="58" text-anchor="middle" class="d-text-sub">https://api.myapp.com</text>
+      <line x1="180" y1="100" x2="538" y2="100" class="d-line" marker-end="url(#arw103b)"/>
+      <text x="360" y="72" text-anchor="middle" class="d-text-sub">① GET /profile　Origin: https://myapp.com</text>
+      <text x="360" y="90" text-anchor="middle" class="d-text-sub">Cookie: session=abc（自動で付く）</text>
+      <line x1="540" y1="180" x2="182" y2="180" class="d-line" marker-end="url(#arw103b)"/>
+      <text x="360" y="152" text-anchor="middle" class="d-text-sub">② Access-Control-Allow-Origin: https://myapp.com</text>
+      <text x="360" y="170" text-anchor="middle" class="d-text-sub">Access-Control-Allow-Credentials: true</text>
+      <rect x="10" y="262" width="340" height="56" rx="8" class="d-box-good"/>
+      <text x="180" y="286" text-anchor="middle" class="d-text-bold">③ 両方そろっている</text>
+      <text x="180" y="306" text-anchor="middle" class="d-text-sub">→ JavaScript にレスポンスを渡す</text>
+      <rect x="370" y="262" width="340" height="56" rx="8" class="d-box-bad"/>
+      <text x="540" y="286" text-anchor="middle" class="d-text-bold">③' Allow-Origin が * ／ Credentials なし</text>
+      <text x="540" y="306" text-anchor="middle" class="d-text-sub">→ CORS エラー（読ませない）</text>
+    </svg>
+    <figcaption>図：認証情報付きのクロスオリジン通信。クライアントの設定とサーバーの2つのヘッダがそろって初めて読める</figcaption>
+    </figure>
+
+    <h3 id="sec-5-3">5.3 重要な制約</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>制約</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><code>Allow-Origin: *</code> と <code>Credentials: true</code> は <strong>併用不可</strong></td><td>どのサイトからでも Cookie 付きでアクセスできてしまう</td></tr>
+        <tr><td>具体的なオリジンを指定する必要がある</td><td>許可する相手を限定するため</td></tr>
+        <tr><td><code>SameSite</code> Cookie 属性も影響する</td><td>クロスサイトでの Cookie 送信を制御する（→ <a href="#sec-6">6. Cookie に付ける印</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p>ブラウザ側でこの組み合わせを禁止しているのは、もし許してしまうと、利用者が罠サイトを開いただけで <strong>ログイン中の情報（プロフィール、メール、残高など）を罠サイトの JavaScript に読まれてしまう</strong> からです。</p>
+
+    <h3 id="sec-5-4">5.4 設定例（Express.js ＋ cors パッケージ）</h3>
+<pre><code>const cors = require('cors');
+
+app.use(cors({
+  origin: 'https://myapp.com',   // 具体的なオリジン（* 不可）
+  credentials: true               // 認証情報を許可
+}));
+
+// クライアント
+fetch('https://api.myapp.com/profile', {
+  credentials: 'include'
+});</code></pre>
+    <p><code>credentials: true</code> を指定すると、レスポンスに <code>Access-Control-Allow-Credentials: true</code> が付きます。開発者ツールの Network タブで、実際に付いているか確認できます。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>Cookie はどう付いていくのか：HttpOnly・Secure・SameSite</h2>
+    <p>Cookie は、ブラウザが「このドメイン宛てのリクエストにはこの Cookie を付ける」と覚えていて、条件が合えば <strong>自動で付けて送る</strong> 小さなデータです。ログイン状態を保つセッションID などがよく入っています。サーバーは Cookie を発行するとき、扱い方を決める <strong>印（属性）</strong> を付けられます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>属性</th><th>意味</th><th>守れるもの</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HttpOnly</strong></td><td>JavaScript（<code>document.cookie</code>）から読めなくする</td><td>XSS で Cookie を盗まれにくくする</td></tr>
+        <tr><td><strong>Secure</strong></td><td>HTTPS の通信でだけ送る</td><td>盗聴で Cookie を盗まれない</td></tr>
+        <tr><td><strong>SameSite</strong></td><td>他サイトから始まったリクエストに Cookie を付けるかを決める（<code>Strict</code> / <code>Lax</code> / <code>None</code>）</td><td><strong>勝手な送信</strong>（罠サイトからのリクエストにログイン Cookie が付くこと）を止める</td></tr>
+      </tbody>
+    </table></div>
+    <p>CORS が止めるのは「読むこと」でした。これに対して SameSite は、そもそも <strong>Cookie を付けて送ること</strong> を止める仕組みで、守っている場所が違います。属性の細かい使い分けは 74_セッション管理 で、勝手な送信を悪用する攻撃（CSRF）は <a href="30-1_CSRF.html">CSRF</a> のページで扱います。</p>
+
+    <h3 id="sec-6-1">6.1 例：画面と API を別のオリジンに分けたとき</h3>
+    <p>「オリジン」と「サイト」は範囲が違う点に注意が必要です。<strong>サイト</strong> は、おおまかに「スキーム＋登録可能なドメイン（<code>myapp.com</code> の部分）」の単位で、サブドメインやポートの違いは同じサイトとみなされます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>構成</th><th>オリジン</th><th>サイト</th><th>必要な設定</th></tr></thead>
+      <tbody>
+        <tr><td>画面 <code>https://myapp.com</code><br>API <code>https://api.myapp.com</code></td><td>別（CORS が必要）</td><td>同じ</td><td>CORS の credentials 設定。<code>SameSite=Lax</code> の Cookie も送られる</td></tr>
+        <tr><td>画面 <code>https://myapp.com</code><br>API <code>https://api.other.com</code></td><td>別（CORS が必要）</td><td>別</td><td>CORS の credentials 設定に加え、Cookie を <code>SameSite=None; Secure</code> にする必要がある。さらにブラウザの「サードパーティ Cookie 制限」で送られない場合もある</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">設計のヒント</p>
+      <p>画面と API は、できれば <strong>同じサイト（サブドメイン違い）</strong> にそろえるか、<a href="#sec-4">プロキシ</a> で同じオリジンに見せると、Cookie まわりのトラブルが減ります。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>環境別の設定</h2>
+    <p>開発環境と本番環境では、許可したいオリジンが違います。設定を環境ごとに切り替えましょう。</p>
+    <h3 id="sec-7-1">7.1 開発環境</h3>
+<pre><code>// 開発環境では全てのオリジンを許可
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'development' ? '*' : 'https://myapp.com',
+  credentials: process.env.NODE_ENV === 'production'
+};</code></pre>
+    <p>開発環境で <code>credentials</code> を <code>false</code> にしているのは、<code>*</code> と認証情報の併用が禁止されているからです。そのため、この設定では開発環境で Cookie を使ったログインは試せません。Cookie 付きで試したいときは、開発環境でも <code>http://localhost:3000</code> のように具体的なオリジンを指定します。</p>
+    <h3 id="sec-7-2">7.2 本番環境</h3>
+<pre><code>// 本番環境では特定のオリジンのみ許可
+const corsOptions = {
+  origin: ['https://myapp.com', 'https://www.myapp.com'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};</code></pre>
+
+    <h2 id="sec-8"><span class="num">8.</span>トラブルシューティング</h2>
+    <h3 id="sec-8-1">8.1 問題1：プリフライトリクエストが失敗する</h3>
+    <ol class="steps">
+      <li>OPTIONS メソッドのハンドラー（処理する関数）が正しく設定されているか</li>
+      <li><code>Access-Control-Allow-Methods</code> に使うメソッドが含まれているか</li>
+      <li><code>Access-Control-Allow-Headers</code> に使うヘッダが含まれているか</li>
+    </ol>
+    <h3 id="sec-8-2">8.2 問題2：credentials が送信されない</h3>
+    <ol class="steps">
+      <li>クライアント側で <code>credentials: 'include'</code> を指定しているか</li>
+      <li>サーバー側で <code>Access-Control-Allow-Credentials: true</code> を返しているか</li>
+      <li><code>Access-Control-Allow-Origin</code> が <code>*</code> ではなく、具体的なオリジンになっているか</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">補足：「送られない」のか「読めない」のかを分ける</p>
+      <p>2 と 3 は、厳密には「Cookie は送られたが、レスポンスを読ませてもらえない」原因です（プリフライトが必要なリクエストでは、プリフライトの応答にも 2 が必要です）。Network タブで <strong>リクエストに Cookie ヘッダが付いていない</strong> なら、Cookie 側の <code>SameSite</code>・<code>Secure</code> 属性や、ブラウザのサードパーティ Cookie 制限を疑います（→ <a href="#sec-6-1">6.1</a>）。</p>
+    </div>
+    <h3 id="sec-8-3">8.3 問題3：開発環境では動くが本番環境で動かない</h3>
+    <ol class="steps">
+      <li>環境変数の設定が正しいか</li>
+      <li>本番環境のオリジンが正しく設定されているか</li>
+      <li>HTTPS / HTTP の違いがないか（スキームが違えば別オリジン）</li>
+    </ol>
+    <h3 id="sec-8-4">8.4 ハマりやすい細かい点</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>症状</th><th>原因と対処</th></tr></thead>
+      <tbody>
+        <tr><td>オリジンを書いたのに通らない</td><td>オリジンの末尾に <code>/</code> を付けている（<code>http://127.0.0.1:5500/</code>）。オリジンにはパスが含まれないので、<code>http://127.0.0.1:5500</code> と書く</td></tr>
+        <tr><td><code>localhost</code> で許可したのに通らない</td><td>ブラウザで開いている URL が <code>127.0.0.1</code> になっている。<code>localhost</code> と <code>127.0.0.1</code> は文字列が違うので <strong>別オリジン</strong></td></tr>
+        <tr><td>フロントとバックエンドを同じ PC で動かしているのにエラー</td><td>例：フロント <code>localhost:5500</code>、API <code>localhost:5000</code>。<strong>ポートが違えば別オリジン</strong> なので CORS 設定が必要</td></tr>
+        <tr><td>プリフライトは成功するのに最後にエラー</td><td>本番リクエスト（PUT など）のレスポンスに <code>Access-Control-Allow-Origin</code> が付いていない</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">調べ方のコツ</p>
+      <p>エラーの調査には、開発者ツールの <strong>Network タブ</strong>（リクエスト・レスポンスのヘッダを1件ずつ確認できる）を使います。<code>Access-Control-Allow-Methods</code> などが実際に何を返しているかが見えます。Cookie が保存されているかは <strong>Application タブ</strong> で確認するのがおすすめです。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>セキュリティのベストプラクティス</h2>
+    <p>CORS エラーを「とにかく消す」ために許可を広げすぎると、それ自体が <strong>設定ミスの脆弱性</strong> になります（→ <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>設定</th><th>リスク</th></tr></thead>
+      <tbody>
+        <tr><td><code>*</code>（ワイルドカード）</td><td>どのサイトからでも API を呼んで、レスポンスを読める</td></tr>
+        <tr><td>オリジン検証なし</td><td>悪意あるサイトも許可してしまう</td></tr>
+        <tr><td><strong>推奨</strong></td><td>許可するオリジンを明示的にリストアップする</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-1">9.1 最小限のオリジンを許可する</h3>
+    <span class="code-label bad">危険な例</span>
+<pre><code>// 悪い例
+app.use(cors({
+  origin: '*'  // 全て許可（本番環境では非推奨）
+}));</code></pre>
+    <span class="code-label good">安全な例</span>
+<pre><code>// 良い例
+app.use(cors({
+  origin: ['https://myapp.com', 'https://www.myapp.com']
+}));</code></pre>
+
+    <h3 id="sec-9-2">9.2 届いた Origin をそのまま返さない</h3>
+    <p>複数のオリジンを許可したいとき、<code>Access-Control-Allow-Origin</code> を <strong>動的に設定</strong> することがあります。このとき <strong>Origin ヘッダの検証</strong> を必ず行います。リクエストの Origin を反射的にそのまま返すと、<code>*</code> と同じどころか、<code>*</code> では禁止されている Cookie 付きの読み取りまで <strong>あらゆるオリジンに許可</strong> してしまいます（任意オリジン許可の脆弱性）。</p>
+    <span class="code-label bad">危険な例</span>
+<pre><code>// ❌ 危険：任意の Origin をそのまま返す
+res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+res.setHeader('Access-Control-Allow-Credentials', 'true');</code></pre>
+    <span class="code-label good">安全な例</span>
+<pre><code>// ✅ 許可リストで検証
+if (allowedOrigins.includes(req.headers.origin)) {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+}</code></pre>
+    <p>認証情報を含む CORS は、<strong>必要最小限のオリジン</strong> だけに許可しましょう。また、検証は <code>includes</code> のような <strong>完全一致</strong> で行います。「<code>myapp.com</code> を含むか」のような部分一致だと、<code>myapp.com.evil.example</code> のようなドメインを通してしまいます。</p>
+
+    <h3 id="sec-9-3">9.3 必要最小限のメソッドとヘッダを許可する</h3>
+    <span class="code-label bad">危険な例</span>
+<pre><code>// 悪い例
+app.use(cors({
+  methods: ['*'],
+  allowedHeaders: ['*']
+}));</code></pre>
+    <span class="code-label good">安全な例</span>
+<pre><code>// 良い例
+app.use(cors({
+  methods: ['GET', 'POST'],        // 実際に使うメソッドのみ
+  allowedHeaders: ['Content-Type'] // 実際に使うヘッダのみ
+}));</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">ノートの記述からの修正：オプション名</p>
+      <p>もとのノートでは <code>allowMethods</code> / <code>allowHeaders</code> と書かれていましたが、Express の cors パッケージでの正しい名前は <strong><code>methods</code> / <code>allowedHeaders</code></strong> です（<code>allowMethods</code> / <code>allowHeaders</code> は Hono など別のフレームワークの名前）。cors パッケージは知らないオプションを黙って無視するため、名前を間違えると「絞ったつもりで既定値のまま」になります。</p>
+    </div>
+
+    <h3 id="sec-9-4">9.4 環境変数で管理する</h3>
+    <p>許可するオリジンをコードに直接書かず、<strong>環境変数</strong>（サーバーの起動時に外から渡す設定値）で管理すると、環境ごとの切り替えや追加が安全にできます。</p>
+<pre><code>const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+
+app.use(cors({
+  origin: allowedOrigins
+}));</code></pre>
+    <p>たとえば本番サーバーで <code>ALLOWED_ORIGINS=https://myapp.com,https://www.myapp.com</code> と設定します。未設定のときは開発用の <code>http://localhost:3000</code> だけが許可されるので、<strong>設定を忘れても全開放にはなりません</strong>。</p>
+
+    <h3 id="sec-9-5">9.5 AI にコードを書かせたときに見るところ</h3>
+    <p>AI が生成したサーバーコードは、エラーを消すために CORS を広く開けていることがあります。次の点を確認しましょう。</p>
+    <ul>
+      <li><code>origin: '*'</code> や <code>cors()</code>（引数なし）が本番用のコードに残っていないか</li>
+      <li><code>req.headers.origin</code> を検証せずにそのまま返していないか</li>
+      <li><code>credentials: true</code> が本当に必要か。必要なら許可オリジンが具体的に絞られているか</li>
+      <li>Cookie に <code>HttpOnly</code>・<code>Secure</code>・<code>SameSite</code> が付いているか。<code>SameSite=None</code> にしているなら、それが必要な構成か</li>
+    </ul>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>サーバー側での対処</strong>：CORS ミドルウェアを使う（推奨）。必要に応じて手動でヘッダを設定し、プリフライト（OPTIONS）も処理する</li>
+        <li><strong>クライアント側での対処</strong>：開発環境ではプロキシを使う。credentials を含む場合は適切に設定する</li>
+        <li>エラーメッセージのキーワード（No Allow-Origin／wildcard '*'／Method／Request header）で直すヘッダが決まる</li>
+        <li>認証情報付きは <code>credentials: 'include'</code> ＋ <code>Allow-Credentials: true</code> ＋ <strong>具体的なオリジン</strong>。<code>*</code> とは併用できない</li>
+        <li>Cookie が送られるかは CORS ではなく <strong>Cookie の属性（SameSite・Secure）</strong> が決める</li>
+        <li><strong>セキュリティ</strong>：本番環境では具体的なオリジンのみを許可し、Origin の反射は許可リストで検証する。メソッドとヘッダも必要最小限にし、設定は環境変数で管理する</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. CORSエラーが出たのに、curl で同じ API を叩くと成功しました。どこを直すべきですか？</summary>
+      <div class="body">
+        <p><strong>サーバーが返すレスポンスヘッダ</strong> です。CORS はブラウザが行うチェックなので、curl では起きません。サーバーは正常に応答しており、ブラウザが JavaScript への受け渡しを止めているだけなので、<code>Access-Control-Allow-Origin</code> などの許可ヘッダを返すように直します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 「must not be the wildcard '*' when the request's credentials mode is 'include'」と出ました。原因と直し方は？</summary>
+      <div class="body">
+        <p>Cookie を付ける設定（<code>credentials: 'include'</code>）なのに、サーバーが <code>Access-Control-Allow-Origin: *</code> を返しているのが原因です。<code>https://myapp.com</code> のような <strong>具体的なオリジン</strong> を返し、あわせて <code>Access-Control-Allow-Credentials: true</code> を返します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 複数オリジンを許可するために <code>req.headers.origin</code> をそのまま Allow-Origin に入れ、Credentials も true にしました。何が問題ですか？</summary>
+      <div class="body">
+        <p>どんなオリジンから来ても許可が返るため、<strong>罠サイトからも Cookie 付きでリクエストしてレスポンスを読める</strong> ようになります（任意オリジン許可の脆弱性）。許可リストを用意し、完全一致で検証したときだけ Origin を返すようにします。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. 開発中、<code>cors({ origin: 'http://localhost:5500' })</code> と設定したのに、<code>http://127.0.0.1:5500</code> で開いた画面からはエラーになります。なぜですか？</summary>
+      <div class="body">
+        <p><code>localhost</code> と <code>127.0.0.1</code> は同じ PC を指していても、文字列として違うので <strong>別のオリジン</strong> として扱われるからです。実際に開いている URL に合わせて許可オリジンを書きます（末尾に <code>/</code> も付けません）。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. Next.js の rewrites でプロキシを設定すると、なぜ CORS エラーが起きなくなるのですか？</summary>
+      <div class="body">
+        <p>ブラウザから見ると自分と <strong>同じオリジン</strong>（<code>/api/…</code>）にリクエストしているだけになり、別オリジンへの中継は Next.js のサーバーが行うからです。CORS はブラウザのルールで、サーバー同士の通信には関係しません。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. 画面 <code>https://myapp.com</code> と API <code>https://api.other.com</code> の構成で、CORS の設定は正しいのに Cookie がリクエストに付きません。何を疑いますか？</summary>
+      <div class="body">
+        <p>2つは <strong>別サイト</strong> なので、Cookie の <code>SameSite</code> 属性が <code>Lax</code>（多くのブラウザの既定）や <code>Strict</code> だと送られません。<code>SameSite=None; Secure</code> が必要で、さらにブラウザのサードパーティ Cookie 制限で止められる場合もあります。同じサイトにそろえるか、プロキシで同じオリジンに見せる構成も検討します。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/10_ブラウザのセキュリティモデル/05_CORSエラーの対処法</li>
+      <li>ノート：72_Web脆弱性対策/10_ブラウザのセキュリティモデル/02_CORS（徳丸本3章）— 徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方』第3章「認証情報を含むリクエスト」</li>
+      <li>ノート：72_Web脆弱性対策/10_ブラウザのセキュリティモデル/08_CORSとCookie（ねる前エンジニアリング）— https://www.youtube.com/watch?v=Gd8JYnzLDRM</li>
+      <li>ノート：72_Web脆弱性対策/10_ブラウザのセキュリティモデル/07_CORS入門（プログラミングチュートリアル）</li>
+      <li>MDN Web Docs「オリジン間リソース共有 (CORS)」「Request: credentials プロパティ」</li>
+      <li>expressjs/cors（npm パッケージ cors）のドキュメント</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-2_CORSの仕組み.html"><span class="lbl">← 前のページ</span>CORSの仕組み</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-4_CSP.html"><span class="lbl">次のページ →</span>CSP（コンテンツセキュリティポリシー）</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

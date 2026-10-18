@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ヘキサゴナルアーキテクチャ｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">20 アプリ内部構造 › 23 クリーン・ヘキサ・オニオン › ヘキサゴナルアーキテクチャ</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 アプリ内部構造 ／ 23 クリーン・ヘキサ・オニオン</span>
+      <h1>ヘキサゴナルアーキテクチャ</h1>
+      <p class="lead">ヘキサゴナルアーキテクチャ（ポート&amp;アダプタ）は、業務ロジックのコアを中心に置き、外の世界とはすべて「ポート（インターフェース）」と「アダプタ（実装）」でつなぐスタイルです。このページでは、Driving（入力側）と Driven（出力側）の2種類のポートの違い、フォルダ構成、テストのしやすさ、クリーンアーキテクチャとの対応関係を詳しく見ていきます。</p>
+      <p class="meta">もとにしたノート：ヘキサゴナルアーキテクチャ / 00_解説_アプリ内部構造</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><strong>ヘキサゴナル（六角形）アーキテクチャ</strong>は、Alistair Cockburn（アリスター・コーバーン）が 2005 年に提唱したアーキテクチャスタイルで、別名 <strong>「ポート&amp;アダプタ（Ports and Adapters）」</strong>と呼ばれます。</p>
+    <p><a href="23-1_依存性のルールとクリーンアーキテクチャ.html">クリーンアーキテクチャ</a>と<strong>ほぼ同じ思想</strong>ですが、図と用語が違います。特に「<strong>ビジネスロジックを中心に置き、外の世界はすべてアダプタでつなぐ</strong>」という考え方が明快で、同心円型アーキテクチャの入門として最も覚えやすいスタイルです。このページでは次の内容を扱います。</p>
+    <ul>
+      <li>ヘキサゴナルアーキテクチャが生まれた狙い</li>
+      <li>中心概念：<strong>Application Core・Port・Adapter</strong></li>
+      <li>2種類のポート：<strong>Driving Port（入力側）</strong>と <strong>Driven Port（出力側）</strong>、それぞれのコード例</li>
+      <li>依存の向きとフォルダ構成、実装のコツ</li>
+      <li>テストのしやすさ、メリット</li>
+      <li>クリーンアーキテクチャとの対応関係、よくある誤解</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>ヘキサゴナルアーキテクチャの狙い</h2>
+    <p>Cockburn がこのスタイルで目指したのは、<strong>アプリケーションを、人間のユーザーからでも、別のプログラムからでも、自動テストやバッチスクリプトからでも同じように動かせるようにし、最終的に使う実行環境のデバイスや DB から切り離して開発・テストできるようにする</strong>ことでした。</p>
+    <p>当時よくあった問題は、業務ロジックが UI のコードや DB アクセスのコードに混ざり込み、</p>
+    <ul>
+      <li>画面を操作しないと業務ロジックをテストできない</li>
+      <li>DB がないと何も動かない</li>
+      <li>入口（Web 画面、バッチ、他システム連携）が増えるたびに、同じロジックを書き写すことになる</li>
+    </ul>
+    <p>というものです。そこで、アプリケーションの「内側」と「外側」をはっきり分け、内側と外側の接点を<strong>ポート（差し込み口）</strong>として定義し、外側の技術ごとに<strong>アダプタ（変換器）</strong>を差し込む、という構造を考えました。電気製品のコンセントとプラグ、あるいは USB ポートと各種機器をイメージすると分かりやすいでしょう。</p>
+    <div class="callout key">
+      <p class="callout-title">一言でいうと</p>
+      <p>コアは「どんな形の差し込み口があるか」だけを決める。外の世界は、その差し込み口に合うアダプタを作って差し込む。<strong>アダプタを替えても、コアは一切変わらない</strong>。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>六角形の図と3つの中心概念</h2>
+    <p>真ん中に <strong>アプリケーションコア</strong>を置き、その周りを <strong>ポート → アダプタ → 外部</strong> の順で囲みます。図を六角形で描くことが多いので「ヘキサゴナル」と呼ばれます。慣習として、<strong>左側にコアを呼び出す側（入力）</strong>、<strong>右側にコアから呼び出される側（出力）</strong>を描きます。</p>
+    <figure>
+    <svg viewBox="0 0 760 440" role="img" aria-label="ヘキサゴナルアーキテクチャの六角形とDrivingポート・Drivenポート">
+      <defs>
+        <marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker>
+      </defs>
+      <text x="75" y="44" text-anchor="middle" class="d-text-bold">Driving Adapter</text>
+      <text x="75" y="62" text-anchor="middle" class="d-text-sub">（外からコアを呼ぶ）</text>
+      <text x="680" y="44" text-anchor="middle" class="d-text-bold">Driven Adapter</text>
+      <text x="680" y="62" text-anchor="middle" class="d-text-sub">（コアから呼ばれる）</text>
+      <polygon points="380,70 530,150 530,290 380,370 230,290 230,150" class="d-box-good"/>
+      <text x="380" y="196" text-anchor="middle" class="d-text-bold">Application Core</text>
+      <text x="380" y="220" text-anchor="middle" class="d-text-sub">ドメイン＋ユースケース</text>
+      <text x="380" y="240" text-anchor="middle" class="d-text-sub">外部のことは何も知らない</text>
+      <rect x="175" y="190" width="110" height="60" rx="8" class="d-box-accent"/>
+      <text x="230" y="215" text-anchor="middle" class="d-text">入力ポート</text>
+      <text x="230" y="235" text-anchor="middle" class="d-text-sub">Driving Port</text>
+      <rect x="475" y="190" width="110" height="60" rx="8" class="d-box-accent"/>
+      <text x="530" y="215" text-anchor="middle" class="d-text">出力ポート</text>
+      <text x="530" y="235" text-anchor="middle" class="d-text-sub">Driven Port</text>
+
+      <rect x="10" y="110" width="130" height="48" rx="8" class="d-box"/>
+      <text x="75" y="139" text-anchor="middle" class="d-text">HTTP Controller</text>
+      <rect x="10" y="196" width="130" height="48" rx="8" class="d-box"/>
+      <text x="75" y="225" text-anchor="middle" class="d-text">CLI コマンド</text>
+      <rect x="10" y="282" width="130" height="48" rx="8" class="d-box"/>
+      <text x="75" y="311" text-anchor="middle" class="d-text">テストコード</text>
+      <line x1="140" y1="134" x2="172" y2="203" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="140" y1="220" x2="171" y2="220" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="140" y1="306" x2="172" y2="237" class="d-line" marker-end="url(#arw1)"/>
+
+      <rect x="610" y="110" width="140" height="48" rx="8" class="d-box"/>
+      <text x="680" y="139" text-anchor="middle" class="d-text">MySQL Repository</text>
+      <rect x="610" y="196" width="140" height="48" rx="8" class="d-box"/>
+      <text x="680" y="225" text-anchor="middle" class="d-text">InMemory Repo</text>
+      <rect x="610" y="282" width="140" height="48" rx="8" class="d-box"/>
+      <text x="680" y="311" text-anchor="middle" class="d-text">Kafka Producer</text>
+      <line x1="610" y1="134" x2="589" y2="203" class="d-line-accent" stroke-dasharray="6 4" marker-end="url(#arw2)"/>
+      <line x1="610" y1="220" x2="589" y2="220" class="d-line-accent" stroke-dasharray="6 4" marker-end="url(#arw2)"/>
+      <line x1="610" y1="306" x2="589" y2="237" class="d-line-accent" stroke-dasharray="6 4" marker-end="url(#arw2)"/>
+
+      <text x="75" y="372" text-anchor="middle" class="d-text-sub">実線：ポートを呼ぶ（使う）</text>
+      <text x="680" y="372" text-anchor="middle" class="d-text-sub">破線：ポートを実装する</text>
+      <text x="380" y="410" text-anchor="middle" class="d-text-accent">どちら側の矢印もコア（のポート）を向く ＝ 依存は外 → 内</text>
+    </svg>
+    <figcaption>図1：六角形のコアと、左右のポート・アダプタ。アダプタは差し替え可能で、コアは変わらない</figcaption>
+    </figure>
+    <div class="grid c3">
+      <div class="card good"><h4>1. Application Core（中心）</h4><ul>
+        <li>業務ロジックの塊</li>
+        <li><strong>外部のことは何も知らない</strong></li>
+        <li>クリーンアーキテクチャの Entities ＋ Use Cases に相当</li>
+      </ul></div>
+      <div class="card accent"><h4>2. Port（ポート）</h4><ul>
+        <li><strong>コアが外と会話するための「窓口」</strong></li>
+        <li>実体は単なるインターフェース</li>
+        <li>Driving Port と Driven Port の2種類がある</li>
+      </ul></div>
+      <div class="card"><h4>3. Adapter（アダプタ）</h4><ul>
+        <li><strong>ポートと外部をつなぐ具体的な実装</strong></li>
+        <li>同じポートに対して複数のアダプタを取り替え可能</li>
+        <li>例：<code>PostgresUserRepository</code>, <code>MongoUserRepository</code></li>
+      </ul></div>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>2種類のポート — Driving と Driven</h2>
+    <p>ポートには、<strong>誰が会話を始めるか</strong>によって2種類あります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>Driving Port（駆動ポート）</th><th>Driven Port（被駆動ポート）</th></tr></thead>
+      <tbody>
+        <tr><td>図の位置</td><td>左側・入力側（Primary）</td><td>右側・出力側（Secondary）</td></tr>
+        <tr><td>会話を始めるのは</td><td><strong>外部</strong>がコアを呼ぶ</td><td><strong>コア</strong>が外部を呼ぶ</td></tr>
+        <tr><td>ポートの中身</td><td>Use Case のインターフェース</td><td>Repository・外部サービスのインターフェース</td></tr>
+        <tr><td>ポートを実装するのは</td><td>コア（Use Case のサービス）</td><td>アダプタ（DB・メッセージングなどの具体実装）</td></tr>
+        <tr><td>ポートを使うのは</td><td>アダプタ（Controller・CLI・テスト）</td><td>コア</td></tr>
+        <tr><td>アダプタの例</td><td>HTTP Controller、CLI、Slack Bot、バッチ、テスト</td><td>MySQL Repository、インメモリ Repository、Kafka Producer、メール送信</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">ポイント：どちらのポートもコア側に置かれる</p>
+      <p>Driving Port はコアが「こう呼んでください」と公開する入口、Driven Port はコアが「こういう機能をください」と要求する出口です。<strong>どちらもコアが定義する</strong>ので、アダプタはどちら側でもコアに依存し、コアはアダプタを知りません。</p>
+    </div>
+
+    <h3>Driving Port（左側・入力側）</h3>
+    <p><strong>外部がコアを呼び出すときに使う窓口</strong>です。</p>
+<pre><code>// Driving Port
+interface PlaceOrderPort {
+  execute(input: PlaceOrderInput): Promise&lt;Order&gt;;
+}
+
+// コア（実装）
+class PlaceOrderService implements PlaceOrderPort { /* ... */ }
+
+// Driving Adapter（外から呼ぶ側）
+class HTTPOrderController {
+  constructor(private port: PlaceOrderPort) {}
+  async handle(req) {
+    return this.port.execute({ items: req.body.items });
+  }
+}
+
+// 別の Driving Adapter：CLI
+class CLIOrderCommand {
+  constructor(private port: PlaceOrderPort) {}
+  run(args) { return this.port.execute({ items: args.items }); }
+}</code></pre>
+    <p>→ <strong>HTTP から呼んでも CLI から呼んでも、コアは同じ</strong>です。アダプタの仕事は、HTTP リクエストやコマンドライン引数を <code>PlaceOrderInput</code> に変換することだけです。</p>
+
+    <h3>Driven Port（右側・出力側）</h3>
+    <p><strong>コアが外を呼び出すときに使う窓口</strong>です。</p>
+<pre><code>// Driven Port
+interface OrderRepository {
+  save(order: Order): Promise&lt;void&gt;;
+}
+
+// コアはこのインターフェースだけを知る
+class PlaceOrderService {
+  constructor(private repo: OrderRepository) {}
+}
+
+// Driven Adapter（外の具体実装）
+class MySQLOrderRepository implements OrderRepository { /* ... */ }
+class InMemoryOrderRepository implements OrderRepository { /* テスト用 */ }</code></pre>
+    <p>→ <strong>DB を MySQL からインメモリに差し替えても、コアは変更なし</strong>です。Driven Port の仕組みは、<a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a>そのものです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>フォルダ構成例</h2>
+    <p>ポートの In / Out、アダプタの In / Out をフォルダで分けると、依存の向きがひと目で分かります。</p>
+<pre><code>src/
+├─ core/                  ← 中心
+│   ├─ domain/            ← Entity
+│   │   └─ Order.ts
+│   └─ application/       ← UseCase
+│       ├─ ports/         ← ポート（インターフェース）
+│       │   ├─ in/        ← Driving Port
+│       │   │   └─ PlaceOrderPort.ts
+│       │   └─ out/       ← Driven Port
+│       │       └─ OrderRepository.ts
+│       └─ services/
+│           └─ PlaceOrderService.ts
+├─ adapters/
+│   ├─ in/                ← Driving Adapter（入力）
+│   │   ├─ web/           ← HTTP Controller
+│   │   └─ cli/           ← CLI コマンド
+│   └─ out/               ← Driven Adapter（出力）
+│       ├─ persistence/   ← MySQL Repository
+│       └─ messaging/     ← Kafka Producer
+└─ main.ts                ← 配線（どのアダプタを差し込むかを決める）</code></pre>
+    <p><code>main.ts</code> は、クリーンアーキテクチャの Frameworks &amp; Drivers 層にある配線板と同じ役割です。ここで「本番では MySQL アダプタ、ローカル開発ではインメモリアダプタ」のように、どのアダプタを差し込むかを決めます（<a href="24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root</a> 参照）。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>実装のコツ</h2>
+    <ol class="steps">
+      <li><strong>Port は必ず core 側に置く</strong><br>ポートが core の外にあると、core が外部に依存してしまいます。<strong>インターフェースは core に、実装は adapters に</strong>置きます。</li>
+      <li><strong>Adapter は薄く</strong><br>アダプタに業務ロジックを書きません。<strong>変換だけ</strong>の薄い層に保ちます。アダプタに「在庫が足りなければ…」のような判断が入り始めたら、それはコアに移すべきサインです。</li>
+      <li><strong>In と Out を分ける</strong><br>Driving Port と Driven Port は<strong>フォルダで明確に分ける</strong>と、依存の向きがひと目で分かります。</li>
+    </ol>
+
+    <h2 id="sec-7"><span class="num">7.</span>テスト例 — インメモリのアダプタを差し込む</h2>
+<pre><code>// インメモリのアダプタでテスト
+test('注文が保存される', async () =&gt; {
+  const inMemoryRepo = {
+    orders: [] as Order[],
+    async save(o: Order) { this.orders.push(o); }
+  };
+  const service = new PlaceOrderService(inMemoryRepo);
+
+  await service.execute({ items: [{ id: 'a', price: 100 }] });
+
+  expect(inMemoryRepo.orders.length).toBe(1);
+});</code></pre>
+    <p><strong>DB を起動せず、モックフレームワークも不要</strong>です。インメモリのアダプタは「本物と同じポートを実装した、もう1つのアダプタ」にすぎません。これがヘキサゴナルの一番の恩恵です。</p>
+    <p class="small muted">※ もとのノートの例では変数に <code>OrderRepository</code> 型を注釈していましたが、その型には <code>orders</code> プロパティがないためアサーションで型エラーになります。ここでは型注釈を外し、構造的型付けでポートに適合させる形にしています。</p>
+    <div class="callout tip">
+      <p class="callout-title">テストの分担が自然に決まる</p>
+      <p>コアはインメモリアダプタでユニットテスト、Driving Adapter（Controller など）は変換が正しいかをユニットテスト、Driven Adapter（MySQL Repository など）は本物の DB を使った統合テスト、という分担が自然に生まれます。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>メリット</h2>
+    <h3>1. テストが非常にしやすい</h3>
+    <ul>
+      <li>インメモリのアダプタを差し込めば、DB なしでコアのすべてをテストできる</li>
+      <li>Driving Adapter はユニットテスト、Driven Adapter は統合テストという分担が自然</li>
+    </ul>
+    <h3>2. 外部依存の差し替えが簡単</h3>
+    <ul>
+      <li>DB の変更、メッセージブローカーの変更、UI の変更が、すべてアダプタの差し替えで済む</li>
+      <li>レガシーシステムからの移行でも、中核を先に作ってアダプタを後からつなぎ替えられる</li>
+    </ul>
+    <h3>3. 新しい入口を増やしやすい</h3>
+    <ul>
+      <li>既存の HTTP API に加えて、CLI・Slack Bot・バッチ処理を増やしたい場合、新しい Driving Adapter を書くだけで済む</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">デメリット・注意点</p>
+      <p>インターフェースとアダプタのぶん、ファイル数と間接参照が増えます。画面から保存まで一直線の小さな CRUD アプリでは、手間に見合わないことがあります。ポートは<strong>外部との境界にだけ</strong>置くのが原則です（第 10 章「誤解3」）。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>クリーンアーキテクチャとの関係</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>ヘキサゴナル</th><th>クリーン</th></tr></thead>
+      <tbody>
+        <tr><td>発案者</td><td>Alistair Cockburn（2005）</td><td>Robert C. Martin（2012）</td></tr>
+        <tr><td>図</td><td>六角形</td><td>同心円</td></tr>
+        <tr><td>用語</td><td>Port, Adapter</td><td>Boundary, Interface Adapter</td></tr>
+        <tr><td>層の数</td><td>コア＋アダプタ（2層）</td><td>4層</td></tr>
+        <tr><td>本質</td><td>同じ</td><td>同じ</td></tr>
+      </tbody>
+    </table></div>
+    <p>両者は<strong>ほとんど同じことを言っています</strong>。クリーンアーキテクチャのほうが、コアの中身（Entities と Use Cases）を分けるなど、<strong>層の内訳が細かく定義</strong>されています。用語はおおよそ次のように対応します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ヘキサゴナル</th><th>クリーンアーキテクチャでの近いもの</th></tr></thead>
+      <tbody>
+        <tr><td>Application Core</td><td>Entities ＋ Use Cases</td></tr>
+        <tr><td>Driving Port</td><td>Use Case の入力境界（Input Port / Input Boundary）</td></tr>
+        <tr><td>Driven Port</td><td>Use Case 層に置く Repository・Gateway のインターフェース（Output Port を含む）</td></tr>
+        <tr><td>Driving Adapter</td><td>Controller（Interface Adapters 層）</td></tr>
+        <tr><td>Driven Adapter</td><td>Repository 実装・Gateway 実装（Interface Adapters 層）＋ DB ドライバ等（Frameworks &amp; Drivers 層）</td></tr>
+        <tr><td>main.ts（配線）</td><td>Frameworks &amp; Drivers 層の main（Composition Root）</td></tr>
+      </tbody>
+    </table></div>
+    <p>3つのスタイル（クリーン・ヘキサゴナル・オニオン）の比較は <a href="23-3_オニオンと3つの比較.html">オニオンアーキテクチャと3つの比較</a> で詳しく扱います。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>よくある誤解</h2>
+    <details open><summary>誤解1：ポートとアダプタは同じもの</summary><div class="body">
+      <p>違います。<strong>ポート＝インターフェース（設計上の約束）</strong>、<strong>アダプタ＝その実装（具体物）</strong>です。1つのポートに対して、本番用・テスト用など複数のアダプタがありえます。</p>
+    </div></details>
+    <details open><summary>誤解2：六角形は6層を意味する</summary><div class="body">
+      <p><strong>六角形の面の数に特別な意味はありません</strong>。Cockburn は、四角形以外の形にして「上下（層）」の印象を避け、ポートとアダプタを描き込む余白を確保するために六角形を選んだだけです。3面でも8面でも本質は変わりません。</p>
+    </div></details>
+    <details open><summary>誤解3：すべての機能にポートを作る</summary><div class="body">
+      <p>過剰設計になります。<strong>外部との境界にだけ</strong>ポートを置けば十分です。コア内部のクラス同士の呼び出しにまでポートは要りません。</p>
+    </div></details>
+    <details open><summary>誤解4：Driven Port はアダプタ側（infrastructure 側）に置く</summary><div class="body">
+      <p>Repository のインターフェースを infrastructure フォルダに置いてしまうと、コアが infrastructure を import することになり、依存が外を向きます。<strong>Driven Port もコアが定義し、コア側に置きます</strong>。</p>
+    </div></details>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <ul>
+      <li>ヘキサゴナルアーキテクチャ（ポート&amp;アダプタ）は Alistair Cockburn が 2005 年に提唱。アプリを UI・テスト・バッチのどこからでも同じように動かし、DB などから切り離して開発・テストできるようにするのが狙い</li>
+      <li>構成要素は <strong>Application Core（外を知らない業務ロジック）</strong>・<strong>Port（窓口＝インターフェース）</strong>・<strong>Adapter（ポートと外部をつなぐ実装）</strong></li>
+      <li><strong>Driving Port</strong>：外がコアを呼ぶ入口（Controller・CLI・テストが使う）。<strong>Driven Port</strong>：コアが外を呼ぶ出口（MySQL・インメモリ・Kafka が実装する）</li>
+      <li>ポートはどちらも <strong>core 側に置く</strong>。アダプタは薄く、変換だけ。In と Out をフォルダで分ける</li>
+      <li>インメモリアダプタを差し込めば、DB もモックフレームワークもなしにコアをテストできる</li>
+      <li>クリーンアーキテクチャとは本質的に同じ。クリーンのほうが層の内訳が細かい。六角形の「6」に意味はない</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Alistair Cockburn「Hexagonal Architecture」：<a href="https://alistair.cockburn.us/hexagonal-architecture/">https://alistair.cockburn.us/hexagonal-architecture/</a></li>
+      <li>Robert C. Martin「The Clean Architecture」（2012）：<a href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="23-1_依存性のルールとクリーンアーキテクチャ.html"><span class="lbl">← 前のページ</span>依存性のルールとクリーンアーキテクチャ</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="23-3_オニオンと3つの比較.html"><span class="lbl">次のページ →</span>オニオンアーキテクチャと3つの比較</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

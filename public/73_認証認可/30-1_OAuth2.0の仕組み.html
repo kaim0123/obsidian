@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OAuth 2.0の仕組み｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 フェデレーション › OAuth 2.0の仕組み</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 フェデレーション</span>
+      <h1>OAuth 2.0の仕組み</h1>
+      <p class="lead">「○○のアカウントでログイン」「○○と連携」ボタンの裏で動いているのが <strong>OAuth 2.0</strong> です。ひとことで言うと、<strong>パスワードを渡さずに、権限だけを貸す</strong> 仕組みです。前半では、写真印刷アプリを例に「誰が何を持っているか」をたとえ話で追い、引換券（認可コード）・通行証（アクセストークン）・割符（PKCE）の意味をつかみます。後半では、各ステップのリクエスト、React と Express による実装例、フローの種類、主なプロバイダー、セキュリティの注意点を見ていきます。</p>
+      <p class="meta">もとにしたノート：30_フェデレーション/01_OAuth2.0とは、02_別のアカウントでログインの裏側_OAuth（ねる前エンジニアリング）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>パスワードを預ける昔のやり方の 3 つの問題と、OAuth 2.0 がそれをどう解くか</li>
+        <li>4 つの登場人物と、認可コードフローの流れ（受付で許可 → 引換券 → 通行証）</li>
+        <li>なぜ引換券をはさむのか（表の道と裏の道）、通行証の範囲・期限・取り消し</li>
+        <li>PKCE（割符）が防ぐ横取り、OAuth 2.0 と OpenID Connect（ログイン）の違い</li>
+        <li>戻ってきたときの処理・実装例・フローの種類・AI に書かせたときのチェックポイント</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>OAuth 2.0 とは：パスワードを渡さずに権限だけを貸す</h2>
+    <p><strong>OAuth 2.0（オーオース 2.0）</strong> は「Open Authorization 2.0」の略で、<strong>ユーザーが自分のアカウント情報（パスワード）を渡すことなく、第三者のアプリケーションにアクセス権限を与えるためのプロトコル</strong>（通信の決まりごと）です。現代の Web アプリケーションで広く使われています。</p>
+    <p>アプリでよく見る「○○のアカウントでログイン」ボタンを押すと、別の画面に飛んで、また戻ってきます。このページでは、その「行って戻る」流れを登場人物ごとに追います。鍵になる考え方は <strong>パスワードを渡さずに権限だけを貸す</strong> ことです。</p>
+
+    <h3 id="sec-1-1">1.1 実務でこんな場面に出会います</h3>
+    <ol class="steps">
+      <li>新しいアプリに、外部のアカウントでのログインを付けてほしいと言われる</li>
+      <li>連携画面に「次の権限を求めています」と出る（よく読まずに許可しがち）</li>
+      <li>「トークンという文字がログに出ている」と指摘される</li>
+      <li>AI が書いた連携コードをレビューすることになる</li>
+    </ol>
+    <p>どれも、<strong>登場人物と、誰が何を持っているか</strong> が分かれば判断できます。</p>
+
+    <h3 id="sec-1-2">1.2 日常生活での例え：ホテルの鍵カード</h3>
+    <p>OAuth 2.0 は「ホテルの鍵カード」のようなものです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ホテル</th><th>OAuth 2.0</th></tr></thead>
+      <tbody>
+        <tr><td>あなた（チェックインする人）</td><td>ユーザー</td></tr>
+        <tr><td>フロント（身分を確認して鍵カードを発行）</td><td>認可サーバー</td></tr>
+        <tr><td>鍵カード（部屋に入る権限を持つ）</td><td>アクセストークン</td></tr>
+        <tr><td>部屋（鍵カードがあれば入れる）</td><td>リソースサーバー</td></tr>
+      </tbody>
+    </table></div>
+    <p>フロントで身分を証明すれば、鍵カードを使って部屋に入れます。OAuth 2.0 も同じように、認可サーバーで本人確認と許可をすれば、アクセストークンを使ってリソース（データ）にアクセスできます。認証（本人確認）と認可（権限を与えること）の違いは <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> で解説しています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>昔のやり方：パスワードを預ける</h2>
+    <p>写真を印刷してくれるアプリがあり、あなたの写真は別の写真サービスに置いてあるとします。印刷アプリはその写真を読みたいわけです。OAuth がなかった頃は、<strong>写真サービスのパスワードを印刷アプリに教えて</strong> いました。印刷アプリはあなたのふりをしてログインします。</p>
+<pre><code>❌ 従来の方法:
+ユーザー → アプリ: 「パスワードは123456です」
+アプリ → サービス: 「パスワード123456でログインします」
+
+✅ OAuth2.0:
+ユーザー → 認証サーバー: 「このアプリにアクセス権限を付与します」
+認証サーバー → アプリ: 「アクセストークンを発行します」
+アプリ → サービス: 「アクセストークンでアクセスします」</code></pre>
+    <p>パスワードを預けるやり方には、3 つの問題があります。</p>
+    <div class="grid c3">
+      <div class="card"><h4>① できることが広すぎる</h4><p>頼んだのは写真を読むことだけなのに、写真を消すこともメールを読むこともできてしまいます。</p></div>
+      <div class="card"><h4>② 鍵が残る</h4><p>アプリの手元にパスワードが残ります。アプリが情報を漏らせば、アカウントごと取られます。</p></div>
+      <div class="card"><h4>③ 1 つだけ止められない</h4><p>やめてほしくなったらパスワードを変えるしかなく、他に連携していたアプリも全部止まります。</p></div>
+    </div>
+    <p>OAuth はこの 3 つを解くために作られました。OAuth 2.0 の主な目的も、これに対応しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>OAuth 2.0 の目的</th><th>内容</th><th>解く問題</th></tr></thead>
+      <tbody>
+        <tr><td><strong>パスワードを共有しない</strong></td><td>第三者のアプリにパスワードを渡さずにアクセス権限を与えられる</td><td>② 鍵が残る</td></tr>
+        <tr><td><strong>限定的なアクセス権限</strong></td><td>アプリに必要な権限だけを与えられる</td><td>① できることが広すぎる</td></tr>
+        <tr><td><strong>アクセス権限の取り消し</strong></td><td>いつでも（そのアプリの分だけ）権限を取り消せる</td><td>③ 1 つだけ止められない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>合鍵ではなく、期限つきの通行証</h2>
+    <p>友達に荷物を取ってきてもらうとき、家の合鍵は渡したくありません。何でも開いてしまうからです。ホテルなら、フロントが <strong>その部屋だけ・今夜までしか使えないカードキー</strong> を作ってくれます。なくしてもフロントで止めてもらえます。</p>
+    <p>OAuth の考え方も同じです。合鍵（パスワード）ではなく <strong>通行証</strong> を渡します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>通行証の性質</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>範囲</strong></td><td>決めたことだけできる（写真を読むだけ）</td></tr>
+        <tr><td><strong>期限</strong></td><td>例えば 1 時間で使えなくなる</td></tr>
+        <tr><td><strong>取り消し</strong></td><td>そのアプリの通行証だけを止められる</td></tr>
+      </tbody>
+    </table></div>
+    <p>範囲の例としては、次のように「アプリごとに必要な権限だけ」を与えます。</p>
+<pre><code>例：
+- 写真アプリ: 写真へのアクセスのみ
+- カレンダーアプリ: カレンダーへのアクセスのみ
+- メールアプリ: メールへのアクセスのみ</code></pre>
+    <p>そして <strong>パスワードはフロントにだけ見せ、アプリには見せません</strong>。このフロントにあたるのが、写真サービスの <strong>受付</strong> です。このページでは、この係をずっと「受付」と呼びます。必要な権限だけを与える考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html#sec-2">最小権限の原則</a>（セキュリティ基礎）とつながっています。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>登場人物：誰が何を持っているか</h2>
+    <p>本物の流れには 4 者が登場します。OAuth 2.0 の正式な役割名と、たとえ話の呼び方を対応させておきます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>正式な役割</th><th>たとえ話</th><th>説明</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>リソースオーナー</strong>（Resource Owner）</td><td>あなた（のブラウザ）</td><td>ユーザーのこと。自分のリソース（データ）の所有者</td><td>Google アカウントを持っているあなた。Google アカウントのデータがリソース</td></tr>
+        <tr><td><strong>クライアント</strong>（Client）</td><td>印刷アプリ</td><td>ユーザーのリソースにアクセスしたいアプリケーション</td><td>あなたが使っている Web アプリ、モバイルアプリ、デスクトップアプリ</td></tr>
+        <tr><td><strong>認可サーバー</strong>（Authorization Server）</td><td>写真サービスの受付</td><td>本人確認とトークン（通行証）の発行を担当するサーバー</td><td>Google・GitHub・Facebook の認可サーバー</td></tr>
+        <tr><td><strong>リソースサーバー</strong>（Resource Server）</td><td>写真の置き場</td><td>実際のデータ（リソース）を提供するサーバー</td><td>Google の API サーバー（ユーザー情報、メールなど）、GitHub の API サーバー（リポジトリ情報など）</td></tr>
+      </tbody>
+    </table></div>
+    <p>受付と置き場は別の係です。<strong>受付は通行証を出す係、置き場は写真を返す係</strong> で、役割が違います。</p>
+    <div class="callout tip">
+      <p class="callout-title">用語のゆれ：「認証サーバー」と「認可サーバー」</p>
+      <p>もとのノート（01_OAuth2.0とは）では Authorization Server を「認証サーバー」、認可コードを「認証コード」と書いています。仕様上の名前は <strong>認可サーバー</strong>・<strong>認可コード</strong>（authorization code）です。このページでは「認可サーバー」「認可コード」に統一し、ノートのコードやコメントはそのまま載せています。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>流れ①：受付でログインして、許可する</h2>
+    <p>ここからは、最も一般的な <strong>認可コードフロー</strong>（Authorization Code Flow）を追います。まず全体図です（PKCE の部分は <a href="#sec-9">9 章</a> で説明します）。</p>
+    <figure>
+    <svg viewBox="0 0 720 600" role="img" aria-label="認可コードフローとPKCEのシーケンス図。印刷アプリがstateと秘密の答えを作り写しを計算する。①ブラウザが戻り先・範囲・state・写しを持って受付へ転送される。②受付の画面でログインし範囲を読んで許可する。③受付が引換券とstateを持たせてブラウザを戻す。④ブラウザが印刷アプリに戻り、アプリがstateを控えと比べる。ここまでが表の道。⑤アプリが引換券・アプリの鍵・秘密の答えを裏の道で受付に送る。受付は答えを崩して写しと比べる。⑥受付が通行証と更新券を返す。⑦アプリが通行証を置き場に見せ、⑧置き場は範囲内の写真だけを返す">
+      <defs>
+        <marker id="arw3011a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="10" width="140" height="46" rx="8" class="d-box"/>
+      <text x="90" y="31" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="90" y="48" text-anchor="middle" class="d-text-sub">あなた</text>
+      <rect x="200" y="10" width="140" height="46" rx="8" class="d-box-accent"/>
+      <text x="270" y="31" text-anchor="middle" class="d-text-bold">印刷アプリ</text>
+      <text x="270" y="48" text-anchor="middle" class="d-text-sub">クライアント</text>
+      <rect x="400" y="10" width="140" height="46" rx="8" class="d-box"/>
+      <text x="470" y="31" text-anchor="middle" class="d-text-bold">受付</text>
+      <text x="470" y="48" text-anchor="middle" class="d-text-sub">認可サーバー</text>
+      <rect x="570" y="10" width="140" height="46" rx="8" class="d-box"/>
+      <text x="640" y="31" text-anchor="middle" class="d-text-bold">写真の置き場</text>
+      <text x="640" y="48" text-anchor="middle" class="d-text-sub">リソースサーバー</text>
+      <path d="M90,56 L90,590" class="d-line-dash"/>
+      <path d="M270,56 L270,590" class="d-line-dash"/>
+      <path d="M470,56 L470,590" class="d-line-dash"/>
+      <path d="M640,56 L640,590" class="d-line-dash"/>
+
+      <rect x="190" y="70" width="160" height="46" rx="8" class="d-box-accent"/>
+      <text x="270" y="89" text-anchor="middle" class="d-text-sub">state と秘密の答えを作り</text>
+      <text x="270" y="107" text-anchor="middle" class="d-text-sub">写しを計算（PKCE）</text>
+
+      <text x="280" y="142" text-anchor="middle" class="d-text-sub">① 受付へ転送：戻り先・範囲・state・写し</text>
+      <path d="M90,150 L468,150" class="d-line" marker-end="url(#arw3011a)"/>
+      <text x="280" y="192" text-anchor="middle" class="d-text-sub">② 受付の画面でログイン、範囲を読んで許可</text>
+      <path d="M90,200 L468,200" class="d-line" marker-end="url(#arw3011a)"/>
+      <text x="280" y="242" text-anchor="middle" class="d-text-sub">③ 引換券（認可コード）＋ state を持たせて戻す</text>
+      <path d="M470,250 L92,250" class="d-line" marker-end="url(#arw3011a)"/>
+      <text x="180" y="292" text-anchor="middle" class="d-text-sub">④ 引換券＋state</text>
+      <path d="M90,300 L268,300" class="d-line" marker-end="url(#arw3011a)"/>
+      <rect x="190" y="312" width="160" height="34" rx="8" class="d-box-good"/>
+      <text x="270" y="334" text-anchor="middle" class="d-text-sub">state を控えと比べる</text>
+
+      <rect x="575" y="180" width="130" height="60" rx="8" class="d-box-warn"/>
+      <text x="640" y="204" text-anchor="middle" class="d-text-bold">表の道</text>
+      <text x="640" y="225" text-anchor="middle" class="d-text-sub">ブラウザを通る</text>
+
+      <path d="M20,366 L700,366" class="d-line-dash"/>
+
+      <text x="370" y="392" text-anchor="middle" class="d-text-sub">⑤ 引換券＋アプリの鍵＋答え</text>
+      <path d="M270,400 L468,400" class="d-line" marker-end="url(#arw3011a)"/>
+      <rect x="395" y="412" width="150" height="46" rx="8" class="d-box-good"/>
+      <text x="470" y="431" text-anchor="middle" class="d-text-sub">答えを崩して</text>
+      <text x="470" y="449" text-anchor="middle" class="d-text-sub">写しと比べる</text>
+      <text x="370" y="482" text-anchor="middle" class="d-text-sub">⑥ 通行証＋更新券</text>
+      <path d="M470,490 L272,490" class="d-line" marker-end="url(#arw3011a)"/>
+      <text x="455" y="527" text-anchor="middle" class="d-text-sub">⑦ 通行証（アクセストークン）を見せる</text>
+      <path d="M270,535 L638,535" class="d-line" marker-end="url(#arw3011a)"/>
+      <text x="455" y="567" text-anchor="middle" class="d-text-sub">⑧ 範囲内の写真だけ返す</text>
+      <path d="M640,575 L272,575" class="d-line" marker-end="url(#arw3011a)"/>
+
+      <rect x="25" y="420" width="130" height="60" rx="8" class="d-box-good"/>
+      <text x="90" y="444" text-anchor="middle" class="d-text-bold">裏の道</text>
+      <text x="90" y="465" text-anchor="middle" class="d-text-sub">サーバー同士</text>
+    </svg>
+    <figcaption>図：認可コードフロー＋PKCE。表の道には引換券と写しだけを流し、通行証は裏の道で受け取る</figcaption>
+    </figure>
+
+    <p>あなたが印刷アプリで「写真サービスと連携」を押したところから始めます。</p>
+    <ol class="steps">
+      <li>印刷アプリは <strong>自分ではパスワードを聞きません</strong>。代わりにブラウザを受付へ送り出します。これを <strong>転送（リダイレクト）</strong> と言います。</li>
+      <li>そのとき、ブラウザに「手紙」を持たせます。中身は 3 つです。
+        <ul>
+          <li><strong>戻り先</strong>：終わったら印刷アプリに戻してください（<code>redirect_uri</code>）</li>
+          <li><strong>範囲（スコープ）</strong>：写真を読むだけを頼みます（<code>scope</code>）</li>
+          <li><strong>合言葉（state）</strong>：あとで本物の戻りか確かめるためのもの。アプリの手元にも控えておきます（<code>state</code>）</li>
+        </ul>
+      </li>
+      <li>ブラウザが受付に着いたら、あなたは <strong>受付の画面で</strong> パスワードを入れます。<strong>印刷アプリの画面ではありません</strong>。パスワードを見るのは受付だけです。</li>
+      <li>次に受付が「印刷アプリが写真を読みたいそうです。許可しますか」と聞いてきます。これが <strong>連携画面（同意画面）</strong> です。</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">連携画面は読んでから押す</p>
+      <p>連携画面に書いてある範囲が、そのまま通行証の範囲になります。よく読まずに押しがちな画面ですが、<strong>読んでから押しましょう</strong>。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>流れ②：引換券を、通行証に替える</h2>
+    <ol class="steps">
+      <li>あなたが許可を押すと、受付はブラウザを戻り先に返します。このとき持たせるのは通行証ではなく <strong>引換券（認可コード）</strong> です。引換券は <strong>数分で使えなくなり、1 回しか使えません</strong>。</li>
+      <li>ブラウザは引換券と合言葉を持って印刷アプリに戻ります。印刷アプリはまず <strong>合言葉が手元の控えと同じか</strong> を確かめます。同じなら、自分が送り出したブラウザが戻ってきたと分かります。</li>
+      <li>次に印刷アプリは <strong>裏の道</strong>（ブラウザを通らない、サーバー同士の直接の通信）で受付に話しかけます。持っていくのは引換券と <strong>アプリ自身の鍵</strong>（クライアントシークレット）です。印刷アプリは前もって受付に登録して、自分の鍵をもらっています。だから受付は、来たのが本物の印刷アプリだと分かります。</li>
+      <li>受付は確かめて、引換券を <strong>通行証（アクセストークン）</strong> に替えてくれます。</li>
+      <li>最後に印刷アプリは通行証を見せて、写真の置き場に頼みます。置き場は通行証の範囲を見て、<strong>写真だけ</strong> を返します。</li>
+    </ol>
+    <p>パスワードは一度も印刷アプリに渡っていません。<strong>あなたは受付にだけパスワードを見せ、アプリは通行証だけを持っている</strong> 状態です。</p>
+    <p>ノート（01_OAuth2.0とは）では、同じ流れを「Google でログイン」の例で次の 7 ステップにまとめています。</p>
+<pre><code>1. ユーザーがアプリで「Googleでログイン」をクリック
+   ↓
+2. アプリがユーザーをGoogleの認証ページにリダイレクト
+   ↓
+3. ユーザーがGoogleでログインし、アプリへのアクセスを許可
+   ↓
+4. Googleが認証コードをアプリに返す
+   ↓
+5. アプリが認証コードを認証サーバーに送信
+   ↓
+6. 認証サーバーがアクセストークンを発行
+   ↓
+7. アプリがアクセストークンを使ってリソースにアクセス</code></pre>
+    <p>OAuth 2.0 の流れの概要は <a href="10-2_ログイン方式と認証の概念.html#sec-9-1">OAuth 2.0：認可フレームワーク</a>（ログイン方式と認証の概念）でも紹介しています。このページでは、それぞれの段階で「なぜそうするのか」をもう一歩掘り下げます。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>なぜ引換券をはさむのか：表の道と裏の道</h2>
+    <p>「最初から通行証を返せば早いのでは？」と思うかもしれません。ここで、道が 2 本あったことを思い出してください。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>表の道（ブラウザを通る道）</h4>
+        <p>ここを通ったものは、ブラウザの履歴、URL、入れている拡張機能など、いろいろなところに残り、<strong>見られうる</strong> 道です。</p>
+      </div>
+      <div class="card">
+        <h4>裏の道（アプリと受付が直接話す道）</h4>
+        <p>あなたのブラウザを通りません。だから価値の高い通行証は、<strong>裏の道でだけ</strong> 受け取ります。</p>
+      </div>
+    </div>
+    <p>表の道を通るのは引換券だけです。引換券は <strong>数分で切れ、1 回きりで、アプリの鍵がないと替えられません</strong>。拾われても使いにくくしてあるわけです。</p>
+    <div class="callout key">
+      <p class="callout-title">いちばん持ち帰ってほしい考え方</p>
+      <p><strong>見られうる道には、見られても困らないものを流す。</strong></p>
+    </div>
+    <p>戻り先（<code>redirect_uri</code>）が勝手な URL に書き換えられて引換券が外部へ流れる危険は、<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">オープンリダイレクト</a>（Web脆弱性対策）で扱っています。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>通行証の中身：範囲・期限・取り消し</h2>
+    <h3 id="sec-8-1">8.1 範囲</h3>
+    <p>印刷アプリが写真を消そうとしたらどうなるでしょうか。置き場は通行証の範囲を見て断ります。<strong>頼んだ以上のことはできません</strong>。</p>
+
+    <h3 id="sec-8-2">8.2 期限とリフレッシュトークン</h3>
+    <p>1 時間たつと、通行証は使えなくなります。毎回あなたに許可を聞き直すのは面倒なので、もう 1 枚 <strong>更新券（リフレッシュトークン）</strong> をもらっておきます。印刷アプリは裏の道で更新券を受付に見せ、新しい通行証をもらいます。あなたは何もしなくて構いません。</p>
+    <p><strong>通行証は短く、更新券で取り直す。</strong> 短くしておけば、通行証が漏れても被害は短い時間で済みます。</p>
+    <p>ノートのコードでは、アクセストークンの期限が切れたときに次のようにして新しいアクセストークンを取得します（<code>grant_type: 'refresh_token'</code> がポイントです）。</p>
+<pre><code>// アクセストークンの有効期限が切れた場合
+async function refreshAccessToken(refreshToken) {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: 'YOUR_CLIENT_ID',
+      client_secret: 'YOUR_CLIENT_SECRET',
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  const data = await response.json();
+  return data.access_token; // 新しいアクセストークン
+}</code></pre>
+    <p>アクセストークンとリフレッシュトークンの寿命の違いや、リフレッシュトークンの保存場所（localStorage を避ける理由）は <a href="10-2_ログイン方式と認証の概念.html#sec-8">アクセストークンとリフレッシュトークン</a> で解説しています。</p>
+
+    <h3 id="sec-8-3">8.3 取り消し</h3>
+    <p>あなたが受付で印刷アプリとの連携を解除すると、更新券が無効になり、次の通行証は出ません。<strong>他のアプリはそのまま動き、パスワードも変えなくて構いません</strong>。</p>
+    <p>これで、<a href="#sec-2">2 章</a> の 3 つの問題（できることが広すぎる・鍵が残る・1 つだけ止められない）が全部解けました。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>もう 1 つの例：スマホのアプリと割符（PKCE）</h2>
+    <p>今度はスマホのアプリを考えます。スマホのアプリには、さっきの <strong>アプリの鍵を安全に置けません</strong>。アプリは利用者のスマホに配られ、中身を分解して調べられるので、鍵を埋め込んでも取り出されてしまうからです。</p>
+    <p>しかもスマホには、<strong>戻り先を横取りする手口</strong> があります。本物と同じ戻り先を名乗る <strong>なりすましアプリ</strong> を入れておくと、受付がブラウザを戻すとき、引換券がなりすましに届いてしまいます。鍵がないので、そのまま通行証に替えられてしまいます。</p>
+    <p>そこで <strong>割符（わりふ）</strong> のような仕組みを足します。これが <strong>PKCE</strong>（Proof Key for Code Exchange、「ピクシー」と読む）です。</p>
+    <ol class="steps">
+      <li>本物のアプリは、最初に毎回新しい <strong>秘密の答え</strong>（code_verifier）を作ります。</li>
+      <li>受付には、答えを決まった計算で崩した <strong>写し</strong>（code_challenge）だけを渡します。受付はその写しを控えておきます。写しから元の答えには戻せません（<strong>一方向の計算</strong>）。</li>
+      <li>引換券を替えるとき、アプリは元の答えを出します。受付は答えを同じ計算で崩し、控えの写しと比べます。</li>
+      <li>なりすましは引換券を拾っても答えを持っていないので、受付は替えてくれません。</li>
+    </ol>
+    <p>写しは見られても平気で、答えは本物の手元から出ません。これも <strong>「見られうる道には、見られても困らないものを流す」</strong> と同じ考え方です。今は <strong>スマホに限らず、どのアプリでも PKCE を使うことが勧められています</strong>。</p>
+    <p>code_verifier・code_challenge の作り方（SHA-256 によるハッシュ化）や実装コードは <a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8">PKCE について</a>（Web脆弱性対策の CSP のページ）で詳しく解説しています。一方向の計算（ハッシュ関数）そのものは <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#hash">ハッシュ関数</a>（セキュリティ基礎）を参照してください。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>許可の仕組みと、ログインの仕組み（OpenID Connect）</h2>
+    <p>ところで、最初のボタンは「ログイン」でした。今までの話は写真を読む <strong>許可</strong> の話です。ログインとは違うのでしょうか。</p>
+    <p>OAuth は元々 <strong>許可を貸す仕組み</strong> で、<strong>誰なのかは言いません</strong>。通行証はホテルのカードキーと同じで、カードキーを持っている人が部屋の持ち主本人とは限りません。拾った人でも開けられます。</p>
+    <p>だからログインに使うときは、もう 1 枚 <strong>本人の証明書</strong> を受け取ります。OAuth の上に作られた決まりである <strong>OpenID Connect（OIDC）</strong> で、受付が <strong>ID トークン</strong> という証明書を出します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ID トークンに書いてあること</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>誰か</td><td>ログインしたユーザー</td></tr>
+        <tr><td>どのアプリ宛てか</td><td>この証明書を受け取るべきアプリ（宛て先）</td></tr>
+        <tr><td>いつまで有効か</td><td>有効期限</td></tr>
+        <tr><td>受付の署名</td><td>受付が発行した本物であることの証明</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>宛て先が大事</strong> です。他のアプリ宛ての証明書を見せられても受け付けません。</p>
+    <div class="grid c2">
+      <div class="card"><h4>通行証（アクセストークン）</h4><p><strong>置き場に見せるもの</strong>。何をしてよいかの許可。</p></div>
+      <div class="card"><h4>証明書（ID トークン）</h4><p><strong>アプリが本人を確かめるもの</strong>。あなたは誰か。</p></div>
+    </div>
+    <p><strong>許可は通行証、本人は証明書。</strong> 分けて覚えておきましょう。アクセストークンと ID トークンの対比図は <a href="10-2_ログイン方式と認証の概念.html#sec-9-2">OpenID Connect（OIDC）：OAuth 2.0 の上の認証レイヤー</a>、SAML・OAuth・OIDC の比較は次のページ <a href="30-2_SAML・OAuth・OIDCの違い.html">SAML・OAuth・OIDCの違い</a> で扱います。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>コードで見る：戻ってきたときの処理とセキュリティの注意点</h2>
+    <p>受付から戻ってきたときの処理を、順に見ます。戻ってくると、URL に引換券（<code>code</code>）と合言葉（<code>state</code>）が付いています。</p>
+
+    <h3 id="sec-11-1">11.1 合言葉（state）を手元の控えと比べる</h3>
+    <p>まず合言葉を控えと比べ、違えばそこで止めます。これを忘れると、<strong>他人が始めた連携をあなたの画面に押し込まれ</strong>、あなたのアカウントが知らない人の写真とつながる、といった事故になります。<code>state</code> は CSRF 攻撃（利用者に意図しないリクエストを送らせる攻撃）を防ぐためのランダムな文字列です。</p>
+    <span class="code-label">ノートのコード：state を生成して、コールバックで検証する</span>
+<pre><code>// stateを生成
+const state = Math.random().toString(36).substring(7);
+sessionStorage.setItem('oauth_state', state);
+
+// コールバックで検証
+const returnedState = urlParams.get('state');
+const storedState = sessionStorage.getItem('oauth_state');
+
+if (returnedState !== storedState) {
+  throw new Error('State mismatch - possible CSRF attack');
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：state は推測できない乱数で</p>
+      <p><code>Math.random()</code> は暗号用の乱数ではないため、本番では <code>crypto.randomBytes</code>（Node.js）や <code>crypto.getRandomValues</code>（ブラウザ）などで作るのが安全です。</p>
+    </div>
+    <p>CSRF の仕組みと、推測できないトークンを埋め込んで照合する対策の考え方は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html#sec-10">秘密情報（トークン）の埋め込み</a>（CSRF のページ）で解説しています。state はこの考え方を OAuth の戻りに当てはめたものです。</p>
+
+    <h3 id="sec-11-2">11.2 裏の道で引換券を通行証に替える：アプリの鍵は環境の設定から</h3>
+    <p>次に、裏の道で引換券を通行証に替えます。<strong>割符の答えとアプリの鍵も一緒に</strong> 出します。アプリの鍵（クライアントシークレット）は <strong>コードに直接書かず、環境の設定から読みます</strong>。</p>
+    <span class="code-label bad">間違い：クライアントシークレットをクライアント側に書く</span>
+<pre><code>const clientSecret = 'secret-key-12345'; // 危険！</code></pre>
+    <span class="code-label good">正しい：サーバー側で管理（環境変数や設定ファイル）</span>
+<pre><code>const clientSecret = process.env.CLIENT_SECRET;</code></pre>
+    <p>鍵をコードに書かない理由は <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-2-4">シークレット管理</a>（セキュリティ基礎）も参照してください。</p>
+
+    <h3 id="sec-11-3">11.3 通行証をログに出さない</h3>
+    <p>通行証は <strong>持っている人なら誰でも使えます</strong>。ログに出せば、ログを読める人全員が「あなた」になれてしまいます。<a href="#sec-1-1">1.1</a> の「トークンという文字がログに出ている」と指摘された場面は、まさにこれです。ログに書いてはいけないものの全体は <a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html#sec-4-4">ログに書いてはいけないもの</a>（セキュリティ基礎）にまとまっています。</p>
+
+    <h3 id="sec-11-4">11.4 更新券は暗号化して保存する</h3>
+    <p>更新券は長く使えるので、<strong>暗号化して保存</strong> します。そして <strong>URL にも、ブラウザの保存場所にも置かない</strong> のが基本です。</p>
+
+    <h3 id="sec-11-5">11.5 HTTPS を使う</h3>
+    <p>OAuth 2.0 では、必ず HTTPS を使ってください。</p>
+    <span class="code-label bad">間違い：HTTP は危険</span>
+<pre><code>redirect_uri: 'http://localhost:3000/callback'</code></pre>
+    <span class="code-label good">正しい：HTTPS を使用</span>
+<pre><code>redirect_uri: 'https://myapp.com/callback'</code></pre>
+    <p>このページのコード例に出てくる <code>http://localhost</code> は、自分の PC だけで動かす開発用の例です。本番の戻り先は HTTPS にします。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>AI に連携コードを書かせたときに見るところ</h2>
+    <ol class="steps">
+      <li><strong>範囲が必要な分より広くないか</strong>：AI は動かすために、とりあえず全部の権限を頼みがちです。連携画面で利用者を怖がらせますし、漏れたときの被害も範囲の広さの分だけ大きくなります。</li>
+      <li><strong>合言葉を作って、戻ってきたときに比べているか</strong>：作るだけで比べていないコードもあります。比べるくだりを探してください。</li>
+      <li><strong>割符（PKCE）を使っているか</strong>。</li>
+      <li><strong>通行証や更新券をログや URL に出していないか</strong>：動作確認のために print で出したまま、という消し忘れがそのまま本番に出ます。</li>
+      <li><strong>ログインに使うなら、証明書（ID トークン）をきちんと確かめているか</strong>：受け取って中身を読むだけで、<strong>宛て先が自分のアプリか・まだ有効か・署名が受付のものか</strong> を確かめていないことがあります。</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">決まった部品に任せる</p>
+      <p>証明書の確認などは、自分で書くより <strong>決まった部品（ライブラリ）に任せる</strong> のが安全です。AI には、<strong>どの部品を使い、何を確かめるか</strong> をはっきり頼みましょう。認証を自前で実装しない考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11-2">認証を自前実装しない</a>（セキュリティ基礎）でも扱っています。</p>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>各ステップの詳細：リクエストとパラメータ</h2>
+    <p>ここからは、ノート（01_OAuth2.0とは）のコードで、認可コードフローの各ステップを Google を例に見ていきます。</p>
+
+    <h3 id="sec-13-1">13.1 ステップ1：認可リクエスト</h3>
+<pre><code>// アプリがユーザーを認証サーバーにリダイレクト
+const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?
+  client_id=YOUR_CLIENT_ID&amp;
+  redirect_uri=http://localhost:3000/callback&amp;
+  response_type=code&amp;
+  scope=email profile&amp;
+  state=random_string`;
+
+window.location.href = authUrl;</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パラメータ</th><th>説明</th><th>たとえ話</th></tr></thead>
+      <tbody>
+        <tr><td><code>client_id</code></td><td>アプリの ID</td><td>どのアプリからの依頼か</td></tr>
+        <tr><td><code>redirect_uri</code></td><td>認可後のリダイレクト先</td><td>戻り先</td></tr>
+        <tr><td><code>response_type</code></td><td><code>code</code>（認可コードを要求）</td><td>引換券をください</td></tr>
+        <tr><td><code>scope</code></td><td>要求する権限（email、profile など）</td><td>範囲</td></tr>
+        <tr><td><code>state</code></td><td>CSRF 攻撃を防ぐためのランダムな文字列</td><td>合言葉</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：コード中の URL の改行</p>
+      <p>ノートのコードは読みやすさのために URL を途中で改行していますが、実際には改行や空白が URL に入ってしまいます。本番では 1 行で書くか、<code>URLSearchParams</code> で組み立てます。また、PKCE を使う場合はここに <code>code_challenge</code> と <code>code_challenge_method=S256</code> を加えます（<a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8-5">実装例</a>）。</p>
+    </div>
+
+    <h3 id="sec-13-2">13.2 ステップ2：ユーザーが認証・許可</h3>
+    <p>ユーザーが Google でログインし、アプリへのアクセスを許可します（<a href="#sec-5">5 章</a> の受付での操作です）。</p>
+
+    <h3 id="sec-13-3">13.3 ステップ3：認可コードを受け取る</h3>
+<pre><code>// リダイレクト先（/callback）で認証コードを受け取る
+// URL: http://localhost:3000/callback?code=AUTHORIZATION_CODE&amp;state=random_string
+
+const urlParams = new URLSearchParams(window.location.search);
+const code = urlParams.get('code');
+const state = urlParams.get('state');</code></pre>
+
+    <h3 id="sec-13-4">13.4 ステップ4：アクセストークンを取得（サーバー側）</h3>
+<pre><code>// サーバー側でアクセストークンを取得
+async function getAccessToken(code) {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      code: code,
+      client_id: 'YOUR_CLIENT_ID',
+      client_secret: 'YOUR_CLIENT_SECRET',
+      redirect_uri: 'http://localhost:3000/callback',
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  const data = await response.json();
+  return data.access_token; // アクセストークン
+}</code></pre>
+    <p>これが「裏の道」での引換券と通行証の交換です。<code>grant_type: 'authorization_code'</code> で「認可コードを交換したい」と伝え、<code>client_secret</code>（アプリの鍵）を添えます。</p>
+
+    <h3 id="sec-13-5">13.5 ステップ5：リソースにアクセス</h3>
+<pre><code>// アクセストークンを使ってリソースにアクセス
+async function getUserInfo(accessToken) {
+  const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+    },
+  });
+
+  const userInfo = await response.json();
+  return userInfo;
+}</code></pre>
+    <p><code>Authorization: Bearer ...</code> は「このトークンを持っている者として扱ってください」という送り方です。Bearer の意味は <a href="10-2_ログイン方式と認証の概念.html#sec-7-1">Bearer はパターン、JWT は形式</a> で解説しています。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>実装例：React と Express</h2>
+    <h3 id="sec-14-1">14.1 フロントエンド（React）</h3>
+<pre><code>// components/LoginButton.jsx
+import { useState } from 'react';
+
+function LoginButton() {
+  const [user, setUser] = useState(null);
+
+  const handleLogin = () =&gt; {
+    // Googleの認証ページにリダイレクト
+    const clientId = 'YOUR_CLIENT_ID';
+    const redirectUri = encodeURIComponent('http://localhost:3000/callback');
+    const scope = encodeURIComponent('email profile');
+    const state = Math.random().toString(36).substring(7);
+
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?
+      client_id=${clientId}&amp;
+      redirect_uri=${redirectUri}&amp;
+      response_type=code&amp;
+      scope=${scope}&amp;
+      state=${state}`;
+
+    window.location.href = authUrl;
+  };
+
+  const handleCallback = async () =&gt; {
+    // URLから認証コードを取得
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+
+    if (code) {
+      // サーバーに認証コードを送信してアクセストークンを取得
+      const response = await fetch('/api/auth/callback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      const { accessToken } = await response.json();
+
+      // ユーザー情報を取得
+      const userInfo = await fetch('/api/user', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      }).then(res =&gt; res.json());
+
+      setUser(userInfo);
+    }
+  };
+
+  // コールバックページで実行
+  useEffect(() =&gt; {
+    handleCallback();
+  }, []);
+
+  if (user) {
+    return &lt;div&gt;こんにちは、{user.name}さん&lt;/div&gt;;
+  }
+
+  return &lt;button onClick={handleLogin}&gt;Googleでログイン&lt;/button&gt;;
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">このコードを使うときの注意</p>
+      <ul>
+        <li><code>useEffect</code> を使っているので、<code>import { useState, useEffect } from 'react';</code> が必要です。</li>
+        <li><code>state</code> を作っていますが、保存も照合もしていません。<a href="#sec-12">12 章</a> の「作るだけで比べていない」例にあたるので、<a href="#sec-11-1">11.1</a> のように控えて比べます。</li>
+        <li>アクセストークンをブラウザに返して使っています。<a href="#sec-7">7 章</a> の「通行証は裏の道でだけ受け取る」に沿うなら、トークンはサーバー側に置き、ブラウザとはセッションでやり取りする形（次の 14.3 の例）が基本です。</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-14-2">14.2 バックエンド（Express.js）</h3>
+<pre><code>// routes/auth.js
+const express = require('express');
+const router = express.Router();
+const axios = require('axios');
+
+// 認証コードをアクセストークンに交換
+router.post('/callback', async (req, res) =&gt; {
+  try {
+    const { code } = req.body;
+
+    // Googleのトークンエンドポイントにリクエスト
+    const response = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: 'http://localhost:3000/callback',
+      grant_type: 'authorization_code',
+    });
+
+    const { access_token, refresh_token } = response.data;
+
+    // アクセストークンをセッションやデータベースに保存
+    req.session.accessToken = access_token;
+    req.session.refreshToken = refresh_token;
+
+    res.json({ accessToken: access_token });
+  } catch (error) {
+    console.error('認証エラー:', error);
+    res.status(400).json({ error: '認証に失敗しました' });
+  }
+});
+
+// ユーザー情報を取得
+router.get('/user', async (req, res) =&gt; {
+  try {
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+
+    if (!accessToken) {
+      return res.status(401).json({ error: 'アクセストークンが必要です' });
+    }
+
+    // GoogleのAPIでユーザー情報を取得
+    const response = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('ユーザー情報取得エラー:', error);
+    res.status(401).json({ error: 'ユーザー情報の取得に失敗しました' });
+  }
+});
+
+module.exports = router;</code></pre>
+
+    <h3 id="sec-14-3">14.3 Google ログインの完全な実装（サーバー側で完結する例）</h3>
+    <p>次の例では、state の生成・照合からトークン取得、ユーザー情報の取得、セッションへの保存までをサーバー側で行います。まず環境変数を設定します。</p>
+<pre><code># .env
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+REDIRECT_URI=http://localhost:3000/callback</code></pre>
+<pre><code>// server.js
+const express = require('express');
+const session = require('express-session');
+const axios = require('axios');
+require('dotenv').config();
+
+const app = express();
+
+app.use(session({
+  secret: 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+}));
+
+// ログインページ
+app.get('/login', (req, res) =&gt; {
+  const state = Math.random().toString(36).substring(7);
+  req.session.oauthState = state;
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?
+    client_id=${process.env.GOOGLE_CLIENT_ID}&amp;
+    redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&amp;
+    response_type=code&amp;
+    scope=email profile&amp;
+    access_type=offline&amp;
+    prompt=consent&amp;
+    state=${state}`;
+
+  res.redirect(authUrl);
+});
+
+// コールバック
+app.get('/callback', async (req, res) =&gt; {
+  const { code, state } = req.query;
+
+  // stateの検証
+  if (state !== req.session.oauthState) {
+    return res.status(400).send('Invalid state parameter');
+  }
+
+  try {
+    // アクセストークンを取得
+    const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: process.env.REDIRECT_URI,
+      grant_type: 'authorization_code',
+    });
+
+    const { access_token, refresh_token } = tokenResponse.data;
+
+    // ユーザー情報を取得
+    const userResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: {
+        'Authorization': `Bearer ${access_token}`,
+      },
+    });
+
+    // セッションに保存
+    req.session.user = userResponse.data;
+    req.session.accessToken = access_token;
+    req.session.refreshToken = refresh_token;
+
+    res.redirect('/dashboard');
+  } catch (error) {
+    console.error('認証エラー:', error);
+    res.status(400).send('認証に失敗しました');
+  }
+});
+
+// ダッシュボード
+app.get('/dashboard', (req, res) =&gt; {
+  if (!req.session.user) {
+    return res.redirect('/login');
+  }
+
+  res.send(`
+    &lt;h1&gt;ダッシュボード&lt;/h1&gt;
+    &lt;p&gt;こんにちは、${req.session.user.name}さん&lt;/p&gt;
+    &lt;p&gt;メール: ${req.session.user.email}&lt;/p&gt;
+  `);
+});
+
+app.listen(3000, () =&gt; {
+  console.log('サーバーが起動しました: http://localhost:3000');
+});</code></pre>
+    <p><code>access_type=offline</code> はリフレッシュトークンを受け取るための Google 独自のパラメータ、<code>prompt=consent</code> は毎回同意画面を表示させる指定です。</p>
+    <div class="callout warn">
+      <p class="callout-title">このコードを使うときの注意</p>
+      <ul>
+        <li>セッションの <code>secret</code> も環境変数から読みます。セッション管理の詳細は 74_セッション管理 フォルダで扱う予定です。</li>
+        <li><code>/dashboard</code> はユーザー名をそのまま HTML に埋め込んでいるので、エスケープしないと <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS</a> の原因になります。</li>
+        <li>この例は PKCE を使っていません。今はどのアプリでも PKCE が勧められているので、<a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8-5">PKCE を使った実装例</a> のように加えます。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-15"><span class="num">15.</span>OAuth 2.0 のフローの種類</h2>
+    <p>OAuth 2.0 には、場面に応じた複数のフロー（グラントタイプ）があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フロー</th><th>特徴</th><th>位置づけ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認可コードフロー</strong>（Authorization Code Flow）</td><td>最も安全で一般的。サーバー側のアプリケーションで使用。アクセストークンとリフレッシュトークンを取得</td><td>推奨（PKCE と組み合わせる）</td></tr>
+        <tr><td><strong>インプリシットフロー</strong>（Implicit Flow）</td><td>クライアント側（ブラウザだけで動く）アプリケーションで使われていた</td><td><strong>非推奨</strong></td></tr>
+        <tr><td><strong>クライアントクレデンシャルフロー</strong>（Client Credentials Flow）</td><td>アプリケーション同士の認証に使用。ユーザーは関与しない</td><td>サーバー間通信で使用</td></tr>
+        <tr><td><strong>リソースオーナーパスワードクレデンシャルフロー</strong></td><td>パスワードを直接アプリに渡すため、セキュリティリスクが高い</td><td><strong>非推奨</strong></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：現在の推奨</p>
+      <p>OAuth 2.0 のセキュリティ上の推奨をまとめた OAuth 2.0 Security BCP（RFC 9700）や策定中の OAuth 2.1 では、インプリシットフローとパスワードクレデンシャルフローは使わないこととされ、ブラウザだけで動くアプリやスマホアプリも <strong>認可コードフロー＋PKCE</strong> を使います。</p>
+    </div>
+    <p>クライアントクレデンシャルフローでは、ユーザーの許可を挟まず、アプリ自身の ID と鍵だけでトークンを取得します。</p>
+<pre><code>// サーバー間の認証
+const response = await fetch('https://oauth2.googleapis.com/token', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  },
+  body: new URLSearchParams({
+    client_id: 'YOUR_CLIENT_ID',
+    client_secret: 'YOUR_CLIENT_SECRET',
+    grant_type: 'client_credentials',
+  }),
+});</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">知らなくていいこと</p>
+      <p>動画（ねる前エンジニアリング）では、<strong>フローの種類ごとの細かい差</strong> は知らなくてよいとしています。名前のついた流れはいくつかありますが、<a href="#sec-5">このページの流れ</a> と <a href="#sec-9">割符（PKCE）</a> を知っていれば十分です。細かい違いは、必要になったときに決まった部品（ライブラリ）の説明を読めば大丈夫です。</p>
+    </div>
+
+    <h2 id="sec-16"><span class="num">16.</span>主な OAuth 2.0 プロバイダー</h2>
+    <p>OAuth 2.0 に対応した代表的なサービス（プロバイダー）の認可リクエストの例です。URL とスコープの書き方がサービスごとに少しずつ違います。</p>
+    <span class="code-label">Google</span>
+<pre><code>// Googleでログイン
+const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?
+  client_id=YOUR_CLIENT_ID&amp;
+  redirect_uri=http://localhost:3000/callback&amp;
+  response_type=code&amp;
+  scope=email profile&amp;
+  access_type=offline&amp;
+  prompt=consent`;</code></pre>
+    <span class="code-label">GitHub</span>
+<pre><code>// GitHubでログイン
+const authUrl = `https://github.com/login/oauth/authorize?
+  client_id=YOUR_CLIENT_ID&amp;
+  redirect_uri=http://localhost:3000/callback&amp;
+  scope=user:email`;</code></pre>
+    <span class="code-label">Facebook</span>
+<pre><code>// Facebookでログイン
+const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?
+  client_id=YOUR_CLIENT_ID&amp;
+  redirect_uri=http://localhost:3000/callback&amp;
+  scope=email`;</code></pre>
+    <p>これらの例には <code>state</code> が入っていません。実際には <a href="#sec-11-1">11.1</a> のとおり必ず付けて照合します。ID プロバイダーそのものの説明は <a href="30-3_IDプロバイダとSSOプロバイダ.html">IDプロバイダとSSOプロバイダ</a> で扱います。</p>
+
+    <h2 id="sec-17"><span class="num">17.</span>OAuth 2.0 のメリット・デメリット</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ol>
+          <li><strong>パスワードを共有しない</strong>：セキュリティが向上</li>
+          <li><strong>限定的な権限</strong>：必要な権限だけを付与</li>
+          <li><strong>アクセス権限の管理</strong>：いつでも取り消し可能</li>
+          <li><strong>標準化</strong>：多くのサービスで対応</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ol>
+          <li><strong>実装が複雑</strong>：フローが複雑で実装が難しい</li>
+          <li><strong>トークンの管理</strong>：アクセストークンとリフレッシュトークンの管理が必要</li>
+          <li><strong>エラーハンドリング</strong>：さまざまなエラーケースに対応する必要がある</li>
+        </ol>
+      </div>
+    </div>
+    <p>実装の複雑さは、<a href="#sec-12">12 章</a> のとおり実績のあるライブラリに任せることで小さくできます。</p>
+
+    <h2 id="sec-18"><span class="num">18.</span>まとめ</h2>
+    <ul>
+      <li><strong>OAuth 2.0</strong> は、パスワードを共有せずにアクセス権限を付与する仕組み。<strong>パスワードは受付（認可サーバー）にだけ見せ、アプリには通行証を渡す</strong>。合鍵ではなく、その部屋だけのカードキー。</li>
+      <li><strong>4 つの役割</strong>：リソースオーナー（あなた）、クライアント（アプリ）、認可サーバー（受付）、リソースサーバー（置き場）。ノートでは認可サーバーを「認証サーバー」と呼んでいる。</li>
+      <li><strong>認可コードフロー</strong> が最も一般的で安全。見られうる <strong>表の道には引換券（認可コード）だけ</strong> を流し、<strong>裏の道で通行証（アクセストークン）に替える</strong>。</li>
+      <li><strong>通行証には範囲と期限</strong> があり、そのアプリの分だけ取り消せる。<strong>リフレッシュトークン</strong> で新しいアクセストークンを取得する。</li>
+      <li><strong>PKCE（割符）</strong> で引換券の横取りを防ぐ。今はどのアプリでも使うことが勧められている。</li>
+      <li><strong>許可は通行証、本人かどうかは証明書（ID トークン）</strong> で確かめる。ログインには OpenID Connect を使う。</li>
+      <li><strong>セキュリティ</strong>：state を作って照合する、クライアントシークレットは環境変数で管理、トークンをログや URL に出さない、更新券は暗号化して保存、HTTPS を使う。</li>
+      <li>フローの種類ごとの細かい差は知らなくてよい。インプリシットフローとパスワードクレデンシャルフローは非推奨。</li>
+    </ul>
+
+    <h2 id="sec-19"><span class="num">19.</span>理解度チェック</h2>
+    <details><summary>Q1. パスワードをアプリに預ける昔のやり方には、どんな 3 つの問題がありましたか？</summary><div class="body"><p>① <strong>できることが広すぎる</strong>（写真を読むだけのはずが、消す・メールを読むこともできる）、② <strong>鍵が残る</strong>（アプリが漏らせばアカウントごと取られる）、③ <strong>1 つだけ止められない</strong>（パスワードを変えると他の連携アプリも全部止まる）です。OAuth は範囲・期限つきで取り消せる通行証を渡すことで、この 3 つを解きます。</p></div></details>
+    <details><summary>Q2. OAuth 2.0 の 4 つの役割を答え、写真印刷アプリの例で何にあたるか説明してください。</summary><div class="body"><p><strong>リソースオーナー</strong>＝あなた、<strong>クライアント</strong>＝印刷アプリ、<strong>認可サーバー</strong>＝写真サービスの受付（通行証を出す係）、<strong>リソースサーバー</strong>＝写真の置き場（写真を返す係）です。</p></div></details>
+    <details><summary>Q3. 受付は、なぜ最初から通行証（アクセストークン）を返さず、引換券（認可コード）を返すのですか？</summary><div class="body"><p>ブラウザを通る <strong>表の道</strong> は、履歴・URL・拡張機能などに残り、見られうるからです。表の道には、数分で切れて 1 回きりで、アプリの鍵がないと替えられない引換券だけを流し、価値の高い通行証はブラウザを通らない <strong>裏の道</strong> で受け取ります。「見られうる道には、見られても困らないものを流す」考え方です。</p></div></details>
+    <details><summary>Q4. state パラメータの照合を忘れると、何が起きますか？</summary><div class="body"><p>他人が始めた連携をあなたの画面に押し込まれ、あなたのアカウントが知らない人の写真（アカウント）とつながる、といった事故が起きます。state は CSRF 攻撃を防ぐための合言葉で、<strong>作るだけでなく、戻ってきたときに控えと比べる</strong> ことが必要です。</p></div></details>
+    <details><summary>Q5. PKCE は、どんな攻撃をどうやって防ぎますか？</summary><div class="body"><p>スマホなどアプリの鍵を安全に置けないアプリで、<strong>なりすましアプリが戻り先を横取りして引換券を通行証に替える</strong> 攻撃を防ぎます。本物のアプリが毎回秘密の答えを作り、受付には一方向の計算で崩した写しだけを渡しておきます。交換時に元の答えを出させ、受付が同じ計算で崩して写しと比べるので、答えを持たないなりすましは替えられません。</p></div></details>
+    <details><summary>Q6. 「アクセストークンを受け取れたので、ログインした人が本人だと分かる」は正しいですか？</summary><div class="body"><p>正しくありません。OAuth は許可を貸す仕組みで、誰なのかは言いません。通行証はカードキーと同じで、持っている人が本人とは限りません。ログインには <strong>OpenID Connect の ID トークン</strong>（誰か・どのアプリ宛てか・いつまで有効か・受付の署名）を受け取り、<strong>宛て先・有効期限・署名</strong> を確かめます。</p></div></details>
+    <details><summary>Q7. アクセストークンの有効期限を短くし、リフレッシュトークンを使うのはなぜですか？ また、リフレッシュトークンはどう扱いますか？</summary><div class="body"><p>通行証が漏れても被害を短い時間で済ませるためです。期限が切れたら、更新券（リフレッシュトークン）を裏の道で受付に見せて新しい通行証をもらうので、ユーザーは何もしなくて構いません。更新券は長く使えるので、<strong>暗号化して保存し、URL やブラウザの保存場所には置きません</strong>。連携を解除すると更新券は無効になります。</p></div></details>
+    <details><summary>Q8. AI が書いた OAuth 連携コードをレビューするとき、確認すべき点を挙げてください。</summary><div class="body"><p>① 範囲（scope）が必要な分より広くないか、② state を作って戻ってきたときに比べているか、③ PKCE を使っているか、④ アクセストークンやリフレッシュトークンをログや URL に出していないか、⑤ ログインに使うなら ID トークンの宛て先・有効期限・署名を確かめているか（ライブラリに任せているか）です。クライアントシークレットがコードに直書きされていないかも見ます。</p></div></details>
+    <details><summary>Q9. インプリシットフローとリソースオーナーパスワードクレデンシャルフローは、今使うべきですか？</summary><div class="body"><p>使うべきではありません。どちらも非推奨で、パスワードクレデンシャルフローはパスワードを直接アプリに渡すためリスクが高いです。ブラウザやスマホのアプリでも <strong>認可コードフロー＋PKCE</strong> を使います。ユーザーが関与しないサーバー間の通信では、クライアントクレデンシャルフローを使います。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>動画：「別のアカウントでログイン」の裏側 — OAuth（ねる前エンジニアリング, 2026-10-09）<a href="https://www.youtube.com/watch?v=1-PeU0vvGSw">https://www.youtube.com/watch?v=1-PeU0vvGSw</a></li>
+      <li>RFC 6749「The OAuth 2.0 Authorization Framework」<a href="https://datatracker.ietf.org/doc/html/rfc6749">https://datatracker.ietf.org/doc/html/rfc6749</a></li>
+      <li>RFC 7636「Proof Key for Code Exchange by OAuth Public Clients」<a href="https://datatracker.ietf.org/doc/html/rfc7636">https://datatracker.ietf.org/doc/html/rfc7636</a></li>
+      <li>RFC 9700「Best Current Practice for OAuth 2.0 Security」<a href="https://datatracker.ietf.org/doc/html/rfc9700">https://datatracker.ietf.org/doc/html/rfc9700</a></li>
+      <li>OpenID Connect Core 1.0 <a href="https://openid.net/specs/openid-connect-core-1_0.html">https://openid.net/specs/openid-connect-core-1_0.html</a></li>
+      <li>関連ページ：<a href="10-2_ログイン方式と認証の概念.html#sec-9">OAuth 2.0 と OpenID Connect（ソーシャルログイン）</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="30-2_SAML・OAuth・OIDCの違い.html">SAML・OAuth・OIDCの違い</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html#sec-8">PKCE について</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">オープンリダイレクト</a>（Web脆弱性対策）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11-2">認証を自前実装しない</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="20-4_パスキーとWebAuthn.html"><span class="lbl">← 前のページ</span>パスキーとWebAuthn</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-2_SAML・OAuth・OIDCの違い.html"><span class="lbl">次のページ →</span>SAML・OAuth・OIDCの違い</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

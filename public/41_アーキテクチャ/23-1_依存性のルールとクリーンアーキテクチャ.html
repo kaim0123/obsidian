@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>依存性のルールとクリーンアーキテクチャ｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">20 アプリ内部構造 › 23 クリーン・ヘキサ・オニオン › 依存性のルールとクリーンアーキテクチャ</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 アプリ内部構造 ／ 23 クリーン・ヘキサ・オニオン</span>
+      <h1>依存性のルールとクリーンアーキテクチャ</h1>
+      <p class="lead">クリーンアーキテクチャの同心円4層（Entities / Use Cases / Interface Adapters / Frameworks &amp; Drivers）に何を書き、何を書かないかを、コード例つきで整理します。そのうえで、本体である「ソースコードの依存は外側から内側へのみ」という依存性のルールと、それを依存性逆転（DIP）で実現する仕組み、導入してかえってコードが汚くなる原因まで扱います。</p>
+      <p class="meta">もとにしたノート：依存性のルール / クリーンアーキテクチャの概要 / レイヤー構成（21_レイヤー） / クリーンアーキテクチャを入れたら、コードが汚くなった（動画要約） / 00_解説_アプリ内部構造</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><strong>クリーンアーキテクチャ（Clean Architecture）</strong>は、Robert C. Martin（通称 Uncle Bob、アンクル・ボブ）が提唱した、<strong>長持ちするソフトウェアを作るための設計方針</strong>です。「クリーン」という名前のとおり、フレームワークや DB に依存しない、純粋で変更に強い構造を目指します。</p>
+    <p>クリーンアーキテクチャといえば4重の同心円の図が有名ですが、その中で<strong>最も大事なのはたった1つのルール</strong>、<strong>依存性のルール（The Dependency Rule）</strong>です。</p>
+    <blockquote><p><strong>ソースコードの依存関係は、外側から内側へのみ向かわなければならない。</strong></p></blockquote>
+    <p>このルールが守られていれば、システムは変更に強くなります。逆に守られていなければ、どんなにきれいな同心円の図を描いても意味がありません。このページでは次の内容を順に扱います。</p>
+    <ul>
+      <li>クリーンアーキテクチャの成り立ちと「約束したもの」</li>
+      <li>同心円の4つの層と、各層に <strong>書くべきこと／書くべきでないこと</strong>（コード例つき）</li>
+      <li>依存性のルールの意味、OK 例と NG 例</li>
+      <li>内側から外側を使うための仕掛け：<strong>依存性逆転（DIP）</strong></li>
+      <li>層をまたぐデータの渡し方（DTO）、層ごとの import ルール、フォルダ構成、テスト</li>
+      <li>メリット・デメリット、よくある NG パターン、そして「導入したらコードが汚くなった」と言われる理由</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">このページの一言要約</p>
+      <p>クリーンアーキテクチャの本体は4つの円ではなく「<strong>依存は内向きのみ</strong>」の1行です。円の数やディレクトリ構成は手段にすぎません。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>クリーンアーキテクチャの成り立ち</h2>
+    <h3>生みの親：ロバート・C・マーティン</h3>
+    <p>クリーンアーキテクチャを提唱したロバート・C・マーティンは、2001 年の「アジャイルソフトウェア開発宣言」に名を連ねた 17 人の1人で、2008 年の著書『Clean Code』で広く知られるようになりました。SOLID 原則を構成する各原則も彼が提唱したものです（ただし「SOLID」という頭文字の並びを考えたのはマイケル・フェザーズです）。</p>
+    <p>2012 年 8 月、マーティンはブログ記事「The Clean Architecture」で、4つの同心円の図を発表しました。円は内側から <strong>エンティティ、ユースケース、インターフェースアダプター、フレームワークとドライバー</strong> の順に並びます。そして、そこに課されたルールは1つだけ、<strong>依存性のルール</strong>でした。2017 年には書籍『Clean Architecture』として体系化されています。</p>
+    <h3>ゼロからの発明ではなく「統合」</h3>
+    <p>クリーンアーキテクチャは、まったく新しい発明というより、先行するアーキテクチャを統合したブランドに近いものです。マーティン本人も「細部は違うが狙いは同じだ」と認めています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>年</th><th>提唱者</th><th>アーキテクチャ</th></tr></thead>
+      <tbody>
+        <tr><td>1992</td><td>イヴァー・ヤコブソン</td><td>BCE（Boundary-Control-Entity）</td></tr>
+        <tr><td>2005</td><td>アリスター・コーバーン</td><td><a href="23-2_ヘキサゴナルアーキテクチャ.html">ヘキサゴナルアーキテクチャ</a>（ポート&amp;アダプタ）</td></tr>
+        <tr><td>2008</td><td>ジェフリー・パレルモ</td><td><a href="23-3_オニオンと3つの比較.html">オニオンアーキテクチャ</a></td></tr>
+        <tr><td>2012</td><td>ロバート・C・マーティン</td><td>クリーンアーキテクチャ（上記を統合）</td></tr>
+      </tbody>
+    </table></div>
+    <h3>クリーンアーキテクチャが約束したもの</h3>
+    <ul>
+      <li><strong>交換可能な部品</strong>：ビジネスルールを円の中心に隔離すれば、DB・Web フレームワーク・UI は後から取り換えられる部品になります。</li>
+      <li><strong>決定を遅らせられる</strong>：「良いアーキテクトは、<strong>まだ決めていない決定の数を最大化</strong>する」。DB やフレームワークの決定をぎりぎりまで遅らせられる構造が良い構造だ、という考え方です。</li>
+      <li><strong>テストが回る</strong>：中心が DB にも Web にも依存しなければ、サーバーを立てずにテストを実行できます。</li>
+      <li><strong>叫ぶアーキテクチャ（Screaming Architecture）</strong>：2011 年のブログ記事で、マーティンは「ディレクトリ構成は『Rails です』ではなく『会計システムだ』と叫ぶべきだ」と主張しました。構造を見ればフレームワークではなく業務が分かるべき、という意味です。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">約束の中身</p>
+      <p>クリーンアーキテクチャが約束したのは<strong>交換可能性とテスト性</strong>であって、ファイルやディレクトリを増やすことではありませんでした。この点は第 12 章の「コードが汚くなる理由」で効いてきます。</p>
+    </div>
+    <h3>なぜこうするのか：4つの独立</h3>
+    <div class="grid c2">
+      <div class="card accent"><h4>1. フレームワークから独立</h4><p>Rails や Next.js が廃れても、ビジネスの中核（Entities・Use Cases）はそのまま動きます。</p></div>
+      <div class="card accent"><h4>2. DB から独立</h4><p>MySQL から MongoDB に変えても、中心のロジックは変更不要です。</p></div>
+      <div class="card accent"><h4>3. UI から独立</h4><p>Web → モバイル → CLI と入れ替えても、業務ルールを再利用できます。</p></div>
+      <div class="card accent"><h4>4. テストが独立して書ける</h4><p>外部依存（DB・API・UI）をモックにして、純粋な Use Case・Entity だけをテストできます。</p></div>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>象徴的な「同心円」と4つの層</h2>
+    <p>クリーンアーキテクチャは、よく次のような同心円の図で表現されます。<strong>外側ほど詳細で変わりやすく、内側ほど中核で変わりにくい</strong>ものを置きます。</p>
+    <figure>
+    <svg viewBox="0 0 760 470" role="img" aria-label="クリーンアーキテクチャの同心円4層と依存の矢印">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <circle cx="300" cy="235" r="210" class="d-box"/>
+      <circle cx="300" cy="235" r="158" class="d-box-warn"/>
+      <circle cx="300" cy="235" r="106" class="d-box-good"/>
+      <circle cx="300" cy="235" r="56" class="d-box-accent"/>
+      <text x="300" y="52" text-anchor="middle" class="d-text-bold">Frameworks &amp; Drivers</text>
+      <text x="300" y="69" text-anchor="middle" class="d-text-sub">Web・DB・UI・外部 API</text>
+      <text x="300" y="104" text-anchor="middle" class="d-text-bold">Interface Adapters</text>
+      <text x="300" y="121" text-anchor="middle" class="d-text-sub">Controller・Presenter・Gateway</text>
+      <text x="300" y="156" text-anchor="middle" class="d-text-bold">Use Cases</text>
+      <text x="300" y="173" text-anchor="middle" class="d-text-sub">アプリ固有のルール</text>
+      <text x="300" y="232" text-anchor="middle" class="d-text-bold">Entities</text>
+      <text x="300" y="250" text-anchor="middle" class="d-text-sub">企業全体のルール</text>
+      <line x1="505" y1="235" x2="462" y2="235" class="d-line-accent" marker-end="url(#arw1)"/>
+      <line x1="455" y1="235" x2="410" y2="235" class="d-line-accent" marker-end="url(#arw1)"/>
+      <line x1="403" y1="235" x2="360" y2="235" class="d-line-accent" marker-end="url(#arw1)"/>
+      <text x="540" y="200" class="d-text-accent">依存の向き：外 → 内</text>
+      <text x="540" y="232" class="d-text">外側＝詳細</text>
+      <text x="540" y="252" class="d-text-sub">変わりやすい・差し替え可能</text>
+      <text x="540" y="284" class="d-text">内側＝方針</text>
+      <text x="540" y="304" class="d-text-sub">変わりにくい・何も知らない</text>
+    </svg>
+    <figcaption>図1：クリーンアーキテクチャの同心円。矢印（ソースコードの依存）は必ず内側を向く</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>役割</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Entities</strong></td><td>企業全体のビジネスルール。どのアプリでも共通する「物事のあり方」</td><td><code>User</code>, <code>Order</code>, <code>Money</code>, <code>Product</code></td></tr>
+        <tr><td><strong>Use Cases</strong></td><td>アプリ固有の業務フロー。「ユーザーを登録する」「注文を確定する」など、アプリがやることを1つずつ表現する</td><td><code>RegisterUserUseCase</code>, <code>PlaceOrderUseCase</code></td></tr>
+        <tr><td><strong>Interface Adapters</strong></td><td>Use Case と外界の間の翻訳役</td><td>Controller, Presenter, Gateway, Repository 実装</td></tr>
+        <tr><td><strong>Frameworks &amp; Drivers</strong></td><td>一番外側。フレームワーク・DB・UI など差し替え可能な道具</td><td>Express, React, PostgreSQL, Redis</td></tr>
+      </tbody>
+    </table></div>
+    <p>以下、各層に「何を書くべきか」「何を書くべきでないか」を、注文処理を題材にしたコードで見ていきます。</p>
+
+    <h3>層1：Entities（エンティティ層）</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>書くべきこと</h4><ul>
+        <li>業務上の概念（User、Order、Product、Email、Price…）</li>
+        <li>業務ルール（<code>canCancel()</code>、<code>applyDiscount()</code> など）</li>
+        <li>不変条件の保証（メール形式の検証、金額が負にならない、など）</li>
+      </ul></div>
+      <div class="card bad"><h4>書くべきでないこと</h4><ul>
+        <li>DB アクセス</li>
+        <li>HTTP / REST</li>
+        <li>フレームワーク固有のもの</li>
+        <li>UI / ビュー</li>
+      </ul></div>
+    </div>
+    <span class="code-label">entities/Order.ts</span>
+<pre><code>class Order {
+  constructor(
+    public readonly id: string,
+    public readonly items: OrderItem[],
+    private _status: OrderStatus
+  ) {
+    if (items.length === 0) throw new Error('注文には最低1つの商品が必要');
+  }
+
+  get status(): OrderStatus {
+    return this._status;
+  }
+
+  canCancel(): boolean {
+    return this._status === 'pending';
+  }
+
+  cancel(): void {
+    if (!this.canCancel()) throw new Error('キャンセル不可');
+    this._status = 'cancelled';
+  }
+
+  total(): number {
+    return this.items.reduce((sum, i) =&gt; sum + i.price, 0);
+  }
+}</code></pre>
+    <p><strong>外部依存がまったくない、純粋な業務モデル</strong>です。どこに持ち出しても動きます。コンストラクタで「商品が0件の注文は作れない」という不変条件を守り、「保留中（pending）のときだけキャンセルできる」という業務ルールをメソッドとして持っています。</p>
+    <p class="small muted">※ もとのノートでは割引ルール <code>applyDiscount(rate)</code>（合計に <code>1 - rate</code> を掛ける）も Entity の例として挙げています。こうした「業務の決まり事」が Entity の中身です。</p>
+
+    <h3>層2：Use Cases（ユースケース層）</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>書くべきこと</h4><ul>
+        <li>アプリ固有の業務の流れ</li>
+        <li>Entity を組み立て、Repository で保存し、外部サービスを呼ぶ、といった<strong>流れ</strong></li>
+        <li>トランザクション境界</li>
+      </ul></div>
+      <div class="card bad"><h4>書くべきでないこと</h4><ul>
+        <li>HTTP や UI の詳細</li>
+        <li>フレームワーク固有の型</li>
+        <li>ビジネスルールそのもの（Entity に書くべき）</li>
+      </ul></div>
+    </div>
+    <span class="code-label">usecases/PlaceOrderUseCase.ts</span>
+<pre><code>interface OrderRepository {
+  save(order: Order): Promise&lt;void&gt;;
+}
+interface PaymentGateway {
+  charge(amount: number): Promise&lt;void&gt;;
+}
+
+class PlaceOrderUseCase {
+  constructor(
+    private orderRepo: OrderRepository,
+    private payment: PaymentGateway
+  ) {}
+
+  async execute(input: PlaceOrderInput): Promise&lt;Order&gt; {
+    const order = new Order(
+      generateId(),
+      input.items.map(i =&gt; new OrderItem(i.id, i.price)),
+      'pending'
+    );
+    await this.payment.charge(order.total());
+    await this.orderRepo.save(order);
+    return order;
+  }
+}</code></pre>
+    <div class="callout key">
+      <p class="callout-title">ここが依存性逆転のポイント</p>
+      <p>インターフェース（<code>OrderRepository</code>、<code>PaymentGateway</code>）は <strong>Use Case 層に定義</strong>します。Use Case は「保存できるもの」「課金できるもの」という抽象だけを知っており、MySQL や Stripe の名前は一切出てきません。</p>
+    </div>
+
+    <h3>層3：Interface Adapters（アダプタ層）</h3>
+    <p>この層に書くのは次のようなものです。</p>
+    <ul>
+      <li><strong>翻訳役</strong>：HTTP リクエスト → Use Case の入力、Use Case の出力 → HTTP レスポンス、といった変換</li>
+      <li><strong>Controller / Presenter / ViewModel</strong></li>
+      <li><strong>Repository の実装</strong>（Use Case が定義したインターフェースを実装し、DB につなぐ）</li>
+    </ul>
+    <span class="code-label">adapters/controllers/OrderController.ts</span>
+<pre><code>class OrderController {
+  constructor(private placeOrder: PlaceOrderUseCase) {}
+
+  async handle(req: Request, res: Response) {
+    const input = {
+      items: req.body.items.map((i: any) =&gt; ({ id: i.id, price: i.price }))
+    };
+    const order = await this.placeOrder.execute(input);
+    res.json({ id: order.id, total: order.total() });
+  }
+}</code></pre>
+    <span class="code-label">adapters/repositories/MySQLOrderRepository.ts</span>
+<pre><code>class MySQLOrderRepository implements OrderRepository {
+  async save(order: Order): Promise&lt;void&gt; {
+    await db.query('INSERT INTO orders (id, status) VALUES (?, ?)', [
+      order.id, order.status
+    ]);
+    // ...明細の保存など
+  }
+}</code></pre>
+    <p><strong>Use Case が定義したインターフェースを、この層で実装</strong>します。HTTP の <code>req</code>/<code>res</code> や SQL といった「外の世界の言葉」は、ここで内側の言葉に翻訳されます。</p>
+    <p class="small muted">※ もとのノートの例では Repository が <code>order._status</code>（private フィールド）を直接読んでいましたが、TypeScript ではコンパイルエラーになるため、Entity に読み取り専用の <code>status</code> ゲッターを追加した形に直しています。</p>
+
+    <h3>層4：Frameworks &amp; Drivers（フレームワーク層）</h3>
+    <p>一番外側の層には、次のものを書きます。</p>
+    <ul>
+      <li>Express / Fastify などの Web サーバー起動</li>
+      <li>MySQL / PostgreSQL などの DB 接続</li>
+      <li>外部サービスのクライアント</li>
+      <li>main 関数・エントリポイント</li>
+      <li><strong>依存関係の組み立て（DI コンテナや手書きの配線）</strong></li>
+    </ul>
+    <span class="code-label">frameworks/main.ts</span>
+<pre><code>import express from 'express';
+import { MySQLOrderRepository } from '../adapters/repositories/MySQLOrderRepository';
+import { StripeGateway } from '../adapters/gateways/StripeGateway';
+import { PlaceOrderUseCase } from '../usecases/PlaceOrderUseCase';
+import { OrderController } from '../adapters/controllers/OrderController';
+
+const app = express();
+
+// 依存を組み立て
+const orderRepo = new MySQLOrderRepository();
+const payment = new StripeGateway();
+const placeOrder = new PlaceOrderUseCase(orderRepo, payment);
+const controller = new OrderController(placeOrder);
+
+app.post('/orders', (req, res) =&gt; controller.handle(req, res));
+app.listen(3000);</code></pre>
+    <p><strong>ここが唯一、すべての層を知っている場所</strong>です。全部を組み立てる「配線板」の役割を持ちます。この組み立て場所は一般に Composition Root と呼ばれます（詳しくは <a href="24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root</a>）。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>依存性のルール — The Dependency Rule</h2>
+    <h3>ルールの本質</h3>
+    <ul>
+      <li><strong>外側のものが、内側のものに依存してもよい</strong></li>
+      <li><strong>内側のものが、外側のものに依存してはいけない</strong></li>
+    </ul>
+    <p>つまり、<strong>Entities は何も知らない</strong>。<strong>Use Cases は Entities だけを知る</strong>。<strong>Adapter や Framework は外側から中を呼ぶだけ</strong>、ということです。矢印（依存）は必ず内側に向き、逆向きに依存してはいけません。</p>
+    <h3>「依存している」とはどういうことか</h3>
+    <p>あるモジュール A が、モジュール B を <strong>import したり、B のクラス名をコードに書いたりしている</strong>とき、「A は B に依存している」といいます。依存の矢印は<strong>データの流れではなく「知っている」の向き</strong>です。</p>
+<pre><code>// UserService が UserRepository に依存している
+import { UserRepository } from './UserRepository';
+
+class UserService {
+  constructor(private repo: UserRepository) {}
+}</code></pre>
+    <p>この「知っている」の矢印を、<strong>常に内側に向ける</strong>のがルールです。</p>
+    <h3>OK な例</h3>
+    <span class="code-label good">○ 依存がすべて内側を向いている</span>
+<pre><code>// 内側（Entities）
+class User {
+  constructor(public email: string) {}
+}
+
+// 一つ外側（UseCase）
+import { User } from '../entities/User'; // ✅ 内側への依存 OK
+
+class RegisterUserUseCase {
+  execute(input) { return new User(input.email); }
+}
+
+// さらに外側（Controller）
+import { RegisterUserUseCase } from '../usecases/RegisterUserUseCase'; // ✅ 内側への依存 OK
+
+class UserController {
+  constructor(private useCase: RegisterUserUseCase) {}
+}</code></pre>
+    <h3>NG な例</h3>
+    <span class="code-label bad">✕ Entity が外側の Express に依存している</span>
+<pre><code>import { Request } from 'express';
+
+class User {
+  constructor(req: Request) { /* ... */ }
+}</code></pre>
+    <p>User（Entity）はドメインの中心にある存在です。<strong>Express（フレームワーク）を知ってはいけません</strong>。Express の仕様が変わるだけで User が壊れてしまいます。</p>
+    <span class="code-label bad">✕ UseCase が具体的な DB（MySQL）を知っている</span>
+<pre><code>import mysql from 'mysql2';
+
+class PlaceOrderUseCase {
+  async execute() {
+    const conn = await mysql.createConnection(...);
+    await conn.query('INSERT INTO orders ...');
+  }
+}</code></pre>
+    <p>Use Case は<strong>どの DB を使うか</strong>まで知るべきではありません。この書き方では、MySQL から PostgreSQL に変えるだけで Use Case が壊れます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>依存性逆転（DIP）で内側から外側を使う</h2>
+    <p>ここで、「でも Use Case は DB に保存したい。<strong>依存を内側にしか向けられないなら、どうやって内側から外側を使うの？</strong>」という疑問が出てきます。本来なら「UseCase → DB」の向きに依存しそうなところです。</p>
+    <p>この疑問に答えるのが <strong>依存性逆転の原則（DIP）</strong>です。解決策は、<strong>インターフェースを内側に置く</strong>ことです。</p>
+    <figure>
+    <svg viewBox="0 0 760 320" role="img" aria-label="依存性逆転の適用前と適用後">
+      <defs>
+        <marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker>
+      </defs>
+      <text x="170" y="28" text-anchor="middle" class="d-text-bold">適用前</text>
+      <rect x="30" y="44" width="280" height="110" rx="10" class="d-box-good" opacity="0.35"/>
+      <text x="44" y="64" class="d-text-sub">内側（Use Case 層）</text>
+      <rect x="80" y="80" width="180" height="52" rx="8" class="d-box-good"/>
+      <text x="170" y="111" text-anchor="middle" class="d-text">PlaceOrderUseCase</text>
+      <rect x="30" y="196" width="280" height="110" rx="10" class="d-box" opacity="0.6"/>
+      <text x="44" y="296" class="d-text-sub">外側（Adapter / Framework）</text>
+      <rect x="60" y="220" width="220" height="52" rx="8" class="d-box-bad"/>
+      <text x="170" y="251" text-anchor="middle" class="d-text">MySQLOrderRepository</text>
+      <line x1="170" y1="132" x2="170" y2="216" class="d-line" marker-end="url(#arw2)"/>
+      <text x="182" y="172" class="d-text-sub">使う（内 → 外）✕</text>
+
+      <text x="560" y="28" text-anchor="middle" class="d-text-bold">適用後</text>
+      <rect x="380" y="44" width="360" height="130" rx="10" class="d-box-good" opacity="0.35"/>
+      <text x="394" y="64" class="d-text-sub">内側（Use Case 層）</text>
+      <rect x="394" y="84" width="150" height="62" rx="8" class="d-box-good"/>
+      <text x="469" y="120" text-anchor="middle" class="d-text">PlaceOrderUseCase</text>
+      <rect x="576" y="84" width="150" height="62" rx="8" class="d-box-accent"/>
+      <text x="651" y="108" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="651" y="128" text-anchor="middle" class="d-text">OrderRepository</text>
+      <line x1="544" y1="115" x2="572" y2="115" class="d-line" marker-end="url(#arw2)"/>
+      <rect x="380" y="196" width="360" height="110" rx="10" class="d-box" opacity="0.6"/>
+      <text x="394" y="296" class="d-text-sub">外側（Adapter / Framework）</text>
+      <rect x="566" y="220" width="170" height="52" rx="8" class="d-box"/>
+      <text x="651" y="251" text-anchor="middle" class="d-text">MySQLOrderRepository</text>
+      <line x1="651" y1="220" x2="651" y2="150" class="d-line-accent" stroke-dasharray="6 4" marker-end="url(#arw3)"/>
+      <text x="530" y="190" text-anchor="end" class="d-text-accent">実装する（外 → 内）○</text>
+    </svg>
+    <figcaption>図2：依存性逆転の before / after。インターフェースを内側に置くと、矢印が「外 → 内」に逆転する</figcaption>
+    </figure>
+<pre><code>// 内側：UseCase がインターフェースを定義
+interface OrderRepository {
+  save(order: Order): Promise&lt;void&gt;;
+}
+
+class PlaceOrderUseCase {
+  constructor(private repo: OrderRepository) {} // 抽象に依存
+}
+
+// 外側：具体実装
+class MySQLOrderRepository implements OrderRepository {
+  async save(order: Order) { /* SQL */ }
+}</code></pre>
+    <p><strong>インターフェース（抽象）は内側にあり、実装（具象）は外側</strong>にあります。外側が内側のインターフェースを<strong>実装</strong>するので、ソースコードの依存の方向は<strong>外 → 内</strong>のままです。実行時の呼び出しは「Use Case → MySQL」の向きに流れますが、ソースコード上で相手の名前を知っているのは MySQL 側だけ、という状態になります。こうすると、<strong>Use Case は MySQL も PostgreSQL も知らないまま</strong>動きます。</p>
+    <p>この仕掛けを <strong>依存性逆転（Dependency Inversion）</strong>と呼びます。そして、実装をどこで選んで渡すかは第 3 章の <code>main.ts</code>（Composition Root）が担当します。これが<strong>依存性注入（DI）</strong>です。</p>
+    <p>詳しくは <a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a>、インターフェースの切り方は <a href="24-3_インターフェースと抽象化.html">インターフェースと抽象化</a> を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>境界をまたぐデータ — DTO で持ち運ぶ</h2>
+    <p>層をまたぐ（Cross the Boundary）ときは、<strong>単純なデータ構造（DTO：Data Transfer Object）で持ち運ぶ</strong>のが原則です。</p>
+<pre><code>// Controller から UseCase へは、専用の入力 DTO で
+class RegisterUserInput {
+  constructor(public email: string, public age: number) {}
+}
+
+class RegisterUserUseCase {
+  execute(input: RegisterUserInput) { /* ... */ }
+}</code></pre>
+    <p>こうすることで、<strong>Use Case は HTTP リクエストの形状を知らずに済みます</strong>。HTTP の <code>req.body</code> を Use Case に直接渡してしまうと、Use Case が「外側の都合（HTTP）」に依存することになります。出力側も同様で、Use Case の結果は Presenter が ViewModel / レスポンス用の形に変換して View に渡します。</p>
+    <div class="callout warn">
+      <p class="callout-title">ただし「詰め替えの沼」に注意</p>
+      <p>リクエストモデル → DTO → エンティティ → レスポンスモデル、と境界ごとに型を作りすぎると、項目を1つ追加するだけで多数のファイルを触ることになります（第 12 章参照）。DTO は<strong>本当に守りたい境界</strong>に使うものです。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>層ごとの import ルールと依存の見分け方</h2>
+    <h3>層ごとの import ルール</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>import してよいもの</th></tr></thead>
+      <tbody>
+        <tr><td>Entities</td><td>他の Entities のみ（または何も import しない）</td></tr>
+        <tr><td>Use Cases</td><td>Entities・自分が定義したインターフェース</td></tr>
+        <tr><td>Interface Adapters</td><td>Use Cases・Entities・インターフェース・フレームワーク</td></tr>
+        <tr><td>Frameworks &amp; Drivers</td><td>何でも（Adapter・Use Case・Entity すべて）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>外側の層ほど多くを知り、内側ほど何も知らない</strong>のが理想形です。</p>
+    <h3>判定チェックリスト</h3>
+    <p>コードを開いたら、まずファイル先頭の <strong>import 文</strong>を見ます。</p>
+    <ol class="steps">
+      <li><strong>Entity は何を import しているか？</strong> → 何も（または他の Entity のみ）</li>
+      <li><strong>Use Case は何を import しているか？</strong> → Entity とインターフェース</li>
+      <li><strong>Adapter は何を import しているか？</strong> → Use Case とインターフェース（＋フレームワーク）</li>
+      <li><strong>Framework 層は何を import しているか？</strong> → すべて（Adapter, Use Case, Entity）</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">ルールを人の規律ではなく機械の検査に</p>
+      <p>import の向きは機械的にチェックできます。Java なら <strong>ArchUnit</strong> で「domain パッケージは infrastructure パッケージに依存しない」といったルールをテストとして書き、違反したら CI を落とせます。TypeScript でも dependency-cruiser や ESLint の import 制限ルールなどで同じことができます。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>フォルダ構成例</h2>
+    <p>「ボブおじさんの同心円」をそのままコードに落とすと、次のようなフォルダ構成になります。</p>
+<pre><code>src/
+├─ entities/               ← 中央：企業全体のルール
+│   ├─ Order.ts
+│   ├─ OrderItem.ts
+│   └─ User.ts
+├─ usecases/               ← ユースケース（＋インターフェース定義）
+│   ├─ PlaceOrderUseCase.ts
+│   ├─ CancelOrderUseCase.ts
+│   └─ RegisterUserUseCase.ts
+├─ adapters/               ← 変換役
+│   ├─ controllers/
+│   │   └─ OrderController.ts
+│   ├─ presenters/
+│   │   └─ OrderPresenter.ts
+│   ├─ repositories/
+│   │   └─ MySQLOrderRepository.ts
+│   └─ gateways/
+│       └─ StripeGateway.ts
+└─ frameworks/             ← 外側：道具と配線
+    ├─ main.ts
+    ├─ db.ts
+    └─ config.ts</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">ディレクトリを4つ作っても、クリーンにはならない</p>
+      <p>大事なのはフォルダ名ではなく<strong>依存の向き</strong>です。<code>usecases/</code> の中のファイルが ORM の型を import していれば、フォルダがどれだけ整っていてもルール違反です。また「叫ぶアーキテクチャ」の考え方に立てば、<code>orders/</code> <code>users/</code> のように業務で切ってから中を層に分ける構成も有力です（<a href="21-3_垂直スライスアーキテクチャ.html">垂直スライスアーキテクチャ</a> 参照）。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>テストしやすさ — 層に分けた最大の恩恵</h2>
+    <h3>Entity のテスト</h3>
+<pre><code>test('canCancel は pending なら true', () =&gt; {
+  const order = new Order('1', [new OrderItem('a', 100)], 'pending');
+  expect(order.canCancel()).toBe(true);
+});</code></pre>
+    <p>依存がないので、すぐにテストできます。</p>
+    <h3>Use Case のテスト（モック注入）</h3>
+<pre><code>test('注文処理の流れ', async () =&gt; {
+  const mockRepo = { save: jest.fn() };
+  const mockPayment = { charge: jest.fn() };
+  const useCase = new PlaceOrderUseCase(mockRepo, mockPayment);
+
+  await useCase.execute({ items: [{ id: 'a', price: 100 }] });
+
+  expect(mockPayment.charge).toHaveBeenCalledWith(100);
+  expect(mockRepo.save).toHaveBeenCalled();
+});</code></pre>
+    <p><strong>DB も HTTP も使わずにテストできます</strong>。Use Case がインターフェースにしか依存していないので、テストではモックを渡すだけで済みます。これがクリーンアーキテクチャの本領です。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>メリット・デメリットと向いている場面</h2>
+    <div class="grid c2">
+      <div class="card good"><h4>メリット</h4><ol>
+        <li><strong>変更に強い</strong>：外側（UI・DB・フレームワーク）が変わっても内側は無傷</li>
+        <li><strong>テスト容易</strong>：Use Case を外部依存なしで単体テストできる</li>
+        <li><strong>ドメインが主役・守られる</strong>：業務ルールがフレームワークの都合に振り回されず、読み取りやすい</li>
+        <li><strong>長寿命</strong>：フレームワークが変わっても資産が残る</li>
+      </ol></div>
+      <div class="card bad"><h4>デメリット</h4><ol>
+        <li><strong>小規模だとオーバースペック</strong>：CRUD が中心ならやりすぎ</li>
+        <li><strong>書く量が増える</strong>：変換・インターフェースが多い</li>
+        <li><strong>学習コスト</strong>：新メンバーが迷う</li>
+      </ol></div>
+    </div>
+    <p>クリーンアーキテクチャは「<strong>ビジネスルールが豊か</strong>で、<strong>長く使う予定のシステム</strong>」に向きます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>スタイル</th><th>手軽さ・コスト</th><th>シンプルさ</th><th>デプロイ容易性</th><th>テスト容易性</th><th>拡張性</th><th>耐障害性</th><th>進化しやすさ</th></tr></thead>
+      <tbody>
+        <tr><td>レイヤード</td><td class="stars">★★★★★</td><td class="stars">★★★★★</td><td class="stars">★</td><td class="stars">★★</td><td class="stars">★</td><td class="stars">★</td><td class="stars">★</td></tr>
+        <tr><td>クリーン・ヘキサ・オニオン</td><td class="stars">★★★</td><td class="stars">★★</td><td class="stars">★</td><td class="stars">★★★★</td><td class="stars">★</td><td class="stars">★</td><td class="stars">★★★</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">レイヤードは『ソフトウェアアーキテクチャの基礎』（Richards &amp; Ford）の評価、クリーン・ヘキサ・オニオンは書籍に評価がないためノート独自の目安です。1つのデプロイ単位である点はレイヤードと同じなので、デプロイ・スケール・耐障害性は変わりません。一方、ドメインを DB なしでテストでき外側を差し替えやすいぶんテスト容易性・進化しやすさが上がり、層とインターフェースが増えるぶんシンプルさ・コストが下がります。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある NG パターンと「完璧主義にならない」</h2>
+    <h3>NG 1：Entity に ORM のアノテーションを付ける</h3>
+    <span class="code-label bad">✕ Entity が ORM を知っている</span>
+<pre><code>@Entity() // ← ORM のアノテーション
+@Table('users')
+class User { /* ... */ }</code></pre>
+    <p>ORM に縛られると、Entity が外側（ORM）に依存してしまいます。厳格に守るなら、<strong>永続化用のモデルは Entity と別に用意</strong>し、Repository 実装で相互に変換します。</p>
+    <h3>NG 2：Use Case で HTTP 例外を throw する</h3>
+    <span class="code-label bad">✕ Use Case が HTTP を知ってしまう</span>
+<pre><code>throw new BadRequestException('invalid');</code></pre>
+    <p>Use Case は<strong>ビジネス例外</strong>（例：<code>OrderCannotBeCancelledError</code>）を throw し、<strong>HTTP ステータスへの変換は外側の Controller で行う</strong>のが正しい形です。</p>
+    <h3>NG 3：View が Entity を直接使う</h3>
+    <p>Entity の内部構造が変わると View が壊れます。<strong>View には ViewModel / DTO で渡します</strong>。</p>
+    <div class="callout bad">
+      <p class="callout-title">3つの NG に共通すること</p>
+      <p>いずれも <strong>内側が外側の事情を知ってしまっている</strong>状態です。</p>
+    </div>
+    <h3>完璧主義にならない</h3>
+    <p>依存性のルールを 100% 守ろうとすると、小さなアプリでは書く量が爆発します。<strong>重要な部分だけ厳密に守り、周辺は柔軟に</strong>というのが現実解です。特に、</p>
+    <ul>
+      <li><strong>Entities・Use Cases はフレームワーク非依存を死守</strong>する</li>
+      <li><strong>Controllers・Adapters はフレームワーク依存でも OK</strong></li>
+    </ul>
+    <p>と割り切ると、コストと効果のバランスがとりやすくなります。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>補足：「クリーンアーキテクチャを入れたら、コードが汚くなった」の正体</h2>
+    <p>ここでは動画「クリーンアーキテクチャを入れたら、コードが汚くなった」（IT技術屋のボヤキ）の要約から、導入の失敗パターンを整理します。動画の主張は、<strong>クリーンアーキテクチャの本体は「依存は内向きのみ」の1行であり、コードが汚くなるのはその誤読と過剰のせい</strong>だ、というものです。</p>
+    <h3>コードが汚くなる4つのメカニズム</h3>
+    <ol class="steps">
+      <li><strong>図のカーゴカルト</strong>：4つの円をそのまま4つのディレクトリにするが、依存の向きは誰も検査しない。結果として、Use Case が ORM の型を参照していたりする。</li>
+      <li><strong>実装が1つしかないインターフェースの量産</strong>：差し替える日は来ないのに、すべてにインターフェースを切る。エディタの「定義へ移動」で宣言に飛ばされ、読む人は毎回迷子になる。</li>
+      <li><strong>詰め替えの沼</strong>：リクエストモデル → DTO → エンティティ → レスポンスモデル。項目を1つ追加するだけで 7 ファイル前後を触ることになる。</li>
+      <li><strong>円の数の誤読</strong>：マーティンは「4つと決まっているわけではない、概念図だ」と明記しているのに、画面3枚の社内システムにまでフル装備の4層を敷いてしまう。</li>
+    </ol>
+    <p>原因はルールの<strong>誤読と過剰</strong>であって、依存性のルールそのものではありません。</p>
+    <h3>なぜ世界中で同じ誤読が起きたのか</h3>
+    <ul>
+      <li><strong>伝わり方の非対称</strong>：図は一目で覚えられるが、「依存は内向きのみ」は痛い目を見ないと腹落ちしない。そのため図だけが広がり、ルールは置き去りにされた。</li>
+      <li><strong>コストとリターンの時間差</strong>：抽象化のコスト（ファイル増・詰め替え・学習時間）は今日払うが、リターンは DB を差し替える日にしか発生しない。そして多くのシステムはその日を迎えない（Rails から Django に乗り換えた、という話はほとんど聞かない）。</li>
+      <li><strong>批判者の存在</strong>：ダン・ノースは 2017 年に SOLID の全要素に疑義を示し、2022 年に対案として <strong>CUPID</strong> を発表した。「単純さは性質であって、層を増やして得るものではない」という主張である。</li>
+      <li><strong>チームの理解度</strong>：1人だけが理解している4層は、その人が抜けた瞬間にただの迷路になる。</li>
+    </ul>
+    <p>誤読は個人の資質の問題ではなく、図の伝わりやすさとコストの時間差という<strong>構造から量産された</strong>、というのが動画の分析です。</p>
+    <h3>AI 時代のクリーンアーキテクチャ</h3>
+    <ul>
+      <li>定型コードやインターフェースは AI が一瞬で書けるため、「7 ファイルの詰め替えが面倒」という反対理由は弱まった。</li>
+      <li>一方で、間接参照だらけのコードは人間にも AI にも追いにくい。ホップ数が多いほど、AI が問題箇所を特定したり修正を提案したりする精度が落ちる。<strong>書くコストは下がったが、読むコストは残る</strong>。</li>
+      <li>ルールは人間の規律ではなく<strong>機械の検査</strong>にする（ArchUnit などで依存の向きをテストとして書き、違反したら CI を落とす）。</li>
+      <li>価値が移る先は「<strong>どこに境界を引けば元が取れるか</strong>」の判断。変更が頻繁な場所の境界は元が取れるが、5 年触っていない DB への抽象は掛け捨てになる。</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">動画のまとめ</p>
+      <p>コードを汚したのは道具ではなく、1行のルールを様式として輸入した使い方です。綺麗なコードとは層が多いコードではなく、<strong>変更したい場所にまっすぐたどり着けるコード</strong>です。円は2つでも6つでもかまいません。</p>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>他のアーキテクチャとの関係</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アーキテクチャ</th><th>クリーンとの関係</th></tr></thead>
+      <tbody>
+        <tr><td><a href="21-1_層化・三層・レイヤード.html">レイヤードアーキテクチャ</a></td><td>4層を上下に並べた古典的な表現。ただし伝統的なレイヤードではドメイン層がインフラ層（DB）に依存しており、依存の向きが違う</td></tr>
+        <tr><td><a href="23-2_ヘキサゴナルアーキテクチャ.html">ヘキサゴナルアーキテクチャ</a></td><td>ポート&amp;アダプタとして同じ思想を表現。層の内訳はクリーンより粗い（コア＋アダプタ）</td></tr>
+        <tr><td><a href="23-3_オニオンと3つの比較.html">オニオンアーキテクチャ</a></td><td>層をタマネギ状に描く。Domain Service と Application Service を分ける</td></tr>
+        <tr><td><a href="23-4_CQRS.html">CQRS</a></td><td>クリーンで「一覧画面のために Entity を大量に組み立てる」のがつらいときに、読み取り側だけ別モデルにする</td></tr>
+      </tbody>
+    </table></div>
+    <p>これら3つ（クリーン・ヘキサゴナル・オニオン）は <strong>本質的にほぼ同じ思想</strong>（依存を内側へ、ドメインを中心に）で、図の描き方と用語が違うだけと捉えて差し支えありません。また、副作用（DB・HTTP）を外側の薄い殻に、純粋な計算を内側に置く「Functional Core, Imperative Shell」は、同心円型アーキテクチャを関数レベルで表したものです（41 外のノート：46_メソッド設計『03_Functional_Core_Imperative_Shell』）。SOLID 原則そのものは 41 外のノート：48_原則『SOLID』が本拠地です。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>よくある誤解</h2>
+    <details><summary>誤解1：クリーンアーキテクチャ＝4つの同心円（4つのディレクトリ）</summary><div class="body">
+      <p>本体は図ではなく「<strong>ソースコードの依存は外側から内側へのみ</strong>」というルールです。4つのディレクトリを作っても、内側が外側を import していればクリーンではありません。逆に、ディレクトリが2つでもルールが守られていれば、その精神に沿っています。</p>
+    </div></details>
+    <details><summary>誤解2：円は必ず4つでなければならない</summary><div class="body">
+      <p>マーティン自身が「4つと決まっているわけではない、概念図だ」と明記しています。小さなシステムなら「ドメイン」と「それ以外」の2つでも十分なことがあります。</p>
+    </div></details>
+    <details><summary>誤解3：すべての依存にインターフェースを切るべき</summary><div class="body">
+      <p>インターフェースが必要なのは、<strong>内側から外側を使う境界</strong>（DB・外部 API・メールなど）と、テストで差し替えたい場所です。実装が1つしかなく差し替える予定もない場所にまで切ると、読みにくさだけが増えます。</p>
+    </div></details>
+    <details><summary>誤解4：依存の向き＝処理（データ）の流れる向き</summary><div class="body">
+      <p>依存の矢印は「<strong>ソースコード上で相手の名前を知っている</strong>」向きです。実行時には Use Case が Repository を呼び出しますが、DIP を使えばソースコード上は Repository 実装が Use Case 側のインターフェースを知っている（外 → 内）状態になります。</p>
+    </div></details>
+    <details><summary>誤解5：100% 厳密に守らないと意味がない</summary><div class="body">
+      <p>小さなアプリで完全に守ると書く量が爆発します。<strong>Entities・Use Cases のフレームワーク非依存だけは死守し、Controller・Adapter は柔軟に</strong>、という割り切りが現実的です。</p>
+    </div></details>
+
+    <h2 id="sec-15"><span class="num">15.</span>まとめ</h2>
+    <ul>
+      <li>クリーンアーキテクチャは Robert C. Martin が 2012 年に提唱した、BCE・ヘキサゴナル・オニオンを統合した設計方針。約束したのは<strong>交換可能性とテスト性</strong></li>
+      <li>同心円は内側から <strong>Entities（企業全体のルール）→ Use Cases（アプリ固有の流れ）→ Interface Adapters（翻訳役）→ Frameworks &amp; Drivers（道具と配線）</strong></li>
+      <li>唯一のルールは <strong>依存性のルール</strong>：ソースコードの依存（import・クラス名の参照）は外側から内側へのみ。外側ほど多くを知り、内側ほど何も知らない</li>
+      <li>内側から外側を使うときは、<strong>インターフェースを内側に置き、実装を外側に置く</strong>（DIP）。実装は <code>main.ts</code> などの Composition Root で組み立てて渡す（DI）</li>
+      <li>層をまたぐときは DTO で運び、Use Case に HTTP の形を知らせない。ただし詰め替えすぎに注意</li>
+      <li>NG：Entity に ORM アノテーション／Use Case で HTTP 例外／View が Entity を直接使う。完璧主義にならず、中心だけは死守</li>
+      <li>コードが汚くなるのは、図のカーゴカルト・実装1つのインターフェース・詰め替えの沼・円の数の誤読という<strong>誤読と過剰</strong>のせい。大事なのは「どこに境界を引けば元が取れるか」</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Robert C. Martin「The Clean Architecture」（2012）：<a href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html</a></li>
+      <li>Robert C. Martin「Screaming Architecture」（2011）：<a href="https://blog.cleancoder.com/uncle-bob/2011/09/30/Screaming-Architecture.html">https://blog.cleancoder.com/uncle-bob/2011/09/30/Screaming-Architecture.html</a></li>
+      <li>Robert C. Martin『Clean Architecture 達人に学ぶソフトウェアの構造と設計』（原著 2017）</li>
+      <li>IT技術屋のボヤキ「クリーンアーキテクチャを入れたら、コードが汚くなった」（YouTube）：<a href="https://www.youtube.com/watch?v=BoAMw_4ZcmA">https://www.youtube.com/watch?v=BoAMw_4ZcmA</a></li>
+      <li>ArchUnit：<a href="https://www.archunit.org/">https://www.archunit.org/</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="22-2_MVP・MVVMとGUIの系譜.html"><span class="lbl">← 前のページ</span>MVP・MVVM と GUI アーキテクチャの系譜</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="23-2_ヘキサゴナルアーキテクチャ.html"><span class="lbl">次のページ →</span>ヘキサゴナルアーキテクチャ</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

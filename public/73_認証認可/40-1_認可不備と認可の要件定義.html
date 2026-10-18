@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>認可不備と認可の要件定義｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 認可モデル › 認可不備と認可の要件定義</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 認可モデル</span>
+      <h1>認可不備と認可の要件定義</h1>
+      <p class="lead">ログインできたあとでも、「その人が、その操作やそのデータに触れてよいか」を毎回確かめないと、他人の情報が見えたり、管理者だけが使える機能を一般利用者に使われたりします。その仕組みが <strong>認可（Authorization）</strong> です。このページでは徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）第23章をもとに、認可不備の典型例と、認可制御を要件としてどう定義するかを解説します。</p>
+      <p class="meta">もとにしたノート：40_認可モデル/01_認可（徳丸本23章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>テーマ</th><th>概要</th></tr></thead>
+        <tbody>
+          <tr><td><strong>認可不備の典型例</strong></td><td>URL直打ち、ID改ざん、画面だけの制御、クライアント側の権限情報</td></tr>
+          <tr><td><strong>認可制御の要件定義</strong></td><td>誰が・何に・何をしてよいかを、サーバー側で必ず判定する設計</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <p>第21章（<a href="20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>）は「誰か」を確かめる認証、第22章（アカウント管理。50_実装 のノートで扱います）はアカウントのライフサイクルが中心でした。本章は、<strong>認証後に「何をしてよいか」を決める認可</strong> がポイントです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>認可とは何か</h2>
+    <p><strong>認可</strong> とは、「今アクセスしている人が、その操作やそのデータに対して権限を持っているか」を判定し、許可または拒否する処理です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証（Authentication）</strong></td><td>「誰か」を確かめること</td><td>ログインして本人だと確認する</td></tr>
+        <tr><td><strong>認可（Authorization）</strong></td><td>「何をしてよいか」を決めること</td><td>自分の注文だけ見られる／管理者だけ削除できる</td></tr>
+      </tbody>
+    </table></div>
+    <p>認証と認可はセットで語られますが、別物です。</p>
+<pre><code>認証に成功した ＝ 「ログインできた」
+認可に成功した ＝ 「その操作・そのデータに触れてよい」</code></pre>
+    <p>ログインできても、<strong>他人の注文履歴を見たり、管理者メニューを使ったりしてよいとは限りません</strong>。認可は、その境界線を守る仕組みです。2 つの違いと「2 つの関門」の考え方は <a href="10-1_認証と認可の違い.html#sec-2">認証と認可の違い：2 つの関門</a> で詳しく解説しています。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <ul>
+      <li><strong>認証</strong>：会社の入口で社員証を見せ、「社員本人です」と確認してもらう</li>
+      <li><strong>認可</strong>：自分のデスクと自分のキャビネットだけ開ける（他の人の引き出しは開けられない）</li>
+      <li><strong>認可不備</strong>：社員証さえあれば、誰のキャビネットでも番号を知っていれば開けられる状態</li>
+    </ul>
+
+    <h3 id="sec-1-2">1.2 なぜ危険か</h3>
+    <p>認可が甘いと、次のような被害が出ます。</p>
+    <ul>
+      <li>他人の個人情報・注文・メッセージが見られる</li>
+      <li>他人のデータを書き換え・削除される</li>
+      <li>一般利用者なのに管理者機能を使える</li>
+      <li>ログインしていないのに、URLを知っているだけで秘密情報が見られる</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">ログイン画面を固めるだけでは足りない</p>
+      <p>「ログイン画面を固めた」「メニューを隠した」だけでは足りません。<strong>サーバーが、リクエストごとに権限を判定する</strong> ことが本質です。</p>
+    </div>
+    <p>OWASP Top 10 では、認可の不備は「アクセス制御の不備（A01）」として最上位に挙げられています（<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-2">A01 アクセス制御の不備</a> を参照）。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>認可不備の典型例</h2>
+    <p>認可の不備は、画面上は正しく見えても、<strong>URLやパラメータを少し変えるだけで突破できる</strong> ことが多いです。代表的なパターンを整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>典型例</th><th>何が起きるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>URLを知っていると認証なしで閲覧できる</strong></td><td>ログイン不要の直リンクで秘密情報が見える</td></tr>
+        <tr><td><strong>IDを変更すると権限外の情報が参照できる</strong></td><td>自分以外のデータのIDに書き換えて読める（IDOR）</td></tr>
+        <tr><td><strong>メニューの表示・非表示のみで制御している</strong></td><td>画面は隠しているが、URL直打ちで機能が使える</td></tr>
+        <tr><td><strong>Hiddenやクッキーに権限情報を保持している</strong></td><td>クライアント側の値を改ざんして権限を上げられる</td></tr>
+      </tbody>
+    </table></div>
+    <p>以下、3〜6 章で 1 つずつ見ていきます。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>URLを知っていると認証なしで閲覧できる</h2>
+    <p>「このURLを知っている人だけが見られる」という設計は、認可ではありません。URLは推測されたり、共有されたり、履歴やログに残ったりします。</p>
+    <span class="code-label bad">危険なイメージ</span>
+<pre><code>https://example.com/reports/secret-2026.pdf
+
+・ログイン不要
+・URLを知っていれば誰でもダウンロードできる
+・メール転送、ブラウザ履歴、Referer、ログからURLが漏れる</code></pre>
+    <p><strong>Referer</strong> は、ブラウザがリンク先へ「どのページから来たか」を伝えるヘッダです。ここに秘密のURLが載って、外部サイトに伝わることがあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>なぜ起きるか</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証チェックがない</strong></td><td>「ログインしているか」すら見ていない</td></tr>
+        <tr><td><strong>推測可能なURL</strong></td><td>連番や日付など、当てやすいパスになっている</td></tr>
+        <tr><td><strong>秘密の共有にURLだけを使う</strong></td><td>「URLが秘密」という前提が崩れやすい</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-1">3.1 対策の考え方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証を必須にする</strong></td><td>ログインしていない利用者には見せない</td></tr>
+        <tr><td><strong>認可も必須にする</strong></td><td>ログイン済みでも、その人に閲覧権限があるか確認する</td></tr>
+        <tr><td><strong>推測困難なトークンだけでは足りない場合がある</strong></td><td>トークン付きURLは一時共有には使えるが、権限管理の代わりにはならない</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">安全なイメージ</span>
+<pre><code>1. 利用者がログインしているか確認する
+2. その利用者が、そのレポートを見てよいか確認する
+3. 許可された場合だけファイルを返す</code></pre>
+    <p>「URLが長いから大丈夫」は、認可の代わりになりません。<strong>誰がアクセスしているかをサーバーが判定する</strong> 必要があります。URLを推測して非公開ページに届く攻撃は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-3-3">URL を推測して非公開ページにアクセス</a> も参照してください。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>IDを変更すると権限外の情報が参照できる（IDOR）</h2>
+    <p>自分のデータの詳細画面で、URLやパラメータのIDを書き換えると、他人のデータが見えてしまう問題です。<strong>IDOR（Insecure Direct Object Reference／安全でない直接オブジェクト参照）</strong> と呼ばれる典型的な認可不備です。「番号を 1 つ変えると他人の注文が見える」流れとコードの直し方は <a href="10-1_認証と認可の違い.html#sec-4">番号を 1 つ変えると：2 つ目の関門がない作り</a> で詳しく解説しているので、ここでは要点を整理します。</p>
+    <span class="code-label bad">危険なイメージ</span>
+<pre><code>自分の注文: https://example.com/orders?id=1001
+他人の注文: https://example.com/orders?id=1002  ← IDだけ変える
+
+サーバーの処理:
+SELECT * FROM orders WHERE id = 1002
+→ 「今ログインしている人が、この注文の持ち主か」を見ていない</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>なぜ起きるか</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>IDの存在確認だけしている</strong></td><td>「そのIDのレコードがあるか」だけ見て、所有者を見ていない</td></tr>
+        <tr><td><strong>クライアントから渡されたIDを信じている</strong></td><td>URL・フォーム・JSONのIDをそのまま使う</td></tr>
+        <tr><td><strong>一覧は自分だけ、詳細は誰でも</strong></td><td>一覧画面だけ絞り込み、詳細APIで認可を忘れている</td></tr>
+      </tbody>
+    </table></div>
+    <p>注文だけでなく、次のようなリソースでも同じです。</p>
+    <ul>
+      <li>ユーザープロフィール（<code>/users/123</code>）</li>
+      <li>メッセージ（<code>/messages/456</code>）</li>
+      <li>請求書・領収書（<code>/invoices/789</code>）</li>
+      <li>アップロードしたファイル（<code>/files/abc</code>）</li>
+      <li>APIのオブジェクト（<code>GET /api/orders/1002</code>）</li>
+    </ul>
+
+    <h3 id="sec-4-1">4.1 対策の考え方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>所有者または権限を毎回確認する</strong></td><td>「この注文は、今の利用者のものか」「閲覧権限があるか」</td></tr>
+        <tr><td><strong>対象はセッションから決める</strong></td><td>自分専用の一覧なら、ログイン中のユーザーIDで絞り込む</td></tr>
+        <tr><td><strong>クライアントのIDを信じない</strong></td><td>渡されたIDは「候補」であり、権限チェック後にだけ使う</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">安全なイメージ</span>
+<pre><code>1. セッションから「今ログインしている利用者」を特定する
+2. リクエストの order_id を受け取る
+3. その注文が、その利用者のものか（または閲覧権限があるか）をDB等で確認する
+4. 権限がなければ 403 Forbidden（または存在を隠すなら 404）を返す
+5. 権限がある場合だけデータを返す</code></pre>
+    <p><strong>403 Forbidden</strong> は「誰かは分かったが、この操作は許可しない」、<strong>404 Not Found</strong> は「見つからない」を表す応答です。どちらを選ぶかの考え方は <a href="10-1_認証と認可の違い.html#sec-4-1">2 つ目の関門を置く</a> を参照してください。</p>
+    <p>第22章（アカウント管理）の「別ユーザーのパスワード変更」と同じ考え方です。<strong>操作対象は、クライアントが指定したIDではなく、サーバーが権限付きで決める</strong> のが基本です。所有者チェックのコード例は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-4">A01 のコード例：所有者チェック</a> にもあります。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>メニューの表示・非表示のみで制御している</h2>
+    <p>管理者メニューを一般利用者の画面に出さない、という実装だけでは不十分です。<strong>画面を隠すこと</strong> と <strong>機能を使えないようにすること</strong> は別問題です（<a href="10-1_認証と認可の違い.html#sec-5">画面で隠しても守れない</a> も参照）。</p>
+    <span class="code-label bad">危険なイメージ</span>
+<pre><code>・一般利用者の画面には「ユーザー削除」ボタンを出さない
+・しかし URL https://example.com/admin/users/delete?id=10 は生きている
+・一般利用者がURLを直打ちすると、削除できてしまう</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>なぜ起きるか</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>UIだけを制御している</strong></td><td>HTMLやJavaScriptでボタンを消しただけ</td></tr>
+        <tr><td><strong>サーバー側に認可がない</strong></td><td>リクエストが来たら、誰からのものでも処理してしまう</td></tr>
+        <tr><td><strong>「見えない＝使えない」と思い込む</strong></td><td>攻撃者は画面を見なくてもURLやAPIを試す</td></tr>
+      </tbody>
+    </table></div>
+    <p>フロントエンド（ブラウザ側）の制御は、<strong>使いやすさのためのもの</strong> です。セキュリティの境界ではありません。</p>
+
+    <h3 id="sec-5-1">5.1 対策の考え方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>サーバー側で必ず認可する</strong></td><td>管理機能のエンドポイント（リクエストを受け付ける URL・API の窓口）すべてで、管理者かどうかを確認する</td></tr>
+        <tr><td><strong>UI制御は補助</strong></td><td>メニュー非表示は誤操作防止やUXのため。権限の代わりにしない</td></tr>
+        <tr><td><strong>APIも同じルール</strong></td><td>画面用URLだけでなく、裏側のAPIにも同じ認可を入れる</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">安全なイメージ</span>
+<pre><code>1. /admin/... へのリクエストを受け取る
+2. セッションから利用者を特定する
+3. その利用者が管理者ロールを持つか確認する
+4. 持っていなければ拒否する
+5. 持っている場合だけ処理する</code></pre>
+    <p><strong>ロール</strong> は「一般利用者」「管理者」のような、権限をまとめた役割のことです。ロールを使った権限の設計は次のページ <a href="40-2_RBAC・ABAC・ACLの使い分け.html">RBAC・ABAC・ACLの使い分け</a> で扱います。</p>
+    <div class="callout key">
+      <p class="callout-title">認可の本質</p>
+      <p>「ボタンを消したから安全」ではなく、<strong>ボタンがなくてもリクエストが来たら拒否できるか</strong> が認可の本質です。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>Hiddenパラメータやクッキーに権限情報を保持している</h2>
+    <p>権限やロールを、HTMLの hidden フィールド（画面には表示されないが、フォーム送信時に一緒に送られる入力欄）やクッキーに入れて、サーバーがそれを信じると危険です。クライアント側の値は、利用者（攻撃者）が自由に書き換えられます。</p>
+    <span class="code-label bad">危険なイメージ：hidden に権限を入れる</span>
+<pre><code>&lt;form action="/update" method="post"&gt;
+  &lt;input type="hidden" name="role" value="user"&gt;
+  ...
+&lt;/form&gt;
+
+攻撃者が role=admin に書き換えて送信
+→ サーバーが「adminとして処理してよい」と判断してしまう</code></pre>
+    <p>クッキーでも同様です。</p>
+    <span class="code-label bad">危険なイメージ：クッキーに権限を入れる</span>
+<pre><code>Cookie: role=user
+
+攻撃者が Cookie を role=admin に変更
+→ 管理者機能が使える</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>なぜ起きるか</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>クライアントを信頼している</strong></td><td>ブラウザから来た値を、権限の根拠にしている</td></tr>
+        <tr><td><strong>改ざん検知がない</strong></td><td>署名やサーバー側照合がなく、値をそのまま信じている</td></tr>
+        <tr><td><strong>見た目の隠し方とセキュリティを混同している</strong></td><td>hidden は画面に見えないだけで、改ざんは簡単</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="危険な作りでは、ブラウザでroleをadminに書き換えて送ると、サーバーが送られてきたroleを信じ、管理者機能が使えてしまう。安全な作りでは、ブラウザで同じ書き換えをしても、サーバーは送られたroleを無視し、セッションのuser_idからサーバー側の権限情報を引く。roleはuserなので拒否される">
+      <defs>
+        <marker id="arw401a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw401b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">危険な作り</text>
+      <rect x="20" y="36" width="200" height="84" rx="8" class="d-box"/>
+      <text x="120" y="64" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="120" y="86" text-anchor="middle" class="d-text-sub">hidden・Cookie の role を</text>
+      <text x="120" y="104" text-anchor="middle" class="d-text-sub">admin に書き換えて送る</text>
+      <path d="M220,78 L268,78" class="d-line-bad" marker-end="url(#arw401b)"/>
+      <rect x="270" y="36" width="200" height="84" rx="8" class="d-box-warn"/>
+      <text x="370" y="64" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="370" y="86" text-anchor="middle" class="d-text-sub">送られてきた role を</text>
+      <text x="370" y="104" text-anchor="middle" class="d-text-sub">そのまま信じる</text>
+      <path d="M470,78 L518,78" class="d-line-bad" marker-end="url(#arw401b)"/>
+      <rect x="520" y="36" width="180" height="84" rx="8" class="d-box-bad"/>
+      <text x="610" y="70" text-anchor="middle" class="d-text-bold">管理者機能が</text>
+      <text x="610" y="92" text-anchor="middle" class="d-text-bold">使えてしまう</text>
+
+      <text x="20" y="164" class="d-text-bold">安全な作り</text>
+      <rect x="20" y="176" width="200" height="104" rx="8" class="d-box"/>
+      <text x="120" y="204" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="120" y="226" text-anchor="middle" class="d-text-sub">同じように role=admin に</text>
+      <text x="120" y="244" text-anchor="middle" class="d-text-sub">書き換えて送っても…</text>
+      <text x="120" y="264" text-anchor="middle" class="d-text-sub">効くのはセッションIDだけ</text>
+      <path d="M220,228 L268,228" class="d-line" marker-end="url(#arw401a)"/>
+      <rect x="270" y="176" width="200" height="104" rx="8" class="d-box-accent"/>
+      <text x="370" y="204" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="370" y="226" text-anchor="middle" class="d-text-sub">送られた role は無視</text>
+      <text x="370" y="244" text-anchor="middle" class="d-text-sub">セッションの user_id から</text>
+      <text x="370" y="262" text-anchor="middle" class="d-text-sub">サーバー側の権限を引く</text>
+      <path d="M470,228 L518,228" class="d-line" marker-end="url(#arw401a)"/>
+      <rect x="520" y="176" width="180" height="104" rx="8" class="d-box-good"/>
+      <text x="610" y="206" text-anchor="middle" class="d-text-sub">セッション・DB では</text>
+      <text x="610" y="228" text-anchor="middle" class="d-text-bold">role = user</text>
+      <text x="610" y="254" text-anchor="middle" class="d-text-bold">→ 拒否する</text>
+    </svg>
+    <figcaption>図：権限の「正」をどこに置くか。ブラウザから来た値ではなく、サーバーが持つ情報で判定する</figcaption>
+    </figure>
+
+    <h3 id="sec-6-1">6.1 対策の考え方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>権限はサーバー側で持つ</strong></td><td>DBやセッションに、利用者のロール・権限を保存する</td></tr>
+        <tr><td><strong>リクエストごとにサーバーで判定する</strong></td><td>クライアントから送られた role は使わない（無視する）</td></tr>
+        <tr><td><strong>どうしてもクライアントに載せるなら改ざん防止が必要</strong></td><td>署名付きトークン等でも、最終判定はサーバー側の権限情報で行う</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">安全なイメージ</span>
+<pre><code>1. ログイン時に、サーバー側セッションへ user_id と role を保存する
+2. 以降のリクエストでは、セッションの user_id から権限を引く
+3. フォームやクッキーの role は見ない（あっても無視する）
+4. 操作ごとに、その権限で許可されるか判定する</code></pre>
+    <p>「画面に出していないから安全」「クッキーに入れておけば便利」は、認可の根拠になりません。<strong>権限の正は、サーバーが管理する情報</strong> です。</p>
+    <p>署名付きトークンに役割を書いた場合でも、役割が変わったあとに古い札が使われる問題があります。これは <a href="10-1_認証と認可の違い.html#sec-7">札に書いた役割</a> で解説しています。クッキーや JWT の改ざんについては <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-3-4">クッキーや JWT の改ざん</a> も参照してください。セッションの持ち方は 74_セッション管理 で扱います。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>認可制御の要件定義</h2>
+    <p>認可不備を防ぐには、実装の前に <strong>「誰が・何に対して・何をしてよいか」</strong> を要件として明確にします。ここが曖昧だと、画面ごとにチェックが抜けたり、APIだけ甘くなったりします。</p>
+
+    <h3 id="sec-7-1">7.1 要件定義で決めること</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>決める項目</th><th>内容</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>主体（誰が）</strong></td><td>利用者の種類・ロール</td><td>未ログイン、一般利用者、管理者</td></tr>
+        <tr><td><strong>対象（何に）</strong></td><td>守るリソース</td><td>注文、プロフィール、管理画面、ファイル</td></tr>
+        <tr><td><strong>操作（何を）</strong></td><td>許可する行為</td><td>閲覧、作成、更新、削除</td></tr>
+        <tr><td><strong>判定の場所</strong></td><td>どこでチェックするか</td><td><strong>必ずサーバー側</strong>（画面・API・バッチも含む）</td></tr>
+        <tr><td><strong>拒否時の振る舞い</strong></td><td>権限がないときの応答</td><td>ログイン画面へ誘導、403、404 など</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>バッチ</strong> は、夜間集計のように人の操作なしにまとめて動く処理のことです。これも認可の入口の 1 つです（<a href="10-1_認証と認可の違い.html#sec-6">入口が増えると</a> を参照）。</p>
+
+    <h3 id="sec-7-2">7.2 権限マトリクスの例</h3>
+    <p>要件を表にすると、抜け漏れに気づきやすくなります。縦に操作、横に主体を並べた表を <strong>権限マトリクス</strong> と呼びます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作＼主体</th><th>未ログイン</th><th>一般利用者</th><th>管理者</th></tr></thead>
+      <tbody>
+        <tr><td>商品一覧の閲覧</td><td>○</td><td>○</td><td>○</td></tr>
+        <tr><td>自分の注文の閲覧</td><td>×</td><td>○（自分のみ）</td><td>○</td></tr>
+        <tr><td>他人の注文の閲覧</td><td>×</td><td>×</td><td>○</td></tr>
+        <tr><td>注文のキャンセル</td><td>×</td><td>○（自分のみ）</td><td>○</td></tr>
+        <tr><td>ユーザー削除</td><td>×</td><td>×</td><td>○</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">「自分のみ」の意味</p>
+      <p>「自分のみ」と書いた行は、<strong>ログインしているだけでは不十分</strong> で、対象リソースの所有者チェックが必要、という意味です（4 章の IDOR 対策）。</p>
+    </div>
+
+    <h3 id="sec-7-3">7.3 要件として書いておくべき原則</h3>
+    <ol class="steps">
+      <li><strong>認証と認可は別物として設計する</strong>（ログイン済みでも、権限がなければ拒否する）</li>
+      <li><strong>認可はサーバー側で、リクエストごとに行う</strong>（画面の表示制御だけでは不十分）</li>
+      <li><strong>クライアントから送られた権限情報を信じない</strong>（<code>role</code>、<code>isAdmin</code>、<code>user_id</code> などをそのまま使わない）</li>
+      <li><strong>すべての入口で同じルールを適用する</strong>（Web画面、API、管理ツール、バッチ処理）</li>
+      <li><strong>デフォルトは拒否し、許可条件を明示する</strong>（書いていない操作はできない、が安全側）</li>
+    </ol>
+    <p>「どこで確かめるか」の観点から同じ内容を整理した <a href="10-1_認証と認可の違い.html#sec-8">どこで確かめるか：4 つの原則</a> もあわせて読むと理解が深まります。必要な権限だけを与える考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照してください。</p>
+
+    <h3 id="sec-7-4">7.4 実装に落とすときのチェックリスト</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チェック項目</th><th>確認すること</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証が必要か</strong></td><td>未ログインで触れてはいけない機能に、ログイン必須があるか</td></tr>
+        <tr><td><strong>ロールチェックがあるか</strong></td><td>管理者専用機能で、管理者かどうかを見ているか</td></tr>
+        <tr><td><strong>所有者チェックがあるか</strong></td><td>自分のデータだけ触る機能で、ID改ざんに耐えるか</td></tr>
+        <tr><td><strong>UI以外でも守れるか</strong></td><td>URL直打ち・API直接呼び出しでも拒否されるか</td></tr>
+        <tr><td><strong>拒否が統一されているか</strong></td><td>権限なしのときに、意図したステータスと画面になるか</td></tr>
+      </tbody>
+    </table></div>
+    <p>OWASP の観点からのチェックリストは <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-5-1">A01 のチェックリスト</a> にもあります。</p>
+
+    <h3 id="sec-7-5">7.5 要件定義の書き方の例</h3>
+    <p>要件は、次のように具体的に書くと実装とテストに使えます。</p>
+    <span class="code-label">要件例</span>
+<pre><code>・注文詳細の閲覧は、ログイン済みかつ、その注文の購入者本人、
+  または管理者のみ可能とする
+・一般利用者が他人の注文IDを指定した場合は、データを返さず拒否する
+・管理者メニューおよび /admin 配下の全機能は、管理者ロールを持つ
+  利用者のみ実行可能とする
+・権限情報はサーバー側セッションまたはDBで管理し、
+  リクエストパラメータやクッキーの値は権限判定に用いない</code></pre>
+    <p>「管理者だけが使える」「自分のデータだけ」といった言葉は、<strong>どのURL・どのAPI・どの操作か</strong> まで落として初めて要件になります。要件を実際の権限管理・ロール管理の仕組みに落とす方法は <a href="40-3_権限管理・ロール管理の実装.html">権限管理・ロール管理の実装</a> で扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本質</th><th>対策の要点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>URL直打ちで閲覧できる</strong></td><td>URLを知っている＝権限、ではない</td><td>認証＋認可をサーバーで行う</td></tr>
+        <tr><td><strong>ID改ざん（IDOR）</strong></td><td>リソースIDを信じすぎている</td><td>所有者・権限を毎回確認する</td></tr>
+        <tr><td><strong>メニュー非表示のみ</strong></td><td>UI制御と認可を混同している</td><td>全エンドポイントでサーバー側認可</td></tr>
+        <tr><td><strong>Hidden・クッキーの権限</strong></td><td>クライアントの値を信じている</td><td>権限の正はサーバー側で持つ</td></tr>
+        <tr><td><strong>要件定義</strong></td><td>誰が・何に・何をしてよいかの曖昧さ</td><td>権限マトリクスと原則を明文化する</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">認可安全の基本</p>
+      <ol>
+        <li>認証（誰か）と認可（何をしてよいか）を分けて設計する</li>
+        <li>認可はサーバー側で、リクエストごとに必ず判定する</li>
+        <li>URLを知っていることや、画面にボタンが無いことを権限の根拠にしない</li>
+        <li>リソースIDは改ざんされる前提で、所有者・権限を確認する</li>
+        <li>Hiddenパラメータやクッキーの権限情報を信じない</li>
+        <li>「誰が・何に・何をしてよいか」を要件として書き、全入口に同じルールを適用する</li>
+        <li>デフォルトは拒否し、許可条件だけを明示する</li>
+      </ol>
+    </div>
+    <p>第21章（<a href="20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>）とあわせて読むと、「ログインできた人」に対して「どこまで許すか」を、認証と認可の両面から整理できます。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>理解度チェック</h2>
+    <details><summary>Q1. 認証と認可の違いを、一言ずつで説明してください。</summary><div class="body"><p><strong>認証</strong> は「誰か」を確かめること、<strong>認可</strong> は「何をしてよいか」を決めることです。ログインできた（認証成功）からといって、他人の注文を見たり管理者機能を使ったりしてよい（認可成功）とは限りません。</p></div></details>
+    <details><summary>Q2. 「推測できない長いURLにしたので、ログインなしでも秘密のレポートを公開して大丈夫」は正しいですか？</summary><div class="body"><p>正しくありません。URLはメール転送、ブラウザ履歴、Referer、ログなどから漏れます。「URLが長いから大丈夫」は認可の代わりにならず、<strong>ログインしているか、その人に閲覧権限があるか</strong> をサーバーで確かめる必要があります。</p></div></details>
+    <details><summary>Q3. <code>/orders?id=1001</code> を <code>id=1002</code> に変えると他人の注文が見える問題を何と呼びますか？ どう直しますか？</summary><div class="body"><p><strong>IDOR（安全でない直接オブジェクト参照）</strong> です。セッションから今の利用者を特定し、その注文がその利用者のものか（または閲覧権限があるか）を毎回確認します。権限がなければ 403（存在を隠すなら 404）を返し、データは渡しません。</p></div></details>
+    <details><summary>Q4. 一般利用者の画面から「ユーザー削除」ボタンを消しました。これで十分ですか？</summary><div class="body"><p>十分ではありません。URLやAPIを直打ちすれば、ボタンがなくてもリクエストは送れます。<code>/admin</code> 配下などすべてのエンドポイントで、<strong>サーバー側で管理者ロールを確認</strong> する必要があります。画面の制御は使いやすさのためのもので、セキュリティの境界ではありません。</p></div></details>
+    <details><summary>Q5. フォームの hidden に <code>role=user</code> を入れ、サーバーがその値で権限を判定しています。何が問題ですか？</summary><div class="body"><p>hidden は画面に見えないだけで、利用者が自由に <code>role=admin</code> へ書き換えられます。クッキーも同じです。権限はサーバー側（セッションやDB）で持ち、<strong>クライアントから送られた role は無視</strong> して、セッションの user_id から権限を引いて判定します。</p></div></details>
+    <details><summary>Q6. 認可制御の要件定義で決めておく 5 つの項目を挙げてください。</summary><div class="body"><p><strong>主体（誰が）</strong>、<strong>対象（何に）</strong>、<strong>操作（何を）</strong>、<strong>判定の場所</strong>（必ずサーバー側）、<strong>拒否時の振る舞い</strong>（ログイン画面へ誘導、403、404 など）です。</p></div></details>
+    <details><summary>Q7. 権限マトリクスで「○（自分のみ）」と書かれた操作は、実装で何が必要になりますか？</summary><div class="body"><p>ログインしているかの確認だけでは不十分で、<strong>対象リソースの所有者チェック</strong> が必要です。たとえば「自分の注文の閲覧」なら、その注文の購入者が今ログインしている利用者本人かを確認します。</p></div></details>
+    <details><summary>Q8. 「デフォルトは拒否し、許可条件を明示する」原則が安全側なのはなぜですか？</summary><div class="body"><p>新しい機能を足したときなどにチェックを書き忘れても、「書いていない操作はできない」状態になるからです。「何もしなければ通る」作りだと、書き忘れがそのまま情報漏洩につながります。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』第23章 認可</li>
+      <li><a href="https://owasp.org/Top10/A01_2021-Broken_Access_Control/">OWASP Top 10：A01 Broken Access Control</a></li>
+      <li>関連ページ：<a href="10-1_認証と認可の違い.html">認証と認可の違い</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="40-2_RBAC・ABAC・ACLの使い分け.html">RBAC・ABAC・ACLの使い分け</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="40-3_権限管理・ロール管理の実装.html">権限管理・ロール管理の実装</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">アクセス制御と認証の失敗</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="30-3_IDプロバイダとSSOプロバイダ.html"><span class="lbl">← 前のページ</span>IDプロバイダとSSOプロバイダ</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-2_RBAC・ABAC・ACLの使い分け.html"><span class="lbl">次のページ →</span>RBAC・ABAC・ACLの使い分け</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>セキュリティの専門用語｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 基本概念 › セキュリティの専門用語</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基本概念</span>
+      <h1>セキュリティの専門用語</h1>
+      <p class="lead">ニュースや脆弱性情報を読んだときに「意味が分かる」状態を目指して、セキュリティの議論に必ず出てくる用語を整理します。情報セキュリティの7要素、攻撃の用語（エクスプロイト・ペイロード・ゼロデイ）、脆弱性の識別子と指標（CVE・CWE・CVSS・EPSS・KEV など）、暗号技術（共通鍵・公開鍵・ハッシュ・電子署名・PKI・TLS）の4つの柱です。</p>
+      <p class="meta">もとにしたノート：10_基本概念/03_セキュリティの基本概念と専門用語（知識地図3章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>用語は4つのグループに分けると迷子になりません。<strong>守りたいもの</strong>（7要素）、<strong>攻撃</strong>（脆弱性 → エクスプロイト → ペイロード）、<strong>弱点の名前と危険度</strong>（CVE が「名前」、CWE が「種類」、CVSS が「深刻度」、EPSS が「悪用されそうか」、KEV が「実際に悪用済みか」）、<strong>守る技術</strong>（暗号・PKI・TLS）です。</p>
+    </div>
+
+    <h2 id="seven"><span class="num">1.</span>情報セキュリティの7要素</h2>
+    <p>情報を守るとき、何を「守る」のかを言葉にしたものです。もっとも有名な <strong>CIA</strong>（機密性・完全性・可用性）に、4つの要素を加えたものが「7要素」です。</p>
+
+    <h3 id="seven-cia">1.1 CIA（基本の3つ）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>英語</th><th>意味</th><th>守れていないときの例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>機密性</strong></td><td>Confidentiality</td><td>許可された者だけが情報にアクセスできる</td><td>個人情報の漏洩、パスワードの流出</td></tr>
+        <tr><td><strong>完全性</strong></td><td>Integrity</td><td>情報が改ざん・破壊されていない</td><td>データベースの不正な書き換え、ファイルの改ざん</td></tr>
+        <tr><td><strong>可用性</strong></td><td>Availability</td><td>必要なときに情報・サービスが使える</td><td>サーバー停止、DDoS によるアクセス不能</td></tr>
+      </tbody>
+    </table></div>
+    <p>3つはトレードオフになることも多くあります。たとえば厳しい認証（機密性↑）は手間が増え、使いにくくなる（可用性↓）ことがあります。詳しくは <a href="10-1_CIA三原則と脅威・脆弱性・リスク.html">CIA三原則と脅威・脆弱性・リスク</a> を参照してください。</p>
+
+    <h3 id="seven-plus">1.2 追加の4要素</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>英語</th><th>意味</th><th>具体例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>真正性</strong></td><td>Authenticity</td><td>送信者・情報源が本物であること</td><td>なりすましメールの検知、デジタル署名による確認</td></tr>
+        <tr><td><strong>信頼性</strong></td><td>Reliability</td><td>システムが期待どおり正確に動くこと</td><td>決済システムの計算ミス、誤ったログ記録（が起きないこと）</td></tr>
+        <tr><td><strong>責任追跡性</strong></td><td>Accountability</td><td>誰が何をしたか追跡できること</td><td>監査ログ、操作履歴の記録</td></tr>
+        <tr><td><strong>否認防止</strong></td><td>Non-repudiation</td><td>行ったことを後から「やっていない」と否定できないこと</td><td>電子署名付きの契約、改ざんが難しいログ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="seven-map">1.3 7要素の関係</h3>
+    <p>7つをバラバラに覚えるより、「何のための要素か」で3つのグループに分けると覚えやすくなります。</p>
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="情報セキュリティの7要素のグループ">
+      <rect x="10" y="10" width="226" height="250" rx="10" class="d-box-accent"/>
+      <text x="123" y="42" text-anchor="middle" class="d-text-bold">情報の保護</text>
+      <rect x="28" y="62" width="190" height="52" rx="8" class="d-box"/>
+      <text x="123" y="84" text-anchor="middle" class="d-text-bold">機密性</text>
+      <text x="123" y="103" text-anchor="middle" class="d-text-sub">見られないように</text>
+      <rect x="28" y="124" width="190" height="52" rx="8" class="d-box"/>
+      <text x="123" y="146" text-anchor="middle" class="d-text-bold">完全性</text>
+      <text x="123" y="165" text-anchor="middle" class="d-text-sub">変えられないように</text>
+      <rect x="28" y="186" width="190" height="52" rx="8" class="d-box"/>
+      <text x="123" y="208" text-anchor="middle" class="d-text-bold">可用性</text>
+      <text x="123" y="227" text-anchor="middle" class="d-text-sub">止められないように</text>
+
+      <rect x="247" y="10" width="226" height="250" rx="10" class="d-box-good"/>
+      <text x="360" y="42" text-anchor="middle" class="d-text-bold">情報の信頼</text>
+      <rect x="265" y="62" width="190" height="52" rx="8" class="d-box"/>
+      <text x="360" y="84" text-anchor="middle" class="d-text-bold">真正性</text>
+      <text x="360" y="103" text-anchor="middle" class="d-text-sub">送り主は本物か</text>
+      <rect x="265" y="124" width="190" height="52" rx="8" class="d-box"/>
+      <text x="360" y="146" text-anchor="middle" class="d-text-bold">信頼性</text>
+      <text x="360" y="165" text-anchor="middle" class="d-text-sub">システムは正しく動くか</text>
+
+      <rect x="484" y="10" width="226" height="250" rx="10" class="d-box"/>
+      <text x="597" y="42" text-anchor="middle" class="d-text-bold">事後の証明</text>
+      <rect x="502" y="62" width="190" height="52" rx="8" class="d-box"/>
+      <text x="597" y="84" text-anchor="middle" class="d-text-bold">責任追跡性</text>
+      <text x="597" y="103" text-anchor="middle" class="d-text-sub">誰がやったか残す</text>
+      <rect x="502" y="124" width="190" height="52" rx="8" class="d-box"/>
+      <text x="597" y="146" text-anchor="middle" class="d-text-bold">否認防止</text>
+      <text x="597" y="165" text-anchor="middle" class="d-text-sub">やったことを否定させない</text>
+    </svg>
+    <figcaption>図：7要素を「保護」「信頼」「事後の証明」の3グループで整理する</figcaption>
+    </figure>
+
+    <h3 id="seven-tech">1.4 対策技術との対応</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>主な対策技術</th></tr></thead>
+      <tbody>
+        <tr><td>機密性</td><td>暗号化、アクセス制御、認証</td></tr>
+        <tr><td>完全性</td><td>ハッシュ値、デジタル署名、バージョン管理</td></tr>
+        <tr><td>可用性</td><td>冗長化、バックアップ、DDoS 対策</td></tr>
+        <tr><td>真正性</td><td>MFA、デジタル証明書、SPF / DKIM（メールの送信元確認）</td></tr>
+        <tr><td>信頼性</td><td>テスト、監視、エラーハンドリング</td></tr>
+        <tr><td>責任追跡性</td><td>監査ログ、SIEM（ログを集めて分析する仕組み）</td></tr>
+        <tr><td>否認防止</td><td>電子署名、タイムスタンプ、改ざん検知つきのログ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="attack"><span class="num">2.</span>攻撃に関する用語</h2>
+
+    <h3 id="attack-dos">2.1 サービス妨害系：DoS と DDoS</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>DoS 攻撃（Denial of Service）</h4>
+        <p><strong>1か所から</strong>大量のリクエストを送り、サービスを使えなくする攻撃。</p>
+      </div>
+      <div class="card">
+        <h4>DDoS 攻撃（Distributed DoS）</h4>
+        <p><strong>多数の端末（ボットネットなど）から同時に</strong>攻撃する DoS。規模が大きく、1か所を遮断しても止まらないため防御が難しい。</p>
+      </div>
+    </div>
+    <p>どちらも狙うのは <strong>可用性</strong>です。例：EC サイトへのアクセス集中、DNS サーバーの過負荷。</p>
+
+    <h3 id="attack-exploit">2.2 脆弱性悪用系：脆弱性 → エクスプロイト → ペイロード</h3>
+    <p>攻撃の流れを表す言葉は、泥棒の侵入にたとえると覚えやすくなります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>説明</th><th>たとえ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>脆弱性</strong>（Vulnerability）</td><td>ソフトウェアや設定の弱点</td><td>鍵のかかっていない窓</td></tr>
+        <tr><td><strong>エクスプロイト</strong>（Exploit）</td><td>脆弱性を <strong>実際に悪用する</strong> コードや手法</td><td>その窓から入る道具・手口</td></tr>
+        <tr><td><strong>ペイロード</strong>（Payload）</td><td>攻撃が成功した後に実行される <strong>本体の処理</strong>（マルウェア本体、データ窃取など）</td><td>侵入後に運び込む「荷物」</td></tr>
+        <tr><td><strong>ゼロデイ攻撃</strong></td><td>修正パッチがまだない脆弱性（ゼロデイ）を悪用する攻撃</td><td>鍵屋が来る前に窓から入る</td></tr>
+        <tr><td><strong>PoC</strong>（Proof of Concept）</td><td>脆弱性が本当に悪用できるかを示す <strong>実証コード</strong>。悪用と同じくらい危険な場合もある</td><td>「この窓は開く」と実演して見せる</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="脆弱性からエクスプロイト、ペイロードへの流れ">
+      <defs><marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="30" width="190" height="80" rx="10" class="d-box-warn"/>
+      <text x="105" y="64" text-anchor="middle" class="d-text-bold">脆弱性</text>
+      <text x="105" y="88" text-anchor="middle" class="d-text-sub">弱点がある</text>
+      <line x1="200" y1="70" x2="262" y2="70" class="d-line" marker-end="url(#m2)"/>
+      <text x="231" y="58" text-anchor="middle" class="d-text-sub">悪用</text>
+      <rect x="265" y="30" width="190" height="80" rx="10" class="d-box-bad"/>
+      <text x="360" y="64" text-anchor="middle" class="d-text-bold">エクスプロイト</text>
+      <text x="360" y="88" text-anchor="middle" class="d-text-sub">侵入の手段</text>
+      <line x1="455" y1="70" x2="517" y2="70" class="d-line" marker-end="url(#m2)"/>
+      <text x="486" y="58" text-anchor="middle" class="d-text-sub">成功後</text>
+      <rect x="520" y="30" width="190" height="80" rx="10" class="d-box"/>
+      <text x="615" y="64" text-anchor="middle" class="d-text-bold">ペイロード</text>
+      <text x="615" y="88" text-anchor="middle" class="d-text-sub">マルウェア・情報窃取</text>
+      <text x="360" y="140" text-anchor="middle" class="d-text-sub">パッチは左端（脆弱性）を消す。EDR などは右端（ペイロード）の動きを見つける</text>
+    </svg>
+    <figcaption>図：攻撃の流れを表す3つの用語</figcaption>
+    </figure>
+
+    <h3 id="attack-targeted">2.3 マルウェアと標的型攻撃</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>マルウェア</strong></td><td>悪意のあるソフトウェアの総称（ウイルス、ランサムウェア、トロイの木馬など。種類は <a href="10-2_さまざまな脅威と対策の基本.html#malware">10-2</a> 参照）</td></tr>
+        <tr><td><strong>標的型攻撃</strong></td><td>特定の組織・個人を狙って綿密に計画された攻撃。APT（持続的標的型攻撃）と呼ばれる高度なものも含む</td></tr>
+      </tbody>
+    </table></div>
+    <p>標的型攻撃には、<strong>スピアフィッシング（狙い撃ちの偽メール）で入口を作る</strong>、<strong>長期間潜伏して情報を集める</strong>、<strong>一般的なマルウェアより検知が難しい</strong>、という特徴があります。</p>
+
+    <h3 id="attack-auth">2.4 認証・人を狙う攻撃</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ブルートフォース攻撃</strong></td><td>パスワードを総当たりで試す</td></tr>
+        <tr><td><strong>辞書攻撃</strong></td><td>よく使われるパスワードのリストで試す</td></tr>
+        <tr><td><strong>パスワードスプレー</strong></td><td>よくある少数のパスワードを、多数のアカウントに試す</td></tr>
+        <tr><td><strong>クレデンシャルスタッフィング</strong></td><td>他のサイトで漏れた ID・パスワードの使い回しを試す</td></tr>
+        <tr><td><strong>フィッシング</strong></td><td>本物の連絡を装い、パスワードや個人情報をだまし取る</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="metrics"><span class="num">3.</span>脆弱性の識別子と指標</h2>
+    <p>脆弱性の情報は世界中で毎日公開されています。混乱しないように、<strong>同じ弱点に同じ名前を付け、危険度を数値にする</strong>仕組みが整っています。アルファベット3〜4文字の略語がたくさん出てきますが、「どの質問に答えるものか」で整理すれば怖くありません。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="脆弱性の識別子と指標の関係">
+      <rect x="10" y="10" width="260" height="60" rx="10" class="d-box"/>
+      <text x="140" y="46" text-anchor="middle" class="d-text-bold">何が弱いか（種類）</text>
+      <rect x="290" y="10" width="420" height="60" rx="10" class="d-box-good"/>
+      <text x="500" y="38" text-anchor="middle" class="d-text-bold">CWE</text>
+      <text x="500" y="58" text-anchor="middle" class="d-text-sub">弱点のパターン（例：CWE-89 SQL インジェクション）</text>
+
+      <rect x="10" y="82" width="260" height="60" rx="10" class="d-box"/>
+      <text x="140" y="118" text-anchor="middle" class="d-text-bold">どの製品のどの穴か</text>
+      <rect x="290" y="82" width="420" height="60" rx="10" class="d-box-accent"/>
+      <text x="500" y="110" text-anchor="middle" class="d-text-bold">CVE ＋ CPE</text>
+      <text x="500" y="130" text-anchor="middle" class="d-text-sub">脆弱性の ID ＋ 製品・バージョンの識別子</text>
+
+      <rect x="10" y="154" width="260" height="60" rx="10" class="d-box"/>
+      <text x="140" y="190" text-anchor="middle" class="d-text-bold">どれくらい危険か</text>
+      <rect x="290" y="154" width="420" height="60" rx="10" class="d-box-warn"/>
+      <text x="500" y="182" text-anchor="middle" class="d-text-bold">CVSS ／ SSVC ／ EPSS</text>
+      <text x="500" y="202" text-anchor="middle" class="d-text-sub">深刻度 ／ 自社にとっての優先度 ／ 悪用される確率</text>
+
+      <rect x="10" y="226" width="260" height="60" rx="10" class="d-box"/>
+      <text x="140" y="262" text-anchor="middle" class="d-text-bold">今すぐ直すべきか</text>
+      <rect x="290" y="226" width="420" height="60" rx="10" class="d-box-bad"/>
+      <text x="500" y="254" text-anchor="middle" class="d-text-bold">KEV カタログ</text>
+      <text x="500" y="274" text-anchor="middle" class="d-text-sub">実際に悪用が確認された脆弱性のリスト</text>
+    </svg>
+    <figcaption>図：脆弱性の識別子・指標は「どの質問に答えるか」で整理する</figcaption>
+    </figure>
+
+    <h3 id="cve">3.1 CVE — 脆弱性の「名前」</h3>
+    <p><strong>CVE</strong>（Common Vulnerabilities and Exposures）は、<strong>公開された脆弱性に付けられる一意の ID</strong>です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>形式</td><td><code>CVE-年-連番</code>（例：<code>CVE-2024-12345</code>）</td></tr>
+        <tr><td>管理</td><td>MITRE が運営し、NVD（米国の国立脆弱性データベース）などで詳細が公開される</td></tr>
+        <tr><td>役割</td><td>「この製品のこのバグ」を、世界中で同じ名前で呼べるようにする</td></tr>
+      </tbody>
+    </table></div>
+    <p>有名な例が <code>CVE-2021-44228</code>（通称 Log4Shell）で、Java のログライブラリ Log4j の重大な脆弱性です。セキュリティニュースで <code>CVE-XXXX-XXXXX</code> と出てきたら、<strong>「公式に登録された脆弱性の名前」</strong>と思えば十分です。</p>
+
+    <h3 id="cwe">3.2 CWE — 弱点の「種類」</h3>
+    <p><strong>CWE</strong>（Common Weakness Enumeration）は、脆弱性の <strong>原因・パターンの分類</strong>です。CVE より抽象的で、「どんな種類のコーディングミスか」を表します。形式は <code>CWE-番号</code> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>CVE</th><th>CWE</th></tr></thead>
+      <tbody>
+        <tr><th>粒度</th><td>特定の製品の、特定のバグ</td><td>弱点のパターン・種類</td></tr>
+        <tr><th>例</th><td>CVE-2021-44228（Log4j の具体的な穴）</td><td>CWE-917（Expression Language Injection）</td></tr>
+        <tr><th>病気でいうと</th><td>「○○さんの今回の症例」</td><td>「インフルエンザ」という病名</td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>よく見る CWE</th><th>名称</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>CWE-79</td><td>クロスサイトスクリプティング（XSS）</td><td>Web ページに悪意のあるスクリプトを埋め込む</td></tr>
+        <tr><td>CWE-89</td><td>SQL インジェクション</td><td>SQL 文に悪意のある入力を混ぜる</td></tr>
+        <tr><td>CWE-787</td><td>範囲外への書き込み（バッファオーバーフローの一種）</td><td>想定外のデータでメモリを破壊する</td></tr>
+        <tr><td>CWE-798</td><td>ハードコードされた認証情報</td><td>ソースコードにパスワードを直書きする</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="cvss">3.3 CVSS — 脆弱性の「深刻度」</h3>
+    <p><strong>CVSS</strong>（Common Vulnerability Scoring System）は、脆弱性の深刻度を <strong>0.0〜10.0 の数値</strong>で表すスコアです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>スコア帯</th><th>深刻度</th><th>目安</th></tr></thead>
+      <tbody>
+        <tr><td>0.0</td><td>None</td><td>影響なし</td></tr>
+        <tr><td>0.1〜3.9</td><td><strong>Low</strong></td><td>低</td></tr>
+        <tr><td>4.0〜6.9</td><td><strong>Medium</strong></td><td>中</td></tr>
+        <tr><td>7.0〜8.9</td><td><strong>High</strong></td><td>高</td></tr>
+        <tr><td>9.0〜10.0</td><td><strong>Critical</strong></td><td>最重要</td></tr>
+      </tbody>
+    </table></div>
+    <p>評価の観点（CVSS v3.1 の例）は、<strong>攻撃ベクトル</strong>（ネットワーク経由か、物理的に触る必要があるか）、<strong>攻撃の複雑さ</strong>、<strong>必要な権限</strong>、<strong>ユーザー操作</strong>（被害者の操作が必要か）、そして <strong>機密性・完全性・可用性への影響</strong> です。</p>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「CVSS が高い＝自社にとって危ない」</p>
+      <p>CVSS は <strong>技術的な深刻度</strong>であり、<strong>自社環境での実際のリスク</strong>とは違います。スコアが高くても、自社でその製品を使っていなければ影響はありません。詳しくは <a href="10-4_リスク管理とリスクアセスメント.html#cvss-not-risk">リスク管理のページ</a> でも扱います。</p>
+    </div>
+
+    <h3 id="cpe">3.4 CPE — 影響を受ける製品の識別子</h3>
+    <p><strong>CPE</strong>（Common Platform Enumeration）は、影響を受ける製品・バージョンを <strong>機械が読める形式</strong>で表す識別子です。形式は <code>cpe:2.3:a:ベンダー:製品:バージョン:...</code> です。</p>
+    <pre><code>cpe:2.3:a:apache:log4j:2.14.1:*:*:*:*:*:*:*
+→ Apache Log4j バージョン 2.14.1</code></pre>
+    <p>脆弱性スキャナーが「自社のどのソフトに当てはまるか」を自動判定するのに使います。日常会話ではあまり出てきませんが、パッチ管理ツールや脆弱性スキャナーの裏側で働いています。</p>
+
+    <h3 id="ssvc">3.5 SSVC — 「自社にとってどれくらい急ぎか」</h3>
+    <p><strong>SSVC</strong>（Stakeholder-Specific Vulnerability Categorization）は、組織ごとの状況に合わせて、<strong>パッチを当てる優先度を判断する</strong>ためのフレームワークです。CVSS が「脆弱性そのものの深刻度」なのに対し、SSVC は「自社にとっての急ぎ度」を考えます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>判断軸</th><th>質問の例</th></tr></thead>
+      <tbody>
+        <tr><td>悪用の可能性</td><td>攻撃コードはすでに公開されているか</td></tr>
+        <tr><td>影響の規模</td><td>自社でそのソフトを使っているか、重要なシステムか</td></tr>
+        <tr><td>環境の安全性</td><td>インターネットに公開されているか、内部だけか</td></tr>
+      </tbody>
+    </table></div>
+    <p>判断の結果は <strong>Track（監視）／ Track*（優先監視）／ Attend（対応）／ Act（即時対応）</strong> のように出力されます。「CVSS 9.8 でも自社で使っていなければ優先度は低い」「CVSS 7.0 でもインターネット公開サーバーなら最優先」といった判断に使います。</p>
+
+    <h3 id="epss">3.6 EPSS — 「悪用されそうか」の確率</h3>
+    <p><strong>EPSS</strong>（Exploit Prediction Scoring System）は、<strong>近いうち（今後30日以内）にその脆弱性が悪用される確率</strong>を 0〜1（0〜100%）で予測するスコアです。FIRST（インシデント対応チームの国際フォーラム）が提供し、毎日更新されます。</p>
+    <ul>
+      <li>CVSS が中程度でも EPSS が高い → 早めにパッチ</li>
+      <li>CVSS が高くても EPSS が低い → 他の対応を優先してよい場合がある</li>
+    </ul>
+
+    <h3 id="kev">3.7 KEV カタログ — 「実際に悪用済み」のリスト</h3>
+    <p><strong>KEV カタログ</strong>（Known Exploited Vulnerabilities Catalog）は、米国の CISA（サイバーセキュリティ・インフラストラクチャセキュリティ庁）が管理する、<strong>実際の攻撃で悪用が確認された脆弱性</strong>のリストです。リストに載っている ＝ <strong>今すぐ対応すべき</strong> という強いシグナルです。</p>
+    <ol class="steps">
+      <li>自社の資産をスキャンした結果と KEV リストを照らし合わせる</li>
+      <li>一致した CVE は最優先でパッチ、または緩和策を適用する</li>
+      <li>政府機関や大企業の調達要件で、KEV への対応が求められることもある</li>
+    </ol>
+
+    <h3 id="metrics-summary">3.8 使い分けのまとめ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指標</th><th>何を教えてくれるか</th><th>いつ使うか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CVE</strong></td><td>脆弱性の名前</td><td>情報の検索、パッチとの照合</td></tr>
+        <tr><td><strong>CWE</strong></td><td>弱点の種類</td><td>開発時の予防、コードレビュー</td></tr>
+        <tr><td><strong>CVSS</strong></td><td>技術的な深刻度</td><td>最初の優先度付け</td></tr>
+        <tr><td><strong>CPE</strong></td><td>影響を受ける製品</td><td>スキャナーによる自動マッチング</td></tr>
+        <tr><td><strong>SSVC</strong></td><td>組織にとっての優先度</td><td>パッチ運用の判断</td></tr>
+        <tr><td><strong>EPSS</strong></td><td>悪用される確率</td><td>CVSS を補った優先度付け</td></tr>
+        <tr><td><strong>KEV</strong></td><td>実際に悪用済みか</td><td>最優先で対応するかの判断</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント</p>
+      <p>優先順位は1つの数字で決めず、<strong>深刻度（CVSS）× 悪用されそうか（EPSS・KEV）× 自社での重要度・露出度</strong> を組み合わせます。特に KEV に載った脆弱性が、インターネットに公開している機器（VPN 装置など）にあれば最優先です。</p>
+    </div>
+
+    <h2 id="crypto"><span class="num">4.</span>暗号技術の用語</h2>
+    <p>暗号は、機密性・完全性・真正性・否認防止を支える土台の技術です。ここでは用語の意味と役割を中心に整理します（理論の詳細は 11_コンピューターサイエンス の暗号のノートが本拠地です）。</p>
+
+    <h3 id="crypto-two">4.1 共通鍵暗号と公開鍵暗号</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>共通鍵暗号（対称鍵暗号）</h4>
+        <p><strong>暗号化と復号に同じ鍵</strong>を使う。家の鍵と同じで、閉めるのも開けるのも同じ鍵。</p>
+        <ul>
+          <li>長所：処理が速く、大量データ向き</li>
+          <li>短所：相手に鍵を安全に渡す方法が問題（<strong>鍵配送問題</strong>）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>公開鍵暗号（非対称鍵暗号）</h4>
+        <p><strong>公開鍵と秘密鍵のペア</strong>を使う。郵便ポストにたとえると、投函口（公開鍵）は誰でも使えるが、中身を取り出す鍵（秘密鍵）は持ち主だけ。</p>
+        <ul>
+          <li>長所：鍵配送問題を解決できる。署名にも使える</li>
+          <li>短所：共通鍵暗号より処理が重い</li>
+        </ul>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分類</th><th>アルゴリズム</th><th>状態・用途</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="3">共通鍵</td><td><strong>AES</strong></td><td>現行の標準。ファイル暗号化、VPN、TLS の中身など</td></tr>
+        <tr><td>3DES</td><td>非推奨（古いシステム向け）</td></tr>
+        <tr><td>ChaCha20</td><td>現行。TLS やモバイル向け（AES より速い環境もある）</td></tr>
+        <tr><td rowspan="2">公開鍵</td><td>RSA</td><td>電子署名、鍵交換（古くからあり、今も広く残っている）</td></tr>
+        <tr><td>ECDSA / ECDH</td><td>現代の TLS や Bitcoin など（楕円曲線暗号。鍵が短く効率的）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>AES</strong>（Advanced Encryption Standard）は2001年に米国政府が標準として採用した暗号で、鍵の長さは 128 / 192 / 256 ビット。Wi-Fi（WPA2/WPA3）、ディスク暗号化（BitLocker など）、HTTPS の中で広く使われています。「軍事級の暗号」と表現されることもありますが、<strong>正しく実装・運用されていることが前提</strong>です。</p>
+    <p>公開鍵暗号で秘密のメッセージを送る流れは、「Alice が Bob の公開鍵で暗号化 → Bob だけが自分の秘密鍵で復号できる」です。</p>
+
+    <h3 id="hash">4.2 ハッシュ関数</h3>
+    <p><strong>任意の長さのデータから、固定長の「指紋」を作る一方向の関数</strong>です。元のデータに戻すことはできません。</p>
+    <ul>
+      <li>同じ入力からは常に同じ出力。入力が少しでも変わると出力は大きく変わる</li>
+      <li>用途：パスワードの保存、ファイルの改ざん検知、デジタル署名の一部</li>
+      <li>注意：<strong>暗号化ではない</strong>（元に戻せないが、総当たりで推測されることはある）</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アルゴリズム</th><th>状態</th></tr></thead>
+      <tbody>
+        <tr><td>SHA-256 / SHA-3</td><td><strong>現行標準</strong></td></tr>
+        <tr><td>MD5 / SHA-1</td><td><strong>非推奨</strong>（別々の入力から同じ出力を作る「衝突攻撃」が現実的）</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ パスワードの悪い保存方法</span>
+    <pre><code>password_plain = "hunter2"              # そのまま保存 → 漏れたら即アウト
+password_hash  = sha256("hunter2")      # 速いハッシュだけ → 事前計算表（レインボーテーブル）や総当たりに弱い</code></pre>
+    <span class="code-label good">○ 正しい保存方法</span>
+    <pre><code>password_hash = bcrypt.hash("hunter2")  # bcrypt / scrypt / Argon2 など「わざと遅い」ハッシュ
+                                         # ＋ ユーザーごとに異なるソルト（ライブラリが自動で付ける）</code></pre>
+
+    <h3 id="signature">4.3 電子署名</h3>
+    <p><strong>送信者の身元確認と改ざん検知を同時に実現する</strong>技術です。紙の書類に押す実印のデジタル版で、しかも「中身が1文字でも変わったら分かる」実印です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>署名の作成（送信者）</h4>
+        <ol>
+          <li>メッセージのハッシュ値を計算する</li>
+          <li>送信者の <strong>秘密鍵</strong> でハッシュ値から署名を作る</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h4>署名の検証（受信者）</h4>
+        <ol>
+          <li>送信者の <strong>公開鍵</strong> で署名を検証し、元のハッシュ値（A）を得る</li>
+          <li>受け取ったメッセージのハッシュ値（B）を計算する</li>
+          <li>A と B が一致 → 改ざんなし ＆ 送信者確認</li>
+        </ol>
+      </div>
+    </div>
+    <p>守れる要素は <strong>真正性・完全性・否認防止</strong> です。</p>
+
+    <h3 id="pki">4.4 PKI（公開鍵基盤）</h3>
+    <p>公開鍵暗号には「その公開鍵は本当にその相手のものか？」という問題が残ります。これを解決するのが、<strong>公開鍵とデジタル証明書を信頼できる形で配布・管理する仕組み</strong>である PKI です。役所が発行する印鑑証明書のような仕組みだと考えてください。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>構成要素</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CA</strong>（認証局）</td><td>デジタル証明書を発行する、信頼の起点</td></tr>
+        <tr><td><strong>デジタル証明書</strong></td><td>「この公開鍵はこの組織のものである」と CA が保証する電子文書</td></tr>
+        <tr><td><strong>CRL / OCSP</strong></td><td>失効した（無効になった）証明書のリスト・確認サービス</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="証明書の信頼の連鎖">
+      <defs><marker id="m3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="210" y="10" width="300" height="56" rx="10" class="d-box-good"/>
+      <text x="360" y="35" text-anchor="middle" class="d-text-bold">ルート CA</text>
+      <text x="360" y="55" text-anchor="middle" class="d-text-sub">ブラウザや OS に最初から入っている</text>
+      <line x1="360" y1="66" x2="360" y2="92" class="d-line" marker-end="url(#m3)"/>
+      <text x="376" y="84" class="d-text-sub">署名</text>
+      <rect x="210" y="96" width="300" height="56" rx="10" class="d-box-accent"/>
+      <text x="360" y="121" text-anchor="middle" class="d-text-bold">中間 CA</text>
+      <text x="360" y="141" text-anchor="middle" class="d-text-sub">ルート CA に保証された CA</text>
+      <line x1="360" y1="152" x2="360" y2="178" class="d-line" marker-end="url(#m3)"/>
+      <text x="376" y="170" class="d-text-sub">署名</text>
+      <rect x="210" y="182" width="300" height="56" rx="10" class="d-box"/>
+      <text x="360" y="207" text-anchor="middle" class="d-text-bold">サーバー証明書</text>
+      <text x="360" y="227" text-anchor="middle" class="d-text-sub">example.com の公開鍵</text>
+      <text x="530" y="124" class="d-text-sub">ブラウザは下から上へ</text>
+      <text x="530" y="142" class="d-text-sub">署名をたどって確認する</text>
+    </svg>
+    <figcaption>図：信頼の連鎖。信頼しているルート CA から順に署名をたどれれば、そのサーバー証明書は信頼できる</figcaption>
+    </figure>
+    <p>身近な例は、ブラウザのアドレスバーの鍵マーク（HTTPS）、社内 VPN のクライアント証明書、コード署名（ソフトウェアの改ざん防止）などです。</p>
+
+    <h3 id="tls">4.5 TLS — HTTPS の「S」の正体</h3>
+    <p><strong>TLS</strong>（Transport Layer Security）は、インターネット上の通信を暗号化するプロトコルです（旧称 SSL）。<strong>通信内容の機密性と改ざん検知</strong>を守ります。公開鍵暗号で鍵を安全に交換し、その後は共通鍵（AES など）で高速に暗号化する、という <strong>両方のいいとこ取り</strong>をしています。</p>
+    <ol class="steps">
+      <li>クライアント「接続したい」</li>
+      <li>サーバー「これが私の証明書です」（公開鍵入り）</li>
+      <li>クライアントが証明書を検証する（CA の署名を確認）</li>
+      <li>双方で共通のセッション鍵を安全に決める</li>
+      <li>以降の通信はセッション鍵（AES など）で暗号化する</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「鍵マークがあれば安全なサイト」</p>
+      <p>HTTPS が保証するのは <strong>通信経路の暗号化</strong>と、接続先がそのドメインであることまでです。<strong>サイト自体が安全とは限りません</strong>（フィッシングサイトも HTTPS にできます）。また TLS 1.0 / 1.1 は非推奨で、TLS 1.2 / 1.3 を使います。</p>
+    </div>
+
+    <h3 id="crypto-map">4.6 暗号技術の関係</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>目的</th><th>技術</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="2">データの保護</td><td>共通鍵暗号（AES）</td><td>大量データの暗号化</td></tr>
+        <tr><td>公開鍵暗号（RSA / 楕円曲線）</td><td>鍵交換、署名</td></tr>
+        <tr><td rowspan="2">データの検証</td><td>ハッシュ関数（SHA-256）</td><td>改ざん検知、パスワード保存</td></tr>
+        <tr><td>電子署名</td><td>送信者確認 ＋ 改ざん検知</td></tr>
+        <tr><td>信頼の仕組み</td><td>PKI（CA ＋ 証明書）</td><td>公開鍵の持ち主を保証する</td></tr>
+        <tr><td>通信の保護</td><td>TLS</td><td>公開鍵で鍵交換 ＋ AES で暗号化 ＋ 証明書で身元確認</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="overall"><span class="num">5.</span>用語の総合マップ</h2>
+    <p>最後に、このページの用語がどうつながっているかを確認しましょう。</p>
+    <figure>
+    <svg viewBox="0 0 720 340" role="img" aria-label="用語の相互関係">
+      <defs><marker id="m4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="10" width="680" height="50" rx="10" class="d-box-accent"/>
+      <text x="40" y="40" class="d-text-bold">守りたいもの</text>
+      <text x="170" y="40" class="d-text-sub">7要素（CIA ＋ 真正性・信頼性・責任追跡性・否認防止）</text>
+      <line x1="360" y1="92" x2="360" y2="64" class="d-line" marker-end="url(#m4)"/>
+      <text x="376" y="83" class="d-text-sub">脅かす</text>
+      <rect x="20" y="96" width="680" height="50" rx="10" class="d-box-bad"/>
+      <text x="40" y="126" class="d-text-bold">攻撃</text>
+      <text x="170" y="126" class="d-text-sub">DoS / DDoS、エクスプロイト、マルウェア、フィッシング…</text>
+      <line x1="360" y1="178" x2="360" y2="150" class="d-line" marker-end="url(#m4)"/>
+      <text x="376" y="169" class="d-text-sub">突く</text>
+      <rect x="20" y="182" width="680" height="50" rx="10" class="d-box-warn"/>
+      <text x="40" y="212" class="d-text-bold">弱点</text>
+      <text x="170" y="212" class="d-text-sub">CVE で名前が付く脆弱性（原因のパターンは CWE）</text>
+      <rect x="20" y="268" width="330" height="62" rx="10" class="d-box"/>
+      <text x="40" y="294" class="d-text-bold">指標（評価する）</text>
+      <text x="40" y="316" class="d-text-sub">CVSS・EPSS・KEV・SSVC</text>
+      <rect x="370" y="268" width="330" height="62" rx="10" class="d-box-good"/>
+      <text x="390" y="294" class="d-text-bold">技術（守る）</text>
+      <text x="390" y="316" class="d-text-sub">暗号（AES・TLS・PKI）・アクセス制御・監視</text>
+      <line x1="185" y1="268" x2="185" y2="236" class="d-line" marker-end="url(#m4)"/>
+      <line x1="535" y1="268" x2="535" y2="236" class="d-line" marker-end="url(#m4)"/>
+    </svg>
+    <figcaption>図：守りたいもの・攻撃・弱点・指標・技術の関係</figcaption>
+    </figure>
+
+    <h2 id="summary"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li><strong>7要素</strong>：CIA が基本。真正性・否認防止などは「誰が・本当に」を守る。</li>
+      <li><strong>攻撃の用語</strong>：脆弱性 → エクスプロイト → ペイロード の順で理解する。</li>
+      <li><strong>CVE と CWE</strong>：CVE は「具体的な穴」の名前、CWE は「穴の種類」。</li>
+      <li><strong>CVSS / EPSS / KEV</strong>：深刻度・悪用確率・悪用済みか、を組み合わせて優先度を決める。CVSS だけで決めない。</li>
+      <li><strong>暗号</strong>：共通鍵は速い、公開鍵は鍵交換と署名、ハッシュは指紋、TLS は両方を組み合わせた通信保護。</li>
+    </ul>
+
+    <h2 id="quiz"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 「CVE-2021-44228」と「CWE-89」の違いは？</summary>
+      <div class="body">
+        <p>CVE-2021-44228 は Log4j という <strong>特定の製品の特定の脆弱性</strong>に付いた名前（ID）です。CWE-89 は SQL インジェクションという <strong>弱点の種類</strong>で、多くの製品の多くの脆弱性が同じ CWE に分類されます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. CVSS 9.8 の脆弱性と、KEV に載った CVSS 6.5 の脆弱性。自社のインターネット公開 VPN 装置に後者が当てはまるとき、どちらを先に直す？</summary>
+      <div class="body">
+        <p>状況によりますが、<strong>KEV に載っている（実際に悪用されている）脆弱性が、外部から届く機器にある</strong>なら、そちらを最優先にするのが基本です。CVSS は技術的な深刻度であり、自社にとっての緊急度は悪用状況や露出度も合わせて判断します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. パスワードを SHA-256 でハッシュ化して保存すれば十分？</summary>
+      <div class="body">
+        <p><strong>不十分です。</strong>SHA-256 は高速なので、事前計算表（レインボーテーブル）や総当たりで推測されやすくなります。bcrypt / scrypt / Argon2 のような「わざと遅い」ハッシュとソルトを使います。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. 電子署名で守れる要素を3つ挙げると？</summary>
+      <div class="body">
+        <p><strong>真正性</strong>（送信者が本物）、<strong>完全性</strong>（改ざんされていない）、<strong>否認防止</strong>（後から「送っていない」と言えない）です。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：10_基本概念/03_セキュリティの基本概念と専門用語（セキュリティ知識地図 第3章）</li>
+      <li>CVE Program — <a href="https://www.cve.org/">https://www.cve.org/</a></li>
+      <li>FIRST — CVSS / EPSS — <a href="https://www.first.org/">https://www.first.org/</a></li>
+      <li>CISA Known Exploited Vulnerabilities Catalog — <a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog">https://www.cisa.gov/known-exploited-vulnerabilities-catalog</a></li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-2_さまざまな脅威と対策の基本.html"><span class="lbl">← 前のページ</span>さまざまな脅威と対策の基本</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-4_リスク管理とリスクアセスメント.html"><span class="lbl">次のページ →</span>リスク管理とリスクアセスメント</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ログイン方式と認証の概念｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 基礎概念 › ログイン方式と認証の概念</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎概念</span>
+      <h1>ログイン方式と認証の概念</h1>
+      <p class="lead">パスワード、Basic 認証、API キー、セッション、JWT、OAuth 2.0、OpenID Connect、SSO、SAML、LDAP、MFA、パスキーにつながる生体認証……。ログインまわりには似た言葉がたくさん出てきます。このページでは、それぞれの仕組み・メリット・デメリット・使いどころを整理し、さらに「どれが認証方式で、どれがトークンの形式やUXのパターンなのか」という、開発者が混同しやすい点をほどいていきます。</p>
+      <p class="meta">もとにしたノート：10_基礎概念/03_ログインの種類と認証方式、10_基礎概念/04_開発者が知るべき認証の7つの概念（Hayk Simonyan）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>認証が答える問いは <strong>「リクエストしてきたのは誰か？」</strong> の1つだけです。その答え方には、パスワードやセッションのような <strong>認証方式</strong> のほかに、JWT のような <strong>トークンの形式</strong>、Bearer のような <strong>運用パターン</strong>、OAuth 2.0 のような <strong>認可フレームワーク</strong>、SSO のような <strong>UX パターン</strong> が組み合わさっています。「それは何の種類の言葉か」を意識すると、ログインの仕組みがぐっと見通しやすくなります。</p>
+    </div>
+
+    <p>認証と認可そのものの違いは、前のページ <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> で説明しました。このページはその続きとして、「認証（本人確認）をどうやって行うか」の具体的な方式を見ていきます。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>まず整理：開発者が混同しやすい5つの点</h2>
+    <p>Hayk Simonyan 氏の動画「7 Authentication Concepts Every Developer Should Know」では、最初に次のような混同をよくある間違いとして挙げています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>よくある誤解</th><th>実際は</th></tr></thead>
+      <tbody>
+        <tr><td>認証方式と認可フレームワークは同じもの</td><td>別物です。<strong>認証方式</strong> は「誰か」を確かめる方法、<strong>認可フレームワーク</strong> は「何にアクセスしてよいか」を決める枠組みです</td></tr>
+        <tr><td>JWT は認証方式である</td><td>JWT は <strong>トークンの形式（フォーマット）</strong> です</td></tr>
+        <tr><td>Bearer ＝ JWT</td><td>Bearer は「トークンを持っている者にアクセスを与える」という <strong>パターン</strong> で、JWT そのものではありません</td></tr>
+        <tr><td>OAuth 2 は認証方式である</td><td>OAuth 2 は <strong>認可フレームワーク</strong> です</td></tr>
+        <tr><td>SSO は認証方式である</td><td>SSO（シングルサインオン）は「一度ログインすれば複数サービスにアクセスできる」という <strong>UX パターン</strong> です</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>UX</strong>（ユーザーエクスペリエンス）は、使いやすさや使い心地のことです。</p>
+    <div class="callout tip">
+      <p class="callout-title">ツールの画面も混同のもと</p>
+      <p>API を試すツールの Postman では、Basic / Digest / API Key / Bearer などが「認証タイプ（Auth Type）」として同じリストに並んでいます。画面をシンプルにするための見せ方ですが、そのせいで「方式」「フレームワーク」「UX」が余計に混ざりやすい、と動画では指摘されています。</p>
+    </div>
+    <p>各用語がどの種類に入るかの一覧は、このページの最後（<a href="#sec-15">15. 全体の整理</a>）にまとめています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>認証とは何か：「リクエストしてきたのは誰か？」</h2>
+    <p>システムが何かを許可したり制限したりする前に、まず <strong>リクエストしてきた相手が誰なのか</strong> を知る必要があります。相手はブラウザやモバイルアプリから使う人間のユーザーのこともあれば、外部のサービス（プログラム）のこともあります。相手が名乗った通りの本人かを確かめるのが認証です。</p>
+    <p>典型的な流れは次のとおりです。</p>
+    <ol class="steps">
+      <li>ユーザーまたは別サービスが、<strong>API ゲートウェイ</strong>（API の入口になるサーバー）などにアクセスする</li>
+      <li>ログイン（<strong>資格情報</strong>＝パスワードなど本人であることを示す情報の提示）で身元を確認する</li>
+      <li>有効なら、システム内の API・サービス・データへのアクセスを許可する</li>
+      <li>無効なら <strong>401 Unauthorized</strong>（「認証されていない」を表す HTTP ステータスコード）を返す</li>
+    </ol>
+    <p>認可（アクセスできるリソースや操作の範囲を決めること）は、この後の別ステップとして扱います。認可モデルの詳しい話は、後の「40 認可モデル」のページで扱う予定です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>ユーザー名／パスワード認証</h2>
+    <p>最も基本的な認証方式です。ユーザー名（またはメールアドレス）とパスワードの組み合わせで認証を行います。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>実装が簡単</strong>：基本的な認証方式で、多くのシステムで標準的に使われている</li>
+          <li><strong>ユーザーに馴染みがある</strong>：ユーザーが最も慣れ親しんでいる認証方式</li>
+          <li><strong>追加の外部サービスが不要</strong>：自社で完全に管理できる</li>
+          <li><strong>コストが低い</strong>：特別なインフラやサービスが不要</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>セキュリティリスク</strong>：パスワードの漏洩、推測、再利用のリスクがある</li>
+          <li><strong>ユーザーの負担</strong>：強力なパスワードの管理がユーザーに委ねられる</li>
+          <li><strong>パスワードリセット機能が必要</strong>：忘れた場合の対応が必要</li>
+          <li><strong>ブルートフォース攻撃に脆弱</strong>：総当たりでパスワードを試す攻撃のこと。レート制限（一定時間内の試行回数の制限）などの対策が必要</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：一般的な Web アプリケーション、企業内システム、会員制サイト。</p>
+    <p>パスワードの安全な保存方法（ハッシュ化）やパスワードポリシーは、次のページ <a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a> と、71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> で扱います。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>HTTP の古典的な方式：Basic 認証と Digest 認証</h2>
+    <p>ここからは、HTTP リクエストで「誰か」を伝える具体的な方式を見ていきます。まずは昔からある2つです。</p>
+
+    <h3 id="sec-4-1">4.1 Basic 認証</h3>
+    <p>最も単純な方式です。</p>
+    <ol class="steps">
+      <li>資格情報なしでリソース（例：<code>GET /api/users</code>）にアクセスすると、サーバーは <strong>401</strong> を返して資格情報を求める</li>
+      <li>次のリクエストで、<code>Authorization</code> ヘッダに <strong>Base64 エンコードした <code>username:password</code></strong> を付ける</li>
+      <li>サーバーで検証し、成功なら <strong>200 OK</strong> とデータを返す。失敗なら再び <strong>401</strong></li>
+    </ol>
+    <p><strong>Base64</strong> は、データを英数字と記号だけの文字列に置き換える <strong>変換方式</strong> です。鍵を使わないので、暗号化ではありません。</p>
+    <span class="code-label bad">Basic 認証のヘッダ：Base64 は誰でも元に戻せる</span>
+<pre><code># 送られるヘッダ（"user:pass" を Base64 にしたもの）
+Authorization: Basic dXNlcjpwYXNz
+
+# 盗み見た人はすぐに元に戻せる
+$ echo dXNlcjpwYXNz | base64 -d
+user:pass</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">Basic 認証の弱点</p>
+      <ul>
+        <li>Base64 は暗号化ではなく、<strong>容易に復号</strong>できます。</li>
+        <li>通信を暗号化する <strong>HTTPS が必須</strong> です。それでも <strong>毎リクエストで資格情報そのものを送る</strong> ため、本番の外部向け API ではほとんど使われません（社内ツール程度）。</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-4-2">4.2 Digest 認証</h3>
+    <p>Basic 認証と似た流れ（まず 401 → 資格情報を付けて再リクエスト → 成功なら 200、失敗なら 401）ですが、パスワードを平文で送らず、<strong>MD5 ハッシュ</strong> にした値を送る点でやや改善されています。<strong>ハッシュ</strong> とは、データから元に戻せない固定長の値を計算することです（詳しくは 71 の <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#crypto">暗号技術の用語</a> を参照）。</p>
+    <p>ただし MD5 は古いハッシュ関数で、後で紹介するセッションや JWT などの現代的な選択肢と比べると <strong>レガシー（時代遅れ）</strong> とみなされることが多く、今はほとんど使われません。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>API キー認証</h2>
+    <p>クライアント（API を使う側）ごとに <strong>一意のキー</strong> を発行し、リクエストのたびに <code>Authorization</code> ヘッダまたは <code>X-API-Key</code> ヘッダで送ってもらう方式です。SaaS のダッシュボードで「API キーを生成」して、そのキーを付けて API を呼び出す体験は、多くがこの方式です。</p>
+    <span class="code-label">API キーを付けたリクエストの例</span>
+<pre><code>GET /api/users HTTP/1.1
+Host: api.example.com
+X-API-Key: 8f3a9c1e7b2d4f60a5e1c9d7b3f2a8e4</code></pre>
+    <ul>
+      <li>サーバー側では、キーそのものではなくキーの <strong>ハッシュ</strong> と、そのキーの <strong>スコープ（権限範囲）</strong> を DB などに保存しておきます。</li>
+      <li>リクエストが来たら、権限やユーザーのテーブルを <strong>ルックアップ（検索）</strong> してキーを検証します。</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>状況</th><th>レスポンス</th></tr></thead>
+      <tbody>
+        <tr><td>キーが有効</td><td>成功レスポンス（データを返す）</td></tr>
+        <tr><td>キーが無効</td><td><strong>401 Unauthorized</strong></td></tr>
+        <tr><td>ヘッダ自体がない</td><td><strong>400 Bad Request</strong>（キー必須の設計の場合。リクエストの形が不正という扱い）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">API キーの弱点</p>
+      <ul>
+        <li>キーが漏洩すると、<strong>誰でもなりすまし可能</strong> です。有効期限は組み込まれていないので、自前で設けない限りずっと使えてしまいます。</li>
+        <li>キーは <strong>ランダムな文字列</strong> で、JWT のように中に情報は入っていません。そのため <strong>所有者や権限を知るには毎回 DB を参照する</strong> 必要があります。</li>
+      </ul>
+    </div>
+    <p>「毎回ヘッダに秘密の値を載せる」という点で JWT と似て見えますが、API キーは <strong>自己完結しない</strong>（キーだけでは誰のものか分からない）のが大きな違いです。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>セッション認証（従来の Web）</h2>
+    <p>従来の Web アプリで使われてきた方式です。ユーザーがログインすると、サーバー側の <strong>セッションストレージ</strong>（ログイン状態を保存しておく場所）にセッションを作り、クライアントには <strong>セッション ID</strong>（ログイン状態を表す番号）を <strong>Cookie</strong> で返します。以降のリクエストでは、ブラウザが Cookie のセッション ID を自動で送り、サーバーはそれでストレージを参照します。有効ならユーザーデータを取得して応答し、見つからなければ認証されていないとして 401 を返します。</p>
+    <p>セッションストアには次のような選択肢があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>特徴</th></tr></thead>
+      <tbody>
+        <tr><td>メモリ</td><td>単純（変数に置くだけ）だが、サーバーの再起動やクラッシュで消える</td></tr>
+        <tr><td><strong>Redis</strong></td><td>高速で、<strong>TTL</strong>（有効期限）を標準で持つ。本番でよく使われる定番</td></tr>
+        <tr><td>SQL DB</td><td>永続化できる</td></tr>
+        <tr><td>ファイルシステム</td><td>スケールしにくく、使われることは稀</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">セッション認証の特徴：ステートフル</p>
+      <p>セッション認証は <strong>ステートフル</strong>、つまりサーバーがセッションを「覚えている」必要があります。従来の Web アプリには向いていますが、サーバーを何台にも分けた API や <strong>マイクロサービス</strong>（機能ごとに小さなサービスへ分けた構成）では、ストアを共有する必要があるためスケールが難しくなりがちです。</p>
+    </div>
+    <p>セッション ID の発行・Cookie の属性・セッション固定攻撃などの詳しい話は 74_セッション管理 で扱います。Cookie の <code>HttpOnly</code>・<code>Secure</code>・<code>SameSite</code> 属性は 72 の <a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html#sec-6">Cookie はどう付いていくのか</a>、Cookie が自動送信されることを悪用する攻撃は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>トークンベース認証：Bearer と JWT</h2>
+    <p>セッションの代わりに、現代のアプリでは <strong>トークン</strong>（ログイン済みであることを示す文字列）を使うことが多くなっています。認証後に発行されたトークンを、クライアントがリクエストのたびに送る方式です。</p>
+
+    <h3 id="sec-7-1">7.1 Bearer はパターン、JWT は形式</h3>
+    <p><strong>Bearer</strong>（ベアラー＝持参人）は、「<strong>このトークンを持っている主体にアクセスを与える</strong>」という運用パターンです。特定の方式ではありません。トークンは <code>Authorization: Bearer &lt;token&gt;</code> の形でヘッダに載せます。</p>
+    <p>Bearer トークンの実体として最も一般的なのが <strong>JWT（JSON Web Token、ジョット）</strong> です。JWT は <strong>署名付きの JSON</strong> で、次のような情報（<strong>クレーム</strong>と呼びます）を中に含められます。</p>
+    <ul>
+      <li>ユーザー ID、メールアドレス</li>
+      <li>有効期限（<code>exp</code>）</li>
+      <li>ロール・権限など</li>
+    </ul>
+    <span class="code-label">Bearer トークンとして送る JWT と、その中身（ペイロード）の例</span>
+<pre><code>Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1MTIzIn0.xxxxx
+
+// ペイロード部分を読むと、たとえばこんな JSON が入っている
+{
+  "sub": "u123",                 // ユーザー ID
+  "email": "taro@example.com",
+  "role": "editor",              // ロール
+  "exp": 1767225600              // 有効期限（UNIX 時刻）
+}</code></pre>
+    <p>JWT の中身は Base64URL で変換されているだけで、誰でも読めます。改ざんされていないことは <strong>署名</strong> で確かめますが、秘密にしたい情報は入れてはいけません。</p>
+
+    <h3 id="sec-7-2">7.2 ログイン後の流れ</h3>
+    <ol class="steps">
+      <li>初回だけ資格情報（ユーザー名とパスワードなど）を検証する</li>
+      <li>有効なら JWT を発行してクライアントに返す</li>
+      <li>以降は <code>Authorization: Bearer &lt;token&gt;</code> で送ってもらい、サーバーは <strong>署名をローカルで検証</strong> する（多くの場合 DB 不要）</li>
+      <li>有効ならデータを返し、無効なら <strong>401</strong></li>
+    </ol>
+
+    <h3 id="sec-7-3">7.3 セッションとの比較</h3>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="左はセッション認証：クライアントがCookieでセッションIDを送り、サーバーはセッションストアを参照する。右はJWT：クライアントがBearerトークンを送り、サーバーは署名をローカルで検証しDB参照が不要">
+      <defs>
+        <marker id="arw102a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="180" y="28" text-anchor="middle" class="d-text-bold">セッション認証（ステートフル）</text>
+      <rect x="20" y="60" width="120" height="64" rx="8" class="d-box"/>
+      <text x="80" y="88" text-anchor="middle" class="d-text-bold">クライアント</text>
+      <text x="80" y="108" text-anchor="middle" class="d-text-sub">Cookie: sid=abc</text>
+      <rect x="220" y="60" width="120" height="64" rx="8" class="d-box"/>
+      <text x="280" y="96" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <path d="M142,100 L218,100" class="d-line" marker-end="url(#arw102a)"/>
+      <text x="180" y="88" text-anchor="middle" class="d-text-sub">① sid</text>
+      <rect x="220" y="190" width="120" height="64" rx="8" class="d-box-warn"/>
+      <text x="280" y="218" text-anchor="middle" class="d-text-bold">セッションストア</text>
+      <text x="280" y="238" text-anchor="middle" class="d-text-sub">Redis など</text>
+      <path d="M280,126 L280,188" class="d-line" marker-end="url(#arw102a)"/>
+      <text x="270" y="162" text-anchor="end" class="d-text-sub">② 毎回参照</text>
+      <text x="180" y="286" text-anchor="middle" class="d-text-sub">サーバーが状態を覚えておく</text>
+
+      <path d="M360,20 L360,290" class="d-line-dash"/>
+
+      <text x="540" y="28" text-anchor="middle" class="d-text-bold">JWT（ステートレス）</text>
+      <rect x="380" y="60" width="120" height="64" rx="8" class="d-box"/>
+      <text x="440" y="88" text-anchor="middle" class="d-text-bold">クライアント</text>
+      <text x="440" y="108" text-anchor="middle" class="d-text-sub">JWT を保持</text>
+      <rect x="580" y="60" width="120" height="64" rx="8" class="d-box"/>
+      <text x="640" y="96" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <path d="M502,100 L578,100" class="d-line" marker-end="url(#arw102a)"/>
+      <text x="540" y="88" text-anchor="middle" class="d-text-sub">① Bearer</text>
+      <rect x="580" y="190" width="120" height="64" rx="8" class="d-box-good"/>
+      <text x="640" y="218" text-anchor="middle" class="d-text-bold">署名を検証</text>
+      <text x="640" y="238" text-anchor="middle" class="d-text-sub">DB 参照なし</text>
+      <path d="M640,126 L640,188" class="d-line" marker-end="url(#arw102a)"/>
+      <text x="630" y="162" text-anchor="end" class="d-text-sub">② その場で確認</text>
+      <text x="540" y="286" text-anchor="middle" class="d-text-sub">トークン自体に情報が入っている</text>
+    </svg>
+    <figcaption>図：セッションは「サーバーの記憶」を参照し、JWT は「トークンの署名」を確かめる</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>セッション</th><th>JWT（典型的な使い方）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>状態</strong></td><td>サーバーがセッションを保持（ステートフル）</td><td><strong>ステートレス</strong>（トークンが自己完結）</td></tr>
+        <tr><td><strong>検証</strong></td><td>ストアを参照</td><td>署名を検証</td></tr>
+        <tr><td><strong>スケール</strong></td><td>ストアの共有が課題</td><td>分散しやすい</td></tr>
+      </tbody>
+    </table></div>
+    <p>JWT 以前のトークンは、中に情報を持たない <strong>不透明トークン</strong>（ただの文字列）で、使うたびに DB やキャッシュを参照する必要がありました。つまりステートフルでした。JWT はクレームをトークン内に載せられるため、<strong>DB 負荷の軽減</strong> と <strong>検証の簡素化</strong> に役立ちます。</p>
+
+    <h3 id="sec-7-4">7.4 トークンベース認証のメリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>ステートレス</strong>：サーバー側でセッションを管理する必要がない</li>
+          <li><strong>スケーラビリティ</strong>：複数のサーバー間で共有できる</li>
+          <li><strong>モバイル対応</strong>：モバイルアプリとの連携が容易</li>
+          <li><strong>マイクロサービス対応</strong>：分散システムに適している</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>トークンの有効期限管理</strong>：適切な有効期限の設定が必要</li>
+          <li><strong>トークンの無効化が困難</strong>：一度発行したトークンは、通常、有効期限まで無効化できない</li>
+          <li><strong>セキュリティリスク</strong>：トークンが漏洩すると、有効期限まで使われる可能性がある</li>
+          <li><strong>実装の複雑さ</strong>：トークンの生成・検証・更新のロジックが必要</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：RESTful API、マイクロサービスアーキテクチャ、モバイルアプリのバックエンド、<strong>SPA</strong>（Single Page Application：1枚のページを JavaScript で書き換えながら動く Web アプリ）。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>アクセストークンとリフレッシュトークン</h2>
+    <p>「漏れたら有効期限まで使われる」という弱点を小さくするため、現代のシステムでは多くの場合、寿命の違う2種類のトークンを組み合わせます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>寿命</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>アクセストークン</strong></td><td>短い（15分〜1時間程度）</td><td>API 呼び出し</td></tr>
+        <tr><td><strong>リフレッシュトークン</strong></td><td>長い（数日〜数週間）</td><td>新しいアクセストークンの取得</td></tr>
+      </tbody>
+    </table></div>
+    <ol class="steps">
+      <li>ログイン時に、アクセストークンとリフレッシュトークンの両方を発行する</li>
+      <li>クライアントはアクセストークンで API を呼び出し、リフレッシュトークンは保管しておく</li>
+      <li>アクセストークンの期限が切れて <strong>401</strong> になったら、リフレッシュトークンで認証サーバーに再発行を依頼する</li>
+      <li>新しいアクセストークンで API の呼び出しを再開する。ユーザーは資格情報を入れ直さずにログイン状態が続く</li>
+    </ol>
+    <p>リフレッシュトークンは長く使えるぶん、盗まれたときの被害が大きくなります。保存場所に注意が必要です。</p>
+    <span class="code-label bad">危険な例：リフレッシュトークンを localStorage に置く</span>
+<pre><code>// JavaScript から自由に読めるので、XSS があると盗まれる
+localStorage.setItem('refresh_token', data.refreshToken);</code></pre>
+    <span class="code-label good">安全な例：サーバーが HttpOnly Cookie で渡す</span>
+<pre><code>Set-Cookie: refresh_token=...; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh</code></pre>
+    <p><strong>localStorage</strong> はブラウザにデータを保存する仕組みで、ページ上の JavaScript から読み書きできます。そのため <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">XSS</a>（攻撃者のスクリプトをページで実行させる攻撃）があると盗まれやすくなります。<strong>HttpOnly</strong> を付けた Cookie は JavaScript から読めないので、こうした保存方法が推奨されます。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>OAuth 2.0 と OpenID Connect（ソーシャルログイン）</h2>
+    <p>「Google でログイン」「GitHub でログイン」のように、Google・Facebook・Twitter・GitHub などの外部サービス（<strong>アイデンティティプロバイダー（IdP）</strong>＝本人確認を引き受けるサービス）のアカウントを使ってログインする方式を <strong>ソーシャルログイン</strong> と呼びます。その裏側で使われているのが OAuth 2.0 と OpenID Connect です。ノートの言葉でまとめると、<strong>OAuth 2.0 は認可のための仕組み、OpenID Connect は認証のための仕組み</strong> です。</p>
+
+    <h3 id="sec-9-1">9.1 OAuth 2.0：認可フレームワーク</h3>
+    <p>OAuth 2.0 は <strong>認可フレームワーク</strong> です。答える問いは「<strong>このアプリは、ユーザーに代わって何にアクセスできるか</strong>」で、単体では「ユーザーが誰か」をアプリに伝えません。</p>
+    <p>例として、外部アプリにあなたの Google Drive のファイルを読ませる場合を考えます。</p>
+    <ol class="steps">
+      <li>アプリがユーザーを Google の <strong>同意画面</strong>（「このアプリに Drive の読み取りを許可しますか？」という画面）へリダイレクトする</li>
+      <li>ユーザーが許可すると、<strong>認可コード</strong>（一時的な引換券）がアプリに返る</li>
+      <li>アプリが認可コードを <strong>アクセストークン</strong> と交換する</li>
+      <li>アプリはそのアクセストークンで Drive API を呼び出し、ファイルを取得する</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">ここが混同ポイント</p>
+      <p>このとき得るアクセストークンは「Drive にアクセスしてよいという <strong>権限の証明</strong>」です。アクセストークンを受け取れたからといって、アプリは「あなたが誰か」を確かめたわけではありません。<strong>OAuth 2.0 のアクセストークンは本人確認（認証）そのものではない</strong>、という区別が重要です。</p>
+    </div>
+
+    <h3 id="sec-9-2">9.2 OpenID Connect（OIDC）：OAuth 2.0 の上の認証レイヤー</h3>
+    <p><strong>OpenID Connect（OIDC）</strong> は、OAuth 2.0 の上に <strong>認証のレイヤー（層）</strong> を載せたものです。「Google でサインイン」などで使われます。</p>
+    <ol class="steps">
+      <li>認可エンドポイント（IdP のログイン受付窓口）へリダイレクトし、ユーザーがログイン・同意する</li>
+      <li>アプリが認可コードを受け取る</li>
+      <li>コードをトークンと交換すると、<strong>アクセストークン</strong>（OAuth 2.0 の認可用）に加えて <strong>ID トークン</strong>（JWT 形式で、メールアドレスやユーザー ID などの <strong>本人情報</strong> が入っている）が返る</li>
+      <li>アプリは ID トークンの署名を検証して身元を確定し、そのうえで自前のセッションやアクセストークンを発行できる</li>
+    </ol>
+    <figure>
+    <svg viewBox="0 0 720 400" role="img" aria-label="ユーザー、アプリ、Google（IdP）、Google Drive APIの4者の間で、同意画面へのリダイレクト、ログインと同意、認可コードの返却、コードとトークンの交換、アクセストークンとIDトークンの発行、APIの呼び出しが順に行われる流れ">
+      <defs>
+        <marker id="arw102b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="25" y="20" width="130" height="46" rx="8" class="d-box"/>
+      <text x="90" y="49" text-anchor="middle" class="d-text-bold">ユーザー</text>
+      <rect x="215" y="20" width="130" height="46" rx="8" class="d-box-accent"/>
+      <text x="280" y="49" text-anchor="middle" class="d-text-bold">アプリ</text>
+      <rect x="405" y="20" width="130" height="46" rx="8" class="d-box"/>
+      <text x="470" y="49" text-anchor="middle" class="d-text-bold">Google（IdP）</text>
+      <rect x="575" y="20" width="130" height="46" rx="8" class="d-box"/>
+      <text x="640" y="49" text-anchor="middle" class="d-text-bold">Drive API</text>
+      <path d="M90,66 L90,320" class="d-line-dash"/>
+      <path d="M280,66 L280,320" class="d-line-dash"/>
+      <path d="M470,66 L470,320" class="d-line-dash"/>
+      <path d="M640,66 L640,320" class="d-line-dash"/>
+
+      <path d="M280,110 L468,110" class="d-line" marker-end="url(#arw102b)"/>
+      <text x="375" y="102" text-anchor="middle" class="d-text-sub">① 同意画面へリダイレクト</text>
+      <path d="M90,150 L468,150" class="d-line" marker-end="url(#arw102b)"/>
+      <text x="185" y="142" text-anchor="middle" class="d-text-sub">② ログイン・同意</text>
+      <path d="M470,190 L282,190" class="d-line" marker-end="url(#arw102b)"/>
+      <text x="375" y="182" text-anchor="middle" class="d-text-sub">③ 認可コード</text>
+      <path d="M280,230 L468,230" class="d-line" marker-end="url(#arw102b)"/>
+      <text x="375" y="222" text-anchor="middle" class="d-text-sub">④ コードをトークンと交換</text>
+      <path d="M470,270 L282,270" class="d-line" marker-end="url(#arw102b)"/>
+      <text x="375" y="262" text-anchor="middle" class="d-text-sub">⑤ アクセス／ID トークン</text>
+      <path d="M280,310 L638,310" class="d-line" marker-end="url(#arw102b)"/>
+      <text x="555" y="302" text-anchor="middle" class="d-text-sub">⑥ アクセストークンで呼び出し</text>
+
+      <rect x="40" y="336" width="310" height="54" rx="8" class="d-box-warn"/>
+      <text x="195" y="359" text-anchor="middle" class="d-text-bold">アクセストークン＝権限の証明</text>
+      <text x="195" y="379" text-anchor="middle" class="d-text-sub">OAuth 2.0（何にアクセスしてよいか）</text>
+      <rect x="370" y="336" width="310" height="54" rx="8" class="d-box-good"/>
+      <text x="525" y="359" text-anchor="middle" class="d-text-bold">ID トークン＝本人の証明</text>
+      <text x="525" y="379" text-anchor="middle" class="d-text-sub">OIDC で追加（あなたは誰か）</text>
+    </svg>
+    <figcaption>図：OAuth 2.0 の流れ。OIDC では ⑤ で ID トークンも返り、アプリは「誰か」を確かめられる</figcaption>
+    </figure>
+    <p>現代の「Sign in with Google / GitHub / Microsoft」の多くは、この OIDC 系統です。安全でスケールしやすい現代的な方法とされています。OAuth 2.0 や OIDC のフロー（認可コードフローや PKCE など）の詳細は、後の「30 フェデレーション」のページで扱う予定です。</p>
+
+    <h3 id="sec-9-3">9.3 ソーシャルログインのメリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>ユーザー体験が良い</strong>：新規登録の手間が減り、ログインが簡単</li>
+          <li><strong>パスワード管理の負担がない</strong>：ユーザーがパスワードを覚える必要がない</li>
+          <li><strong>セキュリティが高い</strong>：大手プロバイダーのセキュリティ対策を利用できる</li>
+          <li><strong>登録率の向上</strong>：登録のハードルが下がり、ユーザー獲得に有利</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>外部依存</strong>：プロバイダーのサービス停止やポリシー変更の影響を受ける</li>
+          <li><strong>プライバシーへの懸念</strong>：ユーザー情報が外部サービスと共有される</li>
+          <li><strong>実装の複雑さ</strong>：OAuth 2.0 の実装には専門知識が必要</li>
+          <li><strong>プロバイダーごとの対応が必要</strong>：複数のプロバイダーに対応すると実装が複雑になる</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：消費者向け Web アプリケーション、モバイルアプリ、スタートアップのサービス。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>シングルサインオン（SSO）とアイデンティティプロトコル（SAML・OIDC）</h2>
+
+    <h3 id="sec-10-1">10.1 SSO は「UX パターン」</h3>
+    <p><strong>シングルサインオン（SSO）</strong> は、一度ログインすれば、関連する複数のアプリケーションやサービスに自動的にログインできる仕組みです。たとえば Google（や Okta）に一度ログインすれば、Gmail・Drive・YouTube・カレンダーに再ログインなしでアクセスできます。SSO そのものは認証方式ではなく <strong>UX パターン</strong> で、下層では次に説明する <strong>SAML</strong> や <strong>OIDC</strong> などの <strong>アイデンティティプロトコル</strong>（身元を伝えるための通信の取り決め）を使います。</p>
+    <ol class="steps">
+      <li>Google などの IdP に一度ログインすると、IdP 側のセッションストアに <strong>グローバルセッション</strong> が保存される</li>
+      <li>クライアントに <strong>SSO 用の Cookie</strong> が付与される</li>
+      <li>別のサービス（例：Drive）に初めてアクセスしたときも、IdP でセッションを検証するだけで通過できる</li>
+      <li>以降のサービス（YouTube、カレンダーなど）も同様に、セッション検証だけで済む</li>
+    </ol>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="ブラウザがIdPに一度だけログインしてSSO用Cookieを受け取ると、IdPのグローバルセッションをもとにGmail、Drive、YouTubeへ再ログインなしでアクセスできる">
+      <defs>
+        <marker id="arw102c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="90" width="150" height="80" rx="8" class="d-box"/>
+      <text x="95" y="122" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="95" y="146" text-anchor="middle" class="d-text-sub">SSO 用 Cookie</text>
+
+      <rect x="265" y="85" width="190" height="90" rx="8" class="d-box-accent"/>
+      <text x="360" y="117" text-anchor="middle" class="d-text-bold">IdP（例：Google）</text>
+      <text x="360" y="141" text-anchor="middle" class="d-text-sub">グローバルセッション</text>
+      <text x="360" y="160" text-anchor="middle" class="d-text-sub">を保存</text>
+
+      <path d="M172,115 L263,115" class="d-line" marker-end="url(#arw102c)"/>
+      <text x="217" y="88" text-anchor="middle" class="d-text-sub">① 一度だけ</text>
+      <text x="217" y="105" text-anchor="middle" class="d-text-sub">ログイン</text>
+      <path d="M263,148 L172,148" class="d-line" marker-end="url(#arw102c)"/>
+      <text x="217" y="168" text-anchor="middle" class="d-text-sub">② Cookie</text>
+
+      <rect x="570" y="20" width="130" height="56" rx="8" class="d-box-good"/>
+      <text x="635" y="53" text-anchor="middle" class="d-text-bold">Gmail</text>
+      <rect x="570" y="102" width="130" height="56" rx="8" class="d-box-good"/>
+      <text x="635" y="135" text-anchor="middle" class="d-text-bold">Drive</text>
+      <rect x="570" y="184" width="130" height="56" rx="8" class="d-box-good"/>
+      <text x="635" y="217" text-anchor="middle" class="d-text-bold">YouTube</text>
+
+      <path d="M457,110 L568,50" class="d-line-dash" marker-end="url(#arw102c)"/>
+      <path d="M457,130 L568,130" class="d-line-dash" marker-end="url(#arw102c)"/>
+      <path d="M457,150 L568,210" class="d-line-dash" marker-end="url(#arw102c)"/>
+      <text x="512" y="122" text-anchor="middle" class="d-text-sub">③ 確認</text>
+      <text x="360" y="222" text-anchor="middle" class="d-text-sub">SAML / OIDC で身元を伝える</text>
+      <text x="360" y="242" text-anchor="middle" class="d-text-sub">→ 各サービスは再ログイン不要</text>
+    </svg>
+    <figcaption>図：SSO。ログインは IdP で一度だけ、各サービスは IdP のセッションを確認して通す</figcaption>
+    </figure>
+    <div class="grid c2">
+      <div class="card">
+        <h4>SSO のメリット</h4>
+        <ul>
+          <li><strong>ユーザー体験が良い</strong>：複数のパスワードを覚える必要がない</li>
+          <li><strong>管理が容易</strong>：管理者が一元的にユーザーを管理できる</li>
+          <li><strong>セキュリティ向上</strong>：パスワードの再利用が減り、一元管理でセキュリティポリシーを統一できる</li>
+          <li><strong>生産性向上</strong>：ログインの手間が減り、業務効率が上がる</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>SSO のデメリット</h4>
+        <ul>
+          <li><strong>実装が複雑</strong>：SAML、OAuth 2.0、OpenID Connect などのプロトコル理解が必要</li>
+          <li><strong>初期コストが高い</strong>：専用のソリューションやインフラが必要</li>
+          <li><strong>単一障害点</strong>：SSO サービスが止まると、すべてのサービスにアクセスできなくなる</li>
+          <li><strong>セキュリティリスク</strong>：SSO アカウントが侵害されると、すべてのサービスが危険にさらされる</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：企業内システム（複数のアプリケーション）、クラウドサービスの統合、教育機関のシステム。</p>
+
+    <h3 id="sec-10-2">10.2 アイデンティティプロトコル：SAML と OIDC</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロトコル</th><th>形式・用途</th><th>備考</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SAML</strong></td><td>XML ベース。エンタープライズやレガシー（Salesforce、社内ダッシュボードなど）で今も広く普及</td><td>ログイン画面へリダイレクトされ、ログイン後に <strong>SAML アサーション</strong>（XML で書かれた「この人は本人です」という証明書）で身元を確認</td></tr>
+        <tr><td><strong>OIDC</strong></td><td>JWT 形式の <strong>ID トークン</strong>。Google などモダンなサービスで主流</td><td>SAML より新しく、JSON / JWT の仕組みと相性が良い</td></tr>
+      </tbody>
+    </table></div>
+    <p>どちらも SSO と組み合わせて使われ、いずれも安全で現役の選択肢です。</p>
+
+    <h3 id="sec-10-3">10.3 SAML 認証のメリット・デメリット</h3>
+    <p><strong>SAML</strong>（Security Assertion Markup Language）は、企業向けの SSO で使われるプロトコルです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>企業向けに標準化</strong>：多くの企業システムでサポートされている</li>
+          <li><strong>一元管理</strong>：企業の ID プロバイダーで一元的に管理できる</li>
+          <li><strong>セキュリティ</strong>：XML 署名と暗号化による高いセキュリティ</li>
+          <li><strong>コンプライアンス</strong>：企業のセキュリティポリシーに準拠しやすい</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>実装が複雑</strong>：XML ベースで、実装が複雑</li>
+          <li><strong>モバイル対応が弱い</strong>：主に Web アプリケーション向け</li>
+          <li><strong>初期設定が大変</strong>：証明書の管理、メタデータ（設定情報）の交換などが必要</li>
+          <li><strong>デバッグが困難</strong>：XML の構造が複雑で、問題の特定が難しい</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：企業の内部システム、クラウドサービスのエンタープライズ版、教育機関のシステム。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>LDAP／Active Directory 認証</h2>
+    <p><strong>LDAP</strong>（Lightweight Directory Access Protocol：ユーザーや組織の情報を保存した「ディレクトリ」にアクセスするためのプロトコル）や、Microsoft の <strong>Active Directory</strong>（社内のユーザー・PC をまとめて管理する仕組み）を使い、既存のディレクトリサービスと連携して認証する方式です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>既存インフラの活用</strong>：企業の既存のディレクトリサービスを利用できる</li>
+          <li><strong>一元管理</strong>：ユーザー情報を一元的に管理できる</li>
+          <li><strong>コスト削減</strong>：新たなユーザー管理システムを構築する必要がない</li>
+          <li><strong>統合性</strong>：企業の既存システムと統合しやすい</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>オンプレミス依存</strong>：多くの場合、オンプレミス（自社で設置・運用する）のインフラが必要</li>
+          <li><strong>設定が複雑</strong>：LDAP の設定や Active Directory との連携が複雑</li>
+          <li><strong>スケーラビリティ</strong>：大規模なシステムではパフォーマンスの問題が起こる可能性</li>
+          <li><strong>クラウド対応</strong>：クラウドネイティブなアプリケーションとの統合が難しい場合がある</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：企業の内部システム、オンプレミスのアプリケーション、大学や研究機関のシステム。社内システムでどれを選ぶかは <a href="10-4_社内システム向け認証方式の選び方.html">社内システム向け認証方式の選び方</a> で詳しく扱います。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>認証を強くする・パスワードをなくす：MFA・パスワードレス・生体認証</h2>
+    <p>ここまでの方式とは別の軸として、「パスワードだけに頼らない」ための方式があります。それぞれの仕組みの詳細は次のページ <a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a> や、後の「20 パスワード・MFA・パスキー」のページで扱う予定です。ここでは特徴だけを押さえます。</p>
+
+    <h3 id="sec-12-1">12.1 多要素認証（MFA）</h3>
+    <p>2つ以上の異なる <strong>認証要素</strong>（知識＝知っているもの、所有物＝持っているもの、生体情報＝本人の体の特徴）を組み合わせて認証する方式です。例：パスワード ＋ SMS コード、パスワード ＋ 認証アプリのコード。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>セキュリティが非常に高い</strong>：単一要素の認証よりはるかに安全</li>
+          <li><strong>不正アクセスの防止</strong>：パスワードが漏洩しても、第二要素がなければアクセスできない</li>
+          <li><strong>コンプライアンス対応</strong>：多くの規制要件（PCI DSS、GDPR など）で推奨・必須</li>
+          <li><strong>柔軟な実装</strong>：ハードウェアトークン、SMS、アプリ、生体認証などさまざまな方式がある</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>ユーザー体験の低下</strong>：ログインに追加の手順が必要</li>
+          <li><strong>実装コスト</strong>：追加のインフラやサービスが必要</li>
+          <li><strong>運用コスト</strong>：SMS 送信などに継続的なコストがかかる場合がある</li>
+          <li><strong>デバイス依存</strong>：スマートフォンやトークンが必要な場合がある</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：金融機関のシステム、企業の機密情報システム、クラウドサービス（AWS、Azure など）、医療情報システム。MFA とパスキーの位置づけは 71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a> も参考になります。</p>
+
+    <h3 id="sec-12-2">12.2 パスワードレス認証</h3>
+    <p>パスワードを使わず、メールや SMS に送られた <strong>ワンタイムコード</strong>（一度だけ使える使い捨てのコード）や、<strong>マジックリンク</strong>（クリックするだけでログインできる URL）で認証する方式です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>パスワード管理の負担がない</strong>：ユーザーがパスワードを覚える必要がない</li>
+          <li><strong>セキュリティ向上</strong>：パスワード漏洩のリスクがない</li>
+          <li><strong>ユーザー体験</strong>：メールや SMS のリンクをクリックするだけ</li>
+          <li><strong>パスワードリセット機能が不要</strong>：パスワードがないため、リセット機能もいらない</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>メール／SMS アカウントのセキュリティに依存</strong>：メールや SMS が侵害されると危険</li>
+          <li><strong>デバイス依存</strong>：メールや SMS を受信できるデバイスが必要</li>
+          <li><strong>実装の複雑さ</strong>：ワンタイムコードの生成、有効期限管理などが必要</li>
+          <li><strong>コスト</strong>：SMS 送信にコストがかかる場合がある</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：モバイルアプリ、一時的なアクセスが必要なサービス、パスワード管理を簡素化したいサービス。</p>
+
+    <h3 id="sec-12-3">12.3 生体認証</h3>
+    <p>指紋、顔、虹彩、声紋などの生体情報を使って認証する方式です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>ユーザー体験が非常に良い</strong>：簡単で速い認証</li>
+          <li><strong>セキュリティが高い</strong>：生体情報は他人に渡すことができない</li>
+          <li><strong>パスワード不要</strong>：パスワードを覚える必要がない</li>
+          <li><strong>偽造が困難</strong>：生体情報の偽造は技術的に難しい</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>デバイス依存</strong>：生体認証に対応したデバイスが必要</li>
+          <li><strong>プライバシーへの懸念</strong>：生体情報の収集・保存に対する懸念</li>
+          <li><strong>誤認率</strong>：環境や体の状態によって誤認証が起こる可能性</li>
+          <li><strong>変更不可</strong>：生体情報が漏洩した場合、パスワードのように変更できない</li>
+          <li><strong>コスト</strong>：専用のハードウェアやソフトウェアが必要</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>適用例</strong>：スマートフォンのロック解除、企業の入退室管理、金融機関の ATM、空港の入国審査。</p>
+
+    <h2 id="sec-13"><span class="num">13.</span>AWS Cognito：複数の方式をまとめて提供するサービス</h2>
+    <p><strong>AWS Cognito</strong> は、AWS が提供する <strong>マネージド認証サービス</strong>（サーバーの運用を AWS に任せられる認証サービス）です。ここまでに紹介した認証方式の多くを、1つのサービスでまとめてサポートしています。</p>
+
+    <h3 id="sec-13-1">13.1 Cognito がサポートする認証方式</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>認証方式</th><th>Cognito での実現方法</th></tr></thead>
+      <tbody>
+        <tr><td>ユーザー名／パスワード認証</td><td>Cognito User Pools で標準的にサポート。カスタム属性の追加も可能</td></tr>
+        <tr><td>ソーシャルログイン（OAuth 2.0 / OIDC）</td><td>Google、Facebook、Amazon、Apple、その他の OIDC プロバイダーに対応。簡単な設定で統合できる</td></tr>
+        <tr><td>多要素認証（MFA）</td><td>SMS ベースの MFA、<strong>TOTP</strong>（Time-based One-Time Password：時刻をもとに30秒ごとなどに変わるコード）アプリベースの MFA、ソフトウェアトークン MFA</td></tr>
+        <tr><td>シングルサインオン（SSO）</td><td>Cognito Identity Pools と User Pools を組み合わせて実現。SAML 2.0 ID プロバイダーとの統合も可能</td></tr>
+        <tr><td>パスワードレス認証</td><td>メールベースのワンタイムパスワード、SMS ベースの認証コード</td></tr>
+        <tr><td>トークンベース認証（JWT）</td><td>認証後に JWT を発行。ID トークン、アクセストークン、リフレッシュトークンを提供</td></tr>
+        <tr><td>SAML 認証</td><td>SAML 2.0 ID プロバイダーとの統合をサポート（エンタープライズ向け機能）</td></tr>
+        <tr><td>LDAP／Active Directory 認証</td><td>AWS Directory Service（AD Connector）と連携して実現可能。既存の Active Directory と統合</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-13-2">13.2 Cognito の構成要素</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>Cognito User Pools</h4>
+        <ul>
+          <li>ユーザー認証とユーザー管理</li>
+          <li>ユーザー登録、ログイン、パスワードリセット</li>
+          <li>ソーシャルログイン、MFA、カスタム認証フロー</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>Cognito Identity Pools</h4>
+        <ul>
+          <li>AWS リソースへの一時的な認証情報の提供</li>
+          <li><strong>フェデレーテッドアイデンティティ</strong>（外部の IdP で確認した身元を受け入れること）の管理</li>
+          <li>未認証ユーザーへのアクセス許可</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-13-3">13.3 Cognito のメリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>マネージドサービス</strong>：インフラの管理が不要</li>
+          <li><strong>スケーラビリティ</strong>：自動的にスケールする</li>
+          <li><strong>複数の認証方式を統合</strong>：1つのサービスで複数の認証方式をサポート</li>
+          <li><strong>AWS サービスとの統合</strong>：Lambda、API Gateway、AppSync などと簡単に統合</li>
+          <li><strong>コスト効率</strong>：使用量ベースの料金で、初期費用なし</li>
+          <li><strong>セキュリティ</strong>：AWS のセキュリティベストプラクティスを適用</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>AWS 依存</strong>：AWS エコシステムに依存する</li>
+          <li><strong>学習曲線</strong>：設定やカスタマイズには知識が必要</li>
+          <li><strong>カスタマイズの制限</strong>：完全なカスタマイズには限界がある</li>
+          <li><strong>コスト</strong>：大規模なユーザーベースではコストがかかる可能性</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout tip">
+      <p class="callout-title">Cognito は「組み合わせ」が強み</p>
+      <p>AWS Cognito は、上記の認証方式のほとんどをサポートする包括的な認証サービスです。単一の方式に限定されず、<strong>複数の認証方式を組み合わせて使える</strong> のが大きな特徴です。特に次の組み合わせが強力です。</p>
+      <ul>
+        <li>ユーザー名／パスワード ＋ ソーシャルログイン ＋ MFA</li>
+        <li>SAML SSO ＋ トークンベース認証</li>
+        <li>パスワードレス認証 ＋ JWT</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-14"><span class="num">14.</span>認証方式の選び方</h2>
+    <h3 id="sec-14-1">14.1 用途別の推奨</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>推奨認証方式</th></tr></thead>
+      <tbody>
+        <tr><td>消費者向け Web アプリ</td><td>ソーシャルログイン、パスワードレス認証</td></tr>
+        <tr><td>企業向けシステム</td><td>SSO（SAML）、LDAP／Active Directory</td></tr>
+        <tr><td>金融・医療システム</td><td>MFA、生体認証</td></tr>
+        <tr><td>モバイルアプリ</td><td>ソーシャルログイン、トークンベース認証</td></tr>
+        <tr><td>API サービス</td><td>トークンベース認証（JWT）</td></tr>
+        <tr><td>スタートアップ</td><td>AWS Cognito（複数方式の統合）</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-14-2">14.2 セキュリティレベル別</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>セキュリティレベル</th><th>推奨認証方式</th></tr></thead>
+      <tbody>
+        <tr><td>低（公開情報）</td><td>ユーザー名／パスワード</td></tr>
+        <tr><td>中（個人情報）</td><td>ソーシャルログイン、パスワードレス認証</td></tr>
+        <tr><td>高（機密情報）</td><td>MFA、SSO</td></tr>
+        <tr><td>最高（金融・医療）</td><td>MFA ＋ 生体認証、ハードウェアトークン</td></tr>
+      </tbody>
+    </table></div>
+    <p>社内システムに絞った具体的な選び方は、<a href="10-4_社内システム向け認証方式の選び方.html">社内システム向け認証方式の選び方</a> で扱います。</p>
+
+    <h2 id="sec-15"><span class="num">15.</span>全体の整理：その言葉は「何の種類」か</h2>
+    <p>最後に、このページで出てきた概念を「分類」で並べ直します。1章で見た混同は、この表の「分類」の列を意識すれば防げます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>分類</th><th>ひとこと</th></tr></thead>
+      <tbody>
+        <tr><td>ユーザー名／パスワード</td><td>認証方式</td><td>知っている秘密で本人確認する最も基本的な方式</td></tr>
+        <tr><td>Basic / Digest</td><td>認証方式（レガシー）</td><td>ヘッダで資格情報／ハッシュを毎回送る</td></tr>
+        <tr><td>API キー</td><td>認証方式</td><td>DB ルックアップが必要な不透明キー</td></tr>
+        <tr><td>セッション ＋ Cookie</td><td>認証方式</td><td>ステートフル、古典的な Web</td></tr>
+        <tr><td>Bearer</td><td>パターン</td><td>トークンを持っている者にアクセスを与える</td></tr>
+        <tr><td>JWT</td><td>トークン形式</td><td>署名付きで、自己完結できる</td></tr>
+        <tr><td>アクセス／リフレッシュトークン</td><td>トークン運用</td><td>短命の API 用 ＋ 長命の更新用</td></tr>
+        <tr><td>OAuth 2.0</td><td>認可フレームワーク</td><td>第三者アプリにリソースへのアクセスを許可する</td></tr>
+        <tr><td>OIDC</td><td>認証（OAuth 2.0 の上）</td><td>ID トークンで本人確認する</td></tr>
+        <tr><td>SSO</td><td>UX パターン</td><td>一度のログインで複数サービス</td></tr>
+        <tr><td>SAML / OIDC</td><td>アイデンティティプロトコル</td><td>SSO の下層技術</td></tr>
+        <tr><td>LDAP / Active Directory</td><td>ディレクトリ連携の認証方式</td><td>既存の社内ユーザー台帳で本人確認する</td></tr>
+        <tr><td>MFA・パスワードレス・生体認証</td><td>認証の強化・代替</td><td>パスワードだけに頼らない</td></tr>
+        <tr><td>AWS Cognito</td><td>マネージド認証サービス</td><td>上記の多くを組み合わせて提供する</td></tr>
+      </tbody>
+    </table></div>
+    <p>認証で「誰か」が分かったら、次は <strong>認可</strong> で「何ができるか」（ロール・ポリシー・スコープ）を決めます。認可の詳しい話は「40 認可モデル」のページで扱う予定です。</p>
+
+    <h2 id="sec-16"><span class="num">16.</span>まとめ</h2>
+    <ul>
+      <li>認証が答える問いは「<strong>リクエストしてきたのは誰か？</strong>」。認証に失敗したら <strong>401</strong> を返し、「何ができるか」は認可で別に決めます。</li>
+      <li><strong>Basic 認証</strong> は Base64 で資格情報を毎回送るだけ、<strong>Digest 認証</strong> は MD5 を使うがレガシー。どちらも現代の外部向け API ではほぼ使われません。</li>
+      <li><strong>API キー</strong> は中身のない不透明な文字列で、所有者や権限は DB 参照が必要。漏れると有効期限なしでなりすましされます。</li>
+      <li><strong>セッション認証</strong> はステートフル（サーバーが覚える）、<strong>JWT</strong> はステートレス（署名をローカル検証）。JWT は「形式」、Bearer は「パターン」です。</li>
+      <li>トークンは <strong>短命のアクセストークン ＋ 長命のリフレッシュトークン</strong> で運用し、リフレッシュトークンは localStorage ではなく <strong>HttpOnly Cookie</strong> に置きます。</li>
+      <li><strong>OAuth 2.0 は認可</strong>（アクセストークン＝権限の証明）、<strong>OIDC は認証</strong>（ID トークン＝本人の証明）。ソーシャルログインの多くは OIDC です。</li>
+      <li><strong>SSO は UX パターン</strong> で、下層では <strong>SAML</strong>（XML・企業向け）や <strong>OIDC</strong>（JWT・モダン）が使われます。</li>
+      <li>LDAP／AD、MFA、パスワードレス、生体認証、Cognito など、方式にはそれぞれメリット・デメリットがあり、<strong>用途とセキュリティレベルに応じて組み合わせて選ぶ</strong> のが基本です。</li>
+    </ul>
+
+    <h2 id="sec-17"><span class="num">17.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 「JWT 認証を使っています」という言い方は、何が不正確なのでしょうか？</summary>
+      <div class="body">
+        <p>JWT は認証方式ではなく、<strong>トークンの形式（フォーマット）</strong> だからです。正確には「ログイン時に資格情報を検証し、その結果を JWT 形式の Bearer トークンとして発行している」といった構成です。Bearer は「持っている者にアクセスを与える」パターン、JWT はそのトークンの中身の形式です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. Basic 認証のヘッダは文字列が読めないので、盗み見られても安全ですか？</summary>
+      <div class="body">
+        <p>安全ではありません。Base64 は暗号化ではなく単なる変換なので、誰でもすぐに <code>username:password</code> に戻せます。HTTPS が必須で、しかも毎リクエストで資格情報を送るため、本番の外部向け API ではほとんど使われません。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. API キーと JWT は、どちらも毎回ヘッダに載せて送ります。大きな違いは何ですか？</summary>
+      <div class="body">
+        <p>API キーは情報を持たない <strong>ランダムな文字列</strong> で、誰のキーか・どんな権限かを知るには毎回 DB を参照する必要があります（自己完結しない）。JWT は署名付きの JSON で、ユーザー ID・有効期限・ロールなどのクレームを中に含められるため、多くの場合 DB を見ずに署名検証だけで済みます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. セッション認証が分散システムやマイクロサービスでスケールしにくいのはなぜですか？</summary>
+      <div class="body">
+        <p>セッション認証は <strong>ステートフル</strong> で、サーバーがセッションを覚えておく必要があるからです。サーバーが複数あると、どのサーバーでも同じセッションを参照できるようにストア（Redis など）を共有しなければならず、それが課題になります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. アクセストークンとリフレッシュトークンを分けるのはなぜですか？ また、リフレッシュトークンはどこに保存すべきですか？</summary>
+      <div class="body">
+        <p>API 呼び出しに使うアクセストークンを短命（15分〜1時間程度）にして、漏れたときの被害期間を短くするためです。長命のリフレッシュトークンで新しいアクセストークンを取り直すので、ユーザーは何度もログインし直さずに済みます。リフレッシュトークンは XSS で盗まれやすい localStorage ではなく、JavaScript から読めない <strong>HttpOnly Cookie</strong> に保存します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. OAuth 2.0 で Google Drive のアクセストークンを受け取ったアプリは、「ユーザーが誰か」を確認できたことになりますか？</summary>
+      <div class="body">
+        <p>なりません。OAuth 2.0 のアクセストークンは「Drive にアクセスしてよい」という <strong>権限の証明</strong> で、本人確認ではありません。ユーザーが誰かを知るには、OAuth 2.0 の上に認証レイヤーを載せた <strong>OpenID Connect</strong> を使い、<strong>ID トークン</strong>（JWT）の署名を検証して本人情報を取り出します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. SSO と SAML・OIDC の関係を説明してください。また、SSO の弱点を1つ挙げてください。</summary>
+      <div class="body">
+        <p>SSO は「一度ログインすれば複数サービスを使える」という <strong>UX パターン</strong> で、それを実現する下層の <strong>アイデンティティプロトコル</strong> が SAML（XML、企業・レガシー向け）や OIDC（JWT、モダンなサービス向け）です。弱点としては、SSO サービスが止まるとすべてのサービスが使えなくなる <strong>単一障害点</strong> になることや、SSO アカウントが侵害されるとすべてのサービスが危険にさらされることがあります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q8. 企業向けの社内システムと、金融・医療システムでは、それぞれどんな認証方式が推奨されていましたか？</summary>
+      <div class="body">
+        <p>企業向けシステムでは <strong>SSO（SAML）や LDAP／Active Directory</strong>、金融・医療システムでは <strong>MFA や生体認証</strong>（最高レベルでは MFA ＋ 生体認証、ハードウェアトークン）が推奨されています。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：73_認証認可/10_基礎概念/03_ログインの種類と認証方式</li>
+      <li>ノート：73_認証認可/10_基礎概念/04_開発者が知るべき認証の7つの概念（Hayk Simonyan）</li>
+      <li>Hayk Simonyan「7 Authentication Concepts Every Developer Should Know」 https://www.youtube.com/watch?v=iX8g4LqF8p8</li>
+      <li>AWS Cognito 公式ドキュメント https://docs.aws.amazon.com/cognito/</li>
+      <li>OAuth 2.0 仕様 https://oauth.net/2/</li>
+      <li>OpenID Connect 仕様 https://openid.net/connect/</li>
+      <li>SAML 2.0 仕様 https://www.oasis-open.org/standards#samlv2.0</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-1_認証と認可の違い.html"><span class="lbl">← 前のページ</span>認証と認可の違い</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-3_パスワード・MFA・暗号化の基礎.html"><span class="lbl">次のページ →</span>パスワード・MFA・暗号化の基礎</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

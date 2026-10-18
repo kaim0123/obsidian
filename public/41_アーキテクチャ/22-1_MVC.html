@@ -1,0 +1,1508 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MVC（定義・Web の MVC・MVC 違反）｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">20 アプリ内部構造 › 22 UI分離・MVC系 › MVC（定義・Web の MVC・MVC 違反）</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 アプリ内部構造 ／ 22 UI分離・MVC系</span>
+      <h1>MVC（定義・Web の MVC・MVC 違反）</h1>
+      <p class="lead">MVC（Model-View-Controller）は、画面を持つアプリケーションを Model・View・Controller の3つに分ける、最も有名な設計パターンです。このページでは、MVC の定義と各要素の役割、データの流れ、Express.js での実装、三層アーキテクチャとの関係を押さえたうえで、AI 生成コードにも多い「MVC 違反」のパターンと直し方、チェックリストまでを詳しく解説します。</p>
+      <p class="meta">もとにしたノート：33_MVCアーキテクチャとは ／ 01_MVC違反とは ／ フロントエンドで敗れたMVCが、サーバーでは無敵な理由（動画要約）</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <ul>
+      <li>MVC とは何か、Model・View・Controller それぞれの役割と責任</li>
+      <li>MVC のデータの流れ（基本形と、ユーザー作成の詳細な例）</li>
+      <li>Express.js での MVC 実装（Model・Controller・Routes・サーバー設定）と、フロントエンド（React）での MVC 的な設計</li>
+      <li>MVC と三層アーキテクチャ・レイヤードアーキテクチャの関係</li>
+      <li>MVC のメリット・デメリット</li>
+      <li><strong>MVC 違反</strong>の4つの典型パターンと、正しい実装例</li>
+      <li>MVC 違反を防ぐための<strong>チェックリスト</strong></li>
+      <li>補足：MVC が 1979 年から生き残っている理由（Smalltalk の MVC と Web の MVC の違い）</li>
+    </ul>
+    <p>MVP・MVVM など派生パターンとの比較は、次の <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a> で扱います。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>MVC とは何か</h2>
+    <p><strong>MVC（Model-View-Controller）</strong>は、アプリケーションを3つのコンポーネントに分けて設計するアーキテクチャパターンです。Web アプリケーションの設計でも代表的なパターンで、Rails・Django・Laravel・Spring MVC など多くのフレームワークが採用しています。</p>
+    <div class="grid c3">
+      <div class="card accent"><h4>View（ビュー）</h4><p>ユーザーが見る部分。表示を担当します。</p></div>
+      <div class="card warn"><h4>Controller（コントローラー）</h4><p>処理の制御。入力を受けて Model と View を橋渡しします。</p></div>
+      <div class="card good"><h4>Model（モデル）</h4><p>データとビジネスロジックを担当します。</p></div>
+    </div>
+
+    <h3>2.1 日常生活での例え：レストラン</h3>
+    <ul>
+      <li><strong>View（ビュー）</strong>：メニューやテーブル（お客様が見る部分）</li>
+      <li><strong>Controller（コントローラー）</strong>：ウェイター（注文を受け取り、キッチンに伝える）</li>
+      <li><strong>Model（モデル）</strong>：キッチンとシェフ（実際に料理を作り、食材を管理する）</li>
+    </ul>
+    <p>お客様（ユーザー）はメニュー（View）を見て、ウェイター（Controller）に注文します。ウェイターはキッチン（Model）に伝え、料理ができたらお客様に提供します。</p>
+
+    <h3>2.2 生まれと「2つの MVC」</h3>
+    <p>MVC は 1979 年、Xerox PARC に客員研究員として来ていたノルウェーの研究者 <strong>トリグヴ・リーンスカウグ（Trygve Reenskaug）</strong>が、Smalltalk のために考案した設計です。もともとは<strong>デスクトップ GUI</strong>の設計で、画面部品の一つひとつが Model・View・Controller を持ち、Model が変わると View に通知されて自動で再描画される、という仕組みでした。</p>
+    <p>一方、今日 Rails や Express で使われている <strong>Web の MVC</strong> は、「HTTP リクエストを Controller が受け、Model を呼び、View（テンプレート）で HTML や JSON を返す」という流れの整理術です。Java の世界で <strong>Model 2</strong> と呼ばれていた設計に MVC の名前がついたもので、元の MVC とは中身がかなり違います（詳しくは <a href="#sec-14">14 節</a>）。このページのコード例は主に Web の MVC です。</p>
+    <figure>
+    <svg viewBox="0 0 760 290" role="img" aria-label="Smalltalk の MVC と Web の MVC の比較">
+      <defs>
+        <marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="180" y="22" text-anchor="middle" class="d-text-bold">Smalltalk の MVC（GUI）</text>
+      <text x="570" y="22" text-anchor="middle" class="d-text-bold">Web の MVC（Model 2）</text>
+      <!-- smalltalk -->
+      <rect x="20" y="50" width="120" height="50" rx="8" class="d-box-warn"/>
+      <text x="80" y="80" text-anchor="middle" class="d-text-bold">Controller</text>
+      <rect x="220" y="50" width="120" height="50" rx="8" class="d-box-good"/>
+      <text x="280" y="80" text-anchor="middle" class="d-text-bold">Model</text>
+      <rect x="120" y="190" width="120" height="50" rx="8" class="d-box-accent"/>
+      <text x="180" y="220" text-anchor="middle" class="d-text-bold">View</text>
+      <line x1="140" y1="75" x2="218" y2="75" class="d-line" marker-end="url(#arw1)"/>
+      <text x="179" y="66" text-anchor="middle" class="d-text-sub">更新</text>
+      <path d="M280,100 L215,188" class="d-line-dash" marker-end="url(#arw1)"/>
+      <text x="282" y="150" class="d-text-sub">変更を通知</text>
+      <path d="M160,188 L95,102" class="d-line" marker-end="url(#arw1)"/>
+      <text x="40" y="150" class="d-text-sub">入力（キー・</text>
+      <text x="40" y="168" class="d-text-sub">マウス）</text>
+      <text x="180" y="275" text-anchor="middle" class="d-text-sub">画面が開いている間ずっと生きている</text>
+      <!-- web -->
+      <rect x="420" y="40" width="110" height="44" rx="22" class="d-box"/>
+      <text x="475" y="67" text-anchor="middle" class="d-text">ブラウザ</text>
+      <rect x="420" y="120" width="130" height="50" rx="8" class="d-box-warn"/>
+      <text x="485" y="150" text-anchor="middle" class="d-text-bold">Controller</text>
+      <rect x="620" y="120" width="120" height="50" rx="8" class="d-box-good"/>
+      <text x="680" y="150" text-anchor="middle" class="d-text-bold">Model</text>
+      <rect x="420" y="210" width="130" height="50" rx="8" class="d-box-accent"/>
+      <text x="485" y="234" text-anchor="middle" class="d-text-bold">View</text>
+      <text x="485" y="252" text-anchor="middle" class="d-text-sub">テンプレート</text>
+      <line x1="460" y1="84" x2="460" y2="118" class="d-line" marker-end="url(#arw1)"/>
+      <text x="410" y="105" text-anchor="end" class="d-text-sub">①リクエスト</text>
+      <line x1="550" y1="138" x2="618" y2="138" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="618" y1="155" x2="552" y2="155" class="d-line" marker-end="url(#arw1)"/>
+      <text x="584" y="130" text-anchor="middle" class="d-text-sub">②呼ぶ</text>
+      <line x1="485" y1="170" x2="485" y2="208" class="d-line" marker-end="url(#arw1)"/>
+      <text x="495" y="194" class="d-text-sub">③データを渡す</text>
+      <path d="M550,235 C610,235 620,62 532,62" class="d-line" marker-end="url(#arw1)"/>
+      <text x="640" y="225" class="d-text-sub">④HTML/JSON</text>
+      <text x="570" y="285" text-anchor="middle" class="d-text-sub">1リクエストで終わる</text>
+    </svg>
+    <figcaption>図：同じ「MVC」でも、GUI 版は Model からの変更通知で View が更新され、Web 版はリクエストごとに Controller が流れを仕切る</figcaption>
+    </figure>
+
+    <h2 id="sec-3"><span class="num">3.</span>MVC の各コンポーネント</h2>
+    <h3>3.1 Model（モデル）</h3>
+    <p><strong>役割</strong>：データとビジネスロジックを担当します。</p>
+    <div class="grid c2">
+      <div class="card"><h4>責任</h4><ul><li>データベースとのやり取り</li><li>データの検証</li><li>ビジネスルールの実装</li><li>データの取得・保存・更新・削除</li></ul></div>
+      <div class="card"><h4>特徴</h4><ul><li>View や Controller に依存しない</li><li>再利用できる</li><li>テストしやすい</li></ul></div>
+    </div>
+    <p>Model のコード例は、5 節の Express 実装で示します（<code>findById</code>・<code>findAll</code>・<code>save</code>・<code>validate</code>・<code>delete</code>・<code>toJSON</code> を持つ <code>User</code> クラス）。</p>
+    <div class="callout tip">
+      <p class="callout-title">Model に DB 操作まで入れるか</p>
+      <p>このページの例では、Model が自分で SQL を発行しています（Rails の ActiveRecord と同じ <strong>Active Record</strong> 型）。小さなアプリではこれで十分ですが、規模が大きくなると「業務ルール（ドメイン）」と「DB アクセス（Repository）」を分けたくなります。それがレイヤードアーキテクチャのドメイン層とインフラ層の分離です（→ <a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード（4層）</a>）。</p>
+    </div>
+
+    <h3>3.2 View（ビュー）</h3>
+    <p><strong>役割</strong>：ユーザーインターフェースを担当します。</p>
+    <div class="grid c2">
+      <div class="card"><h4>責任</h4><ul><li>データを表示する</li><li>ユーザーからの入力を受け取る</li><li>ユーザーに情報を提示する</li></ul></div>
+      <div class="card"><h4>特徴</h4><ul><li>Model や Controller の詳細を知らない</li><li>表示のみを担当する</li><li>再利用できる</li></ul></div>
+    </div>
+    <p>同じユーザー情報を、コンソール・サーバーサイドの HTML・React コンポーネントという3通りに表示する View の例です。表示方法が変わっても、Model は何も変わらないことがポイントです。</p>
+    <span class="code-label">views/userView.js</span>
+<pre><code>class UserView {
+  // ユーザー情報を表示（コンソール）
+  displayUser(user) {
+    console.log(`
+      ユーザー情報:
+      ID: ${user.id}
+      名前: ${user.name}
+      メール: ${user.email}
+    `);
+  }
+
+  // HTML で表示（サーバーサイドレンダリング）
+  renderUserHTML(user) {
+    return `
+      &lt;div class="user-profile"&gt;
+        &lt;h1&gt;${user.name}&lt;/h1&gt;
+        &lt;p&gt;メールアドレス: ${user.email}&lt;/p&gt;
+      &lt;/div&gt;
+    `;
+  }
+
+  // React コンポーネント（クライアントサイド）※JSX
+  renderUserComponent(user) {
+    return (
+      &lt;div className="user-profile"&gt;
+        &lt;h1&gt;{user.name}&lt;/h1&gt;
+        &lt;p&gt;メールアドレス: {user.email}&lt;/p&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  // エラーメッセージを表示
+  displayError(error) {
+    console.error('エラー:', error.message);
+  }
+}
+
+module.exports = UserView;</code></pre>
+
+    <h3>3.3 Controller（コントローラー）</h3>
+    <p><strong>役割</strong>：Model と View の間の仲介を担当します。</p>
+    <div class="grid c2">
+      <div class="card"><h4>責任</h4><ul><li>ユーザーの入力を受け取る</li><li>Model に処理を依頼する</li><li>View に表示を依頼する</li><li>フローの制御</li></ul></div>
+      <div class="card"><h4>特徴</h4><ul><li>Model と View の両方に依存する</li><li>ビジネスロジックは含まない（Model に委譲する）</li><li>リクエストのルーティングを担当する</li></ul></div>
+    </div>
+    <p>上の <code>UserView</code> と組み合わせた、フレームワークを使わない Controller の例です（Express 版は 5 節）。</p>
+    <details><summary>コード：フレームワークなしの UserController（取得・作成・更新・削除）</summary><div class="body">
+<pre><code>// controllers/userController.js
+const User = require('../models/User');
+const UserView = require('../views/userView');
+
+class UserController {
+  constructor() {
+    this.view = new UserView();
+  }
+
+  // ユーザーを取得して表示
+  async showUser(userId) {
+    try {
+      const user = await User.findById(userId);   // Model からデータを取得
+      if (!user) {
+        this.view.displayError(new Error('ユーザーが見つかりません'));
+        return;
+      }
+      this.view.displayUser(user);                 // View に表示を依頼
+    } catch (error) {
+      this.view.displayError(error);
+    }
+  }
+
+  // ユーザーを作成
+  async createUser(name, email) {
+    try {
+      const user = new User(null, name, email);    // Model を作成
+      user.validate();                             // バリデーション
+      await user.save();                           // 保存
+      this.view.displayUser(user);                 // View に表示
+    } catch (error) {
+      this.view.displayError(error);
+    }
+  }
+
+  // ユーザーを更新
+  async updateUser(userId, name, email) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) throw new Error('ユーザーが見つかりません');
+      user.name = name;
+      user.email = email;
+      user.validate();
+      await user.save();
+      this.view.displayUser(user);
+    } catch (error) {
+      this.view.displayError(error);
+    }
+  }
+
+  // ユーザーを削除
+  async deleteUser(userId) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) throw new Error('ユーザーが見つかりません');
+      await user.delete();
+      console.log('ユーザーを削除しました');
+    } catch (error) {
+      this.view.displayError(error);
+    }
+  }
+}
+
+module.exports = UserController;</code></pre>
+    <p>どのメソッドも「Model に頼む → 結果を View に渡す」だけで、検証ルールや SQL は Model 側にあることを確認してください。</p>
+    </div></details>
+
+    <h2 id="sec-4"><span class="num">4.</span>MVC のデータの流れ</h2>
+    <h3>4.1 基本的な流れ</h3>
+    <ol class="steps">
+      <li>ユーザーが View で操作する（ボタンをクリックするなど）</li>
+      <li>View が Controller に通知する</li>
+      <li>Controller が Model に処理を依頼する</li>
+      <li>Model がデータベースとやり取りする</li>
+      <li>Model が結果を Controller に返す</li>
+      <li>Controller が View に表示を依頼する</li>
+      <li>View がユーザーに結果を表示する</li>
+    </ol>
+    <figure>
+    <svg viewBox="0 0 760 210" role="img" aria-label="MVC の基本的なデータの流れ">
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="80" width="100" height="50" rx="25" class="d-box"/>
+      <text x="70" y="110" text-anchor="middle" class="d-text">ユーザー</text>
+      <rect x="170" y="80" width="120" height="50" rx="8" class="d-box-accent"/>
+      <text x="230" y="110" text-anchor="middle" class="d-text-bold">View</text>
+      <rect x="340" y="80" width="130" height="50" rx="8" class="d-box-warn"/>
+      <text x="405" y="110" text-anchor="middle" class="d-text-bold">Controller</text>
+      <rect x="520" y="80" width="110" height="50" rx="8" class="d-box-good"/>
+      <text x="575" y="110" text-anchor="middle" class="d-text-bold">Model</text>
+      <rect x="670" y="80" width="70" height="50" rx="8" class="d-box"/>
+      <text x="705" y="110" text-anchor="middle" class="d-text">DB</text>
+      <line x1="120" y1="95" x2="168" y2="95" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="290" y1="95" x2="338" y2="95" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="470" y1="95" x2="518" y2="95" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="630" y1="95" x2="668" y2="95" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="668" y1="118" x2="632" y2="118" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="518" y1="118" x2="472" y2="118" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="338" y1="118" x2="292" y2="118" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="168" y1="118" x2="122" y2="118" class="d-line" marker-end="url(#arw2)"/>
+      <text x="144" y="70" text-anchor="middle" class="d-text-sub">①操作</text>
+      <text x="314" y="70" text-anchor="middle" class="d-text-sub">②通知</text>
+      <text x="494" y="70" text-anchor="middle" class="d-text-sub">③依頼</text>
+      <text x="649" y="70" text-anchor="middle" class="d-text-sub">④</text>
+      <text x="494" y="150" text-anchor="middle" class="d-text-sub">⑤結果</text>
+      <text x="314" y="150" text-anchor="middle" class="d-text-sub">⑥表示依頼</text>
+      <text x="144" y="150" text-anchor="middle" class="d-text-sub">⑦表示</text>
+      <text x="380" y="190" text-anchor="middle" class="d-text-sub">Controller が往路も復路も仕切る（Web の MVC の典型）</text>
+    </svg>
+    <figcaption>図：MVC の基本的な流れ。上段が往路（入力→処理）、下段が復路（結果→表示）</figcaption>
+    </figure>
+
+    <h3>4.2 詳細な例：ユーザー作成</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手順</th><th>やり取り</th><th>各コンポーネントがすること</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>ユーザー → View</td><td>ユーザーがフォームに入力して送信。View がフォームのデータを取得する</td></tr>
+        <tr><td>2</td><td>View → Controller</td><td>データを渡す。Controller が <code>createUser(name, email)</code> を呼び出す</td></tr>
+        <tr><td>3</td><td>Controller → Model</td><td>新しい User オブジェクトを作成。Model がバリデーションを実行する</td></tr>
+        <tr><td>4</td><td>Model → データベース</td><td>INSERT 文を実行し、データベースがユーザーを保存する</td></tr>
+        <tr><td>5</td><td>データベース → Model → Controller</td><td>保存されたデータ（採番された ID など）が返り、Model が User オブジェクトを Controller に返す</td></tr>
+        <tr><td>6</td><td>Controller → View</td><td>ユーザー情報を渡し、View がそれを表示する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>実践例：Express.js での MVC 実装</h2>
+    <h3>5.1 プロジェクト構造</h3>
+<pre><code>my-app/
+├── models/
+│   └── User.js
+├── views/
+│   └── userView.js
+├── controllers/
+│   └── userController.js
+├── routes/
+│   └── userRoutes.js
+└── server.js</code></pre>
+    <p>API サーバーとして JSON を返す場合、View の役割は <code>res.json()</code> と Model の <code>toJSON()</code> が担います。HTML を返すならテンプレート（EJS など）が View になります。</p>
+
+    <h3>5.2 Model（モデル）</h3>
+<pre><code>// models/User.js
+const db = require('../config/database');
+
+class User {
+  constructor(id, name, email) {
+    this.id = id;
+    this.name = name;
+    this.email = email;
+  }
+
+  static async findById(id) {
+    const [rows] = await db.query('SELECT * FROM users WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return null;
+    }
+    const row = rows[0];
+    return new User(row.id, row.name, row.email);
+  }
+
+  static async findAll() {
+    const [rows] = await db.query('SELECT * FROM users');
+    return rows.map(row =&gt; new User(row.id, row.name, row.email));
+  }
+
+  async save() {
+    if (this.id) {
+      // 更新
+      await db.query(
+        'UPDATE users SET name = ?, email = ? WHERE id = ?',
+        [this.name, this.email, this.id]
+      );
+    } else {
+      // 新規作成
+      const [result] = await db.query(
+        'INSERT INTO users (name, email) VALUES (?, ?)',
+        [this.name, this.email]
+      );
+      this.id = result.insertId;
+    }
+  }
+
+  // バリデーション（ビジネスルール）
+  validate() {
+    if (!this.name || this.name.trim() === '') {
+      throw new Error('名前が必要です');
+    }
+    if (!this.email || !this.email.includes('@')) {
+      throw new Error('有効なメールアドレスが必要です');
+    }
+  }
+
+  async delete() {
+    await db.query('DELETE FROM users WHERE id = ?', [this.id]);
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      email: this.email
+    };
+  }
+}
+
+module.exports = User;</code></pre>
+
+    <h3>5.3 Controller（コントローラー）</h3>
+<pre><code>// controllers/userController.js
+const User = require('../models/User');
+
+class UserController {
+  // ユーザー一覧を取得
+  async index(req, res) {
+    try {
+      const users = await User.findAll();
+      res.json(users.map(user =&gt; user.toJSON()));
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  // 特定のユーザーを取得
+  async show(req, res) {
+    try {
+      const user = await User.findById(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: 'ユーザーが見つかりません' });
+      }
+      res.json(user.toJSON());
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  // ユーザーを作成
+  async create(req, res) {
+    try {
+      const { name, email } = req.body;
+      const user = new User(null, name, email);
+      user.validate();
+      await user.save();
+      res.status(201).json(user.toJSON());
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  // ユーザーを更新
+  async update(req, res) {
+    try {
+      const user = await User.findById(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: 'ユーザーが見つかりません' });
+      }
+      const { name, email } = req.body;
+      user.name = name;
+      user.email = email;
+      user.validate();
+      await user.save();
+      res.json(user.toJSON());
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  // ユーザーを削除
+  async delete(req, res) {
+    try {
+      const user = await User.findById(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: 'ユーザーが見つかりません' });
+      }
+      await user.delete();
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+}
+
+module.exports = new UserController();</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">実装上の注意：this の束縛</p>
+      <p>このように<strong>インスタンスのメソッド</strong>をそのまま <code>router.get('/', userController.index)</code> に渡すと、メソッド内で <code>this</code> を使った場合に <code>undefined</code> になります。上の例は <code>this</code> を使っていないので動きますが、使う場合は <code>userController.index.bind(userController)</code> とするか、アロー関数のプロパティで定義します。</p>
+    </div>
+
+    <h3>5.4 Routes（ルーティング）</h3>
+<pre><code>// routes/userRoutes.js
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/userController');
+
+router.get('/', userController.index);        // ユーザー一覧
+router.get('/:id', userController.show);      // 特定のユーザー
+router.post('/', userController.create);      // ユーザー作成
+router.put('/:id', userController.update);    // ユーザー更新
+router.delete('/:id', userController.delete); // ユーザー削除
+
+module.exports = router;</code></pre>
+
+    <h3>5.5 サーバー設定</h3>
+<pre><code>// server.js
+const express = require('express');
+const userRoutes = require('./routes/userRoutes');
+
+const app = express();
+
+app.use(express.json());
+app.use('/api/users', userRoutes);
+
+app.listen(3000, () =&gt; {
+  console.log('サーバーが起動しました: http://localhost:3000');
+});</code></pre>
+
+    <h3>5.6 発展：複数の Model の連携</h3>
+    <p>ユーザーと投稿（Post）のように Model が増えた場合のプロジェクト構造と、Model 同士の連携の例です。</p>
+<pre><code>my-app/
+├── models/
+│   ├── User.js
+│   └── Post.js
+├── controllers/
+│   ├── userController.js
+│   └── postController.js
+├── routes/
+│   ├── userRoutes.js
+│   └── postRoutes.js
+├── views/
+│   ├── userView.js
+│   └── postView.js
+├── middleware/
+│   └── auth.js
+└── server.js</code></pre>
+<pre><code>// models/Post.js
+const db = require('../config/database');
+const User = require('./User');
+
+class Post {
+  constructor(id, title, content, userId) {
+    this.id = id;
+    this.title = title;
+    this.content = content;
+    this.userId = userId;
+  }
+
+  // 投稿者を取得（Model 同士の連携）
+  async getAuthor() {
+    return await User.findById(this.userId);
+  }
+
+  static async findById(id) {
+    const [rows] = await db.query('SELECT * FROM posts WHERE id = ?', [id]);
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    return new Post(r.id, r.title, r.content, r.userId);
+  }
+
+  static async findByUserId(userId) {
+    const [rows] = await db.query('SELECT * FROM posts WHERE userId = ?', [userId]);
+    return rows.map(row =&gt; new Post(row.id, row.title, row.content, row.userId));
+  }
+
+  toJSON() {
+    return { id: this.id, title: this.title, content: this.content, userId: this.userId };
+  }
+}
+
+module.exports = Post;</code></pre>
+<pre><code>// controllers/postController.js
+const Post = require('../models/Post');
+
+class PostController {
+  async showWithAuthor(req, res) {
+    try {
+      const post = await Post.findById(req.params.id);
+      if (!post) return res.status(404).json({ error: '投稿が見つかりません' });
+      const author = await post.getAuthor();
+      res.json({
+        post: post.toJSON(),
+        author: author.toJSON()
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+}
+
+module.exports = new PostController();</code></pre>
+    <p class="small muted">※もとのノートの例では <code>Post.findById</code> と <code>toJSON</code> が定義されていなかったため、動くように補っています。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>フロントエンドでの MVC</h2>
+    <p>React では、コンポーネントが View、API 呼び出しをまとめたサービスが「Controller 的な役割」を担う、という分け方がよく見られます。</p>
+<pre><code>// components/UserList.jsx（View）
+import { useState, useEffect } from 'react';
+import UserService from '../services/UserService';
+
+function UserList() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() =&gt; {
+    // Controller 的な役割（サービス層）に任せる
+    UserService.getAllUsers()
+      .then(data =&gt; {
+        setUsers(data);
+        setLoading(false);
+      });
+  }, []);
+
+  // View：表示のみ
+  if (loading) {
+    return &lt;div&gt;読み込み中...&lt;/div&gt;;
+  }
+
+  return (
+    &lt;ul&gt;
+      {users.map(user =&gt; (
+        &lt;li key={user.id}&gt;
+          {user.name} - {user.email}
+        &lt;/li&gt;
+      ))}
+    &lt;/ul&gt;
+  );
+}</code></pre>
+<pre><code>// services/UserService.js（Controller 的な役割）
+class UserService {
+  static async getAllUsers() {
+    const response = await fetch('/api/users');
+    return response.json();
+  }
+
+  static async getUser(id) {
+    const response = await fetch(`/api/users/${id}`);
+    return response.json();
+  }
+
+  static async createUser(userData) {
+    const response = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData)
+    });
+    return response.json();
+  }
+}
+
+export default UserService;</code></pre>
+    <div class="callout key">
+      <p class="callout-title">フロントエンドでは MVC は主流ではない</p>
+      <p>実際には、React のような宣言的 UI では「状態（state）が変わると画面が再描画される」仕組みが中心で、古典的な MVC よりも MVVM や単方向データフロー（Flux / Redux）に近い考え方で設計されます。上の例の「サービス＝Controller 的」という対応は、あくまで役割分担のイメージです（→ <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a>）。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>MVC と三層・レイヤードアーキテクチャの関係</h2>
+    <p>もとのノートでは「MVC は三層アーキテクチャの<strong>ビジネスロジック層</strong>をさらに細分化したもの」と説明し、次のように対応づけています。</p>
+    <ul>
+      <li>View ＝ プレゼンテーション層</li>
+      <li>Controller ＝ 制御</li>
+      <li>Model ＝ ビジネスロジック ＋ データアクセス</li>
+    </ul>
+    <p>ただし、この対応は資料によって説明が分かれるところで、より一般的な整理は次のとおりです。</p>
+    <div class="callout warn">
+      <p class="callout-title">より正確な位置づけ：MVC は「プレゼンテーション層まわり」のパターン</p>
+      <p>レイヤードアーキテクチャの観点では、<strong>Controller と View はプレゼンテーション層の中</strong>にあります。Model は「業務ルールとデータ」の総称で、規模が大きくなるとビジネスロジック層（アプリケーション層＋ドメイン層）とデータアクセス層に分かれていきます。つまり MVC は<strong>アプリ全体の構造ではなく、UI まわりの責務の分け方</strong>です。「MVC を使っているから層の設計は要らない」とはなりません。</p>
+    </div>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="MVC とレイヤードアーキテクチャの対応">
+      <text x="160" y="24" text-anchor="middle" class="d-text-bold">小さなアプリの MVC</text>
+      <text x="530" y="24" text-anchor="middle" class="d-text-bold">育ったアプリ（レイヤード）</text>
+      <rect x="40" y="44" width="240" height="110" rx="10" class="d-box-accent"/>
+      <text x="160" y="66" text-anchor="middle" class="d-text-accent">プレゼンテーション</text>
+      <rect x="60" y="78" width="95" height="60" rx="6" class="d-box"/>
+      <text x="107" y="113" text-anchor="middle" class="d-text">View</text>
+      <rect x="165" y="78" width="100" height="60" rx="6" class="d-box"/>
+      <text x="215" y="113" text-anchor="middle" class="d-text">Controller</text>
+      <rect x="40" y="174" width="240" height="110" rx="10" class="d-box-good"/>
+      <text x="160" y="220" text-anchor="middle" class="d-text-bold">Model</text>
+      <text x="160" y="244" text-anchor="middle" class="d-text-sub">業務ルール＋DB アクセス</text>
+      <rect x="410" y="44" width="240" height="60" rx="8" class="d-box-accent"/>
+      <text x="530" y="70" text-anchor="middle" class="d-text-bold">プレゼンテーション層</text>
+      <text x="530" y="90" text-anchor="middle" class="d-text-sub">View・Controller</text>
+      <rect x="410" y="114" width="240" height="50" rx="8" class="d-box-good"/>
+      <text x="530" y="144" text-anchor="middle" class="d-text">アプリケーション層</text>
+      <rect x="410" y="174" width="240" height="50" rx="8" class="d-box-purple"/>
+      <text x="530" y="204" text-anchor="middle" class="d-text">ドメイン層</text>
+      <rect x="410" y="234" width="240" height="50" rx="8" class="d-box-warn"/>
+      <text x="530" y="264" text-anchor="middle" class="d-text">インフラ層（Repository）</text>
+      <line x1="280" y1="99" x2="408" y2="74" class="d-line-dash"/>
+      <line x1="280" y1="229" x2="408" y2="139" class="d-line-dash"/>
+      <line x1="280" y1="229" x2="408" y2="199" class="d-line-dash"/>
+      <line x1="280" y1="229" x2="408" y2="259" class="d-line-dash"/>
+    </svg>
+    <figcaption>図：MVC の Model は、アプリが育つとアプリケーション層・ドメイン層・インフラ層に分かれていく。Controller と View はプレゼンテーション層に残る</figcaption>
+    </figure>
+
+    <h2 id="sec-8"><span class="num">8.</span>MVC のメリット・デメリット</h2>
+    <h3>8.1 メリット</h3>
+    <h4>1. 責任の分離</h4>
+    <p>各コンポーネントが明確な責任を持ちます。Model はデータとビジネスロジック、View は表示、Controller は制御です。</p>
+    <h4>2. 再利用性</h4>
+    <p>各コンポーネントを独立して再利用できます。たとえば同じ Model を複数の View で使えます。</p>
+<pre><code>// 同じ Model を複数の View で使用
+const user = await User.findById(1);
+userView.displayUser(user);
+adminView.displayUser(user);</code></pre>
+    <h4>3. テストしやすい</h4>
+    <p>各コンポーネントを独立してテストできます。とくに Model のバリデーションは、画面も DB もなしで検証できます。</p>
+<pre><code>// Model のテスト（DB 不要）
+describe('User Model', () =&gt; {
+  it('should validate user data', () =&gt; {
+    const user = new User(null, 'Test', 'test@example.com');
+    expect(() =&gt; user.validate()).not.toThrow();
+  });
+});
+
+// Controller のテスト（Model の保存処理はモックにするのが一般的）
+describe('UserController', () =&gt; {
+  it('should create a user', async () =&gt; {
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    jest.spyOn(User.prototype, 'save').mockResolvedValue();
+    await userController.create({ body: { name: 'Test', email: 'test@example.com' } }, res);
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+});</code></pre>
+    <p class="small muted">※もとのノートの Controller テストは戻り値を検証する形でしたが、5 節の Express 版 Controller は <code>res</code> に書き込む形なので、それに合わせて書き換えています。</p>
+    <h4>4. 保守性</h4>
+    <p>変更の影響範囲が限定されます。</p>
+    <ul>
+      <li>View を変更しても Model や Controller に影響しない</li>
+      <li>Model を変更しても View や Controller に影響しない（インターフェースが同じなら）</li>
+    </ul>
+    <h3>8.2 デメリット</h3>
+    <div class="grid c3">
+      <div class="card bad"><h4>複雑性</h4><p>小規模なアプリケーションには過剰な場合があります。</p></div>
+      <div class="card bad"><h4>学習コスト</h4><p>MVC の概念を理解する必要があります。</p></div>
+      <div class="card bad"><h4>ファイル数の増加</h4><p>コンポーネントごとにファイルが必要です。</p></div>
+    </div>
+    <p>加えて、Web の MVC では<strong>Controller が太りやすい（Fat Controller）</strong>、逆に Model に何でも入れると<strong>Fat Model</strong>になる、という問題が実務でよく起きます。その具体例が次の「MVC 違反」です。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>MVC 違反とは</h2>
+    <p><strong>MVC 違反</strong>とは、MVC の原則に従わず、<strong>各層の責務が混在している状態</strong>を指します。とくに AI でコードを生成すると、MVC の原則を無視したコードが出てくることがよくあります。</p>
+    <h3>9.1 各層の正しい責務</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>担当すること</th><th>担当しないこと</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Model</strong></td><td>データの管理、ビジネスロジック、データベース操作</td><td>HTML・CSS・イベント処理などの表示</td></tr>
+        <tr><td><strong>View</strong></td><td>ユーザーインターフェースの表示のみ（ロジックなし）</td><td>計算・判定などのビジネスロジック</td></tr>
+        <tr><td><strong>Controller</strong></td><td>ユーザー入力の処理、Model と View の橋渡し・調整</td><td>価格計算・送料計算などのビジネスロジック、SQL</td></tr>
+      </tbody>
+    </table></div>
+    <p>典型的な違反は次の4つです。</p>
+    <ol>
+      <li>View にビジネスロジックを含める</li>
+      <li>Controller に過度なロジックを実装する（Fat Controller）</li>
+      <li>Model が View に直接依存する</li>
+      <li>Model に HTML・CSS・イベントを含める（3 の拡張パターン）</li>
+    </ol>
+
+    <h2 id="sec-10"><span class="num">10.</span>違反パターン1：View にビジネスロジックを含める</h2>
+    <span class="code-label bad">✕ 悪い例：View に年齢計算と会員ランク判定がある</span>
+<pre><code>&lt;!-- views/user_profile.html --&gt;
+&lt;div class="user-profile"&gt;
+  &lt;h1&gt;ユーザープロフィール&lt;/h1&gt;
+  &lt;p&gt;名前: {{ user.name }}&lt;/p&gt;
+  &lt;p&gt;年齢: {{ calculateAge(user.birthDate) }}&lt;/p&gt;
+  &lt;p&gt;会員ランク: {{ determineMembershipLevel(user.points) }}&lt;/p&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+  // ✕ ビューにビジネスロジックが含まれている
+  function calculateAge(birthDate) {
+    const today = new Date();
+    const birth = new Date(birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff &lt; 0 || (monthDiff === 0 &amp;&amp; today.getDate() &lt; birth.getDate())) {
+      age--;
+    }
+    return age;
+  }
+
+  function determineMembershipLevel(points) {
+    if (points &gt;= 10000) return 'ゴールド';
+    if (points &gt;= 5000) return 'シルバー';
+    if (points &gt;= 1000) return 'ブロンズ';
+    return '一般';
+  }
+&lt;/script&gt;</code></pre>
+    <div class="callout bad">
+      <p class="callout-title">問題点</p>
+      <ul>
+        <li>View にビジネスロジック（年齢計算、会員ランク判定）が含まれている</li>
+        <li>このロジックを他の View で再利用できない</li>
+        <li>テストが難しい</li>
+        <li>ロジックを変更するとき、複数の View を修正する必要がある</li>
+      </ul>
+    </div>
+    <span class="code-label good">○ 良い例：Model にビジネスロジックを置く</span>
+<pre><code>// models/User.js
+class User {
+  constructor(id, name, birthDate, points) {
+    this.id = id;
+    this.name = name;
+    this.birthDate = birthDate;
+    this.points = points;
+  }
+
+  // 年齢を計算するメソッド（モデルに配置）
+  getAge() {
+    const today = new Date();
+    const birth = new Date(this.birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff &lt; 0 || (monthDiff === 0 &amp;&amp; today.getDate() &lt; birth.getDate())) {
+      age--;
+    }
+    return age;
+  }
+
+  // 会員ランクを判定するメソッド（モデルに配置）
+  getMembershipLevel() {
+    if (this.points &gt;= 10000) return 'ゴールド';
+    if (this.points &gt;= 5000) return 'シルバー';
+    if (this.points &gt;= 1000) return 'ブロンズ';
+    return '一般';
+  }
+}
+
+module.exports = User;</code></pre>
+    <span class="code-label good">○ 良い例：Controller は Model を使って表示用データを準備する</span>
+<pre><code>// controllers/user_controller.js
+const User = require('../models/User');
+
+async function getUserProfile(req, res) {
+  const user = await User.findById(req.params.id); // DB アクセスも Model に任せる
+
+  // モデルのメソッドを使用してデータを準備
+  res.render('user_profile', {
+    user: {
+      name: user.name,
+      age: user.getAge(),                          // モデルのメソッドを使用
+      membershipLevel: user.getMembershipLevel()   // モデルのメソッドを使用
+    }
+  });
+}
+
+module.exports = { getUserProfile };</code></pre>
+    <p class="small muted">※もとのノートの良い例では Controller が直接 <code>db.query('SELECT …')</code> を実行していましたが、これ自体が違反パターン2（Controller に DB 処理）に当たるため、<code>User.findById</code> を使う形に直しています。</p>
+    <span class="code-label good">○ 良い例：View は表示のみ</span>
+<pre><code>&lt;!-- views/user_profile.html --&gt;
+&lt;div class="user-profile"&gt;
+  &lt;h1&gt;ユーザープロフィール&lt;/h1&gt;
+  &lt;p&gt;名前: {{ user.name }}&lt;/p&gt;
+  &lt;p&gt;年齢: {{ user.age }}&lt;/p&gt;
+  &lt;p&gt;会員ランク: {{ user.membershipLevel }}&lt;/p&gt;
+&lt;/div&gt;</code></pre>
+
+    <h2 id="sec-11"><span class="num">11.</span>違反パターン2：Controller に過度なロジックを実装する</h2>
+    <span class="code-label bad">✕ 悪い例：Controller に価格・送料・ポイント計算と SQL が混在（Fat Controller）</span>
+<pre><code>// controllers/order_controller.js
+async function createOrder(req, res) {
+  const { userId, items } = req.body;
+
+  // ✕ コントローラーにビジネスロジックが含まれている
+  let total = 0;
+  for (const item of items) {
+    const product = await db.query('SELECT * FROM products WHERE id = ?', [item.productId]);
+    const price = product.price;
+    const discount = product.discount || 0;
+    const itemTotal = price * item.quantity * (1 - discount / 100);
+    total += itemTotal;
+  }
+
+  // ✕ ビジネスルール（送料）がコントローラーに含まれている
+  let shippingFee = 0;
+  if (total &lt; 5000) {
+    shippingFee = 500;
+  } else if (total &lt; 10000) {
+    shippingFee = 300;
+  }
+
+  // ✕ ポイント計算ロジックがコントローラーに含まれている
+  const pointsEarned = Math.floor(total * 0.01);
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  const newPoints = user.points + pointsEarned;
+  await db.query('UPDATE users SET points = ? WHERE id = ?', [newPoints, userId]);
+
+  const order = await db.query(
+    'INSERT INTO orders (user_id, total, shipping_fee, points_earned) VALUES (?, ?, ?, ?)',
+    [userId, total, shippingFee, pointsEarned]
+  );
+
+  res.json({ orderId: order.insertId });
+}</code></pre>
+    <div class="callout bad">
+      <p class="callout-title">問題点</p>
+      <ul>
+        <li>Controller にビジネスロジックが含まれている</li>
+        <li>価格計算、送料計算、ポイント計算などのロジックが混在している</li>
+        <li>テストが難しい（Controller のテストが複雑になる）</li>
+        <li>ロジックを再利用できない（管理画面やバッチから注文を作るときに再実装が必要）</li>
+      </ul>
+    </div>
+    <span class="code-label good">○ 良い例：Model にビジネスロジックを置く</span>
+<pre><code>// models/Order.js
+class Order {
+  constructor(userId, items) {
+    this.id = null;
+    this.userId = userId;
+    this.items = items;
+    this.total = 0;
+    this.shippingFee = 0;
+    this.pointsEarned = 0;
+  }
+
+  // 注文合計を計算（ビジネスロジック）
+  async calculateTotal() {
+    let total = 0;
+    for (const item of this.items) {
+      const product = await Product.findById(item.productId);
+      const price = product.price;
+      const discount = product.discount || 0;
+      const itemTotal = price * item.quantity * (1 - discount / 100);
+      total += itemTotal;
+    }
+    this.total = total;
+    return total;
+  }
+
+  // 送料を計算（ビジネスロジック）
+  calculateShippingFee() {
+    if (this.total &lt; 5000) {
+      this.shippingFee = 500;
+    } else if (this.total &lt; 10000) {
+      this.shippingFee = 300;
+    } else {
+      this.shippingFee = 0;
+    }
+    return this.shippingFee;
+  }
+
+  // 獲得ポイントを計算（ビジネスロジック）
+  calculatePointsEarned() {
+    this.pointsEarned = Math.floor(this.total * 0.01);
+    return this.pointsEarned;
+  }
+
+  // 注文を保存
+  async save() {
+    const [result] = await db.query(
+      'INSERT INTO orders (user_id, total, shipping_fee, points_earned) VALUES (?, ?, ?, ?)',
+      [this.userId, this.total, this.shippingFee, this.pointsEarned]
+    );
+    this.id = result.insertId;
+  }
+}
+
+module.exports = Order;</code></pre>
+    <span class="code-label good">○ 良い例：Controller は制御のみ</span>
+<pre><code>// controllers/order_controller.js
+const Order = require('../models/Order');
+const User = require('../models/User');
+
+async function createOrder(req, res) {
+  try {
+    const { userId, items } = req.body;
+
+    // モデルを作成
+    const order = new Order(userId, items);
+
+    // モデルのメソッドを使用して計算
+    await order.calculateTotal();
+    order.calculateShippingFee();
+    order.calculatePointsEarned();
+
+    // 注文を保存
+    await order.save();
+
+    // ユーザーのポイントを更新（ポイント加算のルールも User モデルのメソッドに）
+    const user = await User.findById(userId);
+    await user.addPoints(order.pointsEarned);
+
+    res.json({ orderId: order.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+module.exports = { createOrder };</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">さらに進めるなら</p>
+      <p>この良い例でも、Controller が「計算する順番」を知っています。注文の作成手順（計算 → 保存 → ポイント加算）をひとまとめにしたいなら、<code>PlaceOrderService</code> のような<strong>アプリケーション層（ユースケース）</strong>に移し、Controller はそれを1回呼ぶだけにします。注文保存とポイント更新を同じトランザクションにまとめる責任も、そこに置くのが自然です（→ <a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード（4層）</a>）。</p>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>違反パターン3・4：Model が View に依存する</h2>
+    <h3>12.1 パターン3：Model が HTML を生成する</h3>
+    <span class="code-label bad">✕ 悪い例：Model がビュー層の責務（HTML・CSS）を持つ</span>
+<pre><code>// models/User.js
+class User {
+  constructor(id, name, email) {
+    this.id = id;
+    this.name = name;
+    this.email = email;
+  }
+
+  // ✕ モデルが HTML を生成している（ビュー層の責務）
+  toHTML() {
+    return `
+      &lt;div class="user-card"&gt;
+        &lt;h2&gt;${this.name}&lt;/h2&gt;
+        &lt;p&gt;${this.email}&lt;/p&gt;
+      &lt;/div&gt;
+    `;
+  }
+
+  // ✕ モデルが HTML と CSS をデータとして返している
+  toJSONHTML() {
+    return {
+      html: `&lt;div&gt;${this.name}&lt;/div&gt;`,
+      css: '.user-card { color: blue; }'
+    };
+  }
+}</code></pre>
+    <div class="callout bad">
+      <p class="callout-title">問題点</p>
+      <ul>
+        <li>Model がプレゼンテーション層（HTML）に依存している</li>
+        <li>Model を他の View（モバイルアプリ、API など）で再利用できない</li>
+        <li>関心の分離が崩れている</li>
+      </ul>
+    </div>
+    <div class="grid c2">
+      <div>
+        <span class="code-label good">○ Model はデータのみ</span>
+<pre><code>// models/User.js
+class User {
+  constructor(id, name, email) {
+    this.id = id;
+    this.name = name;
+    this.email = email;
+  }
+
+  // データのみを返す
+  toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      email: this.email
+    };
+  }
+}
+
+module.exports = User;</code></pre>
+      </div>
+      <div>
+        <span class="code-label good">○ HTML は View で生成</span>
+<pre><code>// views/user_view.js
+function renderUserCard(user) {
+  return `
+    &lt;div class="user-card"&gt;
+      &lt;h2&gt;${user.name}&lt;/h2&gt;
+      &lt;p&gt;${user.email}&lt;/p&gt;
+    &lt;/div&gt;
+  `;
+}
+
+module.exports = { renderUserCard };</code></pre>
+      </div>
+    </div>
+
+    <h3>12.2 パターン4：Model に HTML・CSS・イベントを含める（拡張パターン）</h3>
+    <p>「Model が View に直接依存する」違反の、AI 生成で特に多いバリエーションです。</p>
+    <h4>4.1 Model が <code>toHTML()</code> やテーブル行を返す</h4>
+    <span class="code-label bad">✕ 悪い例：Model がボタンとクリック処理まで生成している</span>
+<pre><code>// models/Product.js
+class Product {
+  constructor(id, name, price, description) {
+    this.id = id;
+    this.name = name;
+    this.price = price;
+    this.description = description;
+  }
+
+  toHTML() {
+    return `
+      &lt;div class="product-card"&gt;
+        &lt;h3&gt;${this.name}&lt;/h3&gt;
+        &lt;p class="price"&gt;¥${this.price.toLocaleString()}&lt;/p&gt;
+        &lt;button onclick="addToCart(${this.id})"&gt;カートに追加&lt;/button&gt;
+      &lt;/div&gt;
+    `;
+  }
+}</code></pre>
+    <p><strong>問題点</strong>：同じデータを API・モバイル・PDF で出し分けにくくなります。HTML を変えるたびに Model を直すことになり、Model のテストで HTML 生成まで検証する必要が出てきます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>バリエーション</th><th>何が起きるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>4.2 Model が CSS やインラインスタイルを持つ</strong></td><td>Model が <code>getStyles()</code> のように<strong>見た目の都合</strong>を返すと、デザイン変更がドメイン層に波及する</td></tr>
+        <tr><td><strong>4.3 Model が <code>&lt;form&gt;</code> と <code>&lt;script&gt;</code> を文字列で返す</strong></td><td>Model に <code>onsubmit</code> や <code>fetch</code> を埋め込むと、<strong>フロントの振る舞い</strong>がドメインに混ざり、テストと再利用が難しくなる</td></tr>
+        <tr><td><strong>4.4 Model が JSON で <code>html</code> / <code>css</code> / <code>js</code> をまとめて返す</strong></td><td>プレゼンテーション層の要素をデータとして束ねると、関心の分離が一か所で崩れる</td></tr>
+      </tbody>
+    </table></div>
+    <h4>正しい分離</h4>
+    <ul>
+      <li>Model は<strong><code>toJSON()</code> やドメイン操作</strong>にとどめる（表示用の軽い整形は、チームの規約で許容する場合もある）</li>
+      <li>HTML の組み立ては<strong>テンプレート／View／コンポーネント</strong>へ</li>
+      <li>スタイルは<strong>CSS やデザインシステム</strong>へ</li>
+      <li>イベントと通信は<strong>View 層または Controller</strong>へ</li>
+    </ul>
+    <div class="grid c2">
+      <div>
+        <span class="code-label good">○ Model はデータとルール</span>
+<pre><code>// models/Product.js
+class Product {
+  toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      price: this.price,
+      description: this.description,
+      formattedPrice:
+        `¥${this.price.toLocaleString()}`,
+    };
+  }
+  isOnSale() {
+    return this.price &lt; 1000;
+  }
+}</code></pre>
+      </div>
+      <div>
+        <span class="code-label good">○ View 側で HTML を組み立てる</span>
+<pre><code>// views/product_view.js
+function renderProductCard(product) {
+  const saleBadge = product.isOnSale()
+    ? '&lt;span class="badge"&gt;セール中&lt;/span&gt;'
+    : '';
+  return `
+    &lt;div class="product-card"&gt;
+      ${saleBadge}
+      &lt;h3&gt;${product.name}&lt;/h3&gt;
+      &lt;p class="price"&gt;${product.formattedPrice}&lt;/p&gt;
+    &lt;/div&gt;
+  `;
+}</code></pre>
+      </div>
+    </div>
+    <p><strong>なぜ分離するのか</strong>：同じ Model を Web・API・別のクライアントで使い回せます。Model の単体テストが HTML に引きずられません。見た目の変更がドメインに波及しにくくなります。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：テンプレート文字列と XSS</p>
+      <p>上の View の例のように、ユーザー入力（名前など）をテンプレート文字列でそのまま HTML に埋め込むと、クロスサイトスクリプティング（XSS）の原因になります。実務では、自動でエスケープしてくれるテンプレートエンジンや React などを使うか、埋め込む前にエスケープしてください。</p>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>MVC 違反を防ぐためのチェックリスト</h2>
+    <p>コードを書くとき、AI が生成したコードをレビューするときに、次の点を確認しましょう（チェックボックスはこのページ上で付け外しできます。保存はされません）。</p>
+    <div class="grid c3">
+      <div class="card good"><h4>Model のチェック</h4>
+        <ul style="list-style:none;padding-left:0">
+          <li><label><input type="checkbox"> ビジネスロジックが含まれているか</label></li>
+          <li><label><input type="checkbox"> HTML・CSS・<code>onclick=</code> などの表示要素が含まれていないか</label></li>
+          <li><label><input type="checkbox"> View や Controller に依存していないか</label></li>
+          <li><label><input type="checkbox"> データの検証ロジックが含まれているか</label></li>
+          <li><label><input type="checkbox"> データベース操作が適切に抽象化されているか</label></li>
+        </ul>
+      </div>
+      <div class="card accent"><h4>View のチェック</h4>
+        <ul style="list-style:none;padding-left:0">
+          <li><label><input type="checkbox"> 表示のみを担当しているか</label></li>
+          <li><label><input type="checkbox"> ビジネスロジックが含まれていないか</label></li>
+          <li><label><input type="checkbox"> データの計算や変換を行っていないか</label></li>
+          <li><label><input type="checkbox"> Controller から渡されたデータをそのまま表示しているか</label></li>
+        </ul>
+      </div>
+      <div class="card warn"><h4>Controller のチェック</h4>
+        <ul style="list-style:none;padding-left:0">
+          <li><label><input type="checkbox"> ユーザー入力の処理のみを担当しているか</label></li>
+          <li><label><input type="checkbox"> ビジネスロジックが含まれていないか</label></li>
+          <li><label><input type="checkbox"> Model と View の橋渡しのみを行っているか</label></li>
+          <li><label><input type="checkbox"> 過度に複雑な処理が含まれていないか</label></li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">重要な原則（3行で）</p>
+      <ol>
+        <li><strong>Model</strong>：データとビジネスロジックのみ</li>
+        <li><strong>View</strong>：表示のみ</li>
+        <li><strong>Controller</strong>：入力処理と調整のみ</li>
+      </ol>
+      <p>AI を使う場合も、生成されたコードがこれらの原則に従っているかを確認し、必要に応じて修正することが大切です。</p>
+    </div>
+
+    <h2 id="sec-14"><span class="num">14.</span>補足：MVC が 47 年間生き残った理由</h2>
+    <p>YouTube 動画「フロントエンドで敗れた MVC が、サーバーでは無敵な理由」（IT技術屋のボヤキ）の要約から、MVC の歴史と、なぜ今も使われ続けているのかを整理します。動画の結論は、MVC は MVP・MVVM・Flux の挑戦を受けて<strong>フロントエンドでは敗れた</strong>が、Rails・Django・Laravel・Spring などの<strong>サーバーサイドでは今も背骨</strong>であり続けている、その理由は技術的な優秀さよりも、Web の構造・教育・会話という人間側の事情とかみ合い、<strong>「言葉」として生き残った</strong>ことにある、というものです。</p>
+
+    <h3>14.1 誕生：造船業界出身の研究者と Xerox PARC</h3>
+    <ul>
+      <li>MVC の誕生は Rails が流行した 2000 年代ではなく <strong>1979 年</strong>。Windows も Mac もまだない時代です。</li>
+      <li>舞台は GUI・イーサネット・パーソナルコンピューターの原型を生んだ <strong>Xerox PARC</strong>（Smalltalk もここで誕生）。</li>
+      <li>1978 年、ノルウェーから客員研究員の<strong>トリグヴ・リーンスカウグ</strong>（当時 48 歳）が来訪します。もとは造船業界で、船の設計や生産計画を支えるシステムを作っていた人物です。</li>
+      <li>関心は理論よりも、「<strong>ユーザーの頭の中のイメージ</strong>」と「<strong>コンピューターの中のデータ</strong>」の溝をどう埋めるか（今でいう UX に近い問題意識）でした。</li>
+      <li>1979 年 5 月のメモ「Thing-Model-View-Editor」では、現実の物事を Model に写し、View で画面に映し、Editor で操作する、と書かれています。Editor は数か月後の議論で <strong>Controller</strong> に改められました。</li>
+      <li>Smalltalk チームが実装に落とし込み、<strong>Smalltalk-80</strong> で MVC が初めて動くコードになりました（思想が先、実装が後）。</li>
+    </ul>
+
+    <h3>14.2 名前だけが世界に広がった</h3>
+    <ol class="steps">
+      <li><strong>1988 年</strong>：Krasner と Pope が Smalltalk-80 の MVC を解説した論文を発表し、設計パターンとして広く知られるようになる</li>
+      <li><strong>NeXTSTEP</strong>：ジョブズの NeXT が MVC を採用。のちに Mac の中核、iPhone アプリの標準設計（Cocoa の MVC）に受け継がれる</li>
+      <li><strong>2004 年 Rails</strong>：決定打。DHH が「Web アプリの正しい作り方」として MVC を前面に押し出し、Model＝ActiveRecord、View＝ERB、Controller＝ルーティングと直結させた。ディレクトリ構成まで決まっていて迷う余地がなかった</li>
+      <li><strong>その後</strong>：Django・CakePHP（2005）、ASP.NET MVC（2009）、Laravel（2011）が続き、業界標準になる</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">Web の MVC は元の MVC とは別物</p>
+      <p>元の MVC は、画面部品の一つひとつが M・V・C を持つ<strong>デスクトップ GUI</strong>の設計でした。Web の MVC は「リクエストを受けて DB を読み、HTML を返す」流れの整理術で、Java で <strong>Model 2</strong> と呼ばれていた設計に MVC の名前がついたものです。</p>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Smalltalk の MVC</th><th>Web の MVC（Model 2）</th></tr></thead>
+      <tbody>
+        <tr><td>Controller の役割</td><td>キーボード・マウスの入力を処理する</td><td><strong>HTTP リクエスト</strong>を受けて処理を振り分ける</td></tr>
+        <tr><td>View の更新</td><td>Model の変更通知（Observer）で自動更新</td><td>リクエストごとに<strong>HTML を生成して返す</strong></td></tr>
+        <tr><td>寿命</td><td>画面が開いている間ずっと生きている</td><td>1リクエストで終わる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>14.3 曖昧さが武器になった4つの理由</h3>
+    <div class="grid c2">
+      <div class="card accent"><h4>1. 人間の分業と一致</h4><p>デザイナー＝View、DB 担当＝Model、つなぐ人＝Controller。チームの形とコードの形がそろいます。</p></div>
+      <div class="card accent"><h4>2. Web の仕組みと相性が良い</h4><p>HTTP のリクエスト→処理→レスポンスを、入口＝Controller、処理＝Model、出口＝View と一本道で説明できます。</p></div>
+      <div class="card accent"><h4>3. 教えやすい</h4><p>3つの箱と矢印だけで、新人に5分で説明できます。学習コストの低さも武器です。</p></div>
+      <div class="card purple"><h4>4. 共通言語になった（最重要）</h4><p>「そのロジックを Controller に書くと太りすぎでは」という会話が、Rails でも Laravel でも Spring でも通じます。</p></div>
+    </div>
+
+    <h3>14.4 挑戦者たちとの攻防</h3>
+    <ul>
+      <li><strong>MVP</strong>（1996 年、Taligent）：View と Model を完全に切り離し、Presenter がすべてを仲介する</li>
+      <li><strong>MVVM</strong>（2005 年、Microsoft の John Gossman が WPF 向けに設計）：ViewModel と View をデータバインディングで同期する</li>
+      <li>挑戦者の多くは名前が MVC の変形で、むしろ MVC という土台の存在感を強めました</li>
+      <li>最大の強敵は <strong>2014 年の Facebook の Flux</strong>。「双方向のデータの流れが複雑さの元凶」と主張し、React と Redux がフロントエンドを塗り替えました</li>
+      <li>ブラウザの中では MVC は敗れましたが、サーバー側では何も変わらず、動画の時点（2026 年）でも Rails 8・Laravel 12・Django は MVC のままです</li>
+    </ul>
+
+    <h3>14.5 MVC が本当に残したもの</h3>
+    <ul>
+      <li>サーバーサイドの Web アプリなら、今でも<strong>MVC から始めるのは合理的</strong>です。枯れた構造・豊富なドキュメント・誰でも読める配置は、新しい設計では得られません。</li>
+      <li>MVC を窮屈に感じたら、アプリが育ったサインです。Controller が肥大化したら<strong>サービス層やドメイン層を足せばよい</strong>。MVC は出発点であって終着点ではありません。</li>
+      <li>MVC が残った本当の理由は、アーキテクチャとしてではなく<strong>言葉として</strong>生き残ったからです。厳密な定義は崩れても、「どこに何を書くか」を議論する単位として毎日使われています。</li>
+      <li>リーンスカウグ本人も、MVC の本質は「ユーザーの心の中のモデルとコンピューターの中のデータの橋渡し」であり、実装は時代ごとに変わってよいと振り返っています。</li>
+    </ul>
+
+    <h2 id="sec-15"><span class="num">15.</span>よくある誤解</h2>
+    <details open><summary>「MVC は Web アプリ全体の構造である」</summary><div class="body">
+      <p><strong>誤りです。</strong>MVC は<strong>画面まわり</strong>のパターンです。DB アクセスやドメインロジックは Model の中か、別のレイヤーに置きます。「M」を単なる DB モデルと混同すると責務が崩れます。</p>
+    </div></details>
+    <details open><summary>「Model ＝ DB のテーブル」</summary><div class="body">
+      <p><strong>誤りです。</strong>Model は<strong>業務ルールを持つ</strong>ものです。テーブルの写しにすぎない Model しかないと、業務ルールが Controller や View、SQL の中に散らばります（違反パターン1・2の原因）。</p>
+    </div></details>
+    <details open><summary>「フレームワークが MVC と名乗っていれば、MVC になっている」</summary><div class="body">
+      <p><strong>要注意です。</strong>Rails の「MVC」は Model にビジネスロジックと DB 操作の両方が入りがちで、Smalltalk の MVC とは中身が違います。名前より、<strong>実際にどこに何の責任があるか</strong>を見ることが大切です。</p>
+    </div></details>
+    <details open><summary>「MVC は古いので使うべきではない」</summary><div class="body">
+      <p><strong>誤りです。</strong>フロントエンドでは単方向データフローなどが主流になりましたが、サーバーサイドの Web アプリでは今も合理的な出発点です。育ってきたらサービス層・ドメイン層を足していきます。</p>
+    </div></details>
+
+    <h2 id="sec-16"><span class="num">16.</span>まとめ</h2>
+    <ul>
+      <li><strong>MVC</strong> は、アプリケーションを Model・View・Controller の3つに分ける設計パターン</li>
+      <li><strong>Model</strong>：データとビジネスロジック／<strong>View</strong>：ユーザーインターフェース（表示のみ）／<strong>Controller</strong>：Model と View の仲介（入力処理と調整のみ）</li>
+      <li><strong>責任の分離</strong>により、保守性・再利用性・テスト容易性が向上する</li>
+      <li>1979 年の Smalltalk の MVC（GUI）と、Rails などの Web の MVC（Model 2）は<strong>別物</strong></li>
+      <li>MVC は<strong>UI まわり</strong>の分け方。アプリが育ったら Model をアプリケーション層・ドメイン層・インフラ層に分けていく</li>
+      <li><strong>MVC 違反</strong>の典型は「View にビジネスロジック」「Fat Controller」「Model が HTML/CSS/イベントを持つ」。チェックリストで防ぐ</li>
+      <li>MVC が長生きしたのは、関心を分けて名前をつけ、<strong>会話できるようにした</strong>から</li>
+    </ul>
+    <p>次は <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a> で、MVC から派生したパターンとその歴史を見ていきます。関連して、41 外のノート：06_Frameworks/02_React『コンポーネント・フックス・サービスとは』（フロントエンドでの MVC 的な設計）、09_Architecture/API設計『APIとは』（MVC での API 設計）も参考になります。</p>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li><a href="https://www.youtube.com/watch?v=ANQxLkDO6fU">フロントエンドで敗れたMVCが、サーバーでは無敵な理由（YouTube／IT技術屋のボヤキ, 2026-08-20）</a></li>
+      <li><a href="https://martinfowler.com/eaaDev/uiArchs.html">Martin Fowler — GUI Architectures</a></li>
+      <li>Glenn E. Krasner, Stephen T. Pope "A Cookbook for Using the Model-View-Controller User Interface Paradigm in Smalltalk-80"（1988）</li>
+      <li>（もとのノート「33_MVCアーキテクチャとは」「01_MVC違反とは」には個別の URL の記載はありません）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="21-3_垂直スライスアーキテクチャ.html"><span class="lbl">← 前のページ</span>垂直スライスアーキテクチャ</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="22-2_MVP・MVVMとGUIの系譜.html"><span class="lbl">次のページ →</span>MVP・MVVM と GUI アーキテクチャの系譜</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>パスキーとWebAuthn｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 パスワード・MFA・パスキー › パスキーとWebAuthn</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 パスワード・MFA・パスキー</span>
+      <h1>パスキーとWebAuthn</h1>
+      <p class="lead">パスキーは、<strong>パスワードの代わりに公開鍵暗号でログインする</strong> 仕組みです。サーバーには秘密が残らず、偽サイトでは使えません。前半では「なぜパスワードはつらいのか」「パスキーは何を送っているのか」を初心者向けにたとえ話で整理し、後半では WebAuthn の用語・SimpleWebAuthn を使った実装・設計の注意点・導入の手順までを見ていきます。</p>
+      <p class="meta">もとにしたノート：20_パスワード・MFA・パスキー/04_パスキーとWebAuthn、05_パスワードは死んだ_パスキーの時代（ゆるコンピュータ科学ラジオ）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>パスワードの弱点が「秘密そのものを送る」設計にあること</li>
+        <li>パスキーが送っているのは「チャレンジへの署名」だけであること（登録とログインの流れ）</li>
+        <li>指紋・顔の役割と、フィッシングに強い理由（ドメインと鍵の対応）</li>
+        <li>同期パスキーと端末固定のパスキー、QR コードの意味</li>
+        <li>SimpleWebAuthn を使った実装、サーバーに保存するもの、設計の注意点、導入ステップ</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>パスワードの「つらさ」はどこにあるのか</h2>
+    <p>パスワードは 60 年近く「セキュリティの大敵」と言われながら生き残ってきました。使い回し・弱いパスワード・辞書攻撃などで乗っ取られ続けてきたのに、人類は長いあいだ良い代わりの手段を持てなかったのです。ここ数年で、その代わりとして <strong>パスキー</strong> が急速に広まっています。</p>
+    <p>パスワードの本質的な問題は、ログインのたびに <strong>「秘密の文字列そのもの」がどこかに行く</strong> 設計になっていることです（通信が暗号化されていても、送っているのは秘密そのものです）。弱点は「秘密を運ぶ」ところに集まります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃される場所</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>入力するとき</td><td>入力欄に打つところを覗き見される。パスワードマネージャーが狙われる</td></tr>
+        <tr><td>サーバー側</td><td>ハッシュ化されることは多いが、原理的には <strong>秘密に近いものを預けている</strong>。ハッシュ値などが漏えいする。運営者のリテラシーが低いと平文（そのままの文字列）で保存されていることもある（ラジオの出演者自身、初期の個人開発サービスで平文保存していたと話しています）</td></tr>
+        <tr><td>フィッシング</td><td><strong>偽サイト</strong> を作れば、そこに同じパスワードを打たせることができてしまう</td></tr>
+      </tbody>
+    </table></div>
+    <p>ログイン機能への攻撃の全体は <a href="20-1_ログイン機能への攻撃と対策.html">ログイン機能への攻撃と対策</a>、サーバー側での保存方法は <a href="20-2_パスワードの安全な保存.html">パスワードの安全な保存</a> で扱っています。</p>
+    <div class="callout tip">
+      <p class="callout-title">ラジオの小話</p>
+      <ul>
+        <li>楽天証券が乗っ取り被害の後に導入した「イラストを 2 枚選ぶ」方式は急場しのぎで、現在はパスキーへの全面移行を進めています。</li>
+        <li>セキュリティに敏感な人は、退会時にアカウントの削除まで求めます。計算機科学者のブライアン・カーニハンは、ブラウザの JavaScript を全部オフにして使っているという逸話も紹介されています。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>パスキーで何が変わるか：秘密を送らず「合図」だけ送る</h2>
+    <p><strong>パスキー（Passkey）</strong> は、パスワードの代わりに使うログイン方式です。<strong>FIDO2</strong> やブラウザの <strong>WebAuthn</strong> といった標準に沿って実装されます（用語は <a href="#sec-3">3 章</a> で整理します）。ポイントは次の 1 文です。</p>
+    <div class="callout key">
+      <p><strong>「ネットの向こうに『秘密そのもの』を送らず、『本人しかできない合図』だけを送る」</strong></p>
+    </div>
+    <p>人が考えて覚える文字列ではなく、端末の中で作られる <strong>暗号鍵のペア（秘密鍵＋公開鍵）</strong> を使います。名前は「鍵」ですが、物理の鍵に近いイメージです。<strong>鍵の本体（秘密鍵）は自分のポケット＝端末に入れたまま</strong>、相手には <strong>本物か試せる片方（公開鍵）だけ</strong> を預けます。</p>
+
+    <h3 id="sec-2-1">2.1 秘密鍵と公開鍵（超ざっくり）</h3>
+    <p>数学の細部は省き、<strong>役割</strong> だけ押さえます。公開鍵暗号とデジタル署名の基礎は <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-7-2">デジタル署名</a>（パスワード・MFA・暗号化の基礎）や <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#signature">電子署名</a>（セキュリティ基礎）で解説しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>秘密鍵（Private Key）</th><th>公開鍵（Public Key）</th></tr></thead>
+      <tbody>
+        <tr><td>どこにある？</td><td>ユーザーの端末内（外に出さない）</td><td>サーバーに登録される（漏れても単体では致命的でない設計）</td></tr>
+        <tr><td>何に使う？</td><td>「本人の合図」を作る（<strong>署名</strong>）</td><td>その合図が本物か検証する</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>電子署名</strong> のイメージは次のとおりです。サーバーが「今日の合言葉はこれ」とランダムなデータ（<strong>チャレンジ</strong>）を出す → 端末が秘密鍵で「それに対する答え」（署名）を作る → サーバーは <strong>公開鍵</strong> で「この答えは確かにその秘密鍵の持ち主が作った」と確認できます。<strong>答えを見ただけでは秘密鍵が分からない</strong>、という性質を利用しています。ラジオでは、以前の回で扱った公開鍵暗号・RSA 暗号の延長として、「秘密鍵で処理したデータを公開鍵で元に戻せれば、秘密鍵の持ち主本人が処理したと検証できる」（公開鍵暗号の逆の操作）と説明されています。</p>
+
+    <h3 id="sec-2-2">2.2 たとえ話：現金を運ぶ vs 振り込み</h3>
+    <p>パスワードは「家を買うのに大切な現金を <strong>持ち歩いて</strong> 支払いに行く」ようなもので、途中で奪われると終わりです。パスキーは「<strong>現金は取り出さず</strong>、銀行振り込みで済ませる」「銀行が『この取引でいい？』と言ったことにだけ応じる」に近い発想です。</p>
+    <span class="code-label bad">パスワード：秘密の文字列そのものが通信路を通る</span>
+<pre><code>あなた ──(パスワード文字列)──&gt; 本物のサイト
+あなた ──(同じ文字列)──────&gt; 偽サイト（フィッシング）にも流れうる</code></pre>
+    <span class="code-label good">パスキー：通るのは「チャレンジに対する署名」だけ。秘密鍵そのものではない</span>
+<pre><code>あなたの端末（秘密鍵は中に閉じ込め）
+     │
+     ├── 署名だけ送信 ──&gt; 本物のサイトは検証 OK
+     └── 偽サイト向けには「別の鍵・別ドメイン」になり、意味が合わない</code></pre>
+
+    <h2 id="sec-3"><span class="num">3.</span>用語の整理</h2>
+    <p>パスキーまわりにはよく似た言葉が出てきます。先に整理しておきます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>FIDO2</strong></td><td>パスワードなしの認証のための規格のまとまり。WebAuthn と CTAP からなる</td></tr>
+        <tr><td><strong>WebAuthn</strong></td><td>ブラウザの JavaScript API（<code>navigator.credentials</code>）と、サーバーが検証する手順の規格（W3C）</td></tr>
+        <tr><td><strong>CTAP</strong></td><td>ブラウザ・OS と、外付けのセキュリティキーが話すための規格</td></tr>
+        <tr><td><strong>パスキー</strong></td><td>FIDO2 の認証情報（鍵のペア）のうち、<strong>ユーザー名を入れずに選べて、多くは端末間で同期されるもの</strong> の呼び名</td></tr>
+        <tr><td><strong>認証器</strong>（Authenticator）</td><td>秘密鍵を持って署名する側。スマホ・PC（指紋・顔・PIN）や USB キー</td></tr>
+        <tr><td><strong>RP</strong>（Relying Party）</td><td>ログインさせる側の Web サービス。<strong>RP ID</strong> はそのドメイン（例：<code>example.com</code>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>仕組み：登録とログイン</h2>
+    <p>パスキーの流れは「最初の 1 回の登録」と「毎回のログイン」の 2 つです。どちらも、秘密鍵は端末から一歩も出ません。</p>
+    <figure>
+    <svg viewBox="0 0 720 520" role="img" aria-label="登録では、サーバーがchallengeとRP IDとユーザーIDを送り、端末が本人確認してRP ID専用の鍵ペアを作り、公開鍵と認証情報IDと署名をサーバーに送り、サーバーが検証して公開鍵を保存する。ログインでは、サーバーが毎回違うchallengeを送り、端末が本人確認して秘密鍵でchallengeとオリジンに署名し、署名だけを送り、サーバーが保存した公開鍵で検証する">
+      <defs>
+        <marker id="arw2041a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <path d="M120,50 L120,510" class="d-line-dash"/>
+      <path d="M600,50 L600,510" class="d-line-dash"/>
+      <rect x="20" y="10" width="200" height="40" rx="8" class="d-box-accent"/>
+      <text x="120" y="35" text-anchor="middle" class="d-text-bold">あなたの端末（認証器）</text>
+      <rect x="500" y="10" width="200" height="40" rx="8" class="d-box"/>
+      <text x="600" y="35" text-anchor="middle" class="d-text-bold">サーバー（RP）</text>
+
+      <text x="360" y="78" text-anchor="middle" class="d-text-bold">① 登録（はじめての 1 回）</text>
+      <text x="360" y="104" text-anchor="middle" class="d-text-sub">challenge（ランダム値）・RP ID・ユーザー ID</text>
+      <path d="M598,112 L122,112" class="d-line" marker-end="url(#arw2041a)"/>
+      <rect x="20" y="126" width="200" height="66" rx="8" class="d-box-accent"/>
+      <text x="120" y="148" text-anchor="middle" class="d-text">指紋・顔・PIN で本人確認</text>
+      <text x="120" y="167" text-anchor="middle" class="d-text">RP ID 専用の鍵ペアを作る</text>
+      <text x="120" y="185" text-anchor="middle" class="d-text-sub">秘密鍵は端末の中に残す</text>
+      <text x="360" y="204" text-anchor="middle" class="d-text-sub">公開鍵・認証情報 ID・challenge への署名</text>
+      <path d="M122,212 L598,212" class="d-line" marker-end="url(#arw2041a)"/>
+      <rect x="500" y="226" width="200" height="50" rx="8" class="d-box-good"/>
+      <text x="600" y="247" text-anchor="middle" class="d-text">署名を検証して</text>
+      <text x="600" y="266" text-anchor="middle" class="d-text-bold">公開鍵を保存</text>
+
+      <path d="M20,298 L700,298" class="d-line-dash"/>
+
+      <text x="360" y="326" text-anchor="middle" class="d-text-bold">② ログイン（毎回）</text>
+      <text x="360" y="352" text-anchor="middle" class="d-text-sub">challenge（毎回違うランダム値）</text>
+      <path d="M598,360 L122,360" class="d-line" marker-end="url(#arw2041a)"/>
+      <rect x="20" y="374" width="200" height="66" rx="8" class="d-box-accent"/>
+      <text x="120" y="396" text-anchor="middle" class="d-text">本人確認して秘密鍵で</text>
+      <text x="120" y="415" text-anchor="middle" class="d-text">challenge と接続先の</text>
+      <text x="120" y="433" text-anchor="middle" class="d-text">オリジンに署名</text>
+      <text x="360" y="452" text-anchor="middle" class="d-text-sub">署名だけを送る（秘密鍵は送らない）</text>
+      <path d="M122,460 L598,460" class="d-line" marker-end="url(#arw2041a)"/>
+      <rect x="500" y="468" width="200" height="46" rx="8" class="d-box-good"/>
+      <text x="600" y="487" text-anchor="middle" class="d-text">保存した公開鍵で検証</text>
+      <text x="600" y="506" text-anchor="middle" class="d-text-sub">OK ならログイン許可</text>
+    </svg>
+    <figcaption>図：登録では公開鍵だけをサーバーへ。ログインでは challenge への署名だけを送り、サーバーは公開鍵で確かめる</figcaption>
+    </figure>
+
+    <h3 id="sec-4-1">4.1 登録（アカウントにパスキーを紐づける）</h3>
+    <p>はじめてそのサービスでパスキーを使うとき、端末の中で鍵ペアが作られ、<strong>公開鍵だけ</strong> がサーバーに送られます。</p>
+    <ol class="steps">
+      <li>ブラウザがサーバーに「登録したい」と伝える。</li>
+      <li>サーバーが <strong>challenge</strong>（ランダム値）・<strong>RP ID</strong>・<strong>ユーザー ID</strong> を返す。</li>
+      <li>認証器が指紋・顔・PIN で本人確認し、<strong>この RP ID 専用の鍵ペア</strong> を作る。秘密鍵は認証器の中から出ず、公開鍵はサーバーへ送る。</li>
+      <li>ブラウザが <strong>公開鍵・認証情報 ID・challenge への署名</strong> を送り、サーバーが検証して保存する。</li>
+    </ol>
+    <p>ネット越しに「秘密鍵ファイル」を送ることはありません。</p>
+
+    <h3 id="sec-4-2">4.2 ログイン（チャレンジと署名）</h3>
+    <ol class="steps">
+      <li>サーバーが「このランダムデータに答えを出せ」と <strong>challenge</strong> を出す。</li>
+      <li>認証器が本人確認し、<strong>秘密鍵で challenge と「接続先のオリジン」に署名</strong> する（オリジン＝ブラウザが実際に開いているサイトの「https://example.com」のような接続先）。</li>
+      <li>ブラウザが <strong>署名だけ</strong> を返す（秘密鍵そのものは送らない）。</li>
+      <li>サーバーが保存していた <strong>公開鍵で検証</strong> し、OK ならログインを許可する。</li>
+    </ol>
+    <p>機密情報は一切送っていないので、サーバーがハッキングされても秘密は漏れません。運営者のリテラシーに依存せず、<strong>原理的に漏れない</strong> のが大きな違いです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>生体認証（指紋・顔）の位置づけ</h2>
+    <p>パスキーと生体認証は <strong>概念として別物</strong> です。生体認証は、パスキー認証の中で使われることがあるだけです。</p>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <p>「指紋データが楽天や Google のサーバーに送られる（保存される）のでは？」→ 多くの場合、<strong>送られません</strong>。</p>
+    </div>
+    <ol class="steps">
+      <li>サーバーはチャレンジを出す（指紋ではない）。</li>
+      <li>端末が「パスキーを使って署名しようとしている」。</li>
+      <li>端末の OS が「この端末の <strong>本人</strong> か？」を <strong>端末の中だけ</strong> で指紋・顔などで確認する。</li>
+      <li>OK なら、端末が秘密鍵を使って署名する。</li>
+    </ol>
+    <p>つまり <strong>生体は「端末の鍵を使っていいか」を確かめる鍵束</strong> のようなもので、<strong>パスキーの本体はあくまで端末内の秘密鍵</strong> です。サービス側に指紋のデータそのものが届くわけではありません（実装は OS・端末によりますが、WebAuthn の普通の説明はこの整理になります）。生体認証そのものの特徴は <a href="10-2_ログイン方式と認証の概念.html#sec-12-3">生体認証</a>（ログイン方式と認証の概念）を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>フィッシングに強い理由：ドメインと鍵の対応</h2>
+    <p>パスキーは <strong>サイト（正確には RP ID＝ドメイン）ごとに別の資格情報</strong> です。さらにブラウザは、<strong>実際に開いているドメイン</strong> を署名に含めます。そのため、本物の <code>example.com</code> 用に作った鍵で、攻撃者の <code>examp1e.com</code> でのログインを完了させることは構造上できません。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="端末にはexample.com用の鍵がある。本物のexample.comを開くと鍵が一致して署名でき、ログインに成功する。見た目がそっくりな偽サイトexamp1e.comを開くと、ブラウザが実際のドメインを見るため対応する鍵が選ばれず、本物のサイトに中継しても署名が通らない">
+      <defs>
+        <marker id="arw2042a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw2042b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="100" width="180" height="100" rx="8" class="d-box-accent"/>
+      <text x="110" y="128" text-anchor="middle" class="d-text-bold">あなたの端末</text>
+      <text x="110" y="152" text-anchor="middle" class="d-text">example.com 用の鍵</text>
+      <text x="110" y="174" text-anchor="middle" class="d-text-sub">（RP ID ごとに別の鍵）</text>
+
+      <path d="M200,125 C225,125 225,62 248,62" class="d-line" marker-end="url(#arw2042a)"/>
+      <rect x="250" y="30" width="210" height="64" rx="8" class="d-box-good"/>
+      <text x="355" y="56" text-anchor="middle" class="d-text-bold">本物 example.com</text>
+      <text x="355" y="78" text-anchor="middle" class="d-text-sub">ブラウザが実際のドメインを確認</text>
+      <path d="M460,62 L508,62" class="d-line" marker-end="url(#arw2042a)"/>
+      <rect x="510" y="30" width="190" height="64" rx="8" class="d-box-good"/>
+      <text x="605" y="56" text-anchor="middle" class="d-text-bold">鍵が一致 → 署名</text>
+      <text x="605" y="78" text-anchor="middle" class="d-text-sub">ログイン成功</text>
+
+      <path d="M200,175 C225,175 225,238 248,238" class="d-line-bad" marker-end="url(#arw2042b)"/>
+      <rect x="250" y="206" width="210" height="64" rx="8" class="d-box-bad"/>
+      <text x="355" y="232" text-anchor="middle" class="d-text-bold">偽サイト examp1e.com</text>
+      <text x="355" y="254" text-anchor="middle" class="d-text-sub">見た目は本物そっくり</text>
+      <path d="M460,238 L508,238" class="d-line-bad" marker-end="url(#arw2042b)"/>
+      <rect x="510" y="206" width="190" height="64" rx="8" class="d-box-bad"/>
+      <text x="605" y="232" text-anchor="middle" class="d-text-bold">対応する鍵がない</text>
+      <text x="605" y="254" text-anchor="middle" class="d-text-sub">中継しても本物で通らない</text>
+      <text x="360" y="292" text-anchor="middle" class="d-text-sub">人が見分けなくても、ブラウザと認証器がドメインで判断する</text>
+    </svg>
+    <figcaption>図：鍵はドメインに結び付いているので、偽ドメインでは本物の鍵が使われない</figcaption>
+    </figure>
+    <ul>
+      <li><strong>偽サイトが独自のチャレンジを送った場合</strong>：本物のサービスが出したチャレンジではないので、その答えは本物のサイトにとって無意味です。</li>
+      <li><strong>中継攻撃（本物のチャレンジを横流しする）の場合</strong>：パスキーはドメインごとに別の鍵です。偽ドメインでは本物用の鍵が選ばれず、署名には偽ドメインが含まれるため、本物では使えません。攻撃者が「そのまま横流ししてログイン完了」とはいきにくい、と理解するとよいでしょう（※さらに高度な中継攻撃の話は別レイヤーの議論になります）。</li>
+    </ul>
+    <p>フィッシングそのものの手口は <a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#human">人を狙う攻撃 — フィッシングとソーシャルエンジニアリング</a>（セキュリティ基礎）を参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>なぜ強いのか：性質の整理</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>性質</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>フィッシングに強い</strong></td><td>鍵は RP ID ごとに作られ、ブラウザが <strong>実際に開いているドメイン</strong> を署名に含める。<code>examp1e.com</code> の偽サイトでは <code>example.com</code> の鍵が選ばれない</td></tr>
+        <tr><td><strong>サーバーから漏れても困らない</strong></td><td>サーバーにあるのは公開鍵だけ。漏れてもログインには使えない</td></tr>
+        <tr><td><strong>使い回しがない</strong></td><td>サイトごとに別の鍵</td></tr>
+        <tr><td><strong>リプレイできない</strong></td><td>毎回違う challenge に署名する（リプレイ＝盗み見た通信をそのまま再送してなりすますこと）</td></tr>
+        <tr><td><strong>生体情報はサーバーに行かない</strong></td><td>指紋・顔は、端末の中で秘密鍵を使ってよいか確かめるだけ</td></tr>
+      </tbody>
+    </table></div>
+    <p>さらにラジオでは、パスキーが <strong>人から切り離されている</strong> 点が強調されています。自分で設定せず、覚えず、入力しません。仕様上、持ち主ですら秘密鍵に触れられないのが望ましいとされており、ソーシャルエンジニアリング（人をだます攻撃）で「読み上げさせる」こともできません。</p>
+    <p>MFA の他の方式（SMS・TOTP・プッシュ通知など）との比較は <a href="20-3_MFAの方式比較.html">MFAの方式比較</a> を参照してください。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>パスキーの種類と複数端末</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>保存場所</th><th>長所</th><th>短所</th></tr></thead>
+      <tbody>
+        <tr><td><strong>同期パスキー</strong></td><td>iCloud キーチェーン、Google パスワードマネージャー、1Password など</td><td>機種変更しても使える。端末をなくしても復旧できる</td><td>同期元のアカウントが乗っ取られると危ない</td></tr>
+        <tr><td><strong>端末固定のパスキー</strong></td><td>USB のセキュリティキー、端末の中だけ</td><td>鍵が端末の外に出ない</td><td>紛失すると使えない。予備が必要</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>一般の利用者には同期パスキー、管理者など権限の強い人には端末固定のセキュリティキー、という使い分けがよくあります。</li>
+      <li>手元に無い端末のパスキーも、<strong>QR コードを読み取り、Bluetooth で近くにあることを確かめて</strong>（ハイブリッド方式）使えます。</li>
+    </ul>
+    <h3 id="sec-8-1">8.1 QR コードが出るのはなぜ？</h3>
+    <p>パスキーのアイデア自体は数十年前からありましたが、複数の端末を持つのが当たり前でなかった「スマホ 1 台時代」には普及しにくい面がありました（ただし端末 1 台でもそれなりに機能します）。今は <strong>同じパスキーを複数端末で使える（同期する）</strong> 仕組みや、PC に鍵がなくスマホにあるとき <strong>QR でスマホ側に認証を回す</strong> 運用があります。端末ごとに別のパスキー／同期して共有／スマホにだけある、などケースはさまざまです。</p>
+    <div class="callout tip">
+      <p><strong>「QR を読む＝それ自体がパスキー」ではありません。</strong> パスキーがスマホにしか入っていないときに「スマホで認証して」と求めている、つまり <strong>どの端末の秘密鍵で署名するか</strong> の都合で画面が出る、と捉えると混乱しにくくなります。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>啓蒙ではなくフールプルーフ</h2>
+    <p>どんなに愚かな使い方をしても事故にならない設計を <strong>フールプルーフ</strong>（対バカ性）といいます。電動シェーバーが肌を切らないのと同じです。パスキーは人の注意力に頼らないので、<strong>PEBKAC</strong>（Problem Exists Between Keyboard And Chair＝問題は椅子とキーボードの間、つまり人間にある）問題もカバーできます。</p>
+    <ul>
+      <li>「強いパスワードを使おう」と呼びかける <strong>世界パスワードデー</strong>（毎年 5 月第 1 木曜）を 10 年以上続けても被害は減らず、2025 年に <strong>世界パスキーデー</strong> に切り替わりました。</li>
+      <li><strong>啓蒙</strong>（人を賢くする）より、そもそも間違えられないようにする方が正しい、というエンジニアリング精神の表れです。</li>
+      <li>技術者は啓蒙を「効果が限られる生ぬるい策」と見がちで、人文学・政治の世界とは「啓蒙」の響きが真逆になりうる、という対比でラジオは締めくくられます（確定申告の予定納税の二重払いなども、フールプルーフにしてほしいという雑談も出ます）。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">ラジオの余談：『DEATH NOTE』はパスキーの啓蒙？</p>
+      <p>半ば冗談として、出演者の独自の読みが紹介されます。ミサがテレビ局に「指定時刻にキャスターが死ぬ」というビデオを送り、ノートそのものは見せずに所有を証明した場面は <strong>パスキー認証</strong>（チャレンジに応えて本人性を示す）。その後ノートを直接ライトに見せに行ったのは <strong>パスワード認証</strong>（秘密そのものを見せる）で、これが原因でマークされ捕まります。作中では一貫して「ノートという秘密を持ち歩いた者から捕まる」、所有者にしか見えない死神（リューク）は秘密のメタファー、という読みも出ます。</p>
+    </div>
+    <p>結論として、人の賢さに頼る啓蒙ではなく、誰が使っても失敗しないフールプルーフな技術だからこそパスキーは強く、証券会社などは早めにパスキーへ切り替えるべき、というのがラジオの主張です。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>実装の流れ（SimpleWebAuthn を使う例）</h2>
+    <p>WebAuthn は検証の手順が多いので、<strong>自作せず実績のあるライブラリ</strong> を使います（「自前実装しない」の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a> も参照）。Node.js なら <code>@simplewebauthn/server</code> と <code>@simplewebauthn/browser</code> がよく使われます。</p>
+
+    <h3 id="sec-10-1">10.1 サーバー：登録</h3>
+<pre><code>import {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+} from '@simplewebauthn/server';
+
+const rpID = 'example.com';
+const origin = 'https://example.com';
+
+// 1. オプションを作る
+const options = await generateRegistrationOptions({
+  rpName: 'Example',
+  rpID,
+  userName: user.email,
+  excludeCredentials: user.passkeys.map((p) =&gt; ({ id: p.credentialId })), // 同じ認証器の二重登録を防ぐ
+  authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+});
+await saveChallenge(user.id, options.challenge); // セッションなどに一時保存
+
+// 2. ブラウザからの応答を検証する
+const verification = await verifyRegistrationResponse({
+  response: body,
+  expectedChallenge: await loadChallenge(user.id),
+  expectedOrigin: origin,
+  expectedRPID: rpID,
+});
+if (verification.verified) {
+  const { credential, credentialBackedUp } = verification.registrationInfo;
+  await savePasskey(user.id, {
+    credentialId: credential.id,
+    publicKey: credential.publicKey,
+    counter: credential.counter,
+    transports: credential.transports,
+    backedUp: credentialBackedUp, // 同期パスキーかどうか
+  });
+}</code></pre>
+    <p><code>expectedChallenge</code>・<code>expectedOrigin</code>・<code>expectedRPID</code> を照合しているのが、<a href="#sec-4">4 章</a> の「challenge とオリジンへの署名」を確かめている部分です。</p>
+
+    <h3 id="sec-10-2">10.2 ブラウザ</h3>
+<pre><code>import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
+
+// 登録
+const optionsJSON = await fetch('/passkeys/register/options').then((r) =&gt; r.json());
+const attResp = await startRegistration({ optionsJSON });
+await fetch('/passkeys/register/verify', { method: 'POST', body: JSON.stringify(attResp) });
+
+// ログイン
+const authOptions = await fetch('/passkeys/login/options').then((r) =&gt; r.json());
+const authResp = await startAuthentication({ optionsJSON: authOptions });
+await fetch('/passkeys/login/verify', { method: 'POST', body: JSON.stringify(authResp) });</code></pre>
+    <p>ログインの検証は <code>generateAuthenticationOptions</code> と <code>verifyAuthenticationResponse</code> で同じ形になります。検証が通ったら、<strong>保存してある counter を更新</strong> してからセッションを発行します。</p>
+
+    <h3 id="sec-10-3">10.3 自動入力で出す（Conditional UI）</h3>
+    <p>ユーザー名の入力欄に、パスワードマネージャーのようにパスキーの候補を出せます。</p>
+<pre><code>&lt;input type="text" name="username" autocomplete="username webauthn" /&gt;</code></pre>
+<pre><code>// ページを開いた時点で待ち受ける
+startAuthentication({ optionsJSON: authOptions, useBrowserAutofill: true });</code></pre>
+
+    <h2 id="sec-11"><span class="num">11.</span>サーバーに保存するもの</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証情報 ID</strong></td><td>どの鍵か。1 人が複数のパスキーを持てるよう、ユーザーとは別のテーブルにする</td></tr>
+        <tr><td><strong>公開鍵</strong></td><td>署名の検証</td></tr>
+        <tr><td><strong>署名カウンター</strong></td><td>認証器の複製を検出する。同期パスキーは常に 0 のことが多い</td></tr>
+        <tr><td><strong>transports</strong></td><td><code>internal</code>・<code>usb</code>・<code>hybrid</code> など。次回のログインで候補を出しやすくする</td></tr>
+        <tr><td><strong>バックアップの状態</strong></td><td>同期パスキーかどうか。端末固定だけの利用者には予備の登録を勧める</td></tr>
+        <tr><td><strong>名前・作成日時・最終利用日時</strong></td><td>利用者が設定画面で見分けて削除できるように</td></tr>
+      </tbody>
+    </table></div>
+    <p>どれも漏れてもログインには使えない情報です。パスワードのハッシュ値を守る話（<a href="20-2_パスワードの安全な保存.html">パスワードの安全な保存</a>）と比べると、サーバー側の負担が軽いことが分かります。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>設計で気をつけること</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>論点</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>challenge の扱い</strong></td><td>サーバーで作り、1 回だけ使い、短い期限を付ける。ブラウザから送られた値を信じない</td></tr>
+        <tr><td><strong>RP ID とオリジン</strong></td><td>RP ID を <code>example.com</code> にすると <code>login.example.com</code> などのサブドメインでも使える。後から変えると全員のパスキーが使えなくなるので最初に決める</td></tr>
+        <tr><td><strong>回復手段</strong></td><td>パスキーを全部なくした人をどう戻すか。メールのリンクだけで済ませると、そこが弱点になる（<a href="20-3_MFAの方式比較.html">MFAの方式比較</a>）</td></tr>
+        <tr><td><strong>パスワードとの併用</strong></td><td>移行期はパスワードも残るので、パスワード側の対策（<a href="20-2_パスワードの安全な保存.html">パスワードの安全な保存</a>）も続ける。パスキーを登録した人にはパスワードの削除を選べるようにする</td></tr>
+        <tr><td><strong>attestation</strong>（認証器の証明）</td><td>一般のサービスでは <code>none</code> でよい。社内で特定の機種だけ許可したいときに使う</td></tr>
+        <tr><td><strong>セッションは別の話</strong></td><td>パスキーで安全にログインしても、その後の Cookie が盗まれれば同じ。セッションの対策は 74_セッション管理 で扱う</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-13"><span class="num">13.</span>導入のステップ</h2>
+    <ol class="steps">
+      <li>ログイン後の設定画面で「パスキーを追加」できるようにする</li>
+      <li>ログイン画面に Conditional UI（自動入力の候補）を出す</li>
+      <li>新規登録でパスキーを最初に勧める</li>
+      <li>管理者アカウントはセキュリティキー・パスキーを必須にする</li>
+      <li>パスワードを削除できるようにする（回復手段を整えてから）</li>
+    </ol>
+
+    <h2 id="sec-14"><span class="num">14.</span>まとめ</h2>
+    <ul>
+      <li><strong>パスキー</strong>＝パスワードの代わりのログイン方式（FIDO2 / WebAuthn 系）。</li>
+      <li>パスワードの弱点は「秘密そのものを送る」設計。パスキーは <strong>秘密鍵を端末に残し、公開鍵だけをサーバー</strong> に預ける。</li>
+      <li>ログインは <strong>「チャレンジへの署名」</strong> で、秘密そのものは送らない。サーバーが漏れても秘密は漏れない。</li>
+      <li><strong>指紋・顔</strong> は、端末が秘密鍵を使う許可を出すためのローカルな確認。生体情報はサーバーに渡らない。</li>
+      <li><strong>サイト（ドメイン）ごとに鍵が違い</strong>、ブラウザが実際のドメインを署名に含めるので、フィッシングがほぼ無力化される。</li>
+      <li>同期パスキーと端末固定のパスキーを使い分ける。QR コードは「どの端末の鍵で署名するか」の都合。</li>
+      <li>人の注意力に頼らない <strong>フールプルーフ</strong> 設計だからこそ強い。</li>
+      <li>実装は SimpleWebAuthn などのライブラリを使い、challenge・RP ID・回復手段・セッションの扱いに気をつけて段階的に導入する。</li>
+    </ul>
+
+    <h2 id="sec-15"><span class="num">15.</span>理解度チェック</h2>
+    <details><summary>Q1. パスワードの本質的な弱点は何で、パスキーはそれをどう解決していますか？</summary><div class="body"><p>パスワードは <strong>秘密そのものを送る（預ける）</strong> 設計なので、覗き見・サーバーからの漏えい・フィッシングで秘密が奪われます。パスキーは秘密鍵を端末から出さず、サーバーの <strong>チャレンジへの署名</strong> だけを送ります。サーバーには公開鍵しかないので、漏れてもログインには使えません。</p></div></details>
+    <details><summary>Q2. 登録のとき、サーバーに送られるものと送られないものは何ですか？</summary><div class="body"><p>送られるのは <strong>公開鍵・認証情報 ID・challenge への署名</strong> です。<strong>秘密鍵</strong> は認証器の中から出ず、送られません。指紋・顔のデータも送られません。</p></div></details>
+    <details><summary>Q3. 「パスキーを使うと指紋データがサービスのサーバーに保存される」は正しいですか？</summary><div class="body"><p>正しくありません。指紋・顔は端末の中だけで照合され、「この端末の秘密鍵を使ってよいか」を確かめるだけです。パスキーの本体は端末内の秘密鍵です。</p></div></details>
+    <details><summary>Q4. 偽サイト examp1e.com でパスキーが使えないのはなぜですか？</summary><div class="body"><p>鍵は RP ID（ドメイン）ごとに作られ、ブラウザが <strong>実際に開いているドメイン</strong> を署名に含めるからです。偽ドメインでは example.com 用の鍵が選ばれず、本物のチャレンジを中継しても署名が本物のサイトで通りません。人が見分けなくても仕組みで防げます。</p></div></details>
+    <details><summary>Q5. 同期パスキーと端末固定のパスキーの長所・短所を答えてください。</summary><div class="body"><p><strong>同期パスキー</strong> は機種変更や紛失時にも復旧できますが、同期元のアカウントが乗っ取られると危険です。<strong>端末固定のパスキー</strong>（USB セキュリティキーなど）は鍵が端末の外に出ませんが、紛失すると使えないので予備が必要です。一般利用者は同期パスキー、管理者はセキュリティキー、という使い分けがよくあります。</p></div></details>
+    <details><summary>Q6. ログインで QR コードが表示されるのはどういうときですか？</summary><div class="body"><p>使っている PC にパスキーがなく、スマホなど別の端末にあるときです。QR を読み取り Bluetooth で近くにあることを確かめて、スマホの秘密鍵で署名します（ハイブリッド方式）。QR そのものがパスキーなのではありません。</p></div></details>
+    <details><summary>Q7. challenge を設計するときに気をつけることは何ですか？</summary><div class="body"><p>サーバーで作り、1 回だけ使い、短い期限を付けます。ブラウザから送られた値を信じず、サーバーに保存しておいた値と照合します（SimpleWebAuthn では <code>expectedChallenge</code>）。毎回違う challenge を使うので、リプレイ攻撃もできません。</p></div></details>
+    <details><summary>Q8. 「フールプルーフ」とは何で、なぜパスキーに当てはまるのですか？</summary><div class="body"><p>どんなに不注意な使い方をしても事故にならない設計のことです。パスキーは利用者が設定も記憶も入力もしないので、偽サイトに気づかなくても、うっかりしていても秘密が漏れません。「強いパスワードを使おう」という啓蒙ではなく、間違えられない仕組みで守る考え方です。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li><a href="https://passkeys.dev/">passkeys.dev</a></li>
+      <li><a href="https://www.w3.org/TR/webauthn-3/">W3C Web Authentication: An API for accessing Public Key Credentials Level 3</a></li>
+      <li><a href="https://simplewebauthn.dev/">SimpleWebAuthn</a></li>
+      <li>動画：パスワードは死んだ。パスキーの時代が始まる…。（ゆるコンピュータ科学ラジオ, 2026-04-05）<a href="https://www.youtube.com/watch?v=Ao2tY0J-xyE">https://www.youtube.com/watch?v=Ao2tY0J-xyE</a></li>
+      <li>FIDO Alliance「Passkeys」<a href="https://fidoalliance.org/passkeys/">https://fidoalliance.org/passkeys/</a></li>
+      <li>FIDO Alliance「White Paper: Multi-Device FIDO Credentials」<a href="https://fidoalliance.org/white-paper-multi-device-fido-credentials/">https://fidoalliance.org/white-paper-multi-device-fido-credentials/</a></li>
+      <li>大和総研 WORLD「パスキーとは？FIDO認証との違い、3つのメリットと課題」<a href="https://www.dir.co.jp/world/entry/passkey">https://www.dir.co.jp/world/entry/passkey</a></li>
+      <li>FIDO Alliance「World Passkey Day 2025」<a href="https://fidoalliance.org/fido-alliance-champions-widespread-passkey-adoption-and-a-passwordless-future-on-world-passkey-day-2025/">https://fidoalliance.org/fido-alliance-champions-widespread-passkey-adoption-and-a-passwordless-future-on-world-passkey-day-2025/</a></li>
+      <li>関連ページ：<a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="20-3_MFAの方式比較.html">MFAの方式比較</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#crypto">暗号技術の用語</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-11">MFA・パスキー、そして「自前実装しない」</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="20-3_MFAの方式比較.html"><span class="lbl">← 前のページ</span>MFAの方式比較</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-1_OAuth2.0の仕組み.html"><span class="lbl">次のページ →</span>OAuth 2.0の仕組み</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cookieの仕組み｜セッション管理解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セッション管理解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 クッキー › Cookieの仕組み</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 クッキー</span>
+      <h1>Cookieの仕組み</h1>
+      <p class="lead">Cookie（クッキー）は、サーバーがブラウザに渡し、ブラウザが保存して次から自動で送り返す小さなデータです。HTTP は前の通信を覚えていないのに、一度ログインすると別のページでもログインしたままなのは Cookie のおかげです。このページでは、Cookie の流れ、Domain・Path・Expires／Max-Age・Secure・HttpOnly・SameSite などの属性、サーバーとブラウザでの扱い方、ファーストパーティ／サードパーティ Cookie の違い、「Cookie を許可しますか」との付き合い方、安全に使うための注意点を解説します。</p>
+      <p class="meta">もとにしたノート：10_クッキー/01_クッキーとは、10_クッキー/02_Cookieとは_図解で理解するWebの仕組み（toamoku）、10_クッキー/03_Cookieとは_なぜログイン状態を覚えていられるのか（つるチャンネル）、10_クッキー/04_機械オンチにCookieを説明する動画（ぴちゃ）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>値を運ぶのが Cookie、意味を決めて覚えているのはサーバーです。</strong>サーバーは <code>Set-Cookie</code> で値を渡し、ブラウザは次から <code>Cookie</code> ヘッダに入れて自動で送ります。ログインに使う Cookie には <strong>ランダムなセッション ID だけ</strong> を入れ、<strong>HttpOnly・Secure・SameSite</strong> を付けるのが基本です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>Cookie とは何か</h2>
+    <p><strong>Cookie（クッキー）</strong> は、Web アプリケーションでユーザーの状態を管理するための仕組みです。サーバーがブラウザに送信し、ブラウザが保存する小さなデータで、次回同じサイトにアクセスしたときにブラウザが自動的にサーバーへ送信します。サーバーがブラウザへ渡す <strong>小さなデータの断片（メモ）</strong>、つまり「クッキーのかけら」だと考えると覚えやすいです。</p>
+    <p>ちなみに Cookie という名前の語源は、はっきりとは分かっていないそうです。</p>
+
+    <h3 id="sec-1-1">1.1 前提：HTTP はステートレス</h3>
+    <p>Web の通信に使う <strong>HTTP</strong> は、<strong>ステートレス</strong>（状態を覚えない）な決まりごと（プロトコル）です。リクエスト（ブラウザからの依頼）ごとに独立していて、前の通信を覚えていません。</p>
+    <p>たとえばログインして、サーバーが「認証に成功しました」と返したとします。ところが次に「マイページを見せて」と頼むと、サーバーは毎回「あなた誰？」となってしまいます。この問題を解決する仕組みの 1 つが Cookie です。HTTP とセッション管理の関係は <a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a> でくわしく扱います。</p>
+
+    <h3 id="sec-1-2">1.2 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>会員カード・ポイントカード</h4>
+        <p>店で発行され、次回来店時に提示します。会員カードを見ればあなたが会員だと分かるように、Cookie を見ればサーバーはあなたが誰かを識別できます。</p>
+        <p>居酒屋のスタンプカードのように、<strong>店（Web サイト）が「この日に来た」「何回来た」と好きに書き込める</strong> カードです。ポイントはたまりません。</p>
+      </div>
+      <div class="card">
+        <h4>Cookie</h4>
+        <p>サーバーが発行し、次回アクセス時にブラウザが自動的に送信します。</p>
+        <p>Amazon でログインしていないのにカートに入れた商品が残っているのは、Cookie の働きです。ブラウザが毎回「かけら」（カギや会員証のようなもの）を渡すので、サーバーはそれに対応する情報を取り出し「このユーザーだ」と判断できます。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>Cookie の流れ：Set-Cookie と Cookie ヘッダ</h2>
+    <p>ログインでセッション ID（サーバーが利用者を見分けるために発行する番号）を保存する例で、流れを見てみます。<strong>ヘッダ</strong> とは、通信の本文とは別に付ける「付せん」のような情報です。</p>
+    <ol class="steps">
+      <li><strong>初回（Cookie をセット）</strong>：ログインに成功すると、サーバーはレスポンス（返事）のヘッダ <code>Set-Cookie</code> でセッション ID（例：<code>ABC123</code>）を返します。</li>
+      <li><strong>保存</strong>：ブラウザはその値を <strong>サイトごとに分けて</strong> 保存します。</li>
+      <li><strong>次回（自動で送信）</strong>：次にそのサイトへリクエストするとき、ブラウザは <code>Cookie</code> ヘッダに入れて <strong>自動で</strong> 送ります。</li>
+      <li><strong>識別</strong>：サーバーは <code>ABC123</code> を「鶴田さんのログイン済みセッション」として覚えているので、本人だと分かります。</li>
+    </ol>
+
+    <figure>
+    <svg viewBox="0 0 720 360" role="img" aria-label="ブラウザがログインすると、サーバーがSet-CookieでセッションIDを返し、ブラウザがサイトごとに保存する。次のリクエストではCookieヘッダで自動的に送り、サーバーが自分の記録と照らして本人と分かる">
+      <defs>
+        <marker id="arw1011a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="40" y="20" width="160" height="48" rx="8" class="d-box"/>
+      <text x="120" y="50" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <rect x="520" y="20" width="160" height="48" rx="8" class="d-box"/>
+      <text x="600" y="50" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <path d="M120,68 L120,345" class="d-line-dash"/>
+      <path d="M600,68 L600,345" class="d-line-dash"/>
+
+      <text x="360" y="100" text-anchor="middle" class="d-text">① POST /login（ID・パスワード）</text>
+      <path d="M120,110 L598,110" class="d-line" marker-end="url(#arw1011a)"/>
+
+      <text x="360" y="160" text-anchor="middle" class="d-text">② Set-Cookie: sessionId=ABC123</text>
+      <path d="M600,170 L122,170" class="d-line" marker-end="url(#arw1011a)"/>
+
+      <rect x="30" y="188" width="180" height="46" rx="8" class="d-box-accent"/>
+      <text x="120" y="208" text-anchor="middle" class="d-text-sub">サイトごとに分けて保存</text>
+      <text x="120" y="225" text-anchor="middle" class="d-text-sub">sessionId=ABC123</text>
+
+      <text x="360" y="252" text-anchor="middle" class="d-text">③ GET /mypage　Cookie: sessionId=ABC123</text>
+      <path d="M120,262 L598,262" class="d-line" marker-end="url(#arw1011a)"/>
+
+      <rect x="490" y="280" width="220" height="56" rx="8" class="d-box-good"/>
+      <text x="600" y="303" text-anchor="middle" class="d-text-sub">ABC123＝鶴田さんのセッション</text>
+      <text x="600" y="322" text-anchor="middle" class="d-text-sub">だから本人だと分かる</text>
+    </svg>
+    <figcaption>図：Cookie は値を運ぶだけ。ABC123 が誰なのかを覚えて判断しているのはサーバー</figcaption>
+    </figure>
+
+    <p>ヘッダの中身は、次のようになります。</p>
+<pre><code>// サーバーがクッキーを設定（レスポンスヘッダ）
+Set-Cookie: sessionId=abc123; Path=/; HttpOnly
+
+// 次回のリクエストで自動的に送信（リクエストヘッダ）
+Cookie: sessionId=abc123</code></pre>
+
+    <div class="callout key">
+      <p class="callout-title">判断しているのは Cookie ではない</p>
+      <p>Cookie 自体が「この人は鶴田さん」と判断しているのではありません。<strong>値を運ぶのが Cookie、意味を決めるのがサーバー</strong> です。HTTP は覚えていない → Cookie を保存して次の通信で送る → サーバーが識別する、という分担です。セッション ID を使ったログインの全体は <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a> で扱います。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>Cookie の特徴と中身</h2>
+
+    <h3 id="sec-3-1">3.1 4 つの特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特徴</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>ブラウザに保存される</td><td>Chrome・Safari・Firefox など各ブラウザが自動で管理します。サーバー → ブラウザ：<code>Set-Cookie</code> ヘッダで送信 → ブラウザが保存 → 次回アクセス時にブラウザが自動的に送信。</td></tr>
+        <tr><td>自動的に送信される</td><td>ブラウザは、同じドメインへのリクエストに自動的に Cookie を含めます。</td></tr>
+        <tr><td>ドメインごとに管理される</td><td>Cookie は設定されたドメインでのみ送信されます。<code>example.com</code> で設定された Cookie は <code>example.com</code> へのリクエストでのみ送られ、<code>other.com</code> へのリクエストでは送られません。</td></tr>
+        <tr><td>サイズ制限がある</td><td>1 つの Cookie は約 4KB まで、1 つのドメインあたり約 20 個まで保存できます（目安）。</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ドメイン</strong> とは、<code>example.com</code> のようなサイトの住所（名前）のことです。</p>
+
+    <h3 id="sec-3-2">3.2 Cookie の構造：名前と値＋属性</h3>
+    <p>Cookie は <strong>キー（名前）と値</strong> のペアに、送り方を決める <strong>属性</strong> が付いた形をしています。まるで小さな設定ファイルのようです。</p>
+<pre><code>sessionid=abc123xyz;   ← キーと値
+Path=/;                ← 属性：どのパスで送るか
+HttpOnly;              ← 属性：JavaScript から読ませない
+Secure;                ← 属性：HTTPS だけで送る
+SameSite=Lax;          ← 属性：別サイトからの送信条件</code></pre>
+    <p>ブラウザがサーバーへ送り返すのは <code>sessionid=abc123xyz</code> の部分だけです。属性は「いつ・どこへ送るか」をブラウザに指示するためのもので、送り返されません。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>Cookie の属性</h2>
+    <p>属性は、Cookie を「いつまで残すか」「どこへ送るか」「誰に読ませるか」を決めるスイッチです。セキュリティに直結するので、1 つずつ見ていきます。</p>
+
+    <h3 id="sec-4-1">4.1 属性の一覧</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>属性</th><th>決めること</th><th>主な目的</th></tr></thead>
+      <tbody>
+        <tr><td><code>Expires</code>／<code>Max-Age</code></td><td>有効期限（いつまで残すか）</td><td>付けなければブラウザを閉じると消える</td></tr>
+        <tr><td><code>Path</code></td><td>送信するパス</td><td>サイト内の一部だけで使う</td></tr>
+        <tr><td><code>Domain</code></td><td>送信するドメイン</td><td>サブドメインにも送るか</td></tr>
+        <tr><td><code>HttpOnly</code></td><td>JavaScript から読めるか</td><td>XSS で盗まれるのを防ぐ</td></tr>
+        <tr><td><code>Secure</code></td><td>HTTPS のときだけ送るか</td><td>盗聴で抜かれるのを防ぐ</td></tr>
+        <tr><td><code>SameSite</code></td><td>別サイトからの依頼で送るか</td><td>CSRF 対策</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-2">4.2 Expires／Max-Age（有効期限）</h3>
+    <p>Cookie の有効期限を設定します。<code>Expires</code> は「この日時まで」、<code>Max-Age</code> は「今から何秒間」で指定します。Express.js（Node.js の Web フレームワーク）の <code>res.cookie()</code> では、<code>maxAge</code> をミリ秒、<code>expires</code> を日付で渡します。</p>
+<pre><code>// maxAge（ミリ秒）
+res.cookie('username', 'yamada', {
+  maxAge: 24 * 60 * 60 * 1000 // 24時間
+});
+
+// expires（日付）
+res.cookie('username', 'yamada', {
+  expires: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24時間後
+});</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">単位に注意</p>
+      <p>Express の <code>maxAge</code> はミリ秒ですが、実際に送られる <code>Set-Cookie</code> ヘッダの <code>Max-Age</code> や、ブラウザの <code>document.cookie</code> で書く <code>max-age</code> は <strong>秒</strong> です（<code>max-age=86400</code> が 24 時間）。</p>
+    </div>
+    <p>有効期限の有無で、Cookie は 2 種類に分かれます。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>セッションクッキー</h4>
+        <p>ブラウザを閉じると削除される Cookie。<code>maxAge</code> や <code>expires</code> を設定しません。</p>
+<pre><code>res.cookie('sessionId', 'abc123', {
+  httpOnly: true
+});</code></pre>
+      </div>
+      <div class="card">
+        <h4>永続クッキー</h4>
+        <p>有効期限が設定されている Cookie。期限まではブラウザを閉じても残ります。</p>
+<pre><code>res.cookie('username', 'yamada', {
+  maxAge: 365 * 24 * 60 * 60 * 1000 // 1年間
+});</code></pre>
+      </div>
+    </div>
+    <p>期限を過去にする（<code>max-age=0</code>）と、Cookie を削除できます（<a href="#sec-5">5 章</a>）。</p>
+
+    <h3 id="sec-4-3">4.3 Path（パス）</h3>
+    <p>Cookie を送信するパス（URL のドメインより後ろの部分）を指定します。</p>
+<pre><code>res.cookie('username', 'yamada', {
+  path: '/admin' // /admin以下のパスでのみ送信
+});</code></pre>
+    <p><code>Path=/</code> ならサイト全体で送られます。</p>
+
+    <h3 id="sec-4-4">4.4 Domain（ドメイン）</h3>
+    <p>Cookie を送信するドメインを指定します。</p>
+<pre><code>res.cookie('username', 'yamada', {
+  domain: '.example.com' // example.comとそのサブドメインで送信
+});</code></pre>
+    <p><strong>サブドメイン</strong> とは、<code>shop.example.com</code> のように親ドメインの前に名前を足した住所です。<code>Domain</code> を付けなければ、Cookie を発行したホストにだけ送られます。付けると送り先が広がるので、必要なときだけ付けます。Domain 指定の広げすぎが招く問題は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> を参照してください。</p>
+
+    <h3 id="sec-4-5">4.5 HttpOnly（JavaScript からのアクセス制限）</h3>
+    <p>JavaScript から Cookie を読めないようにします。セキュリティのため重要です。</p>
+<pre><code>res.cookie('sessionId', 'abc123', {
+  httpOnly: true // JavaScriptからアクセス不可（XSS攻撃対策）
+});</code></pre>
+    <p><strong>XSS（クロスサイトスクリプティング）</strong> とは、攻撃者のスクリプトをページに紛れ込ませる攻撃です。HttpOnly がないと、紛れ込んだスクリプトが <code>document.cookie</code> でセッション ID を読み取り、外へ送れてしまいます。HttpOnly を付けても、Cookie はブラウザが通常どおりサーバーへ送ります（読めなくなるのは JavaScript だけ）。盗み出しの流れは <a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">72 XSSの基本</a> にあります。</p>
+
+    <h3 id="sec-4-6">4.6 Secure（HTTPS のみ）</h3>
+    <p>HTTPS 接続でのみ送信されるようにします。<strong>HTTPS</strong> は通信を暗号化した HTTP です。Secure がないと、暗号化されていない HTTP の通信でも Cookie が送られ、途中で盗聴されて抜かれるおそれがあります。</p>
+<pre><code>res.cookie('sessionId', 'abc123', {
+  secure: true // HTTPSのみ送信
+});</code></pre>
+
+    <h3 id="sec-4-7">4.7 SameSite（別サイトからの送信を制御）</h3>
+    <p>クロスサイトリクエスト（別のサイトのページから、あなたのサイトへ飛んでくる依頼）で Cookie を送る条件を制御します。他サイトから勝手に送信される攻撃、<strong>CSRF（クロスサイトリクエストフォージェリ）</strong> の対策になります。</p>
+<pre><code>res.cookie('sessionId', 'abc123', {
+  sameSite: 'strict' // 同一サイトからのみ送信
+  // 'lax': GETリクエストのみクロスサイトで送信
+  // 'none': すべてのクロスサイトリクエストで送信（secure必須）
+});</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>値</th><th>別サイトからの依頼で送るか</th><th>補足</th></tr></thead>
+      <tbody>
+        <tr><td><code>Strict</code></td><td>送らない（同一サイトからのみ）</td><td>いちばん厳しい。別サイトのリンクから来たときも送られないので、ログインしていない状態で開くことになります。</td></tr>
+        <tr><td><code>Lax</code></td><td>原則送らない。GET（リンクをたどってページを移動する場合）だけ送る</td><td>フォームの POST など、状態を変える依頼には付かないので CSRF を防ぎやすい。使い勝手とのバランスがよく、指定しないときの既定値にしているブラウザもあります。</td></tr>
+        <tr><td><code>None</code></td><td>すべて送る</td><td><code>Secure</code> が必須。別サイトに埋め込む用途などに限ります。</td></tr>
+      </tbody>
+    </table></div>
+    <p>CSRF の攻撃の流れと、SameSite 以外の対策（トークンの埋め込みなど）は <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">72 CSRF</a>、画面と API を別オリジンに分けたときの Cookie の付き方は <a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a> を参照してください。</p>
+
+    <h3 id="sec-4-8">4.8 ログイン用 Cookie の基本形</h3>
+    <p>ログインに使う Cookie は、4 つの属性をそろえて付けるのが基本です。</p>
+<pre><code>res.cookie('sessionId', sessionId, {
+  httpOnly: true,              // JavaScriptから読ませない（XSS対策）
+  secure: true,                // HTTPSのみ（盗聴対策）
+  sameSite: 'strict',          // 別サイトから送らない（CSRF対策）
+  maxAge: 24 * 60 * 60 * 1000  // 24時間
+});</code></pre>
+    <p>ヘッダにすると <code>Set-Cookie: sessionId=…; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Strict</code> のようになります。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>Cookie の使い方</h2>
+
+    <h3 id="sec-5-1">5.1 サーバー側での設定（Express.js）</h3>
+    <p><code>cookie-parser</code> は、届いた <code>Cookie</code> ヘッダを読みやすい形（<code>req.cookies</code>）にしてくれる部品です。</p>
+<pre><code>const express = require('express');
+const cookieParser = require('cookie-parser');
+const app = express();
+
+app.use(cookieParser());
+
+// クッキーを設定
+app.get('/set-cookie', (req, res) =&gt; {
+  res.cookie('username', 'yamada', {
+    maxAge: 24 * 60 * 60 * 1000, // 24時間（ミリ秒）
+    httpOnly: true, // JavaScriptからアクセス不可
+    secure: true, // HTTPSのみ
+    sameSite: 'strict' // CSRF攻撃対策
+  });
+  res.send('クッキーを設定しました');
+});
+
+// クッキーを読み取る
+app.get('/get-cookie', (req, res) =&gt; {
+  const username = req.cookies.username;
+  res.json({ username: username || 'クッキーがありません' });
+});
+
+// クッキーを削除
+app.get('/delete-cookie', (req, res) =&gt; {
+  res.clearCookie('username');
+  res.send('クッキーを削除しました');
+});</code></pre>
+
+    <h3 id="sec-5-2">5.2 クライアント側での操作（JavaScript）</h3>
+    <p>ブラウザの JavaScript では <code>document.cookie</code> で Cookie を書いたり読んだりできます。読むと <code>a=1; b=2</code> のように全部がつながった文字列で返るので、名前で取り出す関数を用意します。HttpOnly の Cookie はここには出てきません。</p>
+<pre><code>// クッキーを設定
+document.cookie = 'username=yamada; max-age=86400; path=/';
+
+// クッキーを読み取る
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    return parts.pop().split(';').shift();
+  }
+  return null;
+}
+
+// 使用例
+const username = getCookie('username');
+console.log(username); // 'yamada'
+
+// クッキーを削除（有効期限を過去に設定）
+function deleteCookie(name) {
+  document.cookie = `${name}=; max-age=0; path=/`;
+}
+
+deleteCookie('username');</code></pre>
+
+    <h3 id="sec-5-3">5.3 Cookie の確認方法</h3>
+    <p>ブラウザの開発者ツールで、保存されている Cookie と属性を一覧できます。</p>
+    <ul>
+      <li><strong>Chrome／Edge</strong>：F12 → Application → Cookies</li>
+      <li><strong>Firefox</strong>：F12 → Storage → Cookies</li>
+      <li><strong>Safari</strong>：開発メニュー → Web インスペクタ → Storage → Cookies</li>
+    </ul>
+    <p>JavaScript で確認するなら、コンソールで次のようにします。</p>
+<pre><code>// すべてのクッキーを表示
+console.log(document.cookie);
+
+// 特定のクッキーを取得（5.2 の getCookie を使用）
+console.log(getCookie('username'));</code></pre>
+
+    <h2 id="sec-6"><span class="num">6.</span>Cookie の用途</h2>
+    <p>Cookie はログイン専用ではありません。ユーザー設定・カート・アクセス解析などにも使われます。</p>
+
+    <h3 id="sec-6-1">6.1 ログイン状態の保持</h3>
+    <p>ログイン成功時に、セッション ID を Cookie に保存します。</p>
+<pre><code>app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+
+  // 認証処理
+  if (await authenticate(username, password)) {
+    const sessionId = generateSessionId();
+
+    // セッションIDをクッキーに保存
+    res.cookie('sessionId', sessionId, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24時間
+    });
+
+    res.json({ message: 'ログイン成功' });
+  } else {
+    res.status(401).json({ error: '認証に失敗しました' });
+  }
+});</code></pre>
+    <p>実際には <code>express-session</code> のようなライブラリを使うと、セッション ID の発行と Cookie への保存をまとめて任せられます。セッションに保存するのはユーザー ID などで、Cookie にはセッション ID だけが入ります。</p>
+<pre><code>const express = require('express');
+const session = require('express-session');
+const app = express();
+
+// セッションの設定（セッションIDはクッキーに保存される）
+app.use(session({
+  secret: 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: true, // HTTPSのみ
+    httpOnly: true, // JavaScriptからアクセス不可
+    maxAge: 24 * 60 * 60 * 1000, // 24時間
+    sameSite: 'strict' // CSRF攻撃対策
+  }
+}));
+
+// ログイン
+app.post('/api/login', (req, res) =&gt; {
+  const { username, password } = req.body;
+
+  if (authenticate(username, password)) {
+    // セッションにユーザー情報を保存
+    req.session.userId = getUserId(username);
+    res.json({ message: 'ログイン成功' });
+  } else {
+    res.status(401).json({ error: '認証に失敗しました' });
+  }
+});
+
+// 認証が必要なエンドポイント
+app.get('/api/profile', (req, res) =&gt; {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'ログインが必要です' });
+  }
+
+  const user = getUserById(req.session.userId);
+  res.json(user);
+});</code></pre>
+    <p>この仕組みの詳しい流れは <a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>、ログイン方式全体は <a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a> を参照してください。</p>
+
+    <h3 id="sec-6-2">6.2 ユーザー設定の保存</h3>
+    <p>言語設定のように画面側でも読みたい値は、<code>httpOnly: false</code> にします（秘密ではない値に限ります）。</p>
+<pre><code>app.post('/api/settings/language', (req, res) =&gt; {
+  const { language } = req.body;
+
+  res.cookie('language', language, {
+    maxAge: 365 * 24 * 60 * 60 * 1000, // 1年間
+    httpOnly: false // クライアント側でも読み取り可能
+  });
+
+  res.json({ message: '言語設定を保存しました' });
+});</code></pre>
+
+    <h3 id="sec-6-3">6.3 ショッピングカートの管理</h3>
+<pre><code>app.post('/api/cart/add', (req, res) =&gt; {
+  const { productId, quantity } = req.body;
+
+  // 既存のカートを取得
+  const cart = JSON.parse(req.cookies.cart || '[]');
+
+  // 商品を追加
+  cart.push({ productId, quantity });
+
+  // クッキーに保存
+  res.cookie('cart', JSON.stringify(cart), {
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7日間
+    httpOnly: false
+  });
+
+  res.json({ message: 'カートに追加しました' });
+});</code></pre>
+    <p>Cookie の値は利用者が自由に書き換えられるので、価格などをそのまま信じてはいけません。また 1 つ約 4KB までなので、大きなカートには向きません。</p>
+
+    <h3 id="sec-6-4">6.4 トラッキング（分析）</h3>
+    <p>訪問者ごとにランダムな ID を振り、同じ人が何回来たかを数えます。たとえばテスラのサイトで同じ車を 10 回見に来た人がいれば「相当欲しい人だ」と判断でき、その人にだけ特別オファーを出す、といったことができます。Cookie を使わないと「同じ人が何回も来ている」と記録できないので、毎回初めての人として対応するしかありません。</p>
+<pre><code>app.use((req, res, next) =&gt; {
+  if (!req.cookies.visitorId) {
+    const visitorId = generateVisitorId();
+    res.cookie('visitorId', visitorId, {
+      maxAge: 365 * 24 * 60 * 60 * 1000, // 1年間
+      httpOnly: false
+    });
+  }
+  next();
+});</code></pre>
+
+    <h2 id="sec-7"><span class="num">7.</span>ファーストパーティ Cookie とサードパーティ Cookie</h2>
+
+    <h3 id="sec-7-1">7.1 ファーストパーティ Cookie：その店専用のスタンプカード</h3>
+    <p>ここまで説明した Cookie は、基本的に <strong>訪問したサイト自身が発行するもの</strong> で、<strong>ファーストパーティ Cookie</strong> と呼ばれます。店が発行して店が書き込むポイントカードで、その店の中で閉じています。居酒屋のスタンプカードを落としても誰も困らないのと同じで、問題視されることはほぼありません。</p>
+
+    <h3 id="sec-7-2">7.2 サードパーティ Cookie：共通ポイントカード</h3>
+    <p><strong>サードパーティ Cookie（Third-Party Cookie）</strong> は、「今アクセスしているサイトとは <strong>別のドメインが発行する</strong> Cookie」です。たとえば <code>news-site.com</code> を見ているときに、ページに埋め込まれた広告の <code>ad-tracker.com</code> が Cookie を発行するケースです。ユーザーが見ているのは news-site.com なのに、第三者（サードパーティ）である広告サービスが Cookie を付けてくるので、この名前になっています。</p>
+    <p>例えるなら T ポイントカード（現在の V ポイント）のような <strong>共通ポイントカード</strong> です。いろいろな店で出せるように、サードパーティ Cookie は <strong>いろいろなサイトで使い回されます</strong>。「この人はこの日に A 店に行き、その後 B 店に行った」が 1 枚のカードに書かれていくわけです。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="ブラウザが news-site.com と blog.example という別々のサイトを見る。どちらにも ad-tracker.com の広告が埋め込まれていて、広告を読み込むたびに同じ ad-tracker.com の Cookie が届くため、広告会社は同じ人が両方を見たと記録できる">
+      <defs>
+        <marker id="arw1011b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="110" width="160" height="80" rx="8" class="d-box"/>
+      <text x="90" y="138" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="90" y="160" text-anchor="middle" class="d-text-sub">ad-tracker.com の</text>
+      <text x="90" y="178" text-anchor="middle" class="d-text-sub">Cookie: id=U77</text>
+
+      <rect x="230" y="30" width="200" height="80" rx="8" class="d-box"/>
+      <text x="330" y="62" text-anchor="middle" class="d-text-bold">news-site.com</text>
+      <text x="330" y="86" text-anchor="middle" class="d-text-sub">① 記事を見る（広告枠あり）</text>
+
+      <rect x="230" y="190" width="200" height="80" rx="8" class="d-box"/>
+      <text x="330" y="222" text-anchor="middle" class="d-text-bold">blog.example</text>
+      <text x="330" y="246" text-anchor="middle" class="d-text-sub">② 別のサイトを見る（同じ広告）</text>
+
+      <path d="M170,130 L228,78" class="d-line" marker-end="url(#arw1011b)"/>
+      <path d="M170,170 L228,222" class="d-line" marker-end="url(#arw1011b)"/>
+
+      <path d="M430,70 L558,70" class="d-line-dash" marker-end="url(#arw1011b)"/>
+      <text x="494" y="44" text-anchor="middle" class="d-text-sub">Cookie: id=U77</text><text x="494" y="60" text-anchor="middle" class="d-text-sub">が届く</text>
+      <path d="M430,230 L558,230" class="d-line-dash" marker-end="url(#arw1011b)"/>
+      <text x="494" y="204" text-anchor="middle" class="d-text-sub">Cookie: id=U77</text><text x="494" y="220" text-anchor="middle" class="d-text-sub">が届く</text>
+
+      <rect x="560" y="30" width="150" height="240" rx="8" class="d-box-warn"/>
+      <text x="635" y="112" text-anchor="middle" class="d-text-bold">ad-tracker.com</text>
+      <text x="635" y="134" text-anchor="middle" class="d-text-sub">（広告会社）</text>
+      <text x="635" y="166" text-anchor="middle" class="d-text-sub">U77 は news も</text>
+      <text x="635" y="184" text-anchor="middle" class="d-text-sub">blog も見た</text>
+      <text x="635" y="206" text-anchor="middle" class="d-text-sub">→ 行動をまとめられる</text>
+    </svg>
+    <figcaption>図：別々のサイトに同じ広告会社の部品が埋め込まれていると、同じ Cookie が両方から届き、サイトをまたいだ行動がつながる</figcaption>
+    </figure>
+
+    <h3 id="sec-7-3">7.3 何に使われていたか</h3>
+    <ul>
+      <li>複数のサイトにまたがる <strong>行動トラッキング</strong>（追跡）</li>
+      <li>興味に合わせた <strong>広告の最適化（リターゲティング広告）</strong></li>
+      <li>アナリティクス（アクセス解析）の高度な計測</li>
+    </ul>
+    <p>広告業界の標準技術として長く使われてきました。テスラのサイトを見た後に近所のラーメン屋のサイトやはてなブログを開くと、「テスラが好きなあなたにおすすめ」のように <strong>別サイトで閲覧履歴に基づいた広告</strong> が出るのはこの仕組みです。不動産サイトで北海道の豪邸を見た直後、まったく関係ないサイトで豪邸の広告が並ぶ、といった経験もこれです。</p>
+    <p>テスラのサイト内で「よく見てくれるあなたへ」と出る分には気になりませんが、別サイトでテスラの広告が出ると「自分の閲覧行動が抜かれている」と気持ち悪く感じる人が多く、問題視されるようになりました。</p>
+
+    <h3 id="sec-7-4">7.4 サードパーティ Cookie は廃止・規制の方向へ</h3>
+    <p>ノート作成時点で、各ブラウザは次のように廃止方向へ動いています。</p>
+    <ul>
+      <li>Safari：既にブロック</li>
+      <li>Firefox：既にデフォルトでブロック</li>
+      <li>Chrome：2024〜2025 に段階的廃止（進行中）</li>
+      <li>Edge：2024 から段階的に廃止</li>
+    </ul>
+    <p>理由は、トラッキングが過度に行われていたこと、ユーザーのプライバシーを守るため、GDPR（EU の個人データ保護の法律）など各国の法律との整合性のためです。</p>
+    <p>法律面では、日本では 2022〜2023 年ごろの法改正で <strong>サードパーティ Cookie を許可なしで使うことは禁止</strong> になりました（動画での説明）。ファーストパーティ Cookie は無許可でも OK なことが多いものの、アメリカや EU などで取り決めが違い、EU ではファーストパーティ Cookie でも許可が必要な場合があります。</p>
+    <div class="callout tip">
+      <p class="callout-title">開発者としての方針</p>
+      <p>サードパーティ Cookie は今後 <strong>ほぼ使えなくなる</strong> と考えて構いません。Google は「Privacy Sandbox」などの代替技術を提案していますが、基本的には <strong>サードパーティ Cookie を前提にした実装はしない</strong>、<strong>サードパーティ Cookie なしのログイン・分析方法を採用する</strong> 方向にシフトしていく必要があります。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>「Cookie を許可しますか」との付き合い方</h2>
+    <p>Web ページを開くと「Cookie を使用します。同意しますか」と大きく表示されることがあります。Cookie が何か分からないと怖く感じますが、結論は <strong>そこまで怖がらなくてよい、ただ問題視される面もあるので適切な距離感を知っておく</strong> です。</p>
+
+    <h3 id="sec-8-1">8.1 Cookie そのものは「店が書き込むカード」</h3>
+    <p>基本の Cookie は、<strong>店（サイト）が勝手に書き込んでいるだけ</strong> のスタンプカードです。名前などの個人を特定する情報とは紐づいていません。「許可を押したら自分の名前がサイトに取られるのでは」という類いのものではないのです。個人情報が渡るのは、Google アカウントとの連携のように <strong>こちらから個人情報を渡したとき</strong> です。</p>
+    <p>同意を求められているのがファーストパーティかサードパーティかは、パッと見では分かりません。EU の規制に合わせて国際展開している企業ほどよく聞いてきますし、日本のサイトでも EU 向けに通販していれば同じです。見分けるには「詳細はこちら」から規約を読み、「第三者への送信を含みます」と書かれているかを確認する必要があります。</p>
+
+    <h3 id="sec-8-2">8.2 許可・拒否の考え方（動画の講師の場合）</h3>
+    <p>以下は推奨ではなく「講師はこうしている」という話です。</p>
+    <ul>
+      <li>講師は <strong>全部許可</strong> しています。サードパーティも気にせず、むしろパーソナライズ広告を「育てたい」（興味のない広告ではなく欲しいものを薦めてほしい）と考えているからです。</li>
+      <li><strong>拒否するメリット</strong>：「自分が何を見ているかを統合してまとめられるのが気持ち悪い」人はそれを避けられます。名前とは紐づかないものの、「あるユーザーが北海道の豪邸を見た後にはてなブログを読んでいる」と把握されたくない人は拒否するとよいでしょう。家族共有のパソコンで、閲覧履歴に沿った広告が出ると困る場合も同様です。</li>
+      <li>ログインを含まない閲覧で許可しても、起きるのはせいぜい「いろいろ見ているな」というデータを取られる程度です。</li>
+      <li>同意ボタンは、押してほしい「許可」がなるべく押しやすい位置に置かれています。</li>
+    </ul>
+    <p>極端な例として、コンピューターサイエンスの大家ブライアン・カーニハンは、個人情報を取られるのが嫌で JavaScript をすべて切ってブラウジングしている（そのためサイトがまともに表示されない）と著書に書いているそうです。</p>
+
+    <h3 id="sec-8-3">8.3 いちばん注意すべきはログイン用の Cookie：診察券</h3>
+    <p>Cookie を許可して起きうる最大のトラブルは、<strong>ログイン情報の代わりに Cookie を使う</strong> ケースで、これはここまでの話とは質的に別物です。病院の <strong>診察券</strong> に例えられます。</p>
+    <ol class="steps">
+      <li>初診では、診察券は病院が書き込んでいるだけで、まだあなたの個人情報とは紐づいていません。</li>
+      <li>保険証を見せると、病院の中のシステムで診察券とあなたの情報が紐づけられます（＝ログイン）。</li>
+      <li>次からは診察券だけで済みます（＝Cookie でログイン状態を再利用）。</li>
+      <li>月が変わると保険証を見せてと言われるように、一定期間たつと「もう一度ログインしてください」と言われます。</li>
+    </ol>
+    <p>この使い方をしている Cookie は、それがあればログインできてしまう <strong>個人情報に近いもの</strong> です。友達のパソコンで Twitter などにログインすると、Cookie にログイン情報が残ります。</p>
+    <div class="callout warn">
+      <p class="callout-title">他人のパソコンでログインしたら</p>
+      <ul>
+        <li>使い終わったら <strong>ログアウトする</strong> か、<strong>Cookie を消す</strong>。ただしログアウトしてもブラウザに余計な情報が残ることがあります。</li>
+        <li>そもそも他人のパソコンでログインしないのがいちばん安全です。</li>
+        <li>どうしても使うなら <strong>シークレットモード</strong>（Safari では <strong>プライベートブラウズ</strong>）を使います。ブラウザを閉じれば Cookie などが全部残らない設定になっています。実家や家族共有のパソコンで、見たページの痕跡を残したくないときにも使えます。</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-8-4">8.4 Cookie を消すと直ることがある</h3>
+    <p>Amazon で注文画面に進めずループする、いつまでも特定の商品が買えない、といった不具合が再起動でも直らないとき、公式ヘルプには「ブラウザの Cookie を削除すると直ります」と書かれていることがあります。Google Chrome なら右上の 3 つの点のメニュー → 設定 から Cookie を削除できます。ただし消すとログイン情報も消える可能性があるので、各サイトでもう一度ログインが必要になります。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>Cookie のセキュリティとよくある間違い</h2>
+    <p>Cookie は便利な反面、扱いを間違えるとセキュリティの問題になります。特に重要なのは次の 4 つです。</p>
+
+    <h3 id="sec-9-1">9.1 機密情報を保存しない</h3>
+    <p>Cookie はブラウザ側にあり、利用者が中身を見たり書き換えたりできます。パスワード・メールアドレス・クレジットカード番号などの重要情報を直接入れるのは絶対 NG です。入れてよいのは <strong>ランダムなセッショントークン（セッション ID）</strong> で、機密情報はサーバー側のセッションに保存します。</p>
+    <span class="code-label bad">危険な例：機密情報をそのまま Cookie に保存</span>
+<pre><code>res.cookie('password', userPassword); // 危険！
+res.cookie('creditCard', cardNumber);</code></pre>
+    <span class="code-label good">安全な例：セッションIDのみ保存</span>
+<pre><code>res.cookie('sessionId', sessionId, {
+  httpOnly: true,
+  secure: true
+});
+// 機密情報はサーバー側のセッションに保存
+// sessionid=ランダム文字列 ← これはOK</code></pre>
+    <p>セッション ID の推測されにくさなどの要件は <a href="40-1_セッション管理の不備.html">セッション管理の不備</a> で扱います。</p>
+
+    <h3 id="sec-9-2">9.2 HttpOnly を設定しない</h3>
+    <span class="code-label bad">危険な例：JavaScript からアクセス可能（XSS 攻撃のリスク）</span>
+<pre><code>res.cookie('sessionId', sessionId);</code></pre>
+    <span class="code-label good">安全な例：JavaScript からアクセス不可</span>
+<pre><code>res.cookie('sessionId', sessionId, {
+  httpOnly: true // XSS攻撃から保護
+});</code></pre>
+
+    <h3 id="sec-9-3">9.3 Secure を設定しない（本番環境）</h3>
+    <span class="code-label bad">危険な例：HTTP でも送信される（盗聴のリスク）</span>
+<pre><code>res.cookie('sessionId', sessionId, {
+  httpOnly: true
+});</code></pre>
+    <span class="code-label good">安全な例：HTTPS のみ送信</span>
+<pre><code>res.cookie('sessionId', sessionId, {
+  httpOnly: true,
+  secure: true // 本番環境では必須
+});</code></pre>
+
+    <h3 id="sec-9-4">9.4 SameSite を設定しない</h3>
+    <span class="code-label bad">危険な例：CSRF 攻撃のリスク</span>
+<pre><code>res.cookie('sessionId', sessionId, {
+  httpOnly: true,
+  secure: true
+});</code></pre>
+    <span class="code-label good">安全な例：CSRF 攻撃から保護</span>
+<pre><code>res.cookie('sessionId', sessionId, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict' // CSRF攻撃対策
+});</code></pre>
+    <p>Cookie を出力するサーバー側のコードに潜む脆弱性（ヘッダインジェクションや属性の付け忘れなど）は <a href="40-2_クッキー出力にまつわる脆弱性.html">クッキー出力にまつわる脆弱性</a> と <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">72 リダイレクトとHTTPヘッダインジェクション</a> を参照してください。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>セッション・LocalStorage との違い</h2>
+
+    <h3 id="sec-10-1">10.1 Cookie とセッション</h3>
+    <p><strong>セッション</strong> は、利用者ごとの情報をサーバー側に保存しておく仕組みです。Cookie はその合言葉（セッション ID）を運ぶ役です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>クッキー</th><th>セッション</th></tr></thead>
+      <tbody>
+        <tr><td>保存場所</td><td>ブラウザ</td><td>サーバー</td></tr>
+        <tr><td>サイズ制限</td><td>約 4KB</td><td>制限なし</td></tr>
+        <tr><td>セキュリティ</td><td>低い（利用者が見られる。HttpOnly がなければ JavaScript からもアクセス可能）</td><td>高い（サーバー側のみ）</td></tr>
+        <tr><td>有効期限</td><td>設定可能</td><td>設定可能</td></tr>
+        <tr><td>用途</td><td>ユーザー設定、トラッキング</td><td>ログイン状態、機密情報</td></tr>
+      </tbody>
+    </table></div>
+    <p>使い分けの詳細は <a href="20-1_HTTPとセッション管理.html">HTTPとセッション管理</a> を参照してください。</p>
+
+    <h3 id="sec-10-2">10.2 Cookie と LocalStorage</h3>
+    <p><strong>LocalStorage</strong> は、ブラウザに文字データを保存できる別の仕組みで、JavaScript から読み書きします。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>Cookie</th><th>LocalStorage</th></tr></thead>
+      <tbody>
+        <tr><td>サーバーへ自動送信</td><td>される</td><td>されない</td></tr>
+        <tr><td>容量</td><td>4KB</td><td>5MB</td></tr>
+        <tr><td>JS から読める？</td><td>HttpOnly なら不可</td><td>いつでも可</td></tr>
+        <tr><td>向いている用途</td><td>認証</td><td>UI 設定・一時保存</td></tr>
+      </tbody>
+    </table></div>
+    <p>LocalStorage はいつでも JavaScript から読めるので、XSS があると中身を盗まれやすくなります。元記事では「<strong>認証は Cookie（HttpOnly）一択</strong>」としています。トークンをどこに保存するかの比較は <a href="30-4_トークンの保存場所.html">トークンの保存場所</a> でくわしく扱います。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>押さえること</th></tr></thead>
+      <tbody>
+        <tr><td>前提</td><td>HTTP はステートレスで、前の通信を覚えていない</td></tr>
+        <tr><td>Cookie とは</td><td>サーバーが渡し、ブラウザが保存して自動で送り返す小さなメモ。中身はキーと値＋属性</td></tr>
+        <tr><td>流れ</td><td><code>Set-Cookie</code> で渡す → サイトごとに保存 → <code>Cookie</code> ヘッダで自動送信 → サーバーが識別</td></tr>
+        <tr><td>役割分担</td><td>値を運ぶのが Cookie、覚えて意味を決めるのはサーバー</td></tr>
+        <tr><td>期限</td><td>Expires／Max-Age なし＝セッションクッキー、あり＝永続クッキー。Max-Age は秒（Express の maxAge はミリ秒）</td></tr>
+        <tr><td>送り先</td><td>Domain（付けると送り先が広がる）・Path で絞る</td></tr>
+        <tr><td>守りの属性</td><td>HttpOnly（XSS で読ませない）・Secure（HTTPS のみ）・SameSite（CSRF 対策）をログイン用 Cookie に必ず付ける</td></tr>
+        <tr><td>中身</td><td>機密情報は入れず、ランダムなセッション ID だけ。サイズは約 4KB まで</td></tr>
+        <tr><td>サードパーティ</td><td>別ドメインが発行し、サイトをまたいで行動を追う。ブラウザ・法律ともに廃止・規制の方向で、前提にした実装はしない</td></tr>
+        <tr><td>利用者として</td><td>普通の Cookie は過度に怖がらなくてよい。ログイン用 Cookie は診察券なので、他人の PC ではログアウト・Cookie 削除・シークレットモード</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. HTTP は前の通信を覚えていないのに、なぜログイン状態が続くのですか？</summary>
+      <div class="body"><p>ログイン成功時にサーバーが <code>Set-Cookie</code> でセッション ID を渡し、ブラウザがそれを保存して、次のリクエストから <code>Cookie</code> ヘッダで自動的に送るからです。サーバーはそのセッション ID が誰のものかを覚えているので、本人だと分かります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 「Cookie がユーザーを判断している」は正しいですか？</summary>
+      <div class="body"><p>正しくありません。Cookie は値を運ぶだけで、その値が誰を意味するかを決めて覚えているのはサーバーです。</p></div>
+    </details>
+    <details>
+      <summary>Q3. HttpOnly・Secure・SameSite は、それぞれ何を防ぎますか？</summary>
+      <div class="body"><p>HttpOnly は JavaScript から読めなくして、XSS で Cookie を盗まれるのを防ぎます。Secure は HTTPS のときだけ送るようにして、盗聴で抜かれるのを防ぎます。SameSite は別サイトからの依頼で Cookie を送る条件を絞り、CSRF を防ぎます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. Express で <code>maxAge: 86400</code> と書いたら、Cookie は何時間残りますか？</summary>
+      <div class="body"><p>Express の <code>maxAge</code> はミリ秒なので、86400 ミリ秒＝約 86 秒で消えてしまいます。24 時間にしたいなら <code>24 * 60 * 60 * 1000</code> と書きます。一方、<code>document.cookie</code> や <code>Set-Cookie</code> ヘッダの <code>Max-Age</code> は秒なので、そちらでは <code>86400</code> が 24 時間です。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 有効期限を指定しない Cookie はどうなりますか？</summary>
+      <div class="body"><p>セッションクッキーになり、ブラウザを閉じると削除されます。期限を付けたものは永続クッキーで、期限までは残ります。</p></div>
+    </details>
+    <details>
+      <summary>Q6. SameSite の Strict・Lax・None の違いを説明してください。</summary>
+      <div class="body"><p>Strict は同一サイトからの依頼でだけ送ります。Lax は別サイトからの依頼では原則送らず、リンクをたどってページを移動する GET のときだけ送ります。None はすべての依頼で送り、Secure が必須です。</p></div>
+    </details>
+    <details>
+      <summary>Q7. ユーザー名とパスワードを Cookie に入れておけば、毎回ログインしなくて済みます。この設計の問題は？</summary>
+      <div class="body"><p>Cookie はブラウザ側にあり、利用者が見たり書き換えたりでき、盗まれれば中身がそのまま漏れます。機密情報はサーバー側のセッションに保存し、Cookie にはランダムなセッション ID だけを入れます。</p></div>
+    </details>
+    <details>
+      <summary>Q8. ファーストパーティ Cookie とサードパーティ Cookie の違いと、サードパーティが問題視される理由は？</summary>
+      <div class="body"><p>ファーストパーティは訪問したサイト自身が発行する Cookie（その店専用のスタンプカード）、サードパーティは別のドメイン（広告会社など）が発行する Cookie（共通ポイントカード）です。サードパーティは複数のサイトで使い回され、サイトをまたいだ行動を追跡できるため、プライバシーの面から問題視され、ブラウザでのブロックや法律での規制が進んでいます。</p></div>
+    </details>
+    <details>
+      <summary>Q9. 友達のパソコンで SNS にログインするときの注意点は？</summary>
+      <div class="body"><p>ログイン用の Cookie は診察券のようなもので、残っていれば他人がログインできてしまいます。使い終わったらログアウトするか Cookie を消すこと、できればシークレットモード（プライベートブラウズ）を使うこと、そもそも他人のパソコンでログインしないのが安全です。</p></div>
+    </details>
+    <details>
+      <summary>Q10. 認証情報を LocalStorage ではなく HttpOnly の Cookie に置くことが勧められるのはなぜですか？</summary>
+      <div class="body"><p>LocalStorage はいつでも JavaScript から読めるので、XSS があると盗まれやすいからです。HttpOnly の Cookie は JavaScript から読めず、しかもサーバーへ自動で送られます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：74_セッション管理/10_クッキー/01_クッキーとは</li>
+      <li>ノート：74_セッション管理/10_クッキー/02_Cookieとは_図解で理解するWebの仕組み（toamoku）</li>
+      <li>ノート：74_セッション管理/10_クッキー/03_Cookieとは_なぜログイン状態を覚えていられるのか（つるチャンネル）</li>
+      <li>ノート：74_セッション管理/10_クッキー/04_機械オンチにCookieを説明する動画（ぴちゃ）</li>
+      <li>toamoku「🍪【超わかりやすい】Cookieとは？図解で理解するWebの仕組み！」（Qiita） https://qiita.com/toamoku-20220418/items/bb9b1b9f7c37551934cb</li>
+      <li>つるチャンネル「Cookieとは？ なぜログイン状態を覚えていられるのか」 https://www.youtube.com/shorts/EIPZY4wlvsI</li>
+      <li>ぴちゃ「機械オンチに「Cookie」を説明する動画#148」 https://www.youtube.com/watch?v=QOb1SWOvbu4</li>
+      <li>関連ページ：<a href="../../72_Web脆弱性対策/00_全体像/20-1_XSSの基本.html">72 XSSの基本</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">72 CSRF</a>、<a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">72 リダイレクトとHTTPヘッダインジェクション</a>、<a href="../../73_認証認可/00_全体像/10-2_ログイン方式と認証の概念.html">73 ログイン方式と認証の概念</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_セッション管理の全体像.html"><span class="lbl">← 前のページ</span>セッション管理の全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-1_HTTPとセッション管理.html"><span class="lbl">次のページ →</span>HTTPとセッション管理</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

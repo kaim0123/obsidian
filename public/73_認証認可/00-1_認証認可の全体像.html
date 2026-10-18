@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>認証認可の全体像｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › 認証認可の全体像</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>認証認可の全体像</h1>
+      <p class="lead">ログイン機能や権限チェックは、ほとんどのWebアプリに必要な「守りの仕組み」です。このページは、「あなたは誰か」を確かめる <strong>認証</strong> と、「それをしてよいか」を決める <strong>認可</strong> を学ぶための「地図」です。リクエストの流れのどこで何をするのか、73_認証認可 の各フォルダ（10〜50）が何を扱うのか、そして Cookie・セッション・トークンなど隣のフォルダとの境界線を見渡します。</p>
+      <p class="meta">もとにしたノート：00_全体像/MOC_認証認可（あわせて 73_認証認可 の各フォルダのノート）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>認証は <strong>「あなたは誰ですか？」</strong>、認可は <strong>「あなたはその操作をしてよいですか？」</strong> を確かめることです。ログインで認証が通っても、認可はまだ済んでいません。<strong>認証のあとに、リクエストのたびに認可をする</strong>――この2段構えがこのフォルダ全体の背骨です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このシリーズの地図</h2>
+    <p>73_認証認可 のノートは、次の5つのフォルダに分かれています（MOC_認証認可 の「フォルダ構成」より）。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>10 基礎概念</h4>
+        <p>認証と認可の違い、ログイン方式の全体像、方式の選び方。</p>
+      </div>
+      <div class="card">
+        <h4>20 パスワード・MFA・パスキー</h4>
+        <p>本人確認の手段そのもの。</p>
+      </div>
+      <div class="card">
+        <h4>30 フェデレーション</h4>
+        <p>OAuth 2.0 / OIDC / SAML / IdP・SSO / PKCE。</p>
+      </div>
+      <div class="card">
+        <h4>40 認可モデル</h4>
+        <p>RBAC・ABAC・ACL、権限・ロール管理。</p>
+      </div>
+      <div class="card">
+        <h4>50 実装</h4>
+        <p>ログイン・登録・リセット・2FA・SSO などの機能の作り方。</p>
+      </div>
+    </div>
+    <p>ノートのファイル名は「フォルダ内の通し番号_タイトル（出典）」の形です。徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）の章は「（徳丸本N章）」、動画・記事のクリップは「（作者名）」を末尾に付けています。</p>
+
+    <h3 id="sec-1-1">1.1 解説ページの一覧</h3>
+    <p>いま解説ページがあるのは 10〜40 のまとまりです。50 実装 の解説ページは今後追加する予定です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>まとまり</th><th>扱うこと</th><th>ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>00 全体像</strong></td><td>地図と読む順</td><td><a href="00-0_目次.html">00-0 目次</a><br>00-1 認証認可の全体像（このページ）</td></tr>
+        <tr><td><strong>10 基礎概念</strong></td><td>認証と認可の違い、ログイン方式、パスワード・MFA・暗号化の基礎、方式の選び方</td><td><a href="10-1_認証と認可の違い.html">10-1 認証と認可の違い</a><br><a href="10-2_ログイン方式と認証の概念.html">10-2 ログイン方式と認証の概念</a><br><a href="10-3_パスワード・MFA・暗号化の基礎.html">10-3 パスワード・MFA・暗号化の基礎</a><br><a href="10-4_社内システム向け認証方式の選び方.html">10-4 社内システム向け認証方式の選び方</a></td></tr>
+        <tr><td><strong>20 パスワード・MFA・パスキー</strong></td><td>ログイン機能への攻撃、パスワードの保存、MFA の方式、パスキー</td><td><a href="20-1_ログイン機能への攻撃と対策.html">20-1 ログイン機能への攻撃と対策</a><br><a href="20-2_パスワードの安全な保存.html">20-2 パスワードの安全な保存</a><br><a href="20-3_MFAの方式比較.html">20-3 MFAの方式比較</a><br><a href="20-4_パスキーとWebAuthn.html">20-4 パスキーとWebAuthn</a></td></tr>
+        <tr><td><strong>30 フェデレーション</strong></td><td>OAuth 2.0・OIDC・SAML・IdP と SSO</td><td><a href="30-1_OAuth2.0の仕組み.html">30-1 OAuth 2.0の仕組み</a><br><a href="30-2_SAML・OAuth・OIDCの違い.html">30-2 SAML・OAuth・OIDCの違い</a><br><a href="30-3_IDプロバイダとSSOプロバイダ.html">30-3 IDプロバイダとSSOプロバイダ</a></td></tr>
+        <tr><td><strong>40 認可モデル</strong></td><td>認可不備の典型例、RBAC・ABAC・ACL、ロール管理</td><td><a href="40-1_認可不備と認可の要件定義.html">40-1 認可不備と認可の要件定義</a><br><a href="40-2_RBAC・ABAC・ACLの使い分け.html">40-2 RBAC・ABAC・ACLの使い分け</a><br><a href="40-3_権限管理・ロール管理の実装.html">40-3 権限管理・ロール管理の実装</a></td></tr>
+        <tr><td><strong>50 実装</strong></td><td>ログイン・登録・リセット・2FA・SSO・アカウント管理</td><td>（準備中）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-2"><span class="num">2.</span>認証と認可をひとことで</h2>
+    <p>2つの言葉は似ていますが、確かめていることがまったく違います。詳しくは <a href="10-1_認証と認可の違い.html">10-1 認証と認可の違い</a> で扱うので、ここでは要点だけ押さえます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>認証（Authentication）</th><th>認可（Authorization）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>確かめること</strong></td><td>あなたは誰ですか？</td><td>あなたはその操作をしてよいですか？</td></tr>
+        <tr><td><strong>日常の例え</strong></td><td>身分証明書を見せて「私は山田太郎です」と証明する</td><td>「この部屋に入る権限がありますか？」を確認する</td></tr>
+        <tr><td><strong>Webでの例</strong></td><td>ログイン（ID とパスワード、パスキーなど）</td><td>管理者だけが編集できる、自分の注文だけが見られる</td></tr>
+        <tr><td><strong>失敗したときの応答</strong></td><td>401（誰か分からない）</td><td>403（誰かは分かったが、許可されていない）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">よくある事故</p>
+      <p>URL の注文番号を1つ変えたら他人の注文が見えてしまった――これは「ログインしているからOK」と、認証と認可を混ぜてしまった結果です。認可は <strong>画面ではなくサーバーで</strong>、データを取る手前で確かめ、決まっていなければ断ります。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>「あなたは誰？」から「何をしてよい？」までの流れ</h2>
+    <p>ログインからデータが返るまでを1本の流れにすると、次のようになります。ログイン時に1回だけ行う部分と、<strong>その後のリクエストのたびに行う部分</strong> があることに注目してください。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="認証と認可の流れ。ログイン時に、ログイン、認証、ログイン状態の発行を行い、以後のリクエストのたびに、リクエスト、状態の確認、認可、処理を行う。各段階を扱うフォルダも示す">
+      <defs>
+        <marker id="arw731a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="20" class="d-text-bold">ログイン時（1回）：あなたは誰？</text>
+      <rect x="20" y="32" width="200" height="78" rx="8" class="d-box-accent"/>
+      <text x="120" y="58" text-anchor="middle" class="d-text-bold">① ログイン</text>
+      <text x="120" y="80" text-anchor="middle" class="d-text-sub">ID・パスワード／パスキー</text>
+      <text x="120" y="100" text-anchor="middle" class="d-text-sub">→ 20・50</text>
+      <rect x="260" y="32" width="200" height="78" rx="8" class="d-box-good"/>
+      <text x="360" y="58" text-anchor="middle" class="d-text-bold">② 認証</text>
+      <text x="360" y="80" text-anchor="middle" class="d-text-sub">本人確認（自前 or IdP）</text>
+      <text x="360" y="100" text-anchor="middle" class="d-text-sub">→ 20・30</text>
+      <rect x="500" y="32" width="200" height="78" rx="8" class="d-box"/>
+      <text x="600" y="58" text-anchor="middle" class="d-text-bold">③ ログイン状態を発行</text>
+      <text x="600" y="80" text-anchor="middle" class="d-text-sub">セッション／トークン</text>
+      <text x="600" y="100" text-anchor="middle" class="d-text-sub">→ 74</text>
+      <line x1="222" y1="71" x2="256" y2="71" class="d-line" marker-end="url(#arw731a)"/>
+      <line x1="462" y1="71" x2="496" y2="71" class="d-line" marker-end="url(#arw731a)"/>
+      <path d="M600,112 L600,130 L95,130 L95,170" class="d-line-dash" marker-end="url(#arw731a)"/>
+      <text x="115" y="158" class="d-text-bold">以後のリクエストのたび：何をしてよい？</text>
+      <rect x="20" y="174" width="150" height="78" rx="8" class="d-box"/>
+      <text x="95" y="200" text-anchor="middle" class="d-text-bold">④ リクエスト</text>
+      <text x="95" y="222" text-anchor="middle" class="d-text-sub">トークン等を付ける</text>
+      <text x="95" y="242" text-anchor="middle" class="d-text-sub">→ 37・74</text>
+      <rect x="200" y="174" width="150" height="78" rx="8" class="d-box"/>
+      <text x="275" y="200" text-anchor="middle" class="d-text-bold">⑤ 状態の確認</text>
+      <text x="275" y="222" text-anchor="middle" class="d-text-sub">有効か確かめる</text>
+      <text x="275" y="242" text-anchor="middle" class="d-text-sub">→ 74・41</text>
+      <rect x="380" y="174" width="150" height="78" rx="8" class="d-box-good"/>
+      <text x="455" y="200" text-anchor="middle" class="d-text-bold">⑥ 認可</text>
+      <text x="455" y="222" text-anchor="middle" class="d-text-sub">権限はあるか</text>
+      <text x="455" y="242" text-anchor="middle" class="d-text-sub">→ 40</text>
+      <rect x="560" y="174" width="140" height="78" rx="8" class="d-box-accent"/>
+      <text x="630" y="200" text-anchor="middle" class="d-text-bold">⑦ 処理</text>
+      <text x="630" y="222" text-anchor="middle" class="d-text-sub">データを返す</text>
+      <line x1="172" y1="213" x2="196" y2="213" class="d-line" marker-end="url(#arw731a)"/>
+      <line x1="352" y1="213" x2="376" y2="213" class="d-line" marker-end="url(#arw731a)"/>
+      <line x1="532" y1="213" x2="556" y2="213" class="d-line" marker-end="url(#arw731a)"/>
+      <text x="360" y="284" text-anchor="middle" class="d-text-sub">50 実装：①〜⑦を「ログイン・登録・リセット・2FA・SSO」などの機能として組み立てる</text>
+    </svg>
+    <figcaption>緑の箱（認証・認可）がこのフォルダの中心。灰色の箱は主に 74・37・41 が本拠地</figcaption>
+    </figure>
+
+    <p>ノート「認証と認可とは」の流れを文章にすると、次の7段階です。</p>
+    <ol class="steps">
+      <li>ユーザーがログインする</li>
+      <li><strong>認証</strong>：ユーザー名とパスワードなどを確認する</li>
+      <li>認証に成功したら、トークンまたはセッションを発行する</li>
+      <li>ユーザーがリクエストを送る（トークンを含む）</li>
+      <li>認証を確認する（トークンが有効か）</li>
+      <li><strong>認可</strong>を確認する（権限があるか）</li>
+      <li>リクエストを処理する</li>
+    </ol>
+    <p><strong>トークン</strong>（ログイン済みであることを示す「通行証」のような文字列）や <strong>セッション</strong>（サーバー側でログイン状態を覚えておく仕組み）は、③〜⑤で使われます。この部分の仕組みそのものは 74_セッション管理 が本拠地です（<a href="#sec-6">6章</a>）。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>各フォルダの役割とノート</h2>
+    <p>どのフォルダに何があるかを、ノート単位で見ていきます。解説ページがあるものはリンクにしています。</p>
+
+    <h3 id="sec-4-1">4.1 10 基礎概念：全体の考え方</h3>
+    <p>認証と認可の違い、ログイン方式の種類、よく出る用語、方式の選び方をまとめたフォルダです。ここを先に読むと、20〜50 の各論がどこに位置するか分かりやすくなります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ノート</th><th>内容</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>01_認証と認可とは</td><td>2つの定義、日常の例え、認証・認可の流れ、注意点（ハッシュ化・トークンの有効期限・HTTPS・レート制限）</td><td><a href="10-1_認証と認可の違い.html">10-1</a></td></tr>
+        <tr><td>02_認証と認可の違い（ねる前エンジニアリング）</td><td>2つの関門、番号を変えると他人のデータが見える事故、画面で隠しても守れない、どこで確かめるか</td><td><a href="10-1_認証と認可の違い.html">10-1</a></td></tr>
+        <tr><td>03_ログインの種類と認証方式</td><td>ID/パスワード、ソーシャルログイン、MFA、SSO、パスワードレスなどのメリット・デメリット</td><td><a href="10-2_ログイン方式と認証の概念.html">10-2</a></td></tr>
+        <tr><td>04_開発者が知るべき認証の7つの概念（Hayk Simonyan）</td><td>Basic・API キー・セッション・Bearer/JWT・Access/Refresh・OAuth 2.0・OIDC・SSO・SAML の整理</td><td><a href="10-2_ログイン方式と認証の概念.html">10-2</a></td></tr>
+        <tr><td>05_API認証の仕組み（直也テック）</td><td>API 認証の4方式（Basic・API キー・JWT・OAuth）と、認証と認可の違い</td><td><a href="10-1_認証と認可の違い.html">10-1</a></td></tr>
+        <tr><td>06_認証・認可・暗号化（基礎講座第2回）</td><td>パスワードの保存（ハッシュ・ソルト）、MFA と MFA 疲労攻撃、SSO、共通鍵・公開鍵暗号</td><td><a href="10-3_パスワード・MFA・暗号化の基礎.html">10-3</a></td></tr>
+        <tr><td>07_社内システム向け認証方式の選び方</td><td>第一候補は「OIDC + 社内 IdP への SSO」、用途ごとの向き不向き、Better Auth を使った社内 SSO の設計</td><td><a href="10-4_社内システム向け認証方式の選び方.html">10-4</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-2">4.2 20 パスワード・MFA・パスキー：本人確認の手段</h3>
+    <p>「あなたは誰？」をどうやって確かめるか、その手段そのものを扱います。<strong>MFA</strong>（多要素認証：パスワードなどの知識・スマホなどの所持・指紋などの生体のうち、2種類以上を組み合わせる方法）や、<strong>パスキー</strong>（パスワードの代わりに端末に保存した鍵で本人確認する仕組み）もここです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ノート</th><th>内容</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>01_認証（徳丸本21章）</td><td>ログイン機能への攻撃（SQLインジェクション・パスワード試行・フィッシング）、アカウントロック、パスワードの保存方法</td><td><a href="20-1_ログイン機能への攻撃と対策.html">20-1</a>・<a href="20-2_パスワードの安全な保存.html">20-2</a></td></tr>
+        <tr><td>02_パスワードの安全な保存</td><td>Argon2id などの選び方・設定、ソルト・ペッパー・ストレッチング、古いハッシュからの移行、NIST のパスワード指針</td><td><a href="20-2_パスワードの安全な保存.html">20-2</a></td></tr>
+        <tr><td>03_MFAの方式比較</td><td>認証の3要素、方式ごとのフィッシングへの耐性、MFA を突破する攻撃、回復手段の設計</td><td><a href="20-3_MFAの方式比較.html">20-3</a></td></tr>
+        <tr><td>04_パスキーとWebAuthn</td><td>仕組み（登録・ログイン）、同期パスキーと端末固定、SimpleWebAuthn での実装</td><td><a href="20-4_パスキーとWebAuthn.html">20-4</a></td></tr>
+        <tr><td>05_パスワードは死んだ_パスキーの時代（ゆるコンピュータ科学ラジオ）</td><td>パスワードの弱さ、秘密鍵と公開鍵、フィッシングに強い理由（動画クリップ）</td><td><a href="20-4_パスキーとWebAuthn.html">20-4</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-3">4.3 30 フェデレーション：認証を他に任せる</h3>
+    <p><strong>フェデレーション</strong>（連携：Google や社内のID基盤など、別のサービスに本人確認を任せる仕組み）を扱います。「Googleでログイン」や、1回のログインで複数のアプリを使える <strong>SSO</strong>（シングルサインオン）の裏側です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ノート</th><th>内容</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>01_OAuth2.0とは</td><td>パスワードを共有しない仕組み、4つの登場人物、認可コードフロー、リフレッシュトークン</td><td><a href="30-1_OAuth2.0の仕組み.html">30-1</a></td></tr>
+        <tr><td>02_別のアカウントでログインの裏側_OAuth（ねる前エンジニアリング）</td><td>合鍵ではなく期限つきの通行証、引換券（認可コード）をはさむ理由、PKCE（動画クリップ）</td><td><a href="30-1_OAuth2.0の仕組み.html">30-1</a></td></tr>
+        <tr><td>03_SAML_OAuth2_OpenIDConnectの基礎</td><td>3つのプロトコルの違いと使い分け</td><td><a href="30-2_SAML・OAuth・OIDCの違い.html">30-2</a></td></tr>
+        <tr><td>04_IDプロバイダとSSOプロバイダとは</td><td>IdP（ID を管理して本人確認を引き受けるサービス）と SSO プロバイダの違い、選び方</td><td><a href="30-3_IDプロバイダとSSOプロバイダ.html">30-3</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>PKCE（認可コードの横取りを防ぐ仕組み）のノート「09_PKCEとCSPとは」は 72_Web脆弱性対策 の 10 に置いています。解説は <a href="../../72_Web脆弱性対策/00_全体像/10-4_CSP.html">72 CSP</a> のページにあります。</p>
+
+    <h3 id="sec-4-4">4.4 40 認可モデル：何をしてよいかの決め方</h3>
+    <p>「誰が・何に・何をしてよいか」をどう表して、どう強制するかを扱います。<strong>RBAC</strong>（役割ベース：管理者・編集者などのロールで決める）、<strong>ABAC</strong>（属性ベース：部署・時間帯・データの持ち主などの属性で決める）、<strong>ACL</strong>（アクセス制御リスト：データごとに許可する人を並べる）が代表的なモデルです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ノート</th><th>内容</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>01_認可（徳丸本23章）</td><td>認可不備の典型例（URL を知っていれば見える、ID を変えると見える、メニューの非表示だけで制御、hidden や Cookie に権限情報）、権限マトリクスと要件定義</td><td><a href="40-1_認可不備と認可の要件定義.html">40-1</a></td></tr>
+        <tr><td>02_RBAC・ABAC・ACLの使い分け（Hayk Simonyan）</td><td>3つのモデルの特徴と選び方の目安、認可を強制する仕組み（動画クリップ）</td><td><a href="40-2_RBAC・ABAC・ACLの使い分け.html">40-2</a></td></tr>
+        <tr><td>03_権限管理・ロール管理機能</td><td>RBAC の DB 設計と実装、リソースベース権限・動的権限、最小権限と監査ログ</td><td><a href="40-3_権限管理・ロール管理の実装.html">40-3</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-5">4.5 50 実装：機能として作る</h3>
+    <p>10〜40 の考え方を、実際の機能に落とし込むフォルダです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ノート</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>01_ログイン・ログアウト機能</td><td>JWT・セッション・OAuth 2.0 による実装の比較、レート制限など</td></tr>
+        <tr><td>02_ユーザー登録・プロフィール管理機能</td><td>登録・メール認証・プロフィール編集・アカウント削除</td></tr>
+        <tr><td>03_パスワードリセット機能</td><td>リセット用トークンの扱い、ブルートフォース対策、監視</td></tr>
+        <tr><td>04_二要素認証（2FA）機能</td><td>TOTP・SMS・音声・FIDO2/WebAuthn、バックアップコード、2026年の MFA 突破事例</td></tr>
+        <tr><td>05_認証・認可機能の実装方法</td><td>JWT・セッション・OAuth 2.0/OIDC・API キーの比較と使いどころ</td></tr>
+        <tr><td>06_Next.jsでシングルサインオンを実装する</td><td>NextAuth.js を使った Google ログインの実装手順</td></tr>
+        <tr><td>07_アカウント管理（徳丸本22章）</td><td>登録・パスワード変更・メールアドレス変更・パスワードリセット・停止・削除の注意点</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>よく出る用語の位置づけ</h2>
+    <p>認証まわりの用語は「方式」「トークンの形」「仕組みの枠組み」「使い勝手のパターン」が混ざって出てくるため、混同しがちです。ノート「開発者が知るべき認証の7つの概念」の一覧で、どれが何の仲間かを先に押さえておきましょう。詳しくは <a href="10-2_ログイン方式と認証の概念.html">10-2 ログイン方式と認証の概念</a> で扱います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>分類</th><th>ひとこと</th><th>主なフォルダ</th></tr></thead>
+      <tbody>
+        <tr><td>Basic / Digest</td><td>認証方式（レガシー）</td><td>ヘッダで資格情報／ハッシュを毎回送る</td><td>10</td></tr>
+        <tr><td>API キー</td><td>認証方式</td><td>DB で照合が必要な、中身に意味のないキー</td><td>10・50</td></tr>
+        <tr><td>セッション + Cookie</td><td>認証方式</td><td>サーバーが状態を持つ、古典的な Web の方式</td><td>74（50 で利用）</td></tr>
+        <tr><td>Bearer</td><td>パターン</td><td>トークンを持っている人にアクセスを許す</td><td>74・37</td></tr>
+        <tr><td>JWT</td><td>トークン形式</td><td>署名付きで、中身だけで完結できる</td><td>74（50 で利用）</td></tr>
+        <tr><td>Access / Refresh</td><td>トークン運用</td><td>短命な API 用と、長命な更新用</td><td>74・37</td></tr>
+        <tr><td>OAuth 2.0</td><td>認可フレームワーク</td><td>第三者アプリにリソースへのアクセスを許可する</td><td>30</td></tr>
+        <tr><td>OIDC</td><td>認証（OAuth 2.0 の上）</td><td>ID トークンで本人確認する</td><td>30</td></tr>
+        <tr><td>SSO</td><td>使い勝手のパターン</td><td>一度のログインで複数サービスを使う</td><td>30・10</td></tr>
+        <tr><td>SAML / OIDC</td><td>アイデンティティプロトコル</td><td>SSO を支える下の層の技術</td><td>30</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">ポイント</p>
+      <p>OAuth 2.0 はもともと <strong>認可</strong>（アクセスの許可）の仕組みで、ログイン（<strong>認証</strong>）に使うには OIDC を重ねます。名前に「認証」と付く場面でも、どちらの役割なのかを意識すると混乱が減ります。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>隣のフォルダとの境界</h2>
+    <p>認証・認可は他のテーマと強くつながっています。重なる内容はそれぞれの本拠地で扱い、このフォルダでは書き直しません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>本拠地として扱うこと</th><th>73 との関係</th></tr></thead>
+      <tbody>
+        <tr><td><strong>74_セッション管理</strong></td><td>Cookie・セッション・トークン（JWT など）の仕組み、セッション固定化・ハイジャックなどの攻撃と対策</td><td>73 は「ログインで誰かを確かめる」まで。そのあと <strong>ログイン状態を保つ</strong> 仕組みは 74</td></tr>
+        <tr><td><strong>37_HTTPクライアント・ユーティリティ</strong>（40_認証の付与）</td><td>HTTP クライアントへのトークンの付け方、トークンの自動更新</td><td>図の④。クライアント側でトークンを送る実装は 37</td></tr>
+        <tr><td><strong>41_アーキテクチャ</strong>（50_横断的関心事）</td><td>認証・認可を <strong>どの層で検証するか</strong>、境界とアイデンティティの置き方</td><td>図の⑤⑥を、ゲートウェイ・ミドルウェア・サービスのどこに置くか</td></tr>
+        <tr><td><strong><a href="../../71_セキュリティ基礎/00_全体像/00-1_セキュリティの全体像.html">71_セキュリティ基礎</a></strong></td><td>セキュリティ全体の地図、最小権限・ゼロトラストなどの原則、OWASP Top 10</td><td>認可不備は OWASP Top 10 の A01、認証の失敗は A07。<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a>・<a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">71 最小権限とデータ最小化</a>・<a href="../../71_セキュリティ基礎/00_全体像/20-3_ゼロトラスト.html">71 ゼロトラスト</a></td></tr>
+        <tr><td><strong><a href="../../72_Web脆弱性対策/00_全体像/00-1_Web脆弱性の全体像.html">72_Web脆弱性対策</a></strong></td><td>XSS・CSRF・CORS など Web の脆弱性、PKCE のノート</td><td>ログイン状態を悪用する攻撃は 72。<a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">72 CSRF</a>・<a href="../../72_Web脆弱性対策/00_全体像/10-3_CORSエラーの対処法とCookie.html">72 CORSエラーの対処法とCookie</a>・<a href="../../72_Web脆弱性対策/00_全体像/50-2_WebAPIの脆弱性.html">72 WebAPIの脆弱性</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>なお、セキュリティ全体の地図は MOC_セキュリティ体系、ログイン状態の保持は MOC_セッション管理 が入口のノートです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>学習の進め方</h2>
+    <ol class="steps">
+      <li><strong>10 基礎概念</strong> で、認証と認可の違い・ログイン方式・用語の位置づけをつかむ（<a href="10-1_認証と認可の違い.html">10-1</a>〜<a href="10-4_社内システム向け認証方式の選び方.html">10-4</a>）</li>
+      <li><strong>74_セッション管理</strong> で、ログイン後の状態を Cookie・セッション・トークンでどう保つかを押さえる</li>
+      <li><strong>20 パスワード・MFA・パスキー</strong> で、本人確認の手段を安全に選ぶ・保存する方法を学ぶ</li>
+      <li><strong>30 フェデレーション</strong> で、OAuth 2.0・OIDC・SAML・SSO の仕組みを理解する</li>
+      <li><strong>40 認可モデル</strong> で、権限の決め方と認可不備の防ぎ方を学ぶ（<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a> も参照）</li>
+      <li><strong>50 実装</strong> で、ログイン・登録・リセット・2FA・SSO を機能として組み立てる</li>
+    </ol>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>認証と認可</td><td>認証は「あなたは誰か」（失敗は 401）、認可は「それをしてよいか」（失敗は 403）。認証が通っても認可は済んでいない</td></tr>
+        <tr><td>流れ</td><td>ログイン時に認証してセッション／トークンを発行し、以後のリクエストのたびに状態の確認と認可を行う</td></tr>
+        <tr><td>10 基礎概念</td><td>違い・方式・用語・選び方。社内システムなら「OIDC + 社内 IdP への SSO」が第一候補</td></tr>
+        <tr><td>20 パスワード・MFA・パスキー</td><td>本人確認の手段そのもの（保存方法・MFA の方式・パスキー）</td></tr>
+        <tr><td>30 フェデレーション</td><td>認証を IdP に任せる仕組み（OAuth 2.0・OIDC・SAML・SSO）</td></tr>
+        <tr><td>40 認可モデル</td><td>RBAC・ABAC・ACL と、認可不備の典型例</td></tr>
+        <tr><td>50 実装</td><td>ログイン・登録・リセット・2FA・SSO・アカウント管理の作り方</td></tr>
+        <tr><td>境界</td><td>ログイン状態の保持は 74、トークンの付与は 37、どの層で検証するかは 41</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>理解度チェック</h2>
+    <details><summary>Q1. 認証と認可の違いを、それぞれ「問い」の形で答えてください。</summary><div class="body"><p>認証は「あなたは誰ですか？」、認可は「あなたはその操作をしてよいですか？」です。失敗したときの応答は、認証が 401、認可が 403 です。</p></div></details>
+    <details><summary>Q2. ログイン済みのユーザーが URL の注文番号を書き換えたら、他人の注文が見えてしまいました。何が足りないのでしょうか？</summary><div class="body"><p>認可です。「ログインしている（認証済み）」ことだけを確かめて、「その注文がその人のものか」を確かめていません。認可はサーバー側で、データを取る手前で確かめる必要があります（40 認可モデル、<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a>）。</p></div></details>
+    <details><summary>Q3. 認証はログイン時に1回だけですが、認可はいつ行いますか？</summary><div class="body"><p>リクエストのたびに行います。ログイン後のリクエストごとに、セッション／トークンが有効かを確かめたうえで、その操作をしてよいかを判断します。</p></div></details>
+    <details><summary>Q4. 「Cookie やセッションでログイン状態を保つ仕組み」と「HTTP クライアントでトークンを自動で付ける実装」は、それぞれどのフォルダが本拠地ですか？</summary><div class="body"><p>前者は 74_セッション管理、後者は 37_HTTPクライアント・ユーティリティ（40_認証の付与）です。どの層で認証・認可を検証するかは 41_アーキテクチャ（50_横断的関心事）で扱います。</p></div></details>
+    <details><summary>Q5. OAuth 2.0 と OIDC の関係を説明してください。</summary><div class="body"><p>OAuth 2.0 は第三者アプリにリソースへのアクセスを許可する「認可」のフレームワークです。OIDC はその上に重ねて、ID トークンで本人確認（認証）をできるようにしたものです。どちらも 30 フェデレーション で扱います。</p></div></details>
+    <details><summary>Q6. 「社員だけがログインできる社内システム」を作るとき、第一候補になる構成は何ですか？</summary><div class="body"><p>OIDC + 社内 IdP（Microsoft Entra ID・Google Workspace・Okta など）への SSO です。「社員だけ」は認証方式そのものより、どの IdP に繋ぐかで決まります（<a href="10-4_社内システム向け認証方式の選び方.html">10-4</a>）。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：73_認証認可/00_全体像/MOC_認証認可</li>
+      <li>ノート：73_認証認可/10_基礎概念/01_認証と認可とは・02_認証と認可の違い（ねる前エンジニアリング）・04_開発者が知るべき認証の7つの概念（Hayk Simonyan）・05_API認証の仕組み（直也テック）・07_社内システム向け認証方式の選び方</li>
+      <li>ノート：73_認証認可 の 20_パスワード・MFA・パスキー／30_フェデレーション／40_認可モデル／50_実装 の各ノート（見出しと概要）</li>
+      <li>ノート：74_セッション管理/00_全体像/MOC_セッション管理</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ（21〜23章）</li>
+      <li>OWASP Top 10 https://owasp.org/Top10/</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-1_認証と認可の違い.html"><span class="lbl">次のページ →</span>認証と認可の違い</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

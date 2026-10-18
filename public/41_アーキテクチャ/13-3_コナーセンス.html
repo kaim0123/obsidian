@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コナーセンス｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">10 基礎 › 13 モジュール性・結合 › コナーセンス</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎 ／ 13 モジュール性・結合</span>
+      <h1>コナーセンス</h1>
+      <p class="lead">コナーセンスは、結合の「数」ではなく「種類と強さ」を表すための語彙です。3つの性質（強さ・局所性・程度）、静的5種類・動的4種類の合計9種類とそれぞれの弱め方、そしてサービス間の結合を評価するための使い方を解説します。</p>
+      <p class="meta">もとにしたノート：10_基礎/13_モジュール性・結合/04_コナーセンス</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><a href="13-2_結合の指標.html">結合の指標</a> では、結合を <strong>数</strong> で測る方法を学びました。しかし「依存が3つある」と分かっても、次のことは分かりません。</p>
+    <ul>
+      <li>その依存は <strong>どのくらい壊れやすいのか</strong></li>
+      <li><strong>どう直せば弱くなるのか</strong></li>
+    </ul>
+    <p><strong>コナーセンス（Connascence）</strong> は、結合の <strong>種類と強さ</strong> を表すための語彙です。コナーセンスを知っていると、コードレビューで「ここ、結合が強いですね」とあいまいに言う代わりに、「ここは <strong>位置のコナーセンス</strong> なので、<strong>名前のコナーセンス</strong> に弱めましょう」と、問題と直し方を具体的に伝えられるようになります。</p>
+    <p>このページでは次の内容を扱います。</p>
+    <ol class="steps">
+      <li>コナーセンスの <strong>定義と由来</strong></li>
+      <li><strong>3つの性質</strong>（強さ・局所性・程度）</li>
+      <li><strong>9つの種類</strong>（静的5つ・動的4つ）と、それぞれの弱め方</li>
+      <li>コナーセンスを改善する <strong>3つの指針</strong></li>
+      <li>アーキテクチャ（<strong>サービス間</strong>）での使い方</li>
+    </ol>
+
+    <h2 id="sec-2"><span class="num">2.</span>コナーセンスとは</h2>
+    <h3>2.1 定義</h3>
+    <blockquote><p>2つの部品があり、<strong>一方を変更したときに、システム全体の正しさを保つためにもう一方も変更しなければならない</strong> とき、その2つは <strong>コナーセント</strong>（connascent）である。</p></blockquote>
+    <ul>
+      <li>「connascence」は「共に生まれる」という意味の英語です。<strong>一緒に変わる運命にある関係</strong>、というニュアンスがあります</li>
+      <li><strong>Meilir Page-Jones</strong> が 1990 年代に提唱し（『What Every Programmer Should Know about Object-Oriented Design』1996 など）、その後 <strong>Jim Weirich</strong> の講演で広く知られるようになりました</li>
+      <li>『ソフトウェアアーキテクチャの基礎』第3章でも、結合を正確に説明するための言語として紹介されています</li>
+    </ul>
+
+    <h3>2.2 なぜ「数」だけでは足りないのか</h3>
+    <p>次の2つの関数呼び出しは、どちらも「依存が1つ」です。</p>
+    <pre><code>// A: 名前で依存している
+createUser({ name: "Taro", email: "taro@example.com", isAdmin: false });
+
+// B: 位置で依存している
+createUser("Taro", "taro@example.com", false);</code></pre>
+    <div class="grid c2">
+      <div class="card good">
+        <h4>A：名前で依存</h4>
+        <p>引数の <strong>名前</strong> にだけ依存しています。定義側で引数の順番を入れ替えても壊れません。</p>
+      </div>
+      <div class="card bad">
+        <h4>B：位置で依存</h4>
+        <p>引数の <strong>順番</strong> に依存しています。定義が <code>createUser(email, name, ...)</code> に変わると、<strong>エラーにならずに</strong> 名前とメールアドレスが入れ替わって保存されます。</p>
+      </div>
+    </div>
+    <p>数は同じでも、<strong>B の方が壊れやすい</strong>。この違いを表すのがコナーセンスです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>コナーセンスの3つの性質</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>性質</th><th>意味</th><th>望ましい状態</th></tr></thead>
+      <tbody>
+        <tr><td><strong>強さ</strong>（Strength）</td><td>見つけにくさ・直しにくさ。種類によって決まる</td><td><strong>弱い</strong> ほど良い</td></tr>
+        <tr><td><strong>局所性</strong>（Locality）</td><td>結合している部品同士がどれだけ <strong>近い</strong> か（同じ関数・同じクラス・同じモジュール・別サービス）</td><td>強い結合ほど <strong>近く</strong> に置く</td></tr>
+        <tr><td><strong>程度</strong>（Degree）</td><td>その結合に巻き込まれている部品の <strong>数</strong></td><td><strong>少ない</strong> ほど良い</td></tr>
+      </tbody>
+    </table></div>
+    <p>この3つを <strong>組み合わせて</strong> 考えるのがポイントです。</p>
+    <ul>
+      <li>同じ関数の中の強い結合（局所性が高い）は、ほとんど問題になりません</li>
+      <li>別サービスとの強い結合（局所性が低い）は、深刻な問題になります</li>
+      <li>2か所だけの結合（程度が小さい）より、200か所に散らばった結合（程度が大きい）の方が直すのが大変です</li>
+    </ul>
+    <figure>
+    <svg viewBox="0 0 740 250" role="img" aria-label="局所性と許容できる強さ">
+      <rect x="20" y="30" width="160" height="56" rx="8" class="d-box-good"/>
+      <text x="100" y="64" text-anchor="middle" class="d-text">同じ関数</text>
+      <rect x="200" y="30" width="160" height="56" rx="8" class="d-box-accent"/>
+      <text x="280" y="64" text-anchor="middle" class="d-text">同じクラス</text>
+      <rect x="380" y="30" width="160" height="56" rx="8" class="d-box-warn"/>
+      <text x="460" y="64" text-anchor="middle" class="d-text">同じモジュール</text>
+      <rect x="560" y="30" width="160" height="56" rx="8" class="d-box-bad"/>
+      <text x="640" y="64" text-anchor="middle" class="d-text">別サービス</text>
+      <text x="20" y="116" class="d-text-sub">近い（局所性が高い）</text>
+      <text x="720" y="116" text-anchor="end" class="d-text-sub">遠い（局所性が低い）</text>
+      <polygon points="20,135 720,170 720,180 20,215" class="d-box-accent"/>
+      <text x="40" y="182" class="d-text-bold">許容できるコナーセンスの強さ</text>
+      <text x="20" y="240" class="d-text-sub">強くても可（値・同一性も OK）</text>
+      <text x="720" y="240" text-anchor="end" class="d-text-sub">弱いもの（名前・型）だけにする</text>
+    </svg>
+    <figcaption>図：部品同士が遠いほど、許容できるコナーセンスは弱くなる</figcaption>
+    </figure>
+
+    <h2 id="sec-4"><span class="num">4.</span>9つの種類</h2>
+    <p>コナーセンスには、現在広く合意されている <strong>9つの種類</strong> があります。コードを読めば分かる <strong>静的コナーセンス</strong> が5つ、実行しないと分からない <strong>動的コナーセンス</strong> が4つです。後ろにあるものほど <strong>強い</strong>（見つけにくく、直しにくい）結合です。</p>
+    <figure>
+    <svg viewBox="0 0 770 345" role="img" aria-label="コナーセンス9種類の強さの階段">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="30" y="28" class="d-text-sub">右へ行くほど強い（見つけにくく、直しにくい）</text>
+      <line x1="30" y1="44" x2="330" y2="44" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="30" y="234" width="78" height="56" rx="6" class="d-box-good"/>
+      <text x="69" y="256" text-anchor="middle" class="d-text-bold">①</text>
+      <text x="69" y="276" text-anchor="middle" class="d-text-sub">名前</text>
+      <rect x="110" y="210" width="78" height="80" rx="6" class="d-box-good"/>
+      <text x="149" y="232" text-anchor="middle" class="d-text-bold">②</text>
+      <text x="149" y="252" text-anchor="middle" class="d-text-sub">型</text>
+      <rect x="190" y="186" width="78" height="104" rx="6" class="d-box-accent"/>
+      <text x="229" y="208" text-anchor="middle" class="d-text-bold">③</text>
+      <text x="229" y="228" text-anchor="middle" class="d-text-sub">意味</text>
+      <rect x="270" y="162" width="78" height="128" rx="6" class="d-box-accent"/>
+      <text x="309" y="184" text-anchor="middle" class="d-text-bold">④</text>
+      <text x="309" y="204" text-anchor="middle" class="d-text-sub">位置</text>
+      <rect x="350" y="138" width="78" height="152" rx="6" class="d-box-accent"/>
+      <text x="389" y="160" text-anchor="middle" class="d-text-bold">⑤</text>
+      <text x="389" y="180" text-anchor="middle" class="d-text-sub">アルゴリズム</text>
+      <rect x="430" y="114" width="78" height="176" rx="6" class="d-box-warn"/>
+      <text x="469" y="136" text-anchor="middle" class="d-text-bold">⑥</text>
+      <text x="469" y="156" text-anchor="middle" class="d-text-sub">実行順序</text>
+      <rect x="510" y="90" width="78" height="200" rx="6" class="d-box-warn"/>
+      <text x="549" y="112" text-anchor="middle" class="d-text-bold">⑦</text>
+      <text x="549" y="132" text-anchor="middle" class="d-text-sub">タイミング</text>
+      <rect x="590" y="66" width="78" height="224" rx="6" class="d-box-bad"/>
+      <text x="629" y="88" text-anchor="middle" class="d-text-bold">⑧</text>
+      <text x="629" y="108" text-anchor="middle" class="d-text-sub">値</text>
+      <rect x="670" y="42" width="78" height="248" rx="6" class="d-box-bad"/>
+      <text x="709" y="64" text-anchor="middle" class="d-text-bold">⑨</text>
+      <text x="709" y="84" text-anchor="middle" class="d-text-sub">同一性</text>
+      <line x1="30" y1="304" x2="428" y2="304" class="d-line"/>
+      <line x1="30" y1="298" x2="30" y2="310" class="d-line"/>
+      <line x1="428" y1="298" x2="428" y2="310" class="d-line"/>
+      <text x="229" y="330" text-anchor="middle" class="d-text-accent">静的：コードを見れば分かる</text>
+      <line x1="430" y1="304" x2="748" y2="304" class="d-line"/>
+      <line x1="430" y1="298" x2="430" y2="310" class="d-line"/>
+      <line x1="748" y1="298" x2="748" y2="310" class="d-line"/>
+      <text x="589" y="330" text-anchor="middle" class="d-text-bold">動的：実行しないと分からない</text>
+    </svg>
+    <figcaption>図：コナーセンス9種類の強さの階段。名前がもっとも弱く、同一性がもっとも強い</figcaption>
+    </figure>
+    <div class="callout key">
+      <p class="callout-title">静的と動的の境目</p>
+      <p><strong>動的コナーセンスは、もっとも弱いものでも、もっとも強い静的コナーセンスより強い</strong> とされます。実行時にしか分からない結合は、コンパイラやテストで見つけにくいためです。</p>
+    </div>
+
+    <h3>4.1 静的① 名前のコナーセンス（Connascence of Name）</h3>
+    <p>複数の部品が、ある要素の <strong>名前</strong> について合意している必要がある状態です。</p>
+    <pre><code>function calculateTax(price: number) { ... }
+calculateTax(1000);   // 関数名を変えたら、呼び出し側も変える必要がある</code></pre>
+    <ul>
+      <li><strong>もっとも弱い</strong> コナーセンスで、どんなコードにも必ずあります</li>
+      <li>IDE のリネーム機能で、安全に一括変更できます</li>
+      <li><strong>他のコナーセンスを、できるだけこの形に変えていく</strong> のが基本方針です</li>
+    </ul>
+
+    <h3>4.2 静的② 型のコナーセンス（Connascence of Type）</h3>
+    <p>複数の部品が、ある要素の <strong>型</strong> について合意している必要がある状態です。</p>
+    <pre><code>function sendMail(to: EmailAddress) { ... }
+sendMail(user.email);  // user.email も EmailAddress 型である必要がある</code></pre>
+    <ul>
+      <li>静的型付け言語ではコンパイラが不一致を検出してくれるので、比較的安全です</li>
+    </ul>
+
+    <h3>4.3 静的③ 意味のコナーセンス（Connascence of Meaning / Convention）</h3>
+    <p>複数の部品が、ある <strong>値の意味</strong> について合意している必要がある状態です。「慣習（Convention）のコナーセンス」とも呼ばれます。</p>
+    <span class="code-label bad">✕ 「1 は有効、0 は無効」という約束を、送る側と受け取る側の両方が知っている</span>
+    <pre><code>if (user.status === 1) { ... }</code></pre>
+    <span class="code-label good">○ 名前付きの定数・列挙型にする → 名前のコナーセンスに弱まる</span>
+    <pre><code>enum UserStatus { Active = "active", Inactive = "inactive" }
+if (user.status === UserStatus.Active) { ... }</code></pre>
+    <ul>
+      <li>「マジックナンバー」「マジックストリング」がこれにあたります</li>
+      <li><strong>定数や列挙型で名前を付ける</strong> と、名前のコナーセンスに弱められます</li>
+    </ul>
+
+    <h3>4.4 静的④ 位置のコナーセンス（Connascence of Position）</h3>
+    <p>複数の部品が、値の <strong>順番</strong> について合意している必要がある状態です。</p>
+    <span class="code-label bad">✕ 引数の順番に依存</span>
+    <pre><code>createUser("Taro", "taro@example.com", false, true);</code></pre>
+    <span class="code-label bad">✕ 配列の位置に意味がある</span>
+    <pre><code>const row = ["Taro", 30, "Tokyo"];  // row[1] が年齢、という約束</code></pre>
+    <span class="code-label good">○ オブジェクトにして名前で渡す → 名前のコナーセンスに弱まる</span>
+    <pre><code>createUser({ name: "Taro", email: "taro@example.com", isAdmin: false, notify: true });</code></pre>
+    <ul>
+      <li><strong>静的コナーセンスの中で強い部類</strong> です。同じ型の引数が並ぶと、順番を間違えてもコンパイラが気づきません（上の例の <code>false, true</code> はどちらがどちらか読み取れません）</li>
+      <li>引数が3つを超えたら、オブジェクト（引数オブジェクト）にまとめることを検討します</li>
+    </ul>
+
+    <h3>4.5 静的⑤ アルゴリズムのコナーセンス（Connascence of Algorithm）</h3>
+    <p>複数の部品が、同じ <strong>アルゴリズム</strong> を使うことに合意している必要がある状態です。</p>
+    <pre><code>// 送信側
+const signature = hmacSha256(payload, secret);
+// 受信側（別のサービス）も、まったく同じ方式で検証する必要がある
+const expected = hmacSha256(payload, secret);</code></pre>
+    <ul>
+      <li>例：パスワードのハッシュ方式、署名の検証方式、チェックディジットの計算方法、データの暗号化方式</li>
+      <li>片方だけ変えると、<strong>エラーにならずに検証が失敗し続けます</strong></li>
+      <li>対策：アルゴリズムを <strong>1か所（共通モジュール・ライブラリ）に集約</strong> し、両方がそれを呼ぶ形にします。こうすると、両者の結合は「その関数の名前」に対するコナーセンスに弱まります</li>
+    </ul>
+
+    <h3>4.6 動的⑥ 実行順序のコナーセンス（Connascence of Execution）</h3>
+    <p>部品の <strong>実行順序</strong> が重要である状態です。</p>
+    <span class="code-label bad">✕ open → write → close の順番を、呼び出し側が守る必要がある</span>
+    <pre><code>const file = new File(path);
+file.open();
+file.write(data);
+file.close();</code></pre>
+    <span class="code-label good">○ 順番を内部に閉じ込める</span>
+    <pre><code>writeFile(path, data);  // 内部で open → write → close</code></pre>
+    <ul>
+      <li>例：「初期化メソッドを呼んでから使う」「メール送信前に宛先を設定する」</li>
+      <li>対策：<strong>正しい順番でしか呼べない API にする</strong>（コンストラクタで初期化を済ませる、まとめて実行する関数を用意する）</li>
+    </ul>
+
+    <h3>4.7 動的⑦ タイミングのコナーセンス（Connascence of Timing）</h3>
+    <p>部品の <strong>実行タイミング</strong> が重要である状態です。</p>
+    <ul>
+      <li>例：2つのスレッドが同時に同じ変数を更新すると壊れる（競合状態）、タイムアウト値が呼び出し側と呼ばれる側で整合している必要がある</li>
+      <li>発見が非常に難しく、テストでも再現しにくい種類です</li>
+      <li>対策：ロック・トランザクション・不変データ・メッセージキューによる直列化</li>
+    </ul>
+
+    <h3>4.8 動的⑧ 値のコナーセンス（Connascence of Values）</h3>
+    <p>複数の値が、<strong>互いに整合した状態で一緒に変わる</strong> 必要がある状態です。</p>
+    <ul>
+      <li>例：「注文の合計金額」と「明細の金額の合計」が常に一致している必要がある</li>
+      <li>例：分散システムで、2つのサービスにまたがるデータを同時に更新する必要がある（分散トランザクション）</li>
+      <li>これは <strong>不変条件</strong>（常に成り立つべきルール）そのものです（→ <a href="12-3_トレードオフと原則.html">トレードオフとアーキテクチャに効く原則</a> の「不変条件の境界」）</li>
+      <li>対策：整合性が必要な値を <strong>1つの境界（集約・1つのサービス・1つのトランザクション）の中に閉じ込める</strong></li>
+    </ul>
+
+    <h3>4.9 動的⑨ 同一性のコナーセンス（Connascence of Identity）</h3>
+    <p>複数の部品が、<strong>同じインスタンス（実体）</strong> を参照している必要がある状態です。</p>
+    <ul>
+      <li>例：2つのコンポーネントが同じキュー・同じキャッシュオブジェクト・同じ DB 接続を共有していないと正しく動かない</li>
+      <li><strong>もっとも強い</strong> コナーセンスです</li>
+      <li>対策：共有を減らし、必要なら所有者を1つに決めて、他はその所有者経由でアクセスする</li>
+    </ul>
+
+    <h3>4.10 9種類の一覧</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>種類</th><th>分類</th><th>合意している内容</th><th>主な弱め方</th></tr></thead>
+      <tbody>
+        <tr><td class="c">①</td><td>名前</td><td>静的</td><td>要素の名前</td><td>（目標とする形）IDE のリネームで管理</td></tr>
+        <tr><td class="c">②</td><td>型</td><td>静的</td><td>要素の型</td><td>静的型付けでコンパイラに検査させる</td></tr>
+        <tr><td class="c">③</td><td>意味</td><td>静的</td><td>値の意味（マジックナンバー）</td><td>定数・列挙型で名前を付ける</td></tr>
+        <tr><td class="c">④</td><td>位置</td><td>静的</td><td>値の順番</td><td>引数オブジェクトにして名前で渡す</td></tr>
+        <tr><td class="c">⑤</td><td>アルゴリズム</td><td>静的</td><td>同じ計算方式</td><td>1か所に集約して共有する</td></tr>
+        <tr><td class="c">⑥</td><td>実行順序</td><td>動的</td><td>呼び出しの順番</td><td>正しい順番でしか呼べない API にする</td></tr>
+        <tr><td class="c">⑦</td><td>タイミング</td><td>動的</td><td>実行のタイミング</td><td>ロック・トランザクション・不変データ・キュー</td></tr>
+        <tr><td class="c">⑧</td><td>値</td><td>動的</td><td>複数の値の整合</td><td>1つの境界に閉じ込める</td></tr>
+        <tr><td class="c">⑨</td><td>同一性</td><td>動的</td><td>同じ実体を参照</td><td>所有者を1つに決め、他は経由させる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>コナーセンスを改善する3つの指針</h2>
+    <p>Page-Jones と Weirich の考え方をまとめると、次の3つになります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指針</th><th>内容</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>① 強さを弱める</strong></td><td>強い種類のコナーセンスを、弱い種類に置き換える</td><td>位置 → 名前（引数オブジェクト）、意味 → 名前（列挙型）、実行順序 → 内部に隠す</td></tr>
+        <tr><td><strong>② 局所性を高める</strong></td><td>強いコナーセンスほど、<strong>近く</strong>（同じ関数・クラス・モジュール）に置く</td><td>値のコナーセンスがある2つのデータを、別サービスから同じサービスへ移す</td></tr>
+        <tr><td><strong>③ 程度を減らす</strong></td><td>結合に巻き込まれる部品の数を減らす</td><td>50か所で同じ計算をしている → 1つの関数に集約して1か所にする</td></tr>
+      </tbody>
+    </table></div>
+    <p>『基礎』ではこれを <strong>「カプセル化によって、強いコナーセンスをモジュールの内側に閉じ込める」</strong> と表現しています。これは <strong>高凝集</strong> の言い換えでもあります。</p>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="強いコナーセンスはモジュールの内側に">
+      <rect x="30" y="30" width="270" height="170" rx="12" class="d-box-accent"/>
+      <text x="165" y="56" text-anchor="middle" class="d-text-bold">モジュール A</text>
+      <rect x="60" y="80" width="90" height="40" rx="6" class="d-box"/>
+      <text x="105" y="105" text-anchor="middle" class="d-text-sub">部品</text>
+      <rect x="180" y="80" width="90" height="40" rx="6" class="d-box"/>
+      <text x="225" y="105" text-anchor="middle" class="d-text-sub">部品</text>
+      <line x1="150" y1="94" x2="180" y2="94" class="d-line-accent"/>
+      <line x1="150" y1="106" x2="180" y2="106" class="d-line-accent"/>
+      <text x="165" y="150" text-anchor="middle" class="d-text-sub">内側は強く結びついてよい</text>
+      <text x="165" y="170" text-anchor="middle" class="d-text-sub">（値・実行順序など）＝高凝集</text>
+      <rect x="420" y="30" width="270" height="170" rx="12" class="d-box-accent"/>
+      <text x="555" y="56" text-anchor="middle" class="d-text-bold">モジュール B</text>
+      <rect x="450" y="80" width="90" height="40" rx="6" class="d-box"/>
+      <text x="495" y="105" text-anchor="middle" class="d-text-sub">部品</text>
+      <rect x="570" y="80" width="90" height="40" rx="6" class="d-box"/>
+      <text x="615" y="105" text-anchor="middle" class="d-text-sub">部品</text>
+      <line x1="540" y1="94" x2="570" y2="94" class="d-line-accent"/>
+      <line x1="540" y1="106" x2="570" y2="106" class="d-line-accent"/>
+      <text x="555" y="150" text-anchor="middle" class="d-text-sub">内側は強く結びついてよい</text>
+      <text x="555" y="170" text-anchor="middle" class="d-text-sub">＝高凝集</text>
+      <line x1="300" y1="115" x2="420" y2="115" class="d-line-dash"/>
+      <text x="360" y="104" text-anchor="middle" class="d-text-sub">名前・型</text>
+      <text x="360" y="140" text-anchor="middle" class="d-text-sub">だけ</text>
+      <text x="360" y="222" text-anchor="middle" class="d-text-sub">モジュールの間は弱く結びつく＝疎結合</text>
+    </svg>
+    <figcaption>図：強いコナーセンスはモジュールの内側に閉じ込め、外とは弱いコナーセンスでつなぐ</figcaption>
+    </figure>
+    <blockquote><p><strong>モジュールの中は強く結びつき（高凝集）、モジュールの間は弱く結びつく（疎結合）</strong></p></blockquote>
+    <p>これは、<a href="13-1_モジュール性と疎結合高凝集.html">モジュール性・疎結合と高凝集</a> の原則を、コナーセンスの言葉で具体化したものです。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>アーキテクチャでの使い方 — サービス間のコナーセンス</h2>
+    <p>コナーセンスはクラスや関数の話だけではありません。<strong>サービス間・システム間の結合</strong> を考えるときにも非常に役立ちます。サービス間は局所性がもっとも低い（＝遠い）場所なので、<strong>サービス間には弱いコナーセンスしか置くべきではありません</strong>。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コナーセンス</th><th>サービス間での例</th><th>弱め方</th><th>判定</th></tr></thead>
+      <tbody>
+        <tr><td><strong>名前</strong></td><td>API のエンドポイント名・JSON のフィールド名</td><td>許容範囲。API のバージョニングで変更を管理</td><td><span class="badge good">許容</span></td></tr>
+        <tr><td><strong>型</strong></td><td>JSON スキーマ・gRPC の型定義</td><td>スキーマを契約として公開し、互換性を保つ</td><td><span class="badge good">許容</span></td></tr>
+        <tr><td><strong>意味</strong></td><td><code>status: 3</code> が「発送済み」を意味する</td><td>意味の分かる文字列にする、契約に明記する</td><td><span class="badge warn">要注意</span></td></tr>
+        <tr><td><strong>位置</strong></td><td>CSV 連携で列の順番に意味がある</td><td>項目名付きの形式（JSON など）にする</td><td><span class="badge warn">要注意</span></td></tr>
+        <tr><td><strong>アルゴリズム</strong></td><td>両サービスが同じ方式で署名・ハッシュを計算</td><td>共通ライブラリ化、または一方に処理を寄せる</td><td><span class="badge warn">要注意</span></td></tr>
+        <tr><td><strong>実行順序</strong></td><td>「先に在庫サービスを呼んでから決済サービスを呼ぶ」必要がある</td><td>オーケストレーション（SAGA）で順序を1か所に集約</td><td><span class="badge warn">要注意</span></td></tr>
+        <tr><td><strong>タイミング</strong></td><td>呼び出し側のタイムアウトが、呼ばれる側の処理時間より短い</td><td>非同期化、タイムアウトとリトライの設計</td><td><span class="badge warn">要注意</span></td></tr>
+        <tr><td><strong>値</strong></td><td>注文サービスと在庫サービスのデータを同時に整合させる必要がある</td><td><strong>サービス境界を見直す</strong>、または結果整合性と SAGA を採用</td><td><span class="badge bad">境界を疑う</span></td></tr>
+        <tr><td><strong>同一性</strong></td><td>複数のサービスが同じ DB テーブルを直接読み書きする</td><td><strong>データ所有権</strong> を1サービスに決め、他は API 経由にする</td><td><span class="badge bad">境界を疑う</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout bad">
+      <p class="callout-title">値・同一性のコナーセンスがサービス間にあったら</p>
+      <p>表の下の2行（値・同一性）がサービス間に現れたら、<strong>サービスの分け方そのものが間違っている</strong> サインであることが多いです。これは <strong>分散モノリス</strong>（分けたのに一緒にしか動かせない状態）の典型的な原因です（→ <a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a>、<a href="40-4_データ所有権とSAGA.html">データ所有権・分散トランザクション・SAGA</a>）。</p>
+    </div>
+    <p class="small muted">※「判定」列は、本文の指針（遠い場所には弱いコナーセンスだけを置く）に沿って、このページで整理した目安です。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解</h2>
+    <details open>
+      <summary>「コナーセンスはゼロにすべき」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> 部品が協力して動く以上、コナーセンスは必ずあります。目標は <strong>ゼロにすること</strong> ではなく、<strong>弱い種類にし、近くに置き、数を減らす</strong> ことです。</p>
+      </div>
+    </details>
+    <details open>
+      <summary>「強いコナーセンスは常に悪い」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> 同じ関数の中で、2つの変数が値のコナーセンスを持つのは普通のことです。問題になるのは、<strong>強いコナーセンスが遠い場所（別モジュール・別サービス）にまたがるとき</strong> です。</p>
+      </div>
+    </details>
+    <details open>
+      <summary>「静的型付け言語なら結合の問題は起きない」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> 型のコナーセンスまではコンパイラが守ってくれますが、意味・位置（同じ型が並ぶ場合）・アルゴリズム・すべての動的コナーセンスは検出できません。</p>
+      </div>
+    </details>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>コナーセンス</strong>：一方を変えたら、もう一方も変えなければ正しく動かない関係。結合の <strong>種類と強さ</strong> を表す語彙</li>
+        <li>3つの性質：<strong>強さ</strong>（種類で決まる）・<strong>局所性</strong>（近さ）・<strong>程度</strong>（巻き込まれる数）</li>
+        <li>9つの種類（弱い → 強い）
+          <ul>
+            <li>静的：<strong>名前 → 型 → 意味 → 位置 → アルゴリズム</strong></li>
+            <li>動的：<strong>実行順序 → タイミング → 値 → 同一性</strong></li>
+          </ul>
+        </li>
+        <li>改善の指針：<strong>強さを弱める・局所性を高める・程度を減らす</strong>。強いコナーセンスはモジュールの内側に閉じ込める（＝高凝集）</li>
+        <li>サービス間に <strong>値・同一性</strong> のコナーセンスがあれば、境界を見直すべきサイン</li>
+      </ul>
+    </div>
+    <p>次は <a href="13-4_アーキテクチャ量子と論理コンポーネント.html">アーキテクチャ量子と粒度・論理コンポーネント</a> で、結合を「デプロイの単位」の視点から考えます。</p>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Meilir Page-Jones『What Every Programmer Should Know about Object-Oriented Design』（1996）</li>
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』第3章</li>
+      <li><a href="https://connascence.io/">connascence.io</a></li>
+      <li><a href="https://thoughtbot.com/blog/connascence-as-a-vocabulary-to-discuss-coupling">Connascence as a vocabulary to discuss Coupling（thoughtbot）</a></li>
+      <li><a href="https://coupling.dev/posts/related-topics/connascence/">Connascence: Types, Examples, and Coupling（coupling.dev）</a></li>
+      <li><a href="https://www.qwan.eu/2026/05/08/connascence-intro.html">Connascence: (de)coupling more effectively（QWAN, 2026）</a></li>
+      <li><a href="https://jasonbutz.info/2019/04/connascence-lang-code-review/">Connascence - The Language You Have Been Needing in Code Review（Jason Butz）</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="13-2_結合の指標.html"><span class="lbl">← 前のページ</span>結合の指標（求心性・遠心性・主系列からの距離）</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="13-4_アーキテクチャ量子と論理コンポーネント.html"><span class="lbl">次のページ →</span>アーキテクチャ量子と粒度・論理コンポーネント</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

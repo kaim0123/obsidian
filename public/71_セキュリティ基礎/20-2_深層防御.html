@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>深層防御｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 設計原則 › 深層防御</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+<div class="hero">
+      <span class="eyebrow">20 設計原則</span>
+      <h1>深層防御（Defense in Depth）</h1>
+      <p class="lead">「1つの守りが破られても、次の守りで止める」。城の堀と城壁のように、性質の違う対策を何層にも重ねる考え方です。なぜ1つの対策では足りないのか、Webアプリやログイン機能ではどんな層を積むのか、どこから手を付けるべきか、そしてやりがちな失敗までを解説します。</p>
+      <p class="meta">もとにしたノート：20_設計原則/02_深層防御</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>深層防御は <strong>「卵は一つのカゴに盛るな」</strong> のセキュリティ版です。どんな対策もいつかは破られる前提で、<strong>違う場所・違う性質の対策を何層にも重ねて</strong>、1層が破られても全体としては守り切れるようにします。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>深層防御とは</h2>
+    <p><strong>深層防御</strong>（Defense in Depth）とは、</p>
+    <div class="callout key"><p><strong>1つの防御が破られても、次の防御層で止める</strong></p></div>
+    <p>ために、<strong>複数のセキュリティ対策を多層的に重ねる</strong> 考え方です。もともとは軍事用語で、お城の <strong>外堀 → 城壁 → 内堀 → 天守閣</strong> のような守りをイメージすると分かりやすいでしょう。外堀を越えられても城壁がある、城壁を越えられても内堀がある――攻める側は何度も壁にぶつかります。</p>
+    <p>身近な例では、銀行がそうです。入口には警備員、店内には防犯カメラ、カウンターの奥は関係者以外立入禁止、お金は金庫に入っていて、金庫を開けるには複数人の鍵が必要。どれか1つを突破されても、残りの仕組みが働きます。</p>
+    <div class="callout tip">
+      <p class="callout-title">用語メモ</p>
+      <p>この分野でいう <strong>層（レイヤー）</strong> とは「守りの段」のこと。ネットワークの入口、サーバー、アプリ、データ、そして運用する人間――攻撃者が目的にたどり着くまでに通る場所ごとに、それぞれ守りを置きます。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ1つの対策では足りないのか</h2>
+    <h3 id="sec-2-1">2.1 完璧な防御は存在しない</h3>
+    <p>どんなに強固な対策も、いつか破られる可能性があります。たとえば次のような理由です。</p>
+    <ul>
+      <li>新しい <strong>脆弱性</strong>（ソフトウェアの弱点）が見つかる。修正が出る前に悪用されるものを <strong>ゼロデイ</strong> と呼ぶ</li>
+      <li><strong>設定ミス</strong> で、対策がいつの間にか無効になっている</li>
+      <li><strong>人的ミス</strong> で、パスワードなどの認証情報が漏れる</li>
+      <li>誰も予想していなかった <strong>新しい攻撃手法</strong> が登場する</li>
+    </ul>
+    <h3 id="sec-2-2">2.2 攻撃者を遅らせ、コストを上げる</h3>
+    <p>目的にたどり着くまでに何層も突破が必要なら、攻撃者にとっては次のような不利が生まれます。</p>
+    <div class="grid c3">
+      <div class="card"><h4>時間がかかる</h4><p>作業が長引くほど、防御側に <strong>見つかる可能性</strong> が上がります。</p></div>
+      <div class="card"><h4>コストがかさむ</h4><p>割に合わなければ、攻撃者は <strong>他の標的に移る</strong> ことがあります。</p></div>
+      <div class="card"><h4>ミスをする</h4><p>手数が増えるほど痕跡が残り、<strong>防御側が気付ける</strong> チャンスが増えます。</p></div>
+    </div>
+    <h3 id="sec-2-3">2.3 検知と対応の時間を稼ぐ</h3>
+    <p>層を突破されている間に <strong>異常を検知</strong> し、<strong>対応する時間</strong> を確保できます。泥棒が玄関の鍵をこじ開けている間に防犯ブザーが鳴れば、家の中に入られる前に警察を呼べる、というわけです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>「多層」の例：Webアプリの顧客情報を守る</h2>
+    <p>「データベースの顧客情報を盗む」という1つの目標に対して、防御側は次のように層を重ねます。下から順に、攻撃者が通る順番です。</p>
+    <figure>
+    <svg viewBox="0 0 720 470" role="img" aria-label="Webアプリの7つの防御層。攻撃者は下から上へ順に突破する必要がある">
+      <defs><marker id="arw20b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="150" y="10" width="420" height="44" rx="8" class="d-box"/>
+      <text x="360" y="37" text-anchor="middle" class="d-text-bold">【7】監査ログと異常検知</text>
+      <rect x="150" y="62" width="420" height="44" rx="8" class="d-box-good"/>
+      <text x="360" y="89" text-anchor="middle" class="d-text-bold">【6】DB自体の暗号化（保存時）</text>
+      <rect x="150" y="114" width="420" height="44" rx="8" class="d-box-good"/>
+      <text x="360" y="141" text-anchor="middle" class="d-text-bold">【5】DBユーザーの最小権限</text>
+      <rect x="150" y="166" width="420" height="44" rx="8" class="d-box-accent"/>
+      <text x="360" y="193" text-anchor="middle" class="d-text-bold">【4】ネットワーク隔離（VPC等）</text>
+      <rect x="150" y="218" width="420" height="44" rx="8" class="d-box-accent"/>
+      <text x="360" y="245" text-anchor="middle" class="d-text-bold">【3】入力検証・パラメータ化クエリ</text>
+      <rect x="150" y="270" width="420" height="44" rx="8" class="d-box-warn"/>
+      <text x="360" y="297" text-anchor="middle" class="d-text-bold">【2】認証・認可・セッション管理</text>
+      <rect x="150" y="322" width="420" height="44" rx="8" class="d-box-warn"/>
+      <text x="360" y="349" text-anchor="middle" class="d-text-bold">【1】WAF / CDN / DDoS対策</text>
+      <rect x="250" y="400" width="220" height="50" rx="8" class="d-box-bad"/>
+      <text x="360" y="430" text-anchor="middle" class="d-text-bold">インターネット（攻撃者）</text>
+      <line x1="100" y1="420" x2="100" y2="22" class="d-line" marker-end="url(#arw20b)"/>
+      <text x="88" y="44" text-anchor="end" class="d-text-sub">目標</text>
+      <text x="88" y="420" text-anchor="end" class="d-text-sub">入口</text>
+      <text x="586" y="37" class="d-text-sub">入られても気づく</text>
+      <text x="586" y="89" class="d-text-sub">盗まれても読めない</text>
+      <text x="586" y="141" text-anchor="start" class="d-text-sub">入られても壊せない</text>
+      <text x="586" y="193" class="d-text-sub">外から直接届かない</text>
+      <text x="586" y="245" class="d-text-sub">SQLiを防ぐ</text>
+      <text x="586" y="297" class="d-text-sub">なりすましを防ぐ</text>
+      <text x="586" y="349" class="d-text-sub">明らかな悪意を遮断</text>
+    </svg>
+    <figcaption>図：1つの目標（顧客情報）に対して、性質の違う7層を重ねる</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>内容</th><th>この層があると…</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>WAF / CDN / DDoS対策</strong>。WAF は Web アプリ向けのファイアウォール、DDoS は大量の通信で相手を止める攻撃</td><td>明らかに悪意ある通信を入口で遮断</td></tr>
+        <tr><td>2</td><td><strong>認証・認可・セッション管理</strong>。認証は「あなたは誰か」、認可は「それをしてよいか」の確認</td><td>他人のふりをさせない、権限外を触らせない</td></tr>
+        <tr><td>3</td><td><strong>入力検証・パラメータ化クエリ</strong></td><td>SQLインジェクションを防ぐ</td></tr>
+        <tr><td>4</td><td><strong>ネットワーク隔離</strong>（VPC、プライベートサブネット）</td><td>DBにインターネットから直接アクセスできない</td></tr>
+        <tr><td>5</td><td><strong>DBユーザーの最小権限</strong></td><td>侵入されてもテーブル削除や管理操作はできない（→ <a href="20-1_最小権限とデータ最小化.html">最小権限</a>）</td></tr>
+        <tr><td>6</td><td><strong>DB自体の暗号化</strong>（保存時の暗号化＝At Rest）</td><td>ファイルごと盗まれても読めない</td></tr>
+        <tr><td>7</td><td><strong>監査ログと異常検知</strong></td><td>侵入されても検知してアラートを出せる</td></tr>
+      </tbody>
+    </table></div>
+    <p>どれか1層だけでは不十分です。<strong>すべての層を積んで初めて</strong>、実用的な防御になります。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>層にはどんな種類があるか</h2>
+    <p>システム全体で見ると、守りを置く場所は大きく6つに分けられます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>主な対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>物理層</strong></td><td>データセンターの入退室管理・監視カメラ、サーバー機器の施錠、廃棄時のディスク破壊</td></tr>
+        <tr><td><strong>ネットワーク層</strong></td><td>ファイアウォール（通信の交通整理）、IDS/IPS（侵入の検知・防止）、VPC・セグメンテーション（内部ネットワークの分割）、VPN / ゼロトラストネットワーク</td></tr>
+        <tr><td><strong>ホスト層</strong></td><td>OSパッチ（修正プログラム）の自動適用、アンチウイルス / EDR（端末の不審な動きを検知・対応するツール）、ホストファイアウォール、ディスク暗号化</td></tr>
+        <tr><td><strong>アプリケーション層</strong></td><td>入力検証・出力エスケープ、認証・認可、セッション管理、CSRF対策、CSP、セキュリティヘッダー</td></tr>
+        <tr><td><strong>データ層</strong></td><td>転送中の暗号化（TLS）、保存中の暗号化、機密項目の追加暗号化、アクセスログ</td></tr>
+        <tr><td><strong>運用・人間層</strong></td><td>セキュリティ教育、フィッシング訓練、最小権限の運用、インシデント（事故）対応計画</td></tr>
+      </tbody>
+    </table></div>
+    <p>ネットワークや端末の対策の詳細は <a href="50-1_ネットワークと端末の防御.html">ネットワークと端末の防御</a>、監視の仕組みは <a href="50-2_セキュリティ監視とツール.html">セキュリティ監視とツール</a> で扱います。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>1つの機能でも層を積む：ログイン機能の例</h2>
+    <p>深層防御はシステム全体の話だけではありません。<strong>ログイン機能1つ</strong> にも、次のように何重もの対策を積みます。</p>
+    <ol class="steps">
+      <li><strong>HTTPS</strong> で通信経路を保護する（盗聴を防ぐ）</li>
+      <li><strong>CSP</strong>（ブラウザに「読み込んでよい場所」を指示する仕組み）で XSS の影響を制限する</li>
+      <li><strong>強いパスワードポリシー</strong>（漏洩済みパスワードの禁止、12文字以上）</li>
+      <li><strong>bcrypt / Argon2</strong> でパスワードをハッシュ化して保存する（元に戻せない形に変換）</li>
+      <li><strong>レート制限</strong>（IP・アカウント・デバイスごとに試行回数を制限）</li>
+      <li><strong>MFA</strong>（多要素認証）で、パスワードが漏れても入れないようにする</li>
+      <li><strong>セッションCookieの属性</strong>（HttpOnly、Secure、SameSite）を正しく設定する</li>
+      <li><strong>異常検知</strong>（普段と違う国・普段と違うデバイスからのログイン）</li>
+      <li><strong>不正ログインアラート</strong> をユーザーに通知する</li>
+      <li><strong>監査ログ</strong> で、あとから追跡できるようにする</li>
+    </ol>
+    <div class="callout key">
+      <p class="callout-title">ここが深層防御</p>
+      <p>1〜3 が甘くても 4〜6 で守れる。4〜6 が破られても 8〜10 で検知できる。<strong>「守る」層と「気づく」層の両方</strong> があることがポイントです。</p>
+    </div>
+
+    <h3 id="sec-5-1">5.1 アプリの中でも「入力 → 処理 → 出力」で守る</h3>
+    <p>アプリケーションのコードの中でも、データの流れに沿って各段階で守りを置きます。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>入力時</h4>
+        <ul>
+          <li>型チェック・範囲チェック</li>
+          <li>ホワイトリスト検証（許可したものだけ通す）</li>
+          <li>サイズ制限</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>処理時</h4>
+        <ul>
+          <li>パラメータ化クエリ</li>
+          <li>認可チェック（所有者かどうかも含む）</li>
+          <li>トランザクション</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>出力時</h4>
+        <ul>
+          <li>エスケープ（HTML/JS/URL）</li>
+          <li>機密情報のフィルタリング</li>
+          <li>ヘッダー設定（X-Content-Type-Options 等）</li>
+        </ul>
+      </div>
+    </div>
+    <p>入力検証やエスケープの具体的な書き方は、72_Web脆弱性対策 で詳しく扱います。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>深層防御と最小権限の関係</h2>
+    <p>深層防御と最小権限は、別の方向から被害を減らす <strong>補い合う</strong> 関係です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>深層防御</h4>
+        <p>そもそも <strong>何層も突破させない</strong>。侵入される確率を下げる。</p>
+      </div>
+      <div class="card">
+        <h4>最小権限</h4>
+        <p>侵入されたときの <strong>1層あたりの被害</strong> を小さくする。</p>
+      </div>
+    </div>
+    <p>両方を組み合わせて、<strong>「侵入される確率 × 侵入されたあとの被害」</strong> の掛け算を小さくします。リスクを「起こりやすさ × 影響の大きさ」で考える見方は <a href="10-4_リスク管理とリスクアセスメント.html">リスク管理とリスクアセスメント</a> と同じです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある失敗（アンチパターン）</h2>
+    <h3 id="sec-7-1">7.1 「多層」ではなく「多重」になっている</h3>
+    <p>深層防御で最も誤解されやすいのがここです。<strong>同じ層・同じ性質の対策</strong> を3つ重ねても、それを破る1つの攻撃には弱いままです。</p>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="多重防御と多層防御の比較">
+      <defs><marker id="arw20c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="175" y="26" text-anchor="middle" class="d-text-bold">✕ 多重（同じ性質を重ねる）</text>
+      <rect x="40" y="44" width="270" height="36" rx="8" class="d-box-bad"/>
+      <text x="175" y="67" text-anchor="middle" class="d-text">入口フィルタ A</text>
+      <rect x="40" y="88" width="270" height="36" rx="8" class="d-box-bad"/>
+      <text x="175" y="111" text-anchor="middle" class="d-text">入口フィルタ B</text>
+      <rect x="40" y="132" width="270" height="36" rx="8" class="d-box-bad"/>
+      <text x="175" y="155" text-anchor="middle" class="d-text">入口フィルタ C</text>
+      <text x="175" y="200" text-anchor="middle" class="d-text-sub">すり抜け方が同じなので</text>
+      <text x="175" y="220" text-anchor="middle" class="d-text-sub">1つの攻撃で全部突破される</text>
+      <line x1="360" y1="20" x2="360" y2="230" class="d-line-dash"/>
+      <text x="545" y="26" text-anchor="middle" class="d-text-bold">○ 多層（違う性質を重ねる）</text>
+      <rect x="410" y="44" width="270" height="36" rx="8" class="d-box-good"/>
+      <text x="545" y="67" text-anchor="middle" class="d-text">入口：WAF</text>
+      <rect x="410" y="88" width="270" height="36" rx="8" class="d-box-good"/>
+      <text x="545" y="111" text-anchor="middle" class="d-text">中：権限・暗号化</text>
+      <rect x="410" y="132" width="270" height="36" rx="8" class="d-box-good"/>
+      <text x="545" y="155" text-anchor="middle" class="d-text">奥：監視・アラート</text>
+      <text x="545" y="200" text-anchor="middle" class="d-text-sub">破り方がそれぞれ違うので</text>
+      <text x="545" y="220" text-anchor="middle" class="d-text-sub">攻撃者は毎回別の手が必要</text>
+    </svg>
+    <figcaption>図：「深層」とは、場所と性質の違う対策を組み合わせること</figcaption>
+    </figure>
+
+    <h3 id="sec-7-2">7.2 その他の失敗</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アンチパターン</th><th>なぜダメか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>「WAFを入れれば安全」</strong></td><td>WAF は1つの層にすぎない。アプリ内部の対策を怠る言い訳にはならない</td></tr>
+        <tr><td><strong>「社内ネットだから信頼」</strong></td><td>外からの攻撃にしか備えないのは古い考え方。内部からの攻撃や、乗っ取られたマシンからの <strong>横移動</strong>（社内の別の機器へ次々と侵入を広げること）にも備える（→ <a href="20-3_ゼロトラスト.html">ゼロトラスト</a>）</td></tr>
+        <tr><td><strong>層を増やしすぎて運用不能</strong></td><td>層が多すぎて <strong>誰も全体を把握できない</strong> のも問題。管理のしやすさとのバランスが必要</td></tr>
+        <tr><td><strong>最後の砦「人間」を忘れる</strong></td><td>どれだけ技術対策を積んでも、<strong>フィッシングメール1通で社員が認証情報を渡せば</strong> 台無し。教育と訓練も層の1つ</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「HTTPS にしてあるから安全」</p>
+      <p>HTTPS が守るのは <strong>通信の途中</strong> だけです。サーバーに届いたあとの SQLインジェクションや、認可の抜け、保存データの漏洩は防げません。「〇〇さえあれば安全」という言い方が出たら、深層防御の考え方を思い出してください。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>どこから手を付けるか：層の優先順位</h2>
+    <p>すべての層を一度に実装するのは無理です。投資の優先順位の目安は次の通りです。</p>
+    <ol class="steps">
+      <li><strong>コストが低く効果が高いもの</strong>：HTTPS、セキュリティヘッダー、依存ライブラリの更新</li>
+      <li><strong>設計を変えないと入らないもの</strong>：認証・認可・ログ（後から入れるのは大変なので早めに。→ <a href="20-4_セキュアバイデザイン.html">セキュアバイデザイン</a>）</li>
+      <li><strong>運用で続ける必要があるもの</strong>：パッチ適用、権限の棚卸し、監視</li>
+      <li><strong>高コストだが重要なもの</strong>：WAF、SIEM（ログを集めて分析する基盤）、SOC（セキュリティ監視の専門チーム）</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント</p>
+      <p><strong>最も攻撃される層</strong>（通常はアプリケーション層）から優先的に固めましょう。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>2026年の事例：被害半径で考える</h2>
+    <p>2026年の国内の漏洩事例を分析した記事では、<strong>被害の大きさは「入られたこと」そのものより、侵入後の動きが続いた時間と、届いたデータの量に比例していた</strong> と指摘されています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>事例</th><th>侵入から発覚まで</th></tr></thead>
+      <tbody>
+        <tr><td>アフラック生命</td><td>15日（CPUの高負荷で発覚）</td></tr>
+        <tr><td>ショップサーブ</td><td>約72日</td></tr>
+        <tr><td>両毛システムズ（委託元への通知）</td><td>43日</td></tr>
+        <tr><td>米国防総省 DMDC（海外）</td><td>約9か月</td></tr>
+      </tbody>
+    </table></div>
+    <p>つまり、入口の防御だけでは足りず、<strong>入られたあとの層</strong> が被害を決めます。2026年の事例を層ごとに整理すると次のようになります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>役割</th><th>2026年に足りなかった例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>入口</strong></td><td>脆弱性を塞ぐ</td><td>VPN の脆弱性・ゼロデイ（→ <a href="50-4_脆弱性管理とランサムウェア対策.html">脆弱性管理とランサムウェア対策</a>）</td></tr>
+        <tr><td><strong>権限</strong></td><td>1つのIDで届く範囲を絞る</td><td>保守アカウントで大量アクセス（→ <a href="20-1_最小権限とデータ最小化.html">最小権限</a>）</td></tr>
+        <tr><td><strong>ネットワーク</strong></td><td>横に広がらないよう分ける</td><td>フラットな構成でDBまで到達</td></tr>
+        <tr><td><strong>データ</strong></td><td>持たない・分ける・暗号化する</td><td>退会者データ・免許証画像の保持（→ <a href="20-1_最小権限とデータ最小化.html">データ最小化</a>）</td></tr>
+        <tr><td><strong>検知</strong></td><td>異常な大量取得に気づいて止める</td><td>大量照会の監視不足（→ <a href="40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a>）</td></tr>
+        <tr><td><strong>復旧</strong></td><td>バックアップから戻す</td><td>ランサムウェアで長期停止（→ <a href="50-4_脆弱性管理とランサムウェア対策.html">脆弱性管理とランサムウェア対策</a>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>現代の潮流</h2>
+    <div class="grid c3">
+      <div class="card">
+        <h4>ゼロトラスト</h4>
+        <p>「境界で守る」だけでは不十分、という考え方。<strong>すべてのアクセスを認証・認可・暗号化</strong> する。深層防御の延長線上にある概念です（→ <a href="20-3_ゼロトラスト.html">ゼロトラスト</a>）。</p>
+      </div>
+      <div class="card">
+        <h4>セキュアバイデザイン</h4>
+        <p>設計段階からセキュリティを織り込む。後付けではなく前提として、深層防御を <strong>設計の一部</strong> にする（→ <a href="20-4_セキュアバイデザイン.html">セキュアバイデザイン</a>）。</p>
+      </div>
+      <div class="card">
+        <h4>プラットフォームセキュリティ</h4>
+        <p>層を個別に作るのではなく、クラウドやコンテナ基盤が複数の層をまとめて提供する。例：AWS の VPC + Security Group + WAF + Shield + GuardDuty。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>チェックリスト：あなたのシステムに何層ある？</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>確認する対策</th></tr></thead>
+      <tbody>
+        <tr><td>ネットワーク層</td><td>ファイアウォール、WAF、VPC分離</td></tr>
+        <tr><td>ホスト層</td><td>OS更新、EDR、ホストファイアウォール</td></tr>
+        <tr><td>認証層</td><td>強いパスワード、MFA、レート制限</td></tr>
+        <tr><td>認可層</td><td>RBAC、所有権チェック、デフォルト拒否</td></tr>
+        <tr><td>入力検証層</td><td>ホワイトリスト、型・長さの制限</td></tr>
+        <tr><td>出力エスケープ層</td><td>HTML/JS/SQL のエスケープ、CSP</td></tr>
+        <tr><td>データ保護層</td><td>TLS、保存時暗号化、機密項目の暗号化</td></tr>
+        <tr><td>監査層</td><td>ログ、SIEM、異常検知、アラート</td></tr>
+        <tr><td>運用層</td><td>パッチ、権限棚卸し、訓練</td></tr>
+        <tr><td>対応層</td><td>インシデント対応計画、バックアップ、DR（災害時の復旧計画）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>深層防御は <strong>「多層的に、性質の違う防御を重ねる」</strong> 考え方</li>
+        <li><strong>単一の対策に依存しない</strong>（WAFさえあれば、HTTPSさえあれば…は誤り）</li>
+        <li><strong>違う層</strong> で <strong>違う性質</strong> の対策を組み合わせる。同じものを重ねるのは「多重」</li>
+        <li>「守る」層だけでなく、<strong>入られたあとに気づく・戻す</strong> 層が被害の大きさを決める</li>
+        <li>最小権限・ゼロトラストと合わせて、被害を二重三重に限定する。人間（教育・訓練）も防御層の1つ</li>
+        <li>優先順位は「低コスト・高効果」「設計段階で必要なもの」から</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 入口に違うメーカーのWAFを3台並べました。これは深層防御として十分ですか？</summary>
+      <div class="body">
+        <p><strong>不十分です。</strong> 同じ層・同じ性質の対策を重ねる「多重」になっており、WAFをすり抜ける攻撃（例：正規ユーザーの認証情報を使った侵入）には3台とも無力です。認可・最小権限・暗号化・監視など、<strong>違う層・違う性質</strong> の対策を組み合わせる必要があります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 深層防御と最小権限は、それぞれ何を小さくしますか？</summary>
+      <div class="body">
+        <p>深層防御は <strong>侵入される確率</strong>（何層も突破させない）を、最小権限は <strong>侵入されたときの被害</strong>（1層あたりで失うもの）を小さくします。両方合わせて「確率 × 被害」の積を小さくします。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 2026年の事例分析では、被害の大きさは何に比例していたと指摘されていますか？</summary>
+      <div class="body">
+        <p><strong>侵入後の動きが続いた時間と、届いたデータの量</strong> です。だからこそ、入口だけでなく、権限・ネットワーク分割・データ最小化・検知・復旧といった「入られたあとの層」が重要になります。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：71_セキュリティ基礎/20_設計原則/02_深層防御（2026年の事例の追記を含む）</li>
+      <li>AWS のセキュリティサービス（VPC、Security Group、AWS WAF、Shield、GuardDuty）</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-1_最小権限とデータ最小化.html"><span class="lbl">← 前のページ</span>最小権限とデータ最小化</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-3_ゼロトラスト.html"><span class="lbl">次のページ →</span>ゼロトラスト</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

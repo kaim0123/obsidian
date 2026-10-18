@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evalインジェクション・デシリアライズ・XXE｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 ファイル・データ処理 › Evalインジェクション・デシリアライズ・XXE</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 ファイル・データ処理</span>
+      <h1>Evalインジェクション・デシリアライズ・XXE</h1>
+      <p class="lead">Webアプリは、設定・API・セッションなど、<strong>決まった形（構造）を持つデータ</strong> を読み込むことがよくあります。このページでは徳丸本（『安全なWebアプリケーションの作り方』）第17章に沿って、そのときに起きやすい3つの問題 ── <strong>Evalインジェクション</strong>、<strong>安全でないデシリアライゼーション</strong>、<strong>XML外部実体参照（XXE）</strong> ── の仕組み・被害・原因・対策を解説します。</p>
+      <p class="meta">もとにしたノート：40_ファイル・データ処理/03_構造化データの読み込みにまつわる問題（徳丸本17章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>「データを読む」処理が、いつの間にか「命令を実行する」「別のファイルを取りに行く」処理になっていないか</strong> を疑うのが、この章の要点です。対策の基本は、<strong>eval を使わない／外部から来るデータは JSON で受け取る／XML を使うなら外部実体を無効化する</strong> ことです。</p>
+    </div>
+
+    <p>第17章で扱う問題は次の3つです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>問題</th><th>概要</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Evalインジェクション</strong></td><td>文字列をプログラムとして実行する機能に、外部入力を渡してしまう</td></tr>
+          <tr><td><strong>安全でないデシリアライゼーション</strong></td><td>オブジェクト復元処理に、改ざんされたデータを渡してしまう</td></tr>
+          <tr><td><strong>XML外部実体参照（XXE）</strong></td><td>XML の「外部ファイルを読み込む機能」を悪用される</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>第14〜16章は「コマンド」「ファイル」「インクルード」など、<strong>実行やファイル操作そのもの</strong> が中心でした（<a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a>、<a href="40-2_ファイルアップロード.html">ファイルアップロード</a>、<a href="20-6_ファイルインクルード.html">ファイルインクルード</a>）。本章は、<strong>データを読み込む処理の中に、意図しない命令やファイルアクセスが紛れ込む</strong> 点がポイントです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>構造化データの読み込みにまつわる問題の概要</h2>
+    <p>「構造化データ」とは、単なる文章ではなく、<strong>プログラムが解釈できる決まった形式</strong> のデータです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>形式の例</th><th>よくある用途</th></tr></thead>
+        <tbody>
+          <tr><td><strong>プログラムの文字列</strong></td><td>計算式や設定を動的に評価する（<code>eval</code> など）</td></tr>
+          <tr><td><strong>シリアライズ形式</strong></td><td>オブジェクトを保存・復元する（PHP の <code>serialize</code> など）</td></tr>
+          <tr><td><strong>XML / JSON</strong></td><td>API や設定ファイル、外部システムとのデータ交換</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>XML</strong> は <code>&lt;name&gt;…&lt;/name&gt;</code> のようなタグでデータを表す形式、<strong>JSON</strong> は <code>{"name": "…"}</code> のように値を書き並べる形式です。便利な一方で、読み込み処理が「ただの値」ではなく「命令」や「ファイル参照」まで解釈してしまうと、攻撃につながります。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>注文票に「商品名・個数」だけが書いてあり、厨房はそのとおり作る。</p></div>
+      <div class="card"><h4>攻撃された場合</h4><p>注文票に「商品名」のふりをして「金庫を開けろ」と書かれ、厨房がそれを作業指示として実行してしまう。</p></div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 なぜ危険か</h3>
+    <p>構造化データの読み込みは、アプリが <strong>「外部から来た文字列を、プログラムの一部として解釈する」</strong> ことがある、ということです。悪用されると、次のような被害が出ます。</p>
+<pre><code>・設定ファイルやソースコードなどの情報漏洩
+・サイトの見た目や内容の改ざん
+・不正な機能の実行（管理者権限の操作など）
+・他サイトへの攻撃の踏み台にされる
+・サーバーの CPU を使った暗号通貨の採掘</code></pre>
+    <p><strong>踏み台</strong> とは、乗っ取ったサーバーを中継点にして別の相手を攻撃することです。<strong>暗号通貨の採掘</strong>（マイニング）は、ビットコインなどを得るために大量の計算をさせることで、他人のサーバーで勝手に行われると CPU が使い果たされます。</p>
+    <p>被害の種類は第14〜16章と似ています。違いは、入り口が「コマンド文字列」や「ファイル名」ではなく、<strong>データの読み込み・復元処理</strong> である点です。「データとコードが混ざる」というインジェクション共通の原因は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-2">71 セキュリティ基礎「インジェクションと暗号化の不備」</a> で扱っています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>Evalインジェクションとは</h2>
+    <p><strong>Evalインジェクション</strong> とは、<code>eval</code> のように <strong>文字列をプログラムとして実行する機能</strong> に、外部からの入力を渡してしまい、攻撃者が意図したコードまで動かされてしまう脆弱性です。<code>eval</code> は「evaluate（評価する）」の略で、渡された文字列をその場でプログラムとして実行する関数です。</p>
+    <p>PHP の <code>eval</code>、JavaScript の <code>eval</code>、Python の <code>eval</code> / <code>exec</code>、一部のテンプレートエンジンや式評価ライブラリなど、「文字列をコードとして動かす」機能が対象になります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>インジェクション系脆弱性</td></tr>
+          <tr><td><strong>インターフェース</strong></td><td>言語の式評価・動的実行機能</td></tr>
+          <tr><td><strong>悪用手口</strong></td><td>計算式や設定のふりをして、任意のコードを実行させる</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-2-1">2.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>「1 + 2 を計算して」と頼むと、答えの <code>3</code> が返る。</p></div>
+      <div class="card"><h4>攻撃</h4><p>「1 + 2。ついでに金庫の鍵も開けて」と書かれ、計算以外の作業まで実行される。</p></div>
+    </div>
+
+    <h3 id="sec-2-2">2.2 攻撃のイメージ</h3>
+    <p>たとえば、簡単な計算機機能が次のような URL だとします。</p>
+<pre><code>https://example.com/calc.php?expr=1+2</code></pre>
+    <p>アプリが <code>expr</code> パラメータ（URL の <code>?expr=</code> の部分で、利用者からアプリに渡される値）をそのまま <code>eval</code> に渡している場合は、次のようになります。</p>
+<pre><code>【正常な入力】
+expr=1+2
+→ eval("1+2") を実行（想定どおり、結果は 3）
+
+【攻撃者の入力（イメージ）】
+expr=1; system('cat /etc/passwd');
+→ 計算のあとに、サーバー上のコマンドまで実行される</code></pre>
+    <p><code>;</code> は PHP で「文の区切り」を表す記号で、<code>system()</code> は OS のコマンドを実行する関数です。「計算式を受け取る」つもりが、実際には <strong>プログラム全体を受け取る窓口</strong> になってしまっています。</p>
+
+    <h3 id="sec-2-3">2.3 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>攻撃者が「外部入力を eval に渡す」機能を見つける</li>
+      <li>計算式や設定値のふりをして、任意コードを含む文字列を送る</li>
+      <li>アプリが入力値をそのまま eval に渡す</li>
+      <li>言語処理系が文字列をプログラムとして実行する</li>
+      <li>情報漏洩・改ざん・不正操作・他サイト攻撃などが起きる</li>
+    </ol>
+
+    <h2 id="sec-3"><span class="num">3.</span>Evalインジェクションで何ができるか（被害）</h2>
+    <p><code>eval</code> で任意コードが動くと、Webアプリが持つ権限の範囲で、ほぼ何でもできます。代表的な影響は次のとおりです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>影響</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>情報漏洩</strong></td><td>設定ファイル、ソースコード、データベース内容などを読み出される</td></tr>
+          <tr><td><strong>サイト改ざん</strong></td><td>ページや設定を書き換え、偽情報や不正なリンクを載せる</td></tr>
+          <tr><td><strong>不正な機能実行</strong></td><td>管理者だけができる操作を勝手に行う</td></tr>
+          <tr><td><strong>他サイトへの攻撃</strong></td><td>自サーバーを踏み台にし、別のサイトへ攻撃する</td></tr>
+          <tr><td><strong>暗号通貨の採掘</strong></td><td>サーバーの CPU を使い、攻撃者のための採掘プログラムを動かす</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>第14章の <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> や、第16章の <a href="20-6_ファイルインクルード.html#sec-4">ファイルインクルードによる任意スクリプト実行</a> と同様、<strong>サーバーの乗っ取りに近い状態</strong> になります。</p>
+
+    <h3 id="sec-3-1">3.1 情報漏洩</h3>
+    <p>攻撃者がサーバー上でコードを実行できると、アプリから見えるファイルやデータを読み出せます。</p>
+<pre><code>【起きうること】
+・データベースの接続情報（パスワードなど）の取得
+・ソースコードや設定ファイルの閲覧
+・利用者の個人情報の不正取得</code></pre>
+
+    <h3 id="sec-3-2">3.2 サイト改ざん・不正な機能実行</h3>
+    <p>コード実行ができれば、ファイルの書き換えや、アプリ内部の処理の呼び出しも可能です。</p>
+<pre><code>【起きうること】
+・トップページへの不正な広告・マルウェア配布リンクの埋め込み
+・管理者権限でのユーザー操作
+・データベースの読み取り・書き換え・削除</code></pre>
+    <p><strong>マルウェア</strong> とは、ウイルスなど悪意を持って作られたソフトウェアの総称です。</p>
+
+    <h3 id="sec-3-3">3.3 他サイトへの攻撃・暗号通貨の採掘</h3>
+    <p>乗っ取られたサーバーは、攻撃者にとって便利な計算資源・踏み台になります。</p>
+<pre><code>【起きうること】
+・別サイトへの攻撃リクエストの送信
+・迷惑メールの送信元になる
+・CPU を使い果たす暗号通貨採掘（サーバーが極端に遅くなる）</code></pre>
+    <p>暗号通貨の採掘は、見た目の改ざんほど派手ではありませんが、<strong>電気代・クラウド料金の増大</strong> や <strong>サービス品質の低下</strong> として被害が出ます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>Evalインジェクションが生まれる原因</h2>
+    <p>Evalインジェクションは、次の条件がそろうと起きやすくなります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>原因</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Evalを用いることがそもそも危険である</strong></td><td>文字列をコードとして実行する機能自体が、攻撃の入り口になりやすい</td></tr>
+          <tr><td><strong>Evalに与えるパラメータのチェックがされていない</strong></td><td>外部入力をそのまま渡し、文字種や内容の制限がない</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>特に危険なのは、<strong>「ユーザーが入力した文字列を eval する」</strong> という仕様そのものです。</p>
+    <p>よくある実装例です。</p>
+<pre><code>・簡易計算機: ?expr=1+2 → eval($expr)
+・動的な並び替え: ?sort=price*qty → eval(...)
+・設定式の評価: 管理画面で入力した式をそのまま実行</code></pre>
+    <p>便利に見えますが、入力が「数式」ではなく「任意のプログラム」として解釈されると攻撃対象になります。</p>
+
+    <h3 id="sec-4-1">4.1 脆弱なコードの例</h3>
+    <p class="code-label bad">✕ 危険：外部入力をそのまま eval している</p>
+<pre><code>// ❌ 危険: 外部入力をそのまま eval している
+$expr = $_GET['expr'];
+$result = eval('return ' . $expr . ';');
+echo $result;</code></pre>
+<pre><code>リクエスト例:
+  /calc.php?expr=1; system('id'); //
+
+eval に渡されるイメージ:
+  return 1; system('id'); //;
+→ 計算以外の処理まで実行される</code></pre>
+    <p><code>//</code> は PHP のコメント記号で、その行の残り（ここではアプリが付けた <code>;</code>）を無効にしています。<code>id</code> は「いまどのユーザー権限で動いているか」を表示する OS コマンドです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>Evalインジェクションの対策</h2>
+    <p>対策の基本は次の3つです。優先順位が高いものから並べています。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>安全性</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Evalに相当する機能を使わない</strong></td><td>最も安全</td><td>そもそも動的実行の入り口を作らない</td></tr>
+          <tr><td><strong>Evalの引数に外部からのパラメータを含めない</strong></td><td>とても安全</td><td>使う場合でも、外部入力は渡さない</td></tr>
+          <tr><td><strong>Evalに与える外部からのパラメータを英数字に限定する</strong></td><td>安全寄り</td><td>やむを得ない場合の最後の手段</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-5-1">5.1 Evalを使わない（最優先）</h3>
+    <p>いちばん安全なのは、<strong><code>eval</code> 相当の機能を使わない</strong> ことです。多くの場合、<code>eval</code> がなくても実装できます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>やりたいこと</th><th>eval を使わない方法の例</th></tr></thead>
+        <tbody>
+          <tr><td><strong>四則演算</strong></td><td>専用の数式パーサ、または許可した演算だけを自分で解釈する</td></tr>
+          <tr><td><strong>並び替えキーの指定</strong></td><td><code>price</code> / <code>name</code> などのキーを受け取り、許可リストで SQL や比較処理を選ぶ</td></tr>
+          <tr><td><strong>設定の切り替え</strong></td><td><code>if</code> / <code>switch</code> / 連想配列で分岐する</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>パーサ</strong> とは、文字列を読んで決まった文法どおりに解釈するプログラムのことです。<strong>許可リスト</strong> は、使ってよいものだけを列挙した一覧（ホワイトリスト）です。</p>
+    <p class="code-label bad">✕ 危険：入力をコードとして実行する</p>
+<pre><code>$result = eval('return ' . $_GET['expr'] . ';');</code></pre>
+    <p class="code-label good">○ 安全：許可リストで処理を選ぶ（eval 不要）</p>
+<pre><code>// ✅ 安全: 許可リストで処理を選ぶ（eval 不要）
+$ops = [
+    'add' =&gt; fn($a, $b) =&gt; $a + $b,
+    'sub' =&gt; fn($a, $b) =&gt; $a - $b,
+];
+
+$op = $_GET['op'] ?? '';
+$a = (int)($_GET['a'] ?? 0);
+$b = (int)($_GET['b'] ?? 0);
+
+if (!isset($ops[$op])) {
+    exit('不正な操作です');
+}
+
+echo $ops[$op]($a, $b);</code></pre>
+    <p>利用者が送るのは <code>add</code> / <code>sub</code> という「キー」と数値だけで、実際に動く処理はサーバー側の配列が決めます。<code>(int)</code> は値を整数に変換する書き方、<code>fn(...) =&gt; ...</code> は PHP 7.4 以降の短い無名関数（アロー関数）です。</p>
+
+    <h3 id="sec-5-2">5.2 Evalの引数に外部からのパラメータを指定しない</h3>
+    <p>どうしても <code>eval</code> が必要な場合でも、<strong>外部入力を引数に混ぜない</strong> ことが重要です。</p>
+    <p class="code-label good">○ 比較的安全：eval する文字列はアプリ側で固定</p>
+<pre><code>// ✅ 比較的安全: eval する文字列はアプリ側で固定
+// （ただし、eval 自体は避ける方がよい）
+$code = 'return 1 + 2;';
+$result = eval($code);</code></pre>
+    <p>「固定のコードだけを eval する」ならインジェクションにはなりません。ただし、将来だれかが外部入力を足してしまうリスクがあるため、<strong>そもそも使わない設計</strong> が望ましいです。</p>
+
+    <h3 id="sec-5-3">5.3 外部からのパラメータを英数字に制限する</h3>
+    <p>やむを得ず外部入力を使う場合は、<strong>使える文字を英数字だけに限定</strong> します。記号や空白、引用符が入ると、文の区切りや関数呼び出しを作れます。</p>
+    <p class="code-label good">○ 英数字のみ許可（命令の追加を入れにくくする）</p>
+<pre><code>// ✅ 英数字のみ許可（命令の追加を入れにくくする）
+$expr = $_GET['expr'] ?? '';
+
+if (!preg_match('/\A[a-zA-Z0-9]+\z/', $expr)) {
+    exit('不正な入力です');
+}
+
+// それでも eval は推奨しない。許可リストで値を決める方が安全</code></pre>
+    <p><code>preg_match('/\A[a-zA-Z0-9]+\z/', …)</code> は、先頭（<code>\A</code>）から末尾（<code>\z</code>）まで英数字だけかを <strong>正規表現</strong>（文字列のパターンを表す書き方）で確かめています。英数字限定は「記号による命令追加」を防ぎやすくしますが、<code>eval</code> を使い続ける限りリスクは残ります。<strong>可能なら eval 自体をやめる</strong> のが本筋です。</p>
+
+    <h3 id="sec-5-4">5.4 対策の優先順位</h3>
+    <ol class="steps">
+      <li>Eval に相当する機能を使わない</li>
+      <li>使う場合でも、引数に外部からのパラメータを含めない</li>
+      <li>どうしても外部入力が必要なら、英数字に限定し、許可リストで処理する</li>
+    </ol>
+
+    <h2 id="sec-6"><span class="num">6.</span>安全でないデシリアライゼーションとは</h2>
+    <p><strong>安全でないデシリアライゼーション（Insecure Deserialization）</strong> とは、オブジェクトなどを保存した形式（シリアライズ形式）を復元するときに、<strong>攻撃者が改ざんしたデータを渡され、意図しないオブジェクトや処理が動いてしまう</strong> 脆弱性です。<strong>オブジェクト</strong> とは、プログラムの中でデータとそれを扱う処理をひとまとめにしたものです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>用語</th><th>意味</th></tr></thead>
+        <tbody>
+          <tr><td><strong>シリアライズ</strong></td><td>オブジェクトを、保存や通信できる文字列・バイト列に変換すること</td></tr>
+          <tr><td><strong>デシリアライズ</strong></td><td>その文字列・バイト列から、オブジェクトを復元すること</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>PHP の <code>unserialize</code>、Java の <code>ObjectInputStream</code>、Python の <code>pickle</code>、.NET の BinaryFormatter などが代表例です。これらは「データ」だけでなく、<strong>オブジェクトの種類や、復元時に走る処理</strong> まで表現できることがあります。</p>
+    <p>この問題は OWASP Top 10 では「ソフトウェアとデータの整合性の不備（A08）」に含まれます。pickle や Java の例、ガジェットチェーン（アプリにもともとあるクラスを数珠つなぎに悪用する手法）といった言語ごとの話は <a href="../../71_セキュリティ基礎/00_全体像/40-5_サプライチェーンと整合性の不備.html#sec-7">71 セキュリティ基礎「サプライチェーンと整合性の不備」の「安全でないデシリアライゼーション」</a> で扱っています。ここでは徳丸本に沿って、PHP を例に見ていきます。</p>
+    <div class="callout tip">
+      <p class="callout-title">補足：BinaryFormatter の現状</p>
+      <p>.NET の BinaryFormatter は危険性が広く知られた結果、.NET 5 以降で段階的に非推奨となり、.NET 9 では既定で使えなく（呼ぶと例外になるように）なっています。古い .NET Framework のアプリでは今も使われていることがあるので注意が必要です。</p>
+    </div>
+
+    <h3 id="sec-6-1">6.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>「預かり証」を見せると、預けた荷物だけが返ってくる。</p></div>
+      <div class="card"><h4>攻撃</h4><p>預かり証を偽造し、「荷物」のふりをして「爆弾」や「金庫の鍵」を受け取らせる。</p></div>
+    </div>
+    <p>JSON が「値のメモ」だとすると、一部のシリアライズ形式は「値」に加えて「どんな種類の物か」「戻したときに何をするか」まで書ける、より強力な預かり証です。</p>
+
+    <h3 id="sec-6-2">6.2 攻撃のイメージ</h3>
+    <p>たとえば、ユーザー設定をクッキー（ブラウザに保存され、リクエストのたびにサーバーへ送られる小さなデータ）にシリアライズして保存しているとします。</p>
+<pre><code>【正常な利用】
+クッキー: シリアライズされた「一般ユーザー設定」
+→ unserialize して設定を復元（想定どおり）
+
+【攻撃者の操作】
+クッキーを改ざんし、危険なオブジェクトを含むシリアライズ文字列に差し替える
+→ unserialize 時に、意図しないクラスのオブジェクトが作られる
+→ その過程でファイル削除・コマンド実行などが起きる場合がある</code></pre>
+    <p>ポイントは、<strong>アプリが「自分で保存したデータ」だと思って復元しているのに、実際には利用者が書き換えられる場所（クッキーや Hidden パラメータ）に置いている</strong> ことです。<strong>Hidden パラメータ</strong> とは、フォームの <code>&lt;input type="hidden"&gt;</code> で画面に見えないように埋め込んだ値のことで、見えないだけで利用者は自由に書き換えられます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="上段：サーバーがserializeしたデータをクッキーでブラウザに預けると、利用者が書き換えたデータがunserializeされ細工したオブジェクトが動く。下段：セッションに置けばデータはサーバー内で完結し、ブラウザはセッションIDだけを持つ">
+      <defs>
+        <marker id="arw403a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw403b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <text x="20" y="22" class="d-text-bold">クッキーで運ぶ（危険）</text>
+      <rect x="20" y="36" width="170" height="64" rx="8" class="d-box"/>
+      <text x="105" y="62" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="105" y="84" text-anchor="middle" class="d-text-sub">serialize() して渡す</text>
+      <rect x="275" y="36" width="170" height="64" rx="8" class="d-box-warn"/>
+      <text x="360" y="62" text-anchor="middle" class="d-text-bold">ブラウザのクッキー</text>
+      <text x="360" y="84" text-anchor="middle" class="d-text-sub">利用者が書き換え可能</text>
+      <rect x="530" y="36" width="170" height="64" rx="8" class="d-box-bad"/>
+      <text x="615" y="62" text-anchor="middle" class="d-text-bold">unserialize()</text>
+      <text x="615" y="84" text-anchor="middle" class="d-text-sub">細工した物が復元される</text>
+      <line x1="190" y1="68" x2="273" y2="68" class="d-line" marker-end="url(#arw403a)"/>
+      <line x1="445" y1="68" x2="528" y2="68" class="d-line-bad" marker-end="url(#arw403b)"/>
+      <text x="487" y="58" text-anchor="middle" class="d-text-sub">改ざん</text>
+      <text x="20" y="150" class="d-text-bold">セッションに置く（安全寄り）</text>
+      <rect x="20" y="164" width="425" height="72" rx="8" class="d-box-good"/>
+      <text x="232" y="193" text-anchor="middle" class="d-text-bold">サーバー：$_SESSION に保存・取り出し</text>
+      <text x="232" y="216" text-anchor="middle" class="d-text-sub">中身は利用者の手元を通らない</text>
+      <rect x="530" y="164" width="170" height="72" rx="8" class="d-box"/>
+      <text x="615" y="193" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <text x="615" y="216" text-anchor="middle" class="d-text-sub">セッションIDだけ持つ</text>
+      <line x1="447" y1="200" x2="528" y2="200" class="d-line-dash" marker-start="url(#arw403a)" marker-end="url(#arw403a)"/>
+    </svg>
+    <figcaption>図：シリアライズしたデータを利用者の手元に置くと改ざんされる。サーバー側に置けば手元を通らない</figcaption>
+    </figure>
+
+    <h3 id="sec-6-3">6.3 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>アプリがシリアライズ形式のデータをクッキーや Hidden などで受け取る</li>
+      <li>攻撃者がそのデータを改ざんし、悪意あるオブジェクト定義に差し替える</li>
+      <li>アプリが unserialize 等で復元する</li>
+      <li>復元処理や、その後のオブジェクト利用で意図しない処理が動く</li>
+      <li>情報漏洩・改ざん・不正操作・他サイト攻撃などが起きる</li>
+    </ol>
+
+    <h2 id="sec-7"><span class="num">7.</span>安全でないデシリアライゼーションで何ができるか（被害）</h2>
+    <p>影響は Evalインジェクションとほぼ同種で、条件次第では任意コード実行まで至ります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>影響</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>情報漏洩</strong></td><td>ファイルや内部データの読み出し</td></tr>
+          <tr><td><strong>サイト改ざん</strong></td><td>ファイルや設定の書き換え</td></tr>
+          <tr><td><strong>不正な機能実行</strong></td><td>アプリ内部の処理を不正に動かす</td></tr>
+          <tr><td><strong>他サイトへの攻撃</strong></td><td>踏み台として悪用される</td></tr>
+          <tr><td><strong>暗号通貨の採掘</strong></td><td>サーバー資源の不正利用</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>言語やライブラリによって「復元時に自動で危険な処理が走るか」は違いますが、初心者のうちは <strong>「外部から来たシリアライズデータをそのまま復元するのは危険」</strong> と覚えておけば十分です。</p>
+
+    <h3 id="sec-7-1">7.1 脆弱なコードの例</h3>
+    <p class="code-label bad">✕ 危険：利用者が書き換えられるクッキーをそのまま unserialize</p>
+<pre><code>// ❌ 危険: 利用者が書き換えられるクッキーをそのまま unserialize
+$data = unserialize($_COOKIE['prefs']);
+// $data を設定オブジェクトとして利用...</code></pre>
+    <p>クッキーはブラウザ側で自由に書き換えられます。「サーバーが保存したはずのデータ」でも、利用者の手元を経由すると信頼できません。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>安全でないデシリアライゼーションの対策</h2>
+    <p>対策の基本は次のとおりです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>安全性</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>シリアライズ・デシリアライズ機能を使わない</strong></td><td>最も安全寄り</td><td>特に外部入力に対しては使わない</td></tr>
+          <tr><td><strong>デシリアライズ処理に外部からのパラメータを含めない</strong></td><td>とても安全</td><td>復元対象を外部から渡さない</td></tr>
+          <tr><td><strong>JSON 形式でデータを受け渡す</strong></td><td>安全寄り</td><td>「値」だけを扱い、オブジェクト復元の罠を避ける</td></tr>
+          <tr><td><strong>セッション変数など、書き換えできない場所で持つ</strong></td><td>安全寄り</td><td>利用者の手元を経由させない</td></tr>
+          <tr><td><strong>HMAC などで改ざん検知する</strong></td><td>補助的</td><td>どうしてもクライアント側に置く場合の保険</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-8-1">8.1 シリアライズ形式ではなく JSON 形式で受け渡す</h3>
+    <p>外部とやり取りするデータは、<strong>オブジェクト復元機能を持たない JSON</strong> を使うのが基本です。</p>
+    <p class="code-label bad">✕ 危険：シリアライズ形式をそのまま復元</p>
+<pre><code>$prefs = unserialize($_COOKIE['prefs']);</code></pre>
+    <p class="code-label good">○ 安全寄り：JSON で受け取り、型やキーを検証する</p>
+<pre><code>// ✅ 安全寄り: JSON は「値」のやり取り向き
+$prefs = json_decode($_COOKIE['prefs'] ?? '{}', true);
+
+// 使う前に型やキーを検証する
+$name = $prefs['name'] ?? '';
+if (!is_string($name) || !preg_match('/\A[a-zA-Z0-9_]{1,20}\z/', $name)) {
+    $name = 'guest';
+}</code></pre>
+    <p><code>json_decode(…, true)</code> の <code>true</code> は、結果をオブジェクトではなく連想配列（キーと値の組）で受け取る指定です。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>比較</th><th>シリアライズ形式（例: PHP serialize）</th><th>JSON</th></tr></thead>
+        <tbody>
+          <tr><td><strong>表現するもの</strong></td><td>オブジェクトの種類や状態まで含むことがある</td><td>主に文字列・数値・配列などの値</td></tr>
+          <tr><td><strong>復元時のリスク</strong></td><td>意図しないクラス生成・処理実行がありうる</td><td>値の読み取りが中心（別途検証は必要）</td></tr>
+          <tr><td><strong>外部入力との相性</strong></td><td>悪い</td><td>比較的よい</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>JSON なら絶対安全、という意味ではありません。中身の検証は必要です。ただし、<strong>「復元しただけで危険なオブジェクトが動く」</strong> タイプの事故は起きにくくなります。</p>
+    <div class="callout tip">
+      <p class="callout-title">補足：unserialize の allowed_classes</p>
+      <p>PHP 7.0 以降の <code>unserialize()</code> には、復元してよいクラスを制限する <code>allowed_classes</code> オプション（例：<code>unserialize($s, ['allowed_classes' =&gt; false])</code>）があります。ただし PHP マニュアル自身が「信頼できない入力は、このオプションを使っても <code>unserialize()</code> に渡さないこと」と注意しています。外部から来るデータは JSON にするのが本筋です。</p>
+    </div>
+
+    <h3 id="sec-8-2">8.2 クッキーや Hidden ではなく、セッション変数で持つ</h3>
+    <p>シリアライズ形式のデータを使う必要がある場合でも、<strong>利用者が書き換えられない場所</strong> に置きます。<strong>セッション変数</strong> とは、サーバー側に利用者ごとのデータを保存しておき、ブラウザには目印のセッション ID だけを渡す仕組みです。</p>
+    <p class="code-label bad">✕ 危険：利用者の手元（クッキー）に置く</p>
+<pre><code>// ❌ 危険: 利用者の手元（クッキー）に置く
+setcookie('prefs', serialize($prefs));</code></pre>
+    <p class="code-label good">○ 安全寄り：サーバー側のセッションに置く</p>
+<pre><code>// ✅ 安全寄り: サーバー側のセッションに置く
+session_start();
+$_SESSION['prefs'] = $prefs;</code></pre>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>置き場所</th><th>利用者が書き換えられるか</th><th>評価</th></tr></thead>
+        <tbody>
+          <tr><td><strong>クッキー</strong></td><td>できる</td><td>危険</td></tr>
+          <tr><td><strong>Hidden パラメータ</strong></td><td>できる</td><td>危険</td></tr>
+          <tr><td><strong>セッション変数</strong></td><td>通常はできない</td><td>安全寄り</td></tr>
+          <tr><td><strong>サーバー側 DB / キャッシュ</strong></td><td>できない</td><td>安全寄り</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>「自分で serialize したデータを、あとで unserialize する」場合でも、そのデータを <strong>利用者のブラウザ経由で運ぶ</strong> と改ざんされます。運ぶなら、サーバー側だけに閉じるのが安全です。</p>
+
+    <h3 id="sec-8-3">8.3 HMAC などで改ざんされていないことを確認する</h3>
+    <p>どうしてもクッキーなどに置く必要がある場合は、<strong>改ざん検知（HMAC など）</strong> を付けます。<strong>HMAC</strong> とは、データとサーバーだけが知る秘密鍵から「署名」となる値を計算する方法で、データが1文字でも変わると署名が一致しなくなります。</p>
+    <p class="code-label good">○ 改ざん検知付き（概念例）</p>
+<pre><code>// ✅ 改ざん検知付き（概念例）
+$payload = json_encode($prefs);
+$sig = hash_hmac('sha256', $payload, $serverSecret);
+setcookie('prefs', $payload . '.' . $sig);
+
+// 受け取り時
+[$payload, $sig] = explode('.', $_COOKIE['prefs'], 2);
+$expected = hash_hmac('sha256', $payload, $serverSecret);
+
+if (!hash_equals($expected, $sig)) {
+    exit('改ざんの可能性があります');
+}
+
+$prefs = json_decode($payload, true);</code></pre>
+<pre><code>【ポイント】
+・サーバーだけが知る秘密鍵で署名する
+・受け取り時に署名を検証し、一致しなければ拒否する
+・署名検証前に unserialize しない（先に改ざんチェック）</code></pre>
+    <p><code>hash_equals()</code> は、比較にかかる時間から正解を推測されないように（タイミング攻撃対策）文字列を比べる関数です。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：区切り文字の分割位置に注意</p>
+      <p>上の概念例は、<code>explode('.', …, 2)</code> で <strong>最初の</strong> <code>.</code> で分割しています。しかし JSON の中身に <code>.</code>（小数の <code>1.5</code> や、文字列の中のドットなど）が含まれると、payload の途中で切れてしまい、正しいクッキーでも検証に失敗します。署名（16進数の文字列）には <code>.</code> が入らないので、実際に使うなら <strong>最後の <code>.</code> で分割する</strong>（<code>strrpos()</code> で位置を探す）か、payload を Base64URL などでエンコードしてから連結します。また、<code>.</code> を含まないクッキーが送られてきた場合に備えて、分割結果が2つあるかも確認しましょう。</p>
+    </div>
+    <p>HMAC は「改ざんされていないこと」を確認できます。ただし、<strong>署名付きでもシリアライズ形式のまま復元するのは避け、JSON にする方がよい</strong> です。署名は保険であり、危険な復元処理そのものをなくす方が本筋です。</p>
+
+    <h3 id="sec-8-4">8.4 対策の優先順位</h3>
+    <ol class="steps">
+      <li>外部入力に対してシリアライズ・デシリアライズを使わない</li>
+      <li>データの受け渡しは JSON など、値中心の形式にする</li>
+      <li>状態はセッションやサーバー側ストレージに置く</li>
+      <li>どうしてもクライアント側に置くなら、HMAC 等で改ざん検知する</li>
+      <li>署名検証のあとも、値の型・範囲・許可キーを検証する</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>XML外部実体参照（XXE）とは</h2>
+    <p><strong>XXE（XML External Entity）</strong> とは、XML を読み込むときに使える <strong>外部実体参照</strong> という仕組みを悪用し、サーバー内のファイルを読んだり、サーバーから別の URL へアクセスさせたりする攻撃です。</p>
+    <p>XML には「実体（entity）」という、名前付きの置き換え文字を定義する機能があります。その定義の中で、<strong>外部ファイルや URL</strong> を参照できてしまうパーサ設定だと、攻撃が可能になります。実体の定義は、XML の先頭に置く <strong>DTD</strong>（Document Type Definition：その XML の文書の型や実体を宣言する部分）に書きます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>XML パーサの設定不備を突く攻撃</td></tr>
+          <tr><td><strong>悪用される機能</strong></td><td>外部実体参照（External Entity）</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>サーバー内ファイルの閲覧、内部ネットワークへのアクセス</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-9-1">9.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>「注文書（XML）」に商品名が書いてあり、受付はその内容だけを読む。</p></div>
+      <div class="card"><h4>攻撃</h4><p>注文書の隅に「倉庫の棚卸し表も添付として読み込め」と書かれ、受付が金庫の中身まで声に出して読んでしまう。</p></div>
+    </div>
+
+    <h3 id="sec-9-2">9.2 何ができるか（被害）</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>攻撃の種類</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>外部実体参照によるファイルアクセス</strong></td><td><code>/etc/passwd</code> や設定ファイルなど、サーバー内ファイルを読み出させる</td></tr>
+          <tr><td><strong>URL指定のHTTPアクセスによる攻撃</strong></td><td>サーバーから内部ネットワークや他サイトへ HTTP アクセスさせ、偵察や攻撃の踏み台にする</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><code>/etc/passwd</code> は、Linux などでユーザー一覧が書かれたファイルで、攻撃が成功したかの確認によく狙われます。</p>
+<pre><code>【ファイルアクセスのイメージ】
+攻撃者が送る XML の中に:
+  「file:///etc/passwd の内容を、この項目に展開せよ」
+と書いておく
+
+アプリが XML をパースすると:
+  本来の項目の値として、パスワード関連ファイルの中身が入ってしまう</code></pre>
+<pre><code>【HTTPアクセスのイメージ】
+攻撃者が送る XML の中に:
+  「http://内部サーバー/管理画面 を読み込め」
+と書いておく
+
+アプリが XML をパースすると:
+  サーバーが内部ネットワークへアクセスしてしまう
+  （ファイアウォールの内側から叩ける）</code></pre>
+    <p><strong>パースする</strong> とは、パーサで XML を読んで解釈することです。<strong>ファイアウォール</strong> は、外部と社内ネットワークの間で通信を制限する仕組みです。</p>
+    <p>外部から直接は届かない社内システムでも、<strong>XXE で Web サーバーを踏み台にされると届いてしまう</strong> 点が危険です。このように「サーバーに内部の URL へアクセスさせる」攻撃は <strong>SSRF</strong> の一種で、詳しくは <a href="30-3_SSRF.html#sec-2">SSRF「SSRF が起きる機能」</a> で扱っています。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 320" role="img" aria-label="XXEの流れ。攻撃者が外部実体を含むXMLを送ると、WebサーバーのXMLパーサが実体を解決し、file://でサーバー内のファイルを読み、http://でファイアウォール内側の社内サーバーにアクセスし、その中身をレスポンスに埋め込んで攻撃者に返してしまう">
+      <defs>
+        <marker id="arw403c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw403d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="10" y="60" width="150" height="70" rx="8" class="d-box-bad"/>
+      <text x="85" y="90" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="85" y="112" text-anchor="middle" class="d-text-sub">細工した XML を送る</text>
+      <line x1="190" y1="14" x2="190" y2="290" class="d-line-dash"/>
+      <text x="190" y="310" text-anchor="middle" class="d-text-sub">ファイアウォール（Web の通信だけ通す）</text>
+      <rect x="215" y="14" width="300" height="276" rx="8" class="d-box"/>
+      <text x="231" y="38" class="d-text-bold">Webサーバー</text>
+      <rect x="235" y="52" width="260" height="76" rx="8" class="d-box-warn"/>
+      <text x="365" y="82" text-anchor="middle" class="d-text-bold">XMLパーサ</text>
+      <text x="365" y="106" text-anchor="middle" class="d-text-sub">外部実体を解決してしまう設定</text>
+      <rect x="235" y="200" width="260" height="70" rx="8" class="d-box"/>
+      <text x="365" y="228" text-anchor="middle" class="d-text-bold">サーバー内のファイル</text>
+      <text x="365" y="250" text-anchor="middle" class="d-text-sub">file:///etc/passwd、設定ファイル</text>
+      <rect x="560" y="170" width="150" height="80" rx="8" class="d-box"/>
+      <text x="635" y="198" text-anchor="middle" class="d-text-bold">社内サーバー</text>
+      <text x="635" y="220" text-anchor="middle" class="d-text-sub">http://内部/管理画面</text>
+      <text x="635" y="238" text-anchor="middle" class="d-text-sub">外から直接は届かない</text>
+      <line x1="160" y1="78" x2="233" y2="78" class="d-line" marker-end="url(#arw403c)"/>
+      <text x="200" y="70" text-anchor="middle" class="d-text-sub">①</text>
+      <line x1="345" y1="128" x2="345" y2="198" class="d-line-bad" marker-end="url(#arw403d)"/>
+      <text x="355" y="168" class="d-text-sub">② file:// で読む</text>
+      <line x1="495" y1="100" x2="600" y2="168" class="d-line-bad" marker-end="url(#arw403d)"/>
+      <text x="560" y="112" class="d-text-sub">③ http:// で</text>
+      <text x="560" y="128" class="d-text-sub">アクセス</text>
+      <line x1="233" y1="112" x2="162" y2="112" class="d-line-bad" marker-end="url(#arw403d)"/>
+      <text x="85" y="156" text-anchor="middle" class="d-text-sub">④ 読んだ中身が</text>
+      <text x="85" y="174" text-anchor="middle" class="d-text-sub">レスポンスに混ざって</text>
+      <text x="85" y="192" text-anchor="middle" class="d-text-sub">返ってくる</text>
+    </svg>
+    <figcaption>図：パーサが外部実体を解決すると、サーバー内のファイルや社内サーバーの内容を取り込み、応答に埋め込んで攻撃者へ返してしまう</figcaption>
+    </figure>
+
+    <h3 id="sec-9-3">9.3 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>アプリが XML を受け取り、外部実体を解決する設定のパーサで読む</li>
+      <li>攻撃者が、外部ファイルや URL を参照する実体定義を含んだ XML を送る</li>
+      <li>パーサが実体を解決し、ファイル内容や HTTP レスポンスを取り込む</li>
+      <li>その内容がアプリの処理結果やエラーメッセージ経由で攻撃者に見える</li>
+      <li>情報漏洩や、内部ネットワークへの到達が起きる</li>
+    </ol>
+
+    <h2 id="sec-10"><span class="num">10.</span>XML外部実体参照（XXE）の対策</h2>
+    <p>対策の基本は次のとおりです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>安全性</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>XMLの代わりにJSONを用いる</strong></td><td>最も簡単で安全寄り</td><td>外部実体という仕組み自体を使わない</td></tr>
+          <tr><td><strong>XMLが必要な場合は外部実体を無効化する</strong></td><td>必須</td><td>パーサ設定で DTD / 外部実体を拒否する</td></tr>
+          <tr><td><strong>不要なネットワークアクセスを制限する</strong></td><td>防御深度</td><td>サーバーからの外向き通信を最小化する</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>防御深度</strong>（多層防御）とは、1つの対策が破られても次の対策で止められるよう、守りを何重にも重ねる考え方です。詳しくは <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">71 セキュリティ基礎「深層防御」</a> を参照してください。</p>
+
+    <h3 id="sec-10-1">10.1 XMLの代わりにJSONを用いる（最優先しやすい）</h3>
+    <p>API や設定の受け渡しで XML である必要がなければ、<strong>JSON に置き換える</strong> のが分かりやすい対策です。</p>
+<pre><code>【なぜ JSON がよいか】
+・外部実体参照という仕組みがない
+・「ファイルを読め」「URL にアクセスせよ」といった指示を埋め込みにくい
+・多くの Web API で標準的に使われている</code></pre>
+    <p>もちろん JSON にも別の問題（巨大なネストによる DoS など）はあり得ますが、XXE 固有の問題は避けられます。<strong>DoS</strong>（サービス妨害）とは、サーバーに過大な負荷をかけてサービスを使えなくする攻撃です。</p>
+
+    <h3 id="sec-10-2">10.2 XML を使い続ける場合は、外部実体を無効化する</h3>
+    <p>既存システムや外部仕様で XML が必須な場合は、<strong>XML パーサの設定で外部実体・DTD を無効化</strong> します。</p>
+<pre><code>【設定の考え方】
+・外部実体参照を解決しない
+・外部 DTD を読み込まない
+・可能なら DTD 自体を禁止する</code></pre>
+    <p>言語やライブラリごとに設定方法は異なりますが、方針は共通です。「XML を読める」ことと「外部ファイルまで取りに行く」ことは別であり、後者は通常の Web アプリでは不要です。参考に、PHP と Java での例を示します。</p>
+    <p class="code-label bad">✕ 危険：実体の置換を有効にして読み込む（PHP）</p>
+<pre><code>// ❌ LIBXML_NOENT は「実体を展開する」指定。外部実体も読み込まれてしまう
+$doc = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOENT);</code></pre>
+    <p class="code-label good">○ 安全：実体展開のオプションを付けない（PHP）／DTD を禁止する（Java）</p>
+<pre><code>// ✅ PHP: LIBXML_NOENT / LIBXML_DTDLOAD を付けずに読み込む
+$doc = simplexml_load_string($xml);
+
+// ✅ Java: DOCTYPE（DTD）宣言そのものを禁止する
+DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：パーサの既定値は言語・バージョンで違う</p>
+      <p>PHP が使う libxml2 は、バージョン 2.9.0 以降 <strong>既定では外部実体を読み込みません</strong>。そのため PHP 8.0 で、以前よく使われた <code>libxml_disable_entity_loader()</code> は非推奨になりました。ただし <code>LIBXML_NOENT</code> などのオプションを付けると再び危険になります。一方、Java 標準の <code>DocumentBuilderFactory</code> などは、<strong>何も設定しないと外部実体を解決しうる</strong> ため、上のような明示的な設定が必要です。「最近の環境なら大丈夫」と思い込まず、使っているパーサの既定値を確認しましょう。DTD 自体を禁止しておくと、実体を何重にも展開させてメモリを使い果たさせる DoS（いわゆる Billion Laughs 攻撃）もまとめて防げます。</p>
+    </div>
+
+    <h3 id="sec-10-3">10.3 返却内容にも注意する</h3>
+    <p>XXE では、読み取ったファイル内容が <strong>画面や API レスポンスにそのまま出る</strong> と被害が確定します。パーサ設定の修正が本筋ですが、エラーメッセージに内部情報を出しすぎないことも補助になります。</p>
+
+    <h3 id="sec-10-4">10.4 対策の優先順位</h3>
+    <ol class="steps">
+      <li>可能なら XML ではなく JSON を使う</li>
+      <li>XML が必要なら、外部実体・DTD を無効化する</li>
+      <li>サーバーからの不要な外向き通信を制限する</li>
+      <li>エラーやレスポンスに内部ファイルの内容を出さない</li>
+    </ol>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>Evalインジェクション</th><th>安全でないデシリアライゼーション</th><th>XXE</th></tr></thead>
+        <tbody>
+          <tr><td><strong>本質</strong></td><td>文字列をコードとして実行させられる</td><td>改ざんされたオブジェクト定義を復元させられる</td><td>XML の外部参照でファイルや URL にアクセスさせられる</td></tr>
+          <tr><td><strong>主な被害</strong></td><td>情報漏洩、改ざん、不正実行、他サイト攻撃、採掘</td><td>同左</td><td>ファイル閲覧、内部ネットへのアクセス</td></tr>
+          <tr><td><strong>原因</strong></td><td>eval の利用 / 入力チェック不足</td><td>外部入力の unserialize 等</td><td>外部実体を解決するパーサ設定</td></tr>
+          <tr><td><strong>基本対策</strong></td><td>eval を使わない</td><td>JSON 化・セッション保存・改ざん検知</td><td>JSON 化、または外部実体無効化</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">構造化データ読み込みの安全の基本</p>
+      <ol>
+        <li>文字列をプログラムとして実行する機能（eval 等）を使わない</li>
+        <li>使う場合でも、外部入力を引数に渡さない。渡すなら英数字に限定する</li>
+        <li>外部から来るデータは、シリアライズ形式ではなく JSON などで受け取る</li>
+        <li>状態はクッキーや Hidden ではなく、セッションなどサーバー側に置く</li>
+        <li>どうしてもクライアント側に置くなら HMAC 等で改ざんを検知する</li>
+        <li>XML が不要なら JSON にする。XML を使うなら外部実体を無効化する</li>
+      </ol>
+    </div>
+    <p>本章に共通する考え方は、<strong>「データを読む」処理が、いつの間にか「命令を実行する」「別のファイルを取りに行く」処理になっていないか</strong> を疑うことです。便利な自動変換・自動実行ほど、外部入力との相性は悪くなります。必要最小限の形式（多くの場合は JSON と明示的な許可リスト）でデータを扱う習慣を付けましょう。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Evalインジェクションの最も安全な対策は何ですか？ 計算機能が必要な場合はどうしますか？</summary>
+      <div class="body">
+        <p><strong>eval に相当する機能を使わない</strong> ことです。計算機能が必要なら、専用の数式パーサを使うか、<code>add</code> / <code>sub</code> のようなキーだけを受け取り、許可リスト（連想配列）で実際の処理を選びます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. <code>eval('return ' . $expr . ';')</code> に <code>1; system('id'); //</code> を渡すと、なぜ危険なのですか？</summary>
+      <div class="body">
+        <p><code>;</code> で文が区切られ、計算のあとに <code>system('id')</code> という別の命令が実行されるからです。末尾の <code>//</code> がアプリ側の <code>;</code> をコメントにして、文法エラーも避けています。「計算式」を受け取るつもりが「プログラム全体」を受け取る窓口になっています。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 「自分で serialize したデータをクッキーに入れ、あとで unserialize する」のはなぜ危険ですか？</summary>
+      <div class="body">
+        <p>クッキーは利用者のブラウザにあり、<strong>自由に書き換えられる</strong> からです。攻撃者が危険なオブジェクトを含む文字列に差し替えると、unserialize の時点で意図しないクラスのオブジェクトが作られ、ファイル削除やコマンド実行につながることがあります。データはセッション変数などサーバー側に置くか、JSON で受け渡します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. HMAC で署名すれば、シリアライズ形式のままクッキーに置いてよいですか？</summary>
+      <div class="body">
+        <p><strong>推奨されません。</strong> HMAC は改ざん検知の保険であり、秘密鍵が漏れれば破られます。署名付きでも JSON にする方がよく、危険な復元処理そのものをなくすのが本筋です。また、署名検証は必ず復元より <strong>先に</strong> 行い、検証後も値の型・範囲を確認します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. XXE でできる2種類の攻撃は何ですか？</summary>
+      <div class="body">
+        <p>①外部実体参照で <code>file:///etc/passwd</code> などの <strong>サーバー内ファイルを読み出す</strong> 攻撃と、②サーバーから <strong>内部ネットワークや他サイトへ HTTP アクセスさせる</strong> 攻撃（SSRF の一種）です。後者では、外部から直接届かない社内システムにも、Web サーバーを踏み台にして到達されてしまいます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. XML をどうしても使う必要がある場合、XXE を防ぐにはどうしますか？</summary>
+      <div class="body">
+        <p>XML パーサの設定で <strong>外部実体参照を解決しない・外部 DTD を読み込まない</strong> ようにし、可能なら DTD 自体を禁止します。パーサの既定値は言語やバージョンで違うため、使っているパーサの設定を確認します。補助として、サーバーからの不要な外向き通信を制限し、エラーやレスポンスに内部情報を出さないようにします。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/40_ファイル・データ処理/03_構造化データの読み込みにまつわる問題（徳丸本17章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>OWASP Cheat Sheet Series「Deserialization Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html</li>
+      <li>OWASP Cheat Sheet Series「XML External Entity Prevention Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html</li>
+      <li>PHP マニュアル「unserialize」 https://www.php.net/manual/ja/function.unserialize.php</li>
+      <li>PHP マニュアル「libxml_disable_entity_loader」 https://www.php.net/manual/ja/function.libxml-disable-entity-loader.php</li>
+      <li>Microsoft Learn「BinaryFormatter migration guide」 https://learn.microsoft.com/dotnet/standard/serialization/binaryformatter-migration-guide/</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-2_ファイルアップロード.html"><span class="lbl">← 前のページ</span>ファイルアップロード</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-1_競合状態とキャッシュ.html"><span class="lbl">次のページ →</span>競合状態とキャッシュからの情報漏洩</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ネットワークと端末の防御｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 運用・監視・インシデント › ネットワークと端末の防御</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 運用・監視・インシデント</span>
+      <h1>ネットワークと端末の防御</h1>
+      <p class="lead">データはどうやって届き、その通り道のどこに「門番」を置けば守れるのか。このページでは、ファイアウォール・IDS/IPS・WAF の役割と配置、DDoS 対策、VPN や HTTPS による通信の暗号化、メールのなりすまし対策、そして PC やサーバーそのもの（エンドポイント）を守る技術までを、1枚の地図として整理します。</p>
+      <p class="meta">もとにしたノート：50_運用・監視・インシデント/01_ネットワーク・アプリ・エンドポイントの防御（知識地図4章）、02_ネットワークセキュリティ（基礎講座第4回）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>守りは「1枚の壁」ではなく <strong>何枚も重ねた関所</strong> です。入口で通信を選別する <strong>ファイアウォール</strong>、怪しい動きを見張る <strong>IDS/IPS</strong>、Web アプリへの攻撃を見抜く <strong>WAF</strong>、通り道を暗号化する <strong>VPN・HTTPS</strong>、そして突破されたときの最後の砦として <strong>端末（エンドポイント）側の EDR・パッチ・バックアップ</strong> を組み合わせます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>まず知っておきたい「データの届き方」</h2>
+    <p>ネットワークの守りを理解するには、<strong>データがどんな形で、何を目印に届くのか</strong> を知っておく必要があります。宅配便にたとえると分かりやすくなります。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>パケット＝荷物</h4>
+        <p>ネットワークを流れるデータの小さな塊。中身のほかに「送り主・宛先・ポート番号」などの伝票が付いています。</p>
+      </div>
+      <div class="card">
+        <h4>IP アドレス＝住所</h4>
+        <p>どのコンピュータ宛てかを示す番号（例：<code>192.168.1.1</code>）。建物の住所にあたります。</p>
+      </div>
+      <div class="card">
+        <h4>ポート番号＝部屋番号</h4>
+        <p>同じコンピュータの中で <strong>どのアプリ宛てか</strong> を示す番号（0〜65535）。同じ建物でも部屋が違えば届け先が違います。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-1-1">1.1 よく使うポート番号</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ポート</th><th>サービス</th><th>ひとこと</th></tr></thead>
+      <tbody>
+        <tr><td>22</td><td>SSH</td><td>サーバーへのリモート接続（暗号化あり）</td></tr>
+        <tr><td>25</td><td>SMTP</td><td>メール送信</td></tr>
+        <tr><td>80</td><td>HTTP</td><td>Web サイト（暗号化なし）</td></tr>
+        <tr><td>443</td><td>HTTPS</td><td>Web サイト（暗号化あり）</td></tr>
+        <tr><td>3306 / 5432</td><td>MySQL / PostgreSQL</td><td>データベース。<strong>外部に公開してはいけない</strong> 代表例</td></tr>
+        <tr><td>3389</td><td>RDP</td><td>Windows のリモートデスクトップ。狙われやすい</td></tr>
+      </tbody>
+    </table></div>
+    <p>攻撃者は <strong>ポートスキャン</strong>（どの部屋のドアが開いているかを片っ端から叩いて調べる行為）で、動いているサービスを探します。だから「使わないポートは閉じる」が守りの基本になります。</p>
+
+    <h3 id="sec-1-2">1.2 TCP/IP の主なプロトコル</h3>
+    <p><strong>プロトコル</strong> とは通信の「お約束（手順や形式のルール）」のことです。インターネットの事実上の標準は <strong>TCP/IP</strong> と呼ばれるプロトコル群です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロトコル</th><th>層</th><th>役割</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>IP</strong></td><td>ネットワーク層</td><td>パケットに宛先の IP アドレスを付けて届ける</td><td><code>192.168.1.1</code></td></tr>
+        <tr><td><strong>TCP</strong></td><td>トランスポート層</td><td>届いたかを確認し、順番も保証する「書留」のような通信</td><td>Web（HTTPS）、メール</td></tr>
+        <tr><td><strong>UDP</strong></td><td>トランスポート層</td><td>確認なしで速い「普通郵便」のような通信</td><td>動画配信、DNS</td></tr>
+        <tr><td><strong>ICMP</strong></td><td>ネットワーク層</td><td>エラー通知や疎通確認</td><td><code>ping</code> コマンド</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-3">1.3 OSI 参照モデルと「どの層で守るか」</h3>
+    <p>通信を <strong>7つの層</strong> に分けて考える枠組みが <strong>OSI 参照モデル</strong> です。セキュリティの会話では「L3（ネットワーク層）〜 L7（アプリケーション層）」という言い方がよく出てきます。どの層を見る装置かで、防げる攻撃が変わります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>名前</th><th>主な機能</th><th>TCP/IP での例</th><th>セキュリティ対策の例</th></tr></thead>
+      <tbody>
+        <tr><td>7</td><td>アプリケーション</td><td>Web・メールなど</td><td>HTTP, SMTP</td><td><strong>WAF</strong>、入力検証</td></tr>
+        <tr><td>6</td><td>プレゼンテーション</td><td>データ形式の変換</td><td>TLS（ここに置く説明もある）</td><td>暗号化</td></tr>
+        <tr><td>5</td><td>セッション</td><td>通信の確立・維持</td><td>—</td><td>セッション管理</td></tr>
+        <tr><td>4</td><td>トランスポート</td><td>端から端までの通信</td><td>TCP, UDP</td><td>ポート制御</td></tr>
+        <tr><td>3</td><td>ネットワーク</td><td>経路選択（ルーティング）</td><td>IP</td><td><strong>ファイアウォール</strong>、VPN</td></tr>
+        <tr><td>2</td><td>データリンク</td><td>同じネットワーク内の通信</td><td>Ethernet</td><td>MAC フィルタ</td></tr>
+        <tr><td>1</td><td>物理</td><td>ケーブル・電波</td><td>—</td><td>物理的な入室管理</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-2"><span class="num">2.</span>守りの配置図 — 何がどこを守っているか</h2>
+    <p>個々の装置を学ぶ前に、全体の配置を見ておきましょう。インターネットから社内の大事なデータベースまで、通信は <strong>いくつもの関所</strong> を通り抜けます。お城でいえば、堀・城門・見張り櫓・本丸の門と、内側に行くほど守りが固くなる構造です。</p>
+    <figure>
+    <svg viewBox="0 0 720 590" role="img" aria-label="ファイアウォール・IDS/IPS・WAF・DMZ の配置図">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="220" y="14" width="200" height="40" rx="8" class="d-box"/>
+      <text x="320" y="39" text-anchor="middle" class="d-text-bold">インターネット</text>
+      <line x1="320" y1="54" x2="320" y2="76" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="200" y="78" width="240" height="40" rx="8" class="d-box"/>
+      <text x="320" y="103" text-anchor="middle" class="d-text">DDoS 対策・CDN</text>
+      <text x="458" y="103" class="d-text-sub">大量の攻撃通信を手前で吸収</text>
+      <line x1="320" y1="118" x2="320" y2="140" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="200" y="142" width="240" height="40" rx="8" class="d-box-accent"/>
+      <text x="320" y="167" text-anchor="middle" class="d-text-bold">外部ファイアウォール</text>
+      <text x="458" y="167" class="d-text-sub">IP・ポートで許可／拒否（L3/L4）</text>
+      <line x1="320" y1="182" x2="320" y2="206" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="20" y="170" width="140" height="48" rx="8" class="d-box"/>
+      <text x="90" y="190" text-anchor="middle" class="d-text-bold">IDS</text>
+      <text x="90" y="208" text-anchor="middle" class="d-text-sub">通信のコピーを監視</text>
+      <line x1="160" y1="194" x2="318" y2="194" class="d-line-dash"/>
+      <rect x="200" y="208" width="240" height="40" rx="8" class="d-box-warn"/>
+      <text x="320" y="233" text-anchor="middle" class="d-text">IPS（通り道に置く）</text>
+      <text x="458" y="233" class="d-text-sub">怪しい通信を見つけて遮断</text>
+      <path d="M320,248 V262 H195 V302" class="d-line" marker-end="url(#arw1)"/>
+      <path d="M320,262 H535 V302" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="60" y="276" width="600" height="104" rx="10" class="d-line-dash"/>
+      <text x="648" y="294" text-anchor="end" class="d-text-bold">DMZ（公開してよいゾーン）</text>
+      <rect x="120" y="304" width="150" height="56" rx="8" class="d-box-warn"/>
+      <text x="195" y="327" text-anchor="middle" class="d-text-bold">WAF</text>
+      <text x="195" y="347" text-anchor="middle" class="d-text-sub">HTTP の中身を検査</text>
+      <line x1="270" y1="332" x2="296" y2="332" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="298" y="304" width="130" height="56" rx="8" class="d-box"/>
+      <text x="363" y="337" text-anchor="middle" class="d-text">Web サーバー</text>
+      <rect x="460" y="304" width="150" height="56" rx="8" class="d-box"/>
+      <text x="535" y="337" text-anchor="middle" class="d-text">メールサーバー</text>
+      <line x1="363" y1="360" x2="363" y2="402" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="200" y="404" width="240" height="40" rx="8" class="d-box-accent"/>
+      <text x="320" y="429" text-anchor="middle" class="d-text-bold">内部ファイアウォール</text>
+      <text x="458" y="429" class="d-text-sub">必要な通信だけを内側へ</text>
+      <path d="M320,444 V484 H245 V504" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="60" y="466" width="600" height="110" rx="10" class="d-line-dash"/>
+      <text x="648" y="486" text-anchor="end" class="d-text-bold">内部ネットワーク（厳重に守る）</text>
+      <rect x="170" y="506" width="150" height="48" rx="8" class="d-box-good"/>
+      <text x="245" y="535" text-anchor="middle" class="d-text">AP サーバー</text>
+      <line x1="320" y1="530" x2="398" y2="530" class="d-line" marker-end="url(#arw1)"/>
+      <rect x="400" y="506" width="150" height="48" rx="8" class="d-box-good"/>
+      <text x="475" y="535" text-anchor="middle" class="d-text">DB サーバー</text>
+    </svg>
+    <figcaption>図：ネットワーク防御の典型的な配置。外側ほど「ざっくり大量に」、内側ほど「細かく厳しく」選別する</figcaption>
+    </figure>
+    <p>ポイントは3つです。</p>
+    <ul>
+      <li><strong>外側の装置ほど大雑把で速く、内側ほど細かく重い</strong>。DDoS 対策やファイアウォールが「量」と「宛先」でふるい落とし、WAF が HTTP の「中身」まで調べます。</li>
+      <li><strong>IDS は通り道の横</strong> で通信のコピーを見張るだけ、<strong>IPS は通り道の上</strong> に置いて実際に止めます（3章）。</li>
+      <li><strong>公開するサーバー（Web・メール）と、絶対に公開しないサーバー（DB）を別ゾーンに分ける</strong>。この中間地帯が DMZ です（2.3）。</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>ファイアウォール — 城の門番</h2>
+    <p><strong>ファイアウォール（FW）</strong> は、ネットワークの入口・出口で通信を見張り、<strong>許可された通信だけを通す</strong> 仕組みです。お城の門番のように「通っていいもの」と「止めるもの」を、主に <strong>IP アドレス・ポート番号・プロトコル</strong> で判断します。</p>
+
+    <h3 id="sec-3-1">3.1 4つのタイプ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>タイプ</th><th>見る層</th><th>しくみ</th><th>長所</th><th>短所</th></tr></thead>
+      <tbody>
+        <tr><td><strong>パケットフィルタリング型</strong></td><td>L3/L4</td><td>IP・ポート・プロトコルごとに許可／拒否</td><td>速い・シンプル</td><td>パケットの中身は見ない</td></tr>
+        <tr><td><strong>ステートフルインスペクション型</strong></td><td>L3/L4</td><td>通信の「状態（今つながっている会話か）」も記憶して判断</td><td>不正なパケットを弾きやすい。現在もっとも広く使われる</td><td>アプリの中身は見ない</td></tr>
+        <tr><td><strong>アプリケーション型（プロキシ型）</strong></td><td>L7</td><td>HTTP などの中身まで検査</td><td>細かい制御ができる</td><td>処理が重い</td></tr>
+        <tr><td><strong>次世代ファイアウォール（NGFW）</strong></td><td>L3〜L7</td><td>アプリの識別（「これは Zoom」）、ユーザー ID 連携、TLS を復号しての検査、IPS 機能内蔵、マルウェア検知</td><td>1台で多機能</td><td>高価・設定が複雑になりやすい</td></tr>
+      </tbody>
+    </table></div>
+    <p>NGFW の代表的な製品には Palo Alto Networks、Cisco Firepower、Fortinet、Check Point などがあります。</p>
+
+    <h3 id="sec-3-2">3.2 ルールの書き方の例</h3>
+    <p>パケットフィルタリングのルールは「上から順に照らし合わせ、最後に <strong>それ以外はすべて拒否</strong>」と書くのが基本です。</p>
+    <span class="code-label good">○ 必要なものだけ許可し、最後に全拒否</span>
+    <pre><code>送信元：どこでも → 宛先ポート 443  → 許可（HTTPS）
+送信元：どこでも → 宛先ポート 80   → 許可（HTTP）
+送信元：どこでも → 宛先ポート 3306 → 拒否（DB を外部に公開しない）
+上記以外                          → すべて拒否</code></pre>
+    <p>ステートフル型なら「<strong>内側から始めた HTTPS 接続への返事だけ</strong> を自動で通す」ことができます。返り道のルールを手で書かなくてよいので、設定ミスが減り安全性も上がります。外から突然届いた「返事のふりをしたパケット」は拒否されます。</p>
+
+    <h3 id="sec-3-3">3.3 DMZ — 「見せてよい部屋」と「金庫」を分ける</h3>
+    <p><strong>DMZ（DeMilitarized Zone、非武装地帯）</strong> は、インターネットと社内ネットワークの <strong>中間に置く特別なネットワーク</strong> です。銀行にたとえると、DMZ は誰でも入れる「窓口ロビー」、内部ネットワークは「金庫室」です。</p>
+    <ul>
+      <li>Web サーバーやメールサーバーは、インターネットに公開しないと仕事になりません → DMZ に置く</li>
+      <li>DB サーバーは <strong>絶対に公開してはいけない</strong> → 内部ネットワークに置き、内部ファイアウォールの奥で守る</li>
+      <li>もし DMZ の Web サーバーが乗っ取られても、内部ファイアウォールがもう一枚の壁になる</li>
+    </ul>
+    <p>AWS などのクラウドでも、公開用サブネットと非公開サブネットを分けるという同じ考え方が使われます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>IDS・IPS — 見張り番と自動シャッター</h2>
+    <p>ファイアウォールは「どこ宛てか」で判断しますが、正規のポート（443 など）を通ってくる攻撃は見抜けません。そこで <strong>通信の流れの中に怪しいパターンがないか</strong> を調べるのが IDS・IPS です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>IDS（Intrusion Detection System：侵入検知システム）</h4>
+        <ul>
+          <li>不審な通信を <strong>検知して警告する</strong>（通信そのものは止めない）</li>
+          <li>たとえるなら <strong>火災報知器</strong>、または防犯カメラ＋警報</li>
+          <li>通信の <strong>コピー</strong> を受け取って監視する。通り道に置かなくてよい</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>IPS（Intrusion Prevention System：侵入防止システム）</h4>
+        <ul>
+          <li>不審な通信を <strong>検知してブロックする</strong></li>
+          <li>たとえるなら <strong>自動消火設備</strong>、または防犯カメラ＋自動シャッター</li>
+          <li>通り道の上に置く（<strong>インライン配置</strong>）。全通信を通過させて検査する</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-4-1">4.1 怪しさを見抜く2つの方式</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>しくみ</th><th>得意</th><th>苦手</th></tr></thead>
+      <tbody>
+        <tr><td><strong>シグネチャ型</strong>（ルールベース）</td><td>既知の攻撃パターン（シグネチャ＝指名手配写真）と照合する。例：「この文字列パターンは SQL インジェクション」</td><td>既知の攻撃を確実に見つける</td><td><strong>ゼロデイ攻撃</strong>（まだ対策が知られていない新手の攻撃）には無力</td></tr>
+        <tr><td><strong>アノマリ型</strong>（異常検知）</td><td>「いつもの通信」を学習し、そこから外れたものを怪しむ。例：いつも日本からログインする人が突然海外から</td><td>未知の攻撃にも反応できる</td><td><strong>誤検知</strong>（正常な通信を攻撃と見なす）が多い</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「IPS を入れれば IDS はいらない？」</p>
+      <p>IPS は止められる反面、<strong>誤検知すると正常な業務通信まで止めてしまう</strong> リスクがあります。そのため、誤検知が心配なルールは IDS（警告だけ）で様子を見る、という使い分けもされます。検知結果をどう集めて分析するかは <a href="50-2_セキュリティ監視とツール.html">セキュリティ監視とツール</a> で扱います。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>WAF — Web アプリ専用の検査官</h2>
+    <p>通常のファイアウォールは「443 番（HTTPS）は許可」と判断した時点で、その中身はノーチェックで通します。ところが SQL インジェクションや XSS などの <strong>Web アプリへの攻撃は、正規の HTTPS 通信の中身に紛れてやってきます</strong>。</p>
+    <p><strong>WAF（Web Application Firewall）</strong> は、HTTP リクエストの <strong>中身（URL・パラメータ・ヘッダーなど）</strong> まで調べて、Web アプリ特有の攻撃をブロックする L7 の装置です。空港でいえば、ファイアウォールが「搭乗券の行き先チェック」、WAF が「手荷物の X 線検査」です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>WAF が検知・ブロックする主な攻撃</h4>
+        <ul>
+          <li>SQL インジェクション</li>
+          <li>XSS（クロスサイトスクリプティング）</li>
+          <li>CSRF</li>
+          <li>ディレクトリトラバーサル</li>
+          <li>SSRF</li>
+          <li>不審なボット・スクレイピング</li>
+          <li>DDoS 攻撃の一部（アプリ層）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>WAF の3つの提供形態</h4>
+        <ul>
+          <li><strong>クラウド型</strong>：DNS の向き先を変えるだけで導入しやすい（Cloudflare、AWS WAF など）</li>
+          <li><strong>アプライアンス型</strong>：専用機器をネットワークに設置（Fortinet、Imperva など）</li>
+          <li><strong>ソフトウェア型</strong>：サーバーにソフトを入れる（ModSecurity など）</li>
+        </ul>
+      </div>
+    </div>
+    <h3 id="sec-5-1">5.1 例：AWS WAF でできること</h3>
+    <ol class="steps">
+      <li><strong>IP アドレスのブロック</strong>：特定の IP や国からのアクセスを拒否する</li>
+      <li><strong>マネージドルール</strong>：AWS が用意した攻撃パターン（SQL インジェクション対策、XSS 対策、既知の悪意ある IP リストなど）をまとめて適用する</li>
+      <li><strong>レートリミット</strong>：同じ IP からの大量リクエストを止める（DDoS 対策）</li>
+      <li><strong>カスタムルール</strong>：「この URL は日本の IP からだけ許可」など独自ルールを追加する</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">WAF は「後付けの盾」であって、アプリの修正の代わりではない</p>
+      <p>WAF はパターンで見抜くため、すり抜ける攻撃もあります。SQL インジェクションや XSS は、まずアプリ側（プレースホルダ、エスケープ）で根本的に防ぎ、WAF はその外側にもう一枚重ねる <strong>多層防御</strong> の一層と考えます。詳しくは <a href="40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a>、72_Web脆弱性対策 で。</p>
+    </div>
+
+    <h3 id="sec-5-2">5.2 FW・IDS/IPS・WAF の比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>装置</th><th>見るもの</th><th>動作</th><th>守るもの</th><th>たとえ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ファイアウォール</strong></td><td>IP・ポート・プロトコル（L3/L4）</td><td>許可／拒否</td><td>ネットワーク全体</td><td>城門の門番</td></tr>
+        <tr><td><strong>IDS</strong></td><td>通信の流れのパターン</td><td>検知して警告</td><td>ネットワーク全体</td><td>火災報知器</td></tr>
+        <tr><td><strong>IPS</strong></td><td>通信の流れのパターン</td><td>検知して遮断</td><td>ネットワーク全体</td><td>自動消火設備</td></tr>
+        <tr><td><strong>WAF</strong></td><td>HTTP の中身（L7）</td><td>検知して遮断</td><td>Web アプリ</td><td>手荷物検査</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>DDoS 攻撃と CDN — 「数の暴力」から可用性を守る</h2>
+    <p><strong>DoS（Denial of Service）攻撃</strong> は、大量のリクエストを送りつけてサービスを止める攻撃です。<strong>DDoS（Distributed DoS）</strong> は、それを <strong>乗っ取った大量の PC（ボット）から一斉に</strong> 行うものです。お店の入口に何万人ものサクラが押し寄せ、本当のお客さんが入れなくなる状態をイメージしてください。ボットにされた PC の持ち主は、多くの場合気づいていません。CIA 三原則でいえば <strong>可用性</strong> への攻撃です（<a href="10-1_CIA三原則と脅威・脆弱性・リスク.html">CIA三原則</a>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>狙い</th><th>例</th><th>主な対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ボリューム型</strong></td><td>回線（帯域）を大量のパケットで埋める</td><td>UDP フラッド、ICMP フラッド</td><td>クラウド型 DDoS 対策、CDN で吸収</td></tr>
+        <tr><td><strong>プロトコル型</strong></td><td>TCP の仕組みを悪用してサーバーの資源を枯らす</td><td><strong>SYN フラッド</strong>：接続の開始だけ大量に送り、完了させずに「接続待ち」で詰まらせる</td><td>DDoS 対策サービス、FW</td></tr>
+        <tr><td><strong>アプリケーション型</strong></td><td>少ない通信で重い処理を起こさせる</td><td>HTTP フラッド、Slowloris</td><td><strong>WAF</strong>、レートリミット</td></tr>
+      </tbody>
+    </table></div>
+    <p>ノートには、2023年に ChatGPT が DDoS 攻撃で数時間停止した例や、Google Cloud が 2.54Tbps 規模の攻撃を防いだと公表した例が挙げられています。</p>
+
+    <h3 id="sec-6-1">6.1 DDoS への対策</h3>
+    <ul>
+      <li><strong>クラウド型 DDoS 対策サービス（もっとも効果的）</strong>：AWS Shield（Standard は無料で一般的な DDoS を自動防御、Advanced は有料で大規模攻撃とサポート付き）、Cloudflare（DNS を経由させるだけで保護）</li>
+      <li><strong>CDN（Content Delivery Network）</strong>：コンテンツを世界各地のサーバー（エッジ）にコピーして配る仕組み。本来は高速化のためですが、<strong>攻撃をエッジで吸収し、本番サーバー（オリジン）への直撃を減らす</strong> 効果があります。WAF 機能を持つものも多い（Cloudflare、Akamai、AWS CloudFront など）</li>
+      <li><strong>レートリミット</strong>：同じ IP からの大量リクエストを制限</li>
+      <li><strong>IP ブロックリスト</strong>：既知の攻撃元 IP を拒否</li>
+      <li><strong>Anycast ルーティング</strong>：同じ宛先を世界中の拠点で受け、攻撃を分散させる</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>通り道を暗号化する — VPN・HTTPS・Wi-Fi</h2>
+    <p>ネットワークの途中では、通信を <strong>盗み見（盗聴）</strong> されたり <strong>書き換え（改ざん）</strong> られたりする危険があります。中身が見えない封筒に入れて送るのが暗号化です。</p>
+
+    <h3 id="sec-7-1">7.1 VPN — インターネット上の「専用トンネル」</h3>
+    <p><strong>VPN（Virtual Private Network）</strong> は、インターネットの上に <strong>暗号化されたトンネル（仮想の専用線）</strong> を作る技術です。</p>
+    <ul>
+      <li><strong>リモートアクセス VPN</strong>：在宅・外出先の端末から社内ネットワークへ安全につなぐ（端末 → 暗号化トンネル → VPN サーバー → 社内）</li>
+      <li><strong>サイト間 VPN</strong>：本社と支社など、拠点同士をインターネット経由でつなぐ</li>
+      <li>代表的なプロトコル：IPsec、OpenVPN、WireGuard</li>
+    </ul>
+    <p>なお VPN 機器自体の脆弱性は、ランサムウェアの侵入口として頻繁に狙われます（<a href="50-4_脆弱性管理とランサムウェア対策.html">脆弱性管理とランサムウェア対策</a>）。</p>
+
+    <h3 id="sec-7-2">7.2 HTTPS ができあがるまでの4ステップ</h3>
+    <p><strong>HTTPS</strong> は、Web の通信（HTTP）を <strong>TLS</strong>（旧称 SSL）で暗号化したものです。</p>
+    <ol class="steps">
+      <li><strong>TLS ハンドシェイク</strong>：ブラウザ「接続したい」→ サーバー「使える暗号方式はこれ」と、お互いの能力をすり合わせる</li>
+      <li><strong>証明書の提示</strong>：サーバーが認証局（CA）発行の <strong>デジタル証明書</strong>（身分証明書）を送り、ブラウザが CA の署名を確かめる</li>
+      <li><strong>鍵の交換</strong>：公開鍵暗号の仕組みで、この通信だけに使う <strong>セッション鍵（共通鍵）</strong> を安全に共有する</li>
+      <li><strong>暗号化通信</strong>：以降はセッション鍵（AES など）で HTTP のデータを暗号化してやり取りする</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「鍵マークがあれば安全なサイト」</p>
+      <p>HTTPS が守るのは <strong>通り道</strong> だけです。<strong>フィッシングサイトも普通に HTTPS 化できます</strong>。鍵マークは「途中で盗み見されない」ことの印であって、「相手が信用できる」ことの印ではありません。</p>
+    </div>
+
+    <h3 id="sec-7-3">7.3 Wi-Fi の暗号化方式</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>状態</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>WEP</strong></td><td><strong>危険</strong></td><td>最初期の方式。短時間で解読できてしまう</td></tr>
+        <tr><td><strong>WPA</strong></td><td><strong>非推奨</strong></td><td>WEP の改良版だが、現在は不十分</td></tr>
+        <tr><td><strong>WPA2</strong></td><td><strong>一般的</strong></td><td>AES 暗号。2017年に公表された KRACK 攻撃への対策としてパッチ適用が必須</td></tr>
+        <tr><td><strong>WPA3</strong></td><td><strong>推奨</strong></td><td>より強い暗号。パスワードの総当たり（オフライン辞書攻撃）に強い</td></tr>
+        <tr><td><strong>オープン</strong></td><td><strong>暗号化なし</strong></td><td>カフェなどの公共 Wi-Fi。<strong>VPN なしで機密情報を扱うのは危険</strong></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">公共 Wi-Fi を使うときの基本</p>
+      <ul>
+        <li>銀行や社内システムなど機密性の高い操作は避けるか、VPN を使う</li>
+        <li>「自動接続」はオフにする</li>
+        <li>自宅・オフィスの Wi-Fi は WPA2 以上（できれば WPA3）にする</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>メールのなりすまし対策 — SPF・DKIM・DMARC</h2>
+    <p>メールは仕組み上、<strong>差出人を偽るのが簡単</strong> です。封筒の裏に好きな差出人を書けるのと同じです。そこで、受け取った側が「本当にそのドメインから来たか」を確かめる3つの仕組みを組み合わせます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>仕組み</th><th>正式名称</th><th>何を確かめるか</th><th>どうやって</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SPF</strong></td><td>Sender Policy Framework</td><td>送ってきたサーバーの IP が正規か</td><td>DNS に「このドメインのメールはこの IP から送る」と登録しておく</td></tr>
+        <tr><td><strong>DKIM</strong></td><td>DomainKeys Identified Mail</td><td>途中で改ざんされていないか</td><td>送信側がメールにデジタル署名（封印）を付け、受信側が検証する</td></tr>
+        <tr><td><strong>DMARC</strong></td><td>Domain-based Message Authentication, Reporting and Conformance</td><td>SPF/DKIM に失敗したメールをどう扱うか</td><td>「拒否／隔離／報告」の方針を DNS で宣言する</td></tr>
+      </tbody>
+    </table></div>
+    <ol class="steps">
+      <li>送信者が <code>example.com</code> からメールを送る</li>
+      <li>受信側が <strong>SPF</strong> を確認：「この IP は example.com の正規サーバーか？」</li>
+      <li>受信側が <strong>DKIM</strong> を確認：「署名は正しいか？ 改ざんされていないか？」</li>
+      <li><strong>DMARC</strong> の方針に従って、拒否／隔離（迷惑メールフォルダ）／受信 を決める</li>
+    </ol>
+    <p>組織としては、<strong>自社ドメインに SPF・DKIM・DMARC を設定</strong> し、自社を名乗るなりすましメールが出回るのを防ぎます。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>エンドポイントの防御 — 最後の砦は端末そのもの</h2>
+    <p><strong>エンドポイント</strong> とは、PC・サーバー・スマートフォンなど、ネットワークの「端」につながる個々の端末のことです。ネットワークの関所をすり抜けた攻撃（メール添付や USB メモリ経由など）は、最終的に端末で動きます。だから端末自体にも守りが必要です。</p>
+
+    <h3 id="sec-9-1">9.1 端末を守る技術</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>技術</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>アンチウイルスソフト</strong></td><td>既知のマルウェアの「指名手配写真（シグネチャ）」と照合して検知・駆除</td></tr>
+        <tr><td><strong>EDR</strong>（Endpoint Detection and Response）</td><td>端末上の <strong>ふるまい</strong>（プロセスの起動、ファイル変更、通信）を記録・監視し、未知の脅威も検知。侵入後の調査・対応まで支援</td></tr>
+        <tr><td><strong>ディスク暗号化</strong></td><td>端末を紛失・盗難されても中身を読まれないようにする（BitLocker、FileVault など）</td></tr>
+        <tr><td><strong>改ざん検知（FIM）</strong></td><td>File Integrity Monitoring。重要なファイルや設定の不正な変更を検知する</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card">
+        <h4>アンチウイルス</h4>
+        <ul>
+          <li>検知：既知パターン（シグネチャ）</li>
+          <li>未知の脅威：<strong>弱い</strong></li>
+          <li>調査機能：限定的</li>
+        </ul>
+        <p>たとえ：指名手配写真を持った警備員</p>
+      </div>
+      <div class="card">
+        <h4>EDR</h4>
+        <ul>
+          <li>検知：ふるまい分析＋シグネチャ</li>
+          <li>未知の脅威：<strong>強い</strong></li>
+          <li>調査機能：詳細なタイムラインと原因分析</li>
+        </ul>
+        <p>たとえ：館内の全カメラ録画＋「挙動不審」に気づく警備員</p>
+      </div>
+    </div>
+
+    <h3 id="sec-9-2">9.2 端末の運用・管理</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>パッチ管理</strong></td><td>OS やアプリの脆弱性修正（パッチ）を定期的に当てる。古いままの端末は、穴の開いた扉を放置しているのと同じ</td></tr>
+        <tr><td><strong>バックアップとリカバリ</strong></td><td>ランサムウェアなどから復旧する手段。<strong>3-2-1 ルール</strong>：コピーを3つ、2種類の媒体に、1つは離れた場所（オフサイト・オフライン）に</td></tr>
+        <tr><td><strong>ログ管理</strong></td><td>端末の操作履歴を記録し、インシデント調査に使う（<a href="50-3_セキュアな運用とログ出力.html">セキュアな運用とログ出力</a>）</td></tr>
+        <tr><td><strong>SBOM</strong></td><td>Software Bill of Materials。ソフトに含まれる部品（ライブラリ）の一覧表。食品の原材料表示のようなもので、サプライチェーン攻撃や脆弱性の影響調査に役立つ</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント：端末防御の3点セット</p>
+      <p><strong>EDR ＋ パッチ ＋ バックアップ</strong>。EDR で異変に気づき、パッチで侵入口を減らし、バックアップで最悪の事態から戻れるようにします。</p>
+    </div>
+
+    <h3 id="sec-9-3">9.3 インシデント対応チーム — CSIRT と PSIRT</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>組織</th><th>正式名称</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CSIRT</strong>（シーサート）</td><td>Computer Security Incident Response Team</td><td>組織全体のセキュリティ事故に対応する「消防隊」</td></tr>
+        <tr><td><strong>PSIRT</strong>（ピーサート）</td><td>Product Security Incident Response Team</td><td>自社 <strong>製品</strong> の脆弱性に対応するチーム（製品を作るベンダー企業向け）</td></tr>
+      </tbody>
+    </table></div>
+    <p>インシデント対応は「準備 → 検知・分析 → 封じ込め → 根絶 → 復旧 → 事後対応（教訓）」の流れで進みます。詳しくは <a href="50-2_セキュリティ監視とツール.html">セキュリティ監視とツール</a> と <a href="50-3_セキュアな運用とログ出力.html">セキュアな運用とログ出力</a> で扱います。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>マルウェアとフィッシング — 守りをすり抜けてくる敵</h2>
+    <p><strong>マルウェア</strong> は「malicious（悪意ある）＋ software」の造語で、悪意を持って作られたソフトの総称です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>ふるまい</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ランサムウェア</strong></td><td>ファイルを暗号化して「身代金」を要求。被害がもっとも大きいマルウェアの一つで、IPA「情報セキュリティ10大脅威（組織編）」でも上位の常連。VPN 機器の脆弱性やメール添付から侵入</td></tr>
+        <tr><td><strong>スパイウェア</strong></td><td>ユーザーの行動や情報をこっそり集めて送信。キー入力を記録する <strong>キーロガー</strong> を含むことも</td></tr>
+        <tr><td><strong>ボット</strong></td><td>攻撃者に遠隔操作される。DDoS 攻撃の「兵隊」に使われる</td></tr>
+        <tr><td><strong>ワーム</strong></td><td>ネットワークを通じて <strong>人の操作なしに自己増殖</strong> する（例：2017年の WannaCry は世界中で大規模に感染）</td></tr>
+        <tr><td><strong>トロイの木馬</strong></td><td>正規ソフトを装って侵入し、内部で裏口を開く。無料ソフトやクラック版に混入しやすい</td></tr>
+        <tr><td><strong>アドウェア</strong></td><td>広告を強制表示。単体では軽微だが、スパイウェアと組み合わさることも</td></tr>
+        <tr><td><strong>バックドア</strong></td><td>攻撃者が後で入るための「裏口」。長期間気づかれずに潜むことがある</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-10-1">10.1 感染経路と対策</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>主な感染経路</h4>
+        <ul>
+          <li><strong>メールの添付・リンク（最多）</strong>：「請求書.pdf.exe」のような偽装、Office マクロの悪用</li>
+          <li><strong>Web サイト（ドライブバイダウンロード）</strong>：見るだけで感染。正規サイトが改ざんされて罠になることも</li>
+          <li><strong>USB メモリ</strong>：拾った・もらった USB を挿すだけで感染</li>
+          <li><strong>ソフトのインストール</strong>：クラック版、偽のアップデート通知、サプライチェーン攻撃</li>
+          <li><strong>脆弱性の悪用</strong>：パッチ未適用の OS や VPN 機器・ルーター</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>対策（多層で）</h4>
+        <ul>
+          <li><strong>端末</strong>：アンチウイルス・EDR、OS とソフトを最新に、不審な添付や USB を開かない</li>
+          <li><strong>ネットワーク</strong>：FW・WAF・IDS、怪しいサイトを止める DNS フィルタリング、メールのマルウェアスキャン</li>
+          <li><strong>復旧</strong>：定期バックアップをオフライン・別ネットワークに保管し、復旧手順を事前にテスト</li>
+          <li><strong>人</strong>：フィッシング訓練などの教育、最小権限で被害範囲を限定、報告フローの整備</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-2">10.2 フィッシングとソーシャルエンジニアリング</h3>
+    <p>技術の壁を越えるいちばん簡単な方法は「人をだます」ことです。代表的な手口と見分け方をまとめます。</p>
+    <ul>
+      <li><strong>ビジネスメール詐欺（BEC）</strong>：経営者や取引先になりすまして送金を指示する（「至急！社長の〇〇です。△△に送金してください」）</li>
+      <li><strong>スピアフィッシング</strong>：特定の人・組織を狙い撃ち。SNS などで名前・役職・業務を調べ、本物らしいメールを送る</li>
+      <li><strong>スミッシング</strong>：SMS で「荷物が届いています」などと送り、偽サイトへ誘導。宅配業者・銀行・行政サービスを装うことが多い</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チェックポイント</th><th>確認のしかた</th></tr></thead>
+      <tbody>
+        <tr><td>送信元アドレス</td><td>ドメインが微妙に違わないか（<code>arnaz0n.co.jp</code> など）</td></tr>
+        <tr><td>リンクの URL</td><td>クリック前にマウスを乗せて実際の行き先を確認</td></tr>
+        <tr><td>焦らせる文言</td><td>「今すぐ」「24時間以内」「アカウント停止」</td></tr>
+        <tr><td>日本語の不自然さ</td><td>機械翻訳っぽい表現や誤字</td></tr>
+        <tr><td>添付ファイル</td><td><code>.exe</code>・<code>.zip</code>・マクロ付き Office ファイルに注意</td></tr>
+      </tbody>
+    </table></div>
+    <p>脅威の種類の全体像は <a href="10-2_さまざまな脅威と対策の基本.html">さまざまな脅威と対策の基本</a> も参照してください。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>アプリ層と組織全体の守り方（つながりの整理）</h2>
+    <p>ノートの「知識地図」では、ネットワーク・端末に加えて、アプリケーションと組織全体のモデルまでを1つの地図にしています。ここでは要点と、詳しく扱うページへの道案内をまとめます。</p>
+
+    <h3 id="sec-11-1">11.1 アプリケーションの守り</h3>
+    <ul>
+      <li>Web アプリはインターネットに直接さらされるため、攻撃の主要な標的。代表的な脆弱性は <strong>SQL インジェクション</strong>（入力に SQL 文の一部を混ぜて DB を操る。例：<code>' OR '1'='1</code>）と <strong>XSS</strong>（他人のブラウザで悪意あるスクリプトを動かす）→ <a href="40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a></li>
+      <li><strong>ビジネスロジックの欠陥</strong>：URL を直接打つと他人のデータが見える（権限チェック漏れ）、クーポンが無限に使える（レート制限なし）、決済前に発送してしまう（ワークフローの欠陥）→ 脅威モデリング・コードレビュー・ペネトレーションテストで見つける</li>
+      <li>実装レベルでは <strong>バッファオーバーフロー</strong>（想定以上のデータでメモリを壊す）や <strong>RCE</strong>（リモートから任意のコードを実行させる）も重大。Java・Python などメモリ保護のある言語では起きにくいが、C/C++ では今も重要</li>
+    </ul>
+    <p>ログイン状態を保つ <strong>セッション ID</strong> は Cookie で渡されるため、Cookie の属性設定が大切です。</p>
+    <pre><code>Set-Cookie: sessionid=abc123; HttpOnly; Secure; SameSite=Strict</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>属性</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><code>HttpOnly</code></td><td>JavaScript から Cookie を読めなくする → XSS によるセッション窃取を防ぐ</td></tr>
+        <tr><td><code>Secure</code></td><td>HTTPS のときだけ Cookie を送る → 暗号化なし通信での漏洩を防ぐ</td></tr>
+        <tr><td><code>SameSite</code></td><td>他サイトからのリクエストに Cookie を付けない → CSRF を軽減</td></tr>
+      </tbody>
+    </table></div>
+    <p>開発プロセスでは、<strong>DevSecOps</strong>（開発 Dev・セキュリティ Sec・運用 Ops を一体化）と <strong>シフトレフト</strong>（セキュリティ対策を工程の早い段階＝左側へ移す）が鍵です。</p>
+    <pre><code>コード作成 → 静的解析（SAST）→ 依存関係スキャン（SCA）→ テスト → デプロイ → 動的解析（DAST）
+   ↑ なるべく左側で問題を見つける ＝ シフトレフト</code></pre>
+
+    <h3 id="sec-11-2">11.2 組織全体のモデルと統合プラットフォーム</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モデル</th><th>考え方</th><th>弱点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>境界防御</strong></td><td>社内は「安全な城」、外は「敵地」。ファイアウォールで境界を守る</td><td>内部からの脅威に弱い。クラウド時代は境界があいまい</td></tr>
+        <tr><td><strong>多層防御</strong></td><td>物理 → ネットワーク → 端末 → アプリ → データ → 人 と何層も重ね、1層破られても次で止める</td><td>（今も有効な基本の考え方）</td></tr>
+        <tr><td><strong>ゼロトラスト</strong></td><td>社内・社外を問わず「一切信頼しない」。毎回認証・認可・検証し、最小権限を徹底</td><td>導入・運用が複雑</td></tr>
+      </tbody>
+    </table></div>
+    <p>ゼロトラストの実装要素として、ユーザー（管理者か）・端末（社給 PC か、パッチは最新か）・場所（海外か）・リスク（ログイン失敗の多さ、普段と違う時間帯）に応じてアクセスを動的に判断する <strong>動的アクセス制御（Conditional Access）</strong> があります。例：「海外からの管理者ログインには MFA を追加要求」「パッチ未適用の端末は社内リソースへのアクセスを拒否」。</p>
+    <p>また、拠点ごとにバラバラに置いていた FW・VPN・プロキシを、クラウド上でまとめて提供する <strong>SASE</strong>（Secure Access Service Edge）という考え方も広がっています。SASE は SWG（Web 通信のフィルタ）、CASB（クラウドサービス利用の監視・制御）、FWaaS（クラウド型ファイアウォール）、ZTNA（ゼロトラスト型のアクセス）などを束ねたものです。SIEM・XDR・SOAR などの監視側の基盤は <a href="50-2_セキュリティ監視とツール.html">次のページ</a> で扱います。</p>
+    <p>考え方の詳細は <a href="20-2_深層防御.html">深層防御</a>、<a href="20-3_ゼロトラスト.html">ゼロトラスト</a> を参照してください。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>ファイアウォール</strong> は IP・ポートで通信を選ぶ門番。必要なものだけ許可し、最後に全拒否。公開サーバーは <strong>DMZ</strong>、DB は内部に分ける</li>
+        <li><strong>IDS は検知して警告（火災報知器）、IPS は検知して遮断（自動消火）</strong>。方式はシグネチャ型（既知に強い）とアノマリ型（未知に強いが誤検知多め）</li>
+        <li><strong>WAF</strong> は HTTP の中身を見る Web アプリ専用の検査官。ただしアプリ側の修正の代わりにはならない</li>
+        <li><strong>DDoS</strong> は可用性への攻撃。クラウド型対策サービス・CDN・レートリミットで吸収・分散する</li>
+        <li>通り道は <strong>VPN・HTTPS・WPA2/3</strong> で暗号化、メールは <strong>SPF・DKIM・DMARC</strong> でなりすましを防ぐ。鍵マーク＝安全なサイトではない</li>
+        <li>端末は <strong>EDR ＋ パッチ ＋ バックアップ（3-2-1）</strong>。どの層も「1枚で完璧」はなく、重ねて守る</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ファイアウォールで 443 番ポートを許可している Web サイトに、SQL インジェクション攻撃が来ました。ファイアウォールで止められますか？</summary>
+      <div class="body"><p><strong>基本的に止められません。</strong> 一般的なファイアウォール（パケットフィルタリング型・ステートフル型）は IP・ポートしか見ないので、443 番への正規の HTTPS 通信として通してしまいます。HTTP の中身を検査する <strong>WAF</strong> や、アプリ側のプレースホルダなどで防ぎます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. IDS と IPS の違いを「動作」と「置き場所」の2点で説明してください。</summary>
+      <div class="body"><p><strong>動作</strong>：IDS は検知して警告するだけ（通信は止めない）、IPS は検知してブロックする。<strong>置き場所</strong>：IDS は通信のコピーを受け取って横から監視、IPS は通り道の上（インライン）に置いて全通信を通過させる。IPS は誤検知すると正常な通信も止めてしまう点に注意します。</p></div>
+    </details>
+    <details>
+      <summary>Q3. なぜ DB サーバーを Web サーバーと同じ DMZ に置いてはいけないのですか？</summary>
+      <div class="body"><p>DMZ はインターネットに公開する前提のゾーンで、そこにあるサーバーは攻撃を受けやすいからです。DB を内部ネットワークに置き、内部ファイアウォールで「Web/AP サーバーからの必要な通信だけ」を通すようにすれば、Web サーバーが乗っ取られてもう一枚の壁で DB を守れます（多層防御）。</p></div>
+    </details>
+    <details>
+      <summary>Q4. アンチウイルスと EDR の一番の違いは何ですか？</summary>
+      <div class="body"><p>アンチウイルスは <strong>既知のパターン（シグネチャ）</strong> と照合するため未知の脅威に弱い一方、EDR は端末上の <strong>ふるまい</strong> を記録・分析するので未知の脅威にも気づきやすく、侵入後に「いつ・何が起きたか」のタイムライン調査もできます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：01_ネットワーク・アプリ・エンドポイントの防御（セキュリティ知識地図 第4章のまとめ）</li>
+      <li>toamoku-20220418「セキュリティ基礎講座【第四回】ネットワークセキュリティ完全解説！ファイアウォール・IDS/IPS・WAF・DDoS・マルウェア」 <a href="https://qiita.com/toamoku-20220418/items/bc776aa08ceeabb393d4">https://qiita.com/toamoku-20220418/items/bc776aa08ceeabb393d4</a></li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-6_ログ不足・SSRF・例外処理.html"><span class="lbl">← 前のページ</span>ログ不足・SSRF・例外処理</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-2_セキュリティ監視とツール.html"><span class="lbl">次のページ →</span>セキュリティ監視とツール</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

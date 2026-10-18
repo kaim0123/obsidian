@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アーキテクチャ年表｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">00 全体像 › アーキテクチャ年表</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>アーキテクチャ年表</h1>
+      <p class="lead">MVC からマイクロサービスまで、代表的なアーキテクチャを登場の早い順にたどります。それぞれについて「その前にどんな課題があったか」「何を提案したか」「どう解決したか」「向いている場面と限界」を整理し、最後にコンポーネント・関係性・原則という3要素で歴史を横断的に見直します。</p>
+      <p class="meta">もとにしたノート：00_全体像/アーキテクチャ.md（有名なアーキテクチャ — 西暦順でたどる）</p>
+    </div>
+
+    <!-- ===== 本文ここから（h2 に id を付ける。h2/h3 から目次が自動生成される） ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>ソフトウェアのアーキテクチャには、MVC やクリーンアーキテクチャなど、よく名前を聞くスタイルがいくつもあります。しかし <strong>「なぜ生まれたのか」「何の問題を解決したのか」</strong> が分からないと、名前だけ覚えても使いどころが分かりません。</p>
+    <p>このページでは、代表的なアーキテクチャを <strong>登場が早い順（おおよその西暦）</strong> に並べ、それぞれを次の4つの観点で解説します。</p>
+    <ol class="steps">
+      <li><strong>その前に、どんな課題があったか</strong></li>
+      <li><strong>そのアーキテクチャは何を提案したか</strong></li>
+      <li><strong>どう解決したか</strong>（ざっくりした仕組み）</li>
+      <li><strong>向いている場面と限界</strong></li>
+    </ol>
+    <p>さらに、各時代で <strong>コンポーネント（部品）・関係性（依存）・原則と制約</strong> がどう変わったかを、<a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a>で扱う3要素に沿って、<a href="#sec-14">14章</a>で横断的に整理します。各アーキテクチャの詳しい中身は、章ごとに示す個別ページを参照してください。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>全体の流れ（年表）</h2>
+    <p>まず全体を一覧します。下の図は、出発点のスパゲッティコードから順に、色で「どの軸の進化か」を分けたものです。</p>
+    <figure>
+    <svg viewBox="0 0 760 770" role="img" aria-label="アーキテクチャの年表（縦タイムライン）">
+      <rect x="180" y="14" width="18" height="14" rx="3" class="d-box-accent"/>
+      <text x="204" y="26" class="d-text-sub">UI の分離</text>
+      <rect x="300" y="14" width="18" height="14" rx="3" class="d-box-good"/>
+      <text x="324" y="26" class="d-text-sub">モノリス内の構造</text>
+      <rect x="450" y="14" width="18" height="14" rx="3" class="d-box-purple"/>
+      <text x="474" y="26" class="d-text-sub">システム間の連携</text>
+      <rect x="600" y="14" width="18" height="14" rx="3" class="d-box-bad"/>
+      <text x="624" y="26" class="d-text-sub">出発点</text>
+      <line x1="150" y1="56" x2="150" y2="750" class="d-line"/>
+
+      <circle cx="150" cy="84" r="7" class="d-box-bad"/>
+      <text x="135" y="89" text-anchor="end" class="d-text-accent">1970年代以前</text>
+      <rect x="180" y="60" width="560" height="48" rx="8" class="d-box-bad"/>
+      <text x="196" y="80" class="d-text-bold">スパゲッティコード</text>
+      <text x="196" y="99" class="d-text-sub">表示・計算・DB アクセスが1か所に混在。役割の分離がない出発点</text>
+
+      <circle cx="150" cy="148" r="7" class="d-box-accent"/>
+      <text x="135" y="153" text-anchor="end" class="d-text-accent">1979年</text>
+      <rect x="180" y="124" width="560" height="48" rx="8" class="d-box-accent"/>
+      <text x="196" y="144" class="d-text-bold">MVC</text>
+      <text x="196" y="163" class="d-text-sub">画面・操作・データを3つに分ける ／ 解決：全部1か所に書く乱れ</text>
+
+      <circle cx="150" cy="212" r="7" class="d-box-good"/>
+      <text x="135" y="217" text-anchor="end" class="d-text-accent">1990年代</text>
+      <rect x="180" y="188" width="560" height="48" rx="8" class="d-box-good"/>
+      <text x="196" y="208" class="d-text-bold">3層アーキテクチャ</text>
+      <text x="196" y="227" class="d-text-sub">表示・業務・DB を層で分ける ／ 解決：サーバー側の責務の混在</text>
+
+      <circle cx="150" cy="276" r="7" class="d-box-accent"/>
+      <text x="135" y="281" text-anchor="end" class="d-text-accent">1990年代後半</text>
+      <rect x="180" y="252" width="560" height="48" rx="8" class="d-box-accent"/>
+      <text x="196" y="272" class="d-text-bold">MVP</text>
+      <text x="196" y="291" class="d-text-sub">画面制御を Presenter に任せる ／ 解決：MVC の Controller 肥大化</text>
+
+      <circle cx="150" cy="340" r="7" class="d-box-good"/>
+      <text x="135" y="345" text-anchor="end" class="d-text-accent">2003年</text>
+      <rect x="180" y="316" width="560" height="48" rx="8" class="d-box-good"/>
+      <text x="196" y="336" class="d-text-bold">ドメイン駆動設計（DDD）</text>
+      <text x="196" y="355" class="d-text-sub">ビジネスルールをドメインモデルに集約 ／ 解決：ロジックの肥大化・用語のズレ</text>
+
+      <circle cx="150" cy="404" r="7" class="d-box-accent"/>
+      <text x="135" y="409" text-anchor="end" class="d-text-accent">2005年</text>
+      <rect x="180" y="380" width="560" height="48" rx="8" class="d-box-accent"/>
+      <text x="196" y="400" class="d-text-bold">MVVM</text>
+      <text x="196" y="419" class="d-text-sub">View と Model の間に ViewModel ／ 解決：イベントだらけの画面連携</text>
+
+      <circle cx="150" cy="468" r="7" class="d-box-good"/>
+      <text x="135" y="473" text-anchor="end" class="d-text-accent">2005年</text>
+      <rect x="180" y="444" width="560" height="48" rx="8" class="d-box-good"/>
+      <text x="196" y="464" class="d-text-bold">ヘキサゴナルアーキテクチャ</text>
+      <text x="196" y="483" class="d-text-sub">Port／Adapter で外側を差し替え可能に ／ 解決：業務ロジックの DB 依存</text>
+
+      <circle cx="150" cy="532" r="7" class="d-box-good"/>
+      <text x="135" y="537" text-anchor="end" class="d-text-accent">2008年</text>
+      <rect x="180" y="508" width="560" height="48" rx="8" class="d-box-good"/>
+      <text x="196" y="528" class="d-text-bold">オニオンアーキテクチャ</text>
+      <text x="196" y="547" class="d-text-sub">依存の向きを内側（ドメイン）へ ／ 解決：依存関係の整理不足</text>
+
+      <circle cx="150" cy="596" r="7" class="d-box-good"/>
+      <text x="135" y="601" text-anchor="end" class="d-text-accent">2012年</text>
+      <rect x="180" y="572" width="560" height="48" rx="8" class="d-box-good"/>
+      <text x="196" y="592" class="d-text-bold">クリーンアーキテクチャ</text>
+      <text x="196" y="611" class="d-text-sub">これまでの考え方を1つに統合 ／ 解決：層・依存・責務の全体整理</text>
+
+      <circle cx="150" cy="660" r="7" class="d-box-purple"/>
+      <text x="135" y="656" text-anchor="end" class="d-text-accent">1990年代〜</text>
+      <text x="135" y="674" text-anchor="end" class="d-text-accent">2010年代</text>
+      <rect x="180" y="636" width="560" height="48" rx="8" class="d-box-purple"/>
+      <text x="196" y="656" class="d-text-bold">イベント駆動アーキテクチャ（EDA）</text>
+      <text x="196" y="675" class="d-text-sub">起きたことを通知し非同期に反応 ／ 解決：直接依存・同期連鎖</text>
+
+      <circle cx="150" cy="724" r="7" class="d-box-purple"/>
+      <text x="135" y="729" text-anchor="end" class="d-text-accent">2014年頃</text>
+      <rect x="180" y="700" width="560" height="48" rx="8" class="d-box-purple"/>
+      <text x="196" y="720" class="d-text-bold">マイクロサービス</text>
+      <text x="196" y="739" class="d-text-sub">機能ごとに分割して独立デプロイ ／ 解決：巨大モノリスの瓶頸</text>
+    </svg>
+    <figcaption>図：年表（縦タイムライン）。EDA は源流が古く期間が長いため、ノートの順番どおりマイクロサービスの直前に置いている</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="c">順番</th><th>アーキテクチャ</th><th>登場時期</th><th>一言で言うと</th><th>主に解決した課題</th></tr></thead>
+      <tbody>
+        <tr><td class="c">1</td><td><a href="#sec-4"><strong>MVC</strong></a></td><td>1979年</td><td>画面・操作・データを3つに分ける</td><td>全部1か所に書く乱れ</td></tr>
+        <tr><td class="c">2</td><td><a href="#sec-5"><strong>3層アーキテクチャ</strong></a></td><td>1990年代</td><td>表示・業務・DB を層で分ける</td><td>サーバー側の責務の混在</td></tr>
+        <tr><td class="c">3</td><td><a href="#sec-6"><strong>MVP</strong></a></td><td>1990年代後半</td><td>画面制御を Presenter に任せる</td><td>MVC の Controller 肥大化</td></tr>
+        <tr><td class="c">4</td><td><a href="#sec-7"><strong>ドメイン駆動設計（DDD）</strong></a></td><td>2003年</td><td>ビジネスルールをドメインモデルに集約</td><td>ビジネスロジックの肥大化・用語のズレ</td></tr>
+        <tr><td class="c">5</td><td><a href="#sec-8"><strong>MVVM</strong></a></td><td>2005年</td><td>View と Model の間に ViewModel を置く</td><td>イベントだらけの画面連携</td></tr>
+        <tr><td class="c">6</td><td><a href="#sec-9"><strong>ヘキサゴナルアーキテクチャ</strong></a></td><td>2005年</td><td>Port ／ Adapter で外側を差し替え可能に</td><td>業務ロジックが DB に依存</td></tr>
+        <tr><td class="c">7</td><td><a href="#sec-10"><strong>オニオンアーキテクチャ</strong></a></td><td>2008年</td><td>依存の向きを内側（ドメイン）へ</td><td>依存関係の整理不足</td></tr>
+        <tr><td class="c">8</td><td><a href="#sec-11"><strong>クリーンアーキテクチャ</strong></a></td><td>2012年</td><td>これまでの考え方を1つに統合</td><td>層・依存・責務の全体整理</td></tr>
+        <tr><td class="c">9</td><td><a href="#sec-12"><strong>イベント駆動アーキテクチャ（EDA）</strong></a></td><td>1990年代〜2010年代</td><td>「起きたこと」をイベントで通知し、非同期に反応する</td><td>システム間の直接依存・同期連鎖</td></tr>
+        <tr><td class="c">10</td><td><a href="#sec-13"><strong>マイクロサービス</strong></a></td><td>2014年頃</td><td>機能ごとに小さなサービスに分割して独立デプロイ</td><td>巨大モノリスのデプロイ・スケール・チームの瓶頸</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">年の読み方</p>
+      <p>ここでの年は「名前が広まった時期」の目安です。考え方の源流はもっと前から存在するものもあります。また、<strong>3層</strong> は<a href="21-1_層化・三層・レイヤード.html">レイヤードアーキテクチャ</a>（4層・N層）の源流で、レイヤードはアプリケーション層・ドメイン層をさらに細分化した発展形です。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>その前：スパゲッティコード</h2>
+    <p>アーキテクチャという言葉が普及する前から、ソフトウェアは作られていました。当時（1970年代以前〜）よく起きていたのが、<strong>スパゲッティコード</strong> と呼ばれる状態です。処理の流れや依存が麺のように絡み合い、どこを引っ張るとどこが動くのか分からないことから、こう呼ばれます。</p>
+    <figure>
+    <svg viewBox="0 0 640 200" role="img" aria-label="スパゲッティコードのイメージ">
+      <rect x="150" y="16" width="340" height="170" rx="10" class="d-box-bad"/>
+      <text x="320" y="40" text-anchor="middle" class="d-text-bold">1つのファイル</text>
+      <line x1="235" y1="78" x2="405" y2="78" class="d-line"/>
+      <line x1="235" y1="78" x2="405" y2="148" class="d-line"/>
+      <line x1="405" y1="78" x2="235" y2="148" class="d-line"/>
+      <line x1="235" y1="148" x2="405" y2="148" class="d-line"/>
+      <line x1="235" y1="78" x2="235" y2="148" class="d-line"/>
+      <line x1="405" y1="78" x2="405" y2="148" class="d-line"/>
+      <rect x="175" y="58" width="120" height="40" rx="6" class="d-box"/>
+      <text x="235" y="83" text-anchor="middle" class="d-text">画面の表示</text>
+      <rect x="345" y="58" width="120" height="40" rx="6" class="d-box"/>
+      <text x="405" y="83" text-anchor="middle" class="d-text">計算</text>
+      <rect x="175" y="128" width="120" height="40" rx="6" class="d-box"/>
+      <text x="235" y="153" text-anchor="middle" class="d-text">入力処理</text>
+      <rect x="345" y="128" width="120" height="40" rx="6" class="d-box"/>
+      <text x="405" y="153" text-anchor="middle" class="d-text">DB アクセス</text>
+      <text x="20" y="90" class="d-text-sub">UI を変えると…</text>
+      <text x="505" y="150" class="d-text-sub">…DB 処理が壊れる</text>
+    </svg>
+    <figcaption>図：どこからでもどこへでも参照できるため、変更の影響範囲が予測できない</figcaption>
+    </figure>
+    <ul>
+      <li>画面の表示、計算、DB アクセスが <strong>1つのファイルに全部書かれている</strong></li>
+      <li>UI を変えると DB 処理まで壊れる</li>
+      <li>すべてが密結合しているため、テストが書けない</li>
+    </ul>
+    <p>この状態への反省から生まれた <strong>「役割ごとに分けて、つなぎ方のルールを決めよう」</strong> という発想が、アーキテクチャの出発点になりました。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>MVC（1979年）</h2>
+    <p><span class="badge accent">提唱</span> Trygve Reenskaug（Xerox PARC、Smalltalk 向け） <span class="badge">一言</span> 画面・操作・データを3つに分ける<br><span class="badge">詳しく</span> <a href="22-1_MVC.html">MVC（定義・Web の MVC・MVC 違反）</a>、<a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a></p>
+    <h4>その前の課題 — 全部1か所に書く乱れ</h4>
+    <ul>
+      <li>画面（View）の中に、データ処理や計算まで書いてしまう</li>
+      <li>画面デザインを変えるだけなのに、ロジックまで触る必要がある</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>部品</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Model</strong></td><td>データとビジネスルール</td></tr>
+        <tr><td><strong>View</strong></td><td>ユーザーに見せる部分</td></tr>
+        <tr><td><strong>Controller</strong></td><td>入力を受け取り、Model と View をつなぐ</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 640 300" role="img" aria-label="MVC の三角形">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="250" y="20" width="140" height="56" rx="8" class="d-box-good"/>
+      <text x="320" y="44" text-anchor="middle" class="d-text-bold">Model</text>
+      <text x="320" y="63" text-anchor="middle" class="d-text-sub">データ・ルール</text>
+      <rect x="80" y="190" width="140" height="56" rx="8" class="d-box"/>
+      <text x="150" y="214" text-anchor="middle" class="d-text-bold">View</text>
+      <text x="150" y="233" text-anchor="middle" class="d-text-sub">見せる</text>
+      <rect x="420" y="190" width="140" height="56" rx="8" class="d-box-accent"/>
+      <text x="490" y="214" text-anchor="middle" class="d-text-bold">Controller</text>
+      <text x="490" y="233" text-anchor="middle" class="d-text-sub">入力を受ける</text>
+      <rect x="270" y="244" width="100" height="40" rx="20" class="d-box-purple"/>
+      <text x="320" y="269" text-anchor="middle" class="d-text">ユーザー</text>
+      <line x1="370" y1="262" x2="418" y2="240" class="d-line" marker-end="url(#arw1)"/>
+      <text x="398" y="280" class="d-text-sub">操作</text>
+      <line x1="222" y1="240" x2="268" y2="262" class="d-line" marker-end="url(#arw1)"/>
+      <text x="206" y="280" class="d-text-sub">表示</text>
+      <line x1="470" y1="190" x2="368" y2="78" class="d-line" marker-end="url(#arw1)"/>
+      <text x="436" y="128" class="d-text-sub">更新を依頼</text>
+      <line x1="272" y1="78" x2="172" y2="188" class="d-line-dash" marker-end="url(#arw1)"/>
+      <text x="112" y="128" class="d-text-sub">変更を通知</text>
+      <line x1="418" y1="206" x2="222" y2="206" class="d-line" marker-end="url(#arw1)"/>
+      <text x="320" y="198" text-anchor="middle" class="d-text-sub">表示を切り替え</text>
+    </svg>
+    <figcaption>図：MVC の三角形。点線は「Model の変更を View が監視して描き直す」流れ（元祖 Smalltalk MVC の形）</figcaption>
+    </figure>
+    <p>ノートでは関係を次のように単純化して表しています。</p>
+<pre><code>  ユーザー → View ⇄ Controller ⇄ Model</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">補足：MVC の図は1種類ではない</p>
+      <p>1979年の元祖 Smalltalk MVC では、View は Model を <strong>監視（Observer）</strong> していて、Model が変わると通知を受けて自分で描き直します。一方、Rails などの Web フレームワークの MVC や Apple の Cocoa MVC では、Controller が View と Model の間に立って仲介し、View と Model は直接やり取りしません。上のテキスト図は後者に近い形です。どちらも「関心の分離」という核は同じなので、名前が同じでも図が違う点を知っておくと混乱しません。</p>
+    </div>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li><strong>関心の分離</strong>：見た目と中身の処理を別の場所に書く</li>
+      <li>画面を差し替えても Model はそのまま使える</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>Web アプリ、デスクトップ GUI など、UI があるアプリ全般。</p></div>
+      <div class="card bad"><h4>限界</h4><p>Controller や Model が肥大化しやすい。→ MVP・3層・DDD へ。</p></div>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>3層アーキテクチャ（1990年代）</h2>
+    <p><span class="badge accent">背景</span> クライアント・サーバー型のエンタープライズシステムの普及 <span class="badge">一言</span> 表示・業務・DB を層で分ける<br><span class="badge">詳しく</span> <a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード（4層）</a></p>
+    <h4>その前の課題 — サーバー側の責務の混在</h4>
+    <ul>
+      <li>MVC だけでは、Model の中に DB アクセス・ビジネスルール・画面用の整形が混ざる</li>
+      <li>大規模システムで「この機能、どのファイルに書く？」が人によってバラバラになる</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p>サーバー側を <strong>3つの水平な層</strong> に分け、上の層から下の層へ一方向に呼び出します。</p>
+    <figure>
+    <svg viewBox="0 0 640 270" role="img" aria-label="3層アーキテクチャ">
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="170" y="20" width="300" height="56" rx="8" class="d-box-accent"/>
+      <text x="320" y="53" text-anchor="middle" class="d-text-bold">プレゼンテーション層（UI）</text>
+      <text x="490" y="53" class="d-text-sub">表示・入力</text>
+      <line x1="320" y1="76" x2="320" y2="106" class="d-line" marker-end="url(#arw2)"/>
+      <rect x="170" y="108" width="300" height="56" rx="8" class="d-box-good"/>
+      <text x="320" y="141" text-anchor="middle" class="d-text-bold">ビジネスロジック層</text>
+      <text x="490" y="141" class="d-text-sub">業務ルール</text>
+      <line x1="320" y1="164" x2="320" y2="194" class="d-line" marker-end="url(#arw2)"/>
+      <rect x="170" y="196" width="300" height="56" rx="8" class="d-box-warn"/>
+      <text x="320" y="229" text-anchor="middle" class="d-text-bold">データアクセス層（DB）</text>
+      <text x="490" y="229" class="d-text-sub">永続化</text>
+      <line x1="120" y1="30" x2="120" y2="244" class="d-line-dash" marker-end="url(#arw2)"/>
+      <text x="40" y="140" class="d-text-sub">上→下へ</text>
+      <text x="40" y="158" class="d-text-sub">呼ぶ</text>
+    </svg>
+    <figcaption>図：3層アーキテクチャ。呼び出しは上の層から下の層への一方向</figcaption>
+    </figure>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li><strong>役割の固定</strong>：DB はデータ層、ルールはビジネス層、と置き場所を決められる</li>
+      <li>UI を変えてもビジネス層に手を入れなくて済む（理想形）</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>中〜大規模の業務システム、モノリスのアプリ。</p></div>
+      <div class="card bad"><h4>限界</h4><p>ビジネス層が DB や UI に依存してしまうと、層を分けた意味が薄れる。→ ヘキサゴナル・クリーンへ。</p></div>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>MVP（1990年代後半）</h2>
+    <p><span class="badge accent">背景</span> MVC の Controller 肥大化への対処（Taligent、のちに Windows Forms などで普及） <span class="badge">一言</span> 画面制御を Presenter に任せる<br><span class="badge">詳しく</span> <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a></p>
+    <h4>その前の課題 — MVC の Controller 肥大化</h4>
+    <ul>
+      <li>Controller に UI ロジック・バリデーション・Model 操作が全部集まる</li>
+      <li>View が Model を直接読む実装と、Controller 経由の実装が混在し、処理を追いにくい</li>
+      <li>View の単体テストが難しい</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p>Controller の代わりに <strong>Presenter</strong> を置き、<strong>View は完全に受け身</strong> にします。</p>
+    <figure>
+    <svg viewBox="0 0 640 170" role="img" aria-label="MVP の構造">
+      <defs><marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="80" width="80" height="40" rx="20" class="d-box-purple"/>
+      <text x="50" y="105" text-anchor="middle" class="d-text">ユーザー</text>
+      <line x1="90" y1="100" x2="128" y2="100" class="d-line" marker-end="url(#arw3)"/>
+      <rect x="130" y="70" width="130" height="60" rx="8" class="d-box"/>
+      <text x="195" y="95" text-anchor="middle" class="d-text-bold">View</text>
+      <text x="195" y="115" text-anchor="middle" class="d-text-sub">受け身・描画だけ</text>
+      <line x1="260" y1="88" x2="328" y2="88" class="d-line" marker-end="url(#arw3)"/>
+      <text x="294" y="80" text-anchor="middle" class="d-text-sub">入力を転送</text>
+      <line x1="330" y1="114" x2="262" y2="114" class="d-line" marker-end="url(#arw3)"/>
+      <text x="296" y="150" text-anchor="middle" class="d-text-sub">描画を指示</text>
+      <rect x="330" y="70" width="140" height="60" rx="8" class="d-box-accent"/>
+      <text x="400" y="95" text-anchor="middle" class="d-text-bold">Presenter</text>
+      <text x="400" y="115" text-anchor="middle" class="d-text-sub">画面制御ロジック</text>
+      <line x1="470" y1="88" x2="518" y2="88" class="d-line" marker-end="url(#arw3)"/>
+      <text x="494" y="80" text-anchor="middle" class="d-text-sub">操作</text>
+      <line x1="520" y1="114" x2="472" y2="114" class="d-line" marker-end="url(#arw3)"/>
+      <text x="494" y="134" text-anchor="middle" class="d-text-sub">結果</text>
+      <rect x="520" y="70" width="110" height="60" rx="8" class="d-box-good"/>
+      <text x="575" y="95" text-anchor="middle" class="d-text-bold">Model</text>
+      <text x="575" y="115" text-anchor="middle" class="d-text-sub">ドメイン</text>
+      <path d="M195,70 V40 H575 V70" class="d-line-dash"/>
+      <text x="385" y="33" text-anchor="middle" class="d-text-sub">✕ View は Model を直接参照しない</text>
+    </svg>
+    <figcaption>図：MVP。View と Model の直接結合を禁止し、すべて Presenter を経由する</figcaption>
+    </figure>
+<pre><code>ユーザー入力 → View → Presenter → Model
+                  ←       ←      (結果)</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>部品</th><th>MVC との違い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>View</strong></td><td>Model を直接見ない。Presenter の指示どおりに描画するだけ</td></tr>
+        <tr><td><strong>Presenter</strong></td><td>画面制御のロジックをすべて担当する</td></tr>
+      </tbody>
+    </table></div>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li>View が薄くなり、<strong>Presenter だけを単体テスト</strong> しやすくなる（View をモックに差し替えられる）</li>
+      <li>画面とロジックの境界が MVC より明確になる</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>デスクトップアプリ、Android（初期の UI パターン）など。</p></div>
+      <div class="card bad"><h4>限界</h4><p>Presenter 自体が肥大化しやすい（神 Presenter）。双方向の画面更新が多いと MVVM の方が向く。</p></div>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>ドメイン駆動設計 — DDD（2003年）</h2>
+    <p><span class="badge accent">提唱</span> Eric Evans（書籍 <em>Domain-Driven Design</em> の出版） <span class="badge">一言</span> ビジネスルールをドメインモデルに集約<br><span class="badge">詳しく</span> （41 外のノート：42_ソフトウェア設計『02_DDDとは』）</p>
+    <h4>その前の課題 — ビジネスロジックの肥大化・用語のズレ</h4>
+    <ul>
+      <li>ビジネスルールが Service クラスや Controller に散らばる</li>
+      <li>開発者の用語と現場の用語がズレて、要件のすり合わせに時間がかかる</li>
+      <li>DB のテーブル設計から始めると、業務の本質がコードに反映されない</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p><strong>ソフトウェアの構造と用語を、ビジネス（ドメイン）の現実に合わせる</strong> ことを提案しました。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ユビキタス言語</strong></td><td>開発者と現場が同じ用語を使う</td></tr>
+        <tr><td><strong>境界づけられたコンテキスト</strong></td><td>大きなシステムを業務の区切りで分割する</td></tr>
+        <tr><td><strong>集約・エンティティ・値オブジェクト</strong></td><td>ルールを守る単位としてモデル化する</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 640 280" role="img" aria-label="DDD の境界づけられたコンテキスト">
+      <defs><marker id="arw4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="320" y="22" text-anchor="middle" class="d-text-sub">ユビキタス言語：用語の意味はコンテキストごとに定義する</text>
+      <rect x="20" y="40" width="270" height="200" rx="10" class="d-box-good"/>
+      <text x="155" y="68" text-anchor="middle" class="d-text-bold">注文コンテキスト</text>
+      <rect x="40" y="85" width="230" height="40" rx="6" class="d-box"/>
+      <text x="155" y="110" text-anchor="middle" class="d-text">注文（集約ルート）</text>
+      <rect x="40" y="140" width="110" height="52" rx="6" class="d-box"/>
+      <text x="95" y="162" text-anchor="middle" class="d-text">注文明細</text>
+      <text x="95" y="181" text-anchor="middle" class="d-text-sub">エンティティ</text>
+      <rect x="160" y="140" width="110" height="52" rx="6" class="d-box"/>
+      <text x="215" y="162" text-anchor="middle" class="d-text">金額</text>
+      <text x="215" y="181" text-anchor="middle" class="d-text-sub">値オブジェクト</text>
+      <rect x="350" y="40" width="270" height="200" rx="10" class="d-box-good"/>
+      <text x="485" y="68" text-anchor="middle" class="d-text-bold">配送コンテキスト</text>
+      <rect x="370" y="85" width="230" height="40" rx="6" class="d-box"/>
+      <text x="485" y="110" text-anchor="middle" class="d-text">配送（集約ルート）</text>
+      <rect x="370" y="140" width="110" height="52" rx="6" class="d-box"/>
+      <text x="425" y="162" text-anchor="middle" class="d-text">荷物</text>
+      <text x="425" y="181" text-anchor="middle" class="d-text-sub">エンティティ</text>
+      <rect x="490" y="140" width="110" height="52" rx="6" class="d-box"/>
+      <text x="545" y="162" text-anchor="middle" class="d-text">住所</text>
+      <text x="545" y="181" text-anchor="middle" class="d-text-sub">値オブジェクト</text>
+      <line x1="290" y1="140" x2="348" y2="140" class="d-line" marker-end="url(#arw4)"/>
+      <text x="320" y="264" text-anchor="middle" class="d-text-sub">コンテキスト間は明示的に連携する（コンテキストマップ）</text>
+    </svg>
+    <figcaption>図：DDD では技術の層ではなく、業務の区切り（境界づけられたコンテキスト）とビジネス概念を部品にする</figcaption>
+    </figure>
+<pre><code>  現場の言葉 → ドメインモデル → コードの構造
+                    ↑
+            クリーンアーキテクチャの
+            Entities / Use Cases と相性が良い</code></pre>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li>ビジネスルールを <strong>ドメイン層</strong> に集約し、UI や DB から独立させる</li>
+      <li>チーム間・コンテキスト間の境界（<strong>戦略設計</strong>）と、1つのコンテキスト内のモデル（<strong>戦術設計</strong>）を分けて考える</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>業務ルールが複雑で、長期保守するシステム。</p></div>
+      <div class="card bad"><h4>限界</h4><p>単純な CRUD では過剰。DDD は <strong>アーキテクチャそのもの</strong> というより <strong>設計の考え方</strong> で、クリーン・オニオンと組み合わせて使う。</p></div>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>MVVM（2005年）</h2>
+    <p><span class="badge accent">背景</span> Microsoft の WPF ／ Silverlight 向け（John Gossman が発表） <span class="badge">一言</span> View と Model の間に ViewModel を置く<br><span class="badge">詳しく</span> <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a></p>
+    <h4>その前の課題 — イベントだらけの画面連携</h4>
+    <ul>
+      <li>入力のたびに Controller ／ Presenter が View を手動で更新するコードが増える</li>
+      <li>双方向の画面更新（フォーム ↔ 計算結果）がイベント地獄になる</li>
+      <li>同じデータを PC 版・モバイル版で別々に実装しがち</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p><strong>ViewModel</strong> が画面用の状態を保持し、<strong>データバインディング</strong> によって View と自動で同期させます。</p>
+    <figure>
+    <svg viewBox="0 0 640 220" role="img" aria-label="MVVM の構造">
+      <defs>
+        <marker id="arw5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker>
+      </defs>
+      <rect x="20" y="30" width="150" height="56" rx="8" class="d-box"/>
+      <text x="95" y="54" text-anchor="middle" class="d-text-bold">View</text>
+      <text x="95" y="73" text-anchor="middle" class="d-text-sub">PC 版の画面</text>
+      <rect x="20" y="120" width="150" height="56" rx="8" class="d-box"/>
+      <text x="95" y="144" text-anchor="middle" class="d-text-bold">View</text>
+      <text x="95" y="163" text-anchor="middle" class="d-text-sub">モバイル版の画面</text>
+      <line x1="172" y1="60" x2="258" y2="90" class="d-line-accent" marker-start="url(#arw5a)" marker-end="url(#arw5a)"/>
+      <line x1="172" y1="146" x2="258" y2="116" class="d-line-accent" marker-start="url(#arw5a)" marker-end="url(#arw5a)"/>
+      <rect x="260" y="70" width="170" height="64" rx="8" class="d-box-accent"/>
+      <text x="345" y="97" text-anchor="middle" class="d-text-bold">ViewModel</text>
+      <text x="345" y="117" text-anchor="middle" class="d-text-sub">画面用の状態</text>
+      <line x1="430" y1="102" x2="498" y2="102" class="d-line" marker-end="url(#arw5)"/>
+      <text x="464" y="94" text-anchor="middle" class="d-text-sub">操作</text>
+      <rect x="500" y="70" width="120" height="64" rx="8" class="d-box-good"/>
+      <text x="560" y="97" text-anchor="middle" class="d-text-bold">Model</text>
+      <text x="560" y="117" text-anchor="middle" class="d-text-sub">ドメイン</text>
+      <text x="215" y="205" text-anchor="middle" class="d-text-accent">⇄ データバインディング（自動同期）</text>
+    </svg>
+    <figcaption>図：MVVM。1つの ViewModel に複数の View をバインディングでつなげられる</figcaption>
+    </figure>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li>View に描画ロジックをほぼ書かず、ViewModel の変更が <strong>自動で画面に反映</strong> される</li>
+      <li>ViewModel を画面なしでテストできる</li>
+      <li>1つの ViewModel に複数の View（PC ／ モバイル）を接続しやすい</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>WPF、Vue、Angular、React＋状態管理など <strong>リッチな UI</strong>。</p></div>
+      <div class="card bad"><h4>限界</h4><p>双方向バインディングのバグは追いにくい。フレームワークへの依存が強い。</p></div>
+    </div>
+    <h3 id="sec-8-cmp">MVC 系3パターンの比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>MVC</th><th>MVP</th><th>MVVM</th></tr></thead>
+      <tbody>
+        <tr><td>ロジックの主体</td><td>Controller</td><td>Presenter</td><td>ViewModel</td></tr>
+        <tr><td>View の役割</td><td>描画＋一部の入力</td><td>完全に受け身</td><td>バインディングで自動更新</td></tr>
+        <tr><td>主な舞台</td><td>Rails などの Web</td><td>デスクトップ・Android</td><td>モダンなフロントエンド</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>ヘキサゴナルアーキテクチャ（2005年）</h2>
+    <p><span class="badge accent">提唱</span> Alistair Cockburn（別名 <strong>ポート&amp;アダプタ</strong>） <span class="badge">一言</span> Port ／ Adapter で外側を差し替え可能に<br><span class="badge">詳しく</span> <a href="23-2_ヘキサゴナルアーキテクチャ.html">ヘキサゴナルアーキテクチャ</a></p>
+    <h4>その前の課題 — 業務ロジックが DB に依存</h4>
+    <ul>
+      <li>3層でも、ビジネス層が MySQL や REST API に <strong>直接依存</strong> してしまう</li>
+      <li>DB を変えたいのに、SQL がビジネスロジックの中に散らばっている</li>
+      <li>テストのたびに DB を起動しないといけない</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p><strong>Application Core（ビジネスロジック）</strong> を中心に置き、外の世界とは <strong>Port（コア側が定める差し込み口のインターフェース）</strong> と <strong>Adapter（その差し込み口に合わせて外部技術をつなぐ実装）</strong> を経由して接続します。</p>
+    <figure>
+    <svg viewBox="0 0 640 320" role="img" aria-label="ヘキサゴナルアーキテクチャ">
+      <defs><marker id="arw6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <polygon points="430,160 375,255 265,255 210,160 265,65 375,65" class="d-box-good"/>
+      <text x="320" y="155" text-anchor="middle" class="d-text-bold">Application Core</text>
+      <text x="320" y="175" text-anchor="middle" class="d-text-sub">ビジネスロジック</text>
+      <rect x="218" y="98" width="44" height="24" rx="4" class="d-box-accent"/>
+      <text x="240" y="115" text-anchor="middle" class="d-text-sub">Port</text>
+      <rect x="218" y="198" width="44" height="24" rx="4" class="d-box-accent"/>
+      <text x="240" y="215" text-anchor="middle" class="d-text-sub">Port</text>
+      <rect x="378" y="98" width="44" height="24" rx="4" class="d-box-accent"/>
+      <text x="400" y="115" text-anchor="middle" class="d-text-sub">Port</text>
+      <rect x="378" y="198" width="44" height="24" rx="4" class="d-box-accent"/>
+      <text x="400" y="215" text-anchor="middle" class="d-text-sub">Port</text>
+      <rect x="20" y="70" width="140" height="52" rx="8" class="d-box"/>
+      <text x="90" y="92" text-anchor="middle" class="d-text-bold">Web UI</text>
+      <text x="90" y="111" text-anchor="middle" class="d-text-sub">入力側アダプタ</text>
+      <rect x="20" y="200" width="140" height="52" rx="8" class="d-box"/>
+      <text x="90" y="222" text-anchor="middle" class="d-text-bold">テストコード</text>
+      <text x="90" y="241" text-anchor="middle" class="d-text-sub">入力側アダプタ</text>
+      <rect x="480" y="70" width="140" height="52" rx="8" class="d-box"/>
+      <text x="550" y="92" text-anchor="middle" class="d-text-bold">MySQL</text>
+      <text x="550" y="111" text-anchor="middle" class="d-text-sub">出力側アダプタ</text>
+      <rect x="480" y="200" width="140" height="52" rx="8" class="d-box"/>
+      <text x="550" y="222" text-anchor="middle" class="d-text-bold">外部 API</text>
+      <text x="550" y="241" text-anchor="middle" class="d-text-sub">出力側アダプタ</text>
+      <line x1="160" y1="96" x2="216" y2="110" class="d-line" marker-end="url(#arw6)"/>
+      <line x1="160" y1="226" x2="216" y2="210" class="d-line" marker-end="url(#arw6)"/>
+      <line x1="480" y1="96" x2="424" y2="110" class="d-line" marker-end="url(#arw6)"/>
+      <line x1="480" y1="226" x2="424" y2="210" class="d-line" marker-end="url(#arw6)"/>
+      <text x="320" y="300" text-anchor="middle" class="d-text-sub">矢印は依存の向き：外側のアダプタが、コアの定めたポートに合わせる</text>
+    </svg>
+    <figcaption>図：ヘキサゴナル。DB 側（出力側）でも、アダプタがポートを実装することで依存の向きが内側になる</figcaption>
+    </figure>
+<pre><code>  Web UI ──→ [Adapter] ──→ Port
+                              │
+                     Application Core
+                              │
+  MySQL  ←── [Adapter] ←── Port</code></pre>
+    <p class="small muted">上のテキスト図の矢印は「呼び出し（制御）の流れ」です。DB 側では Core → Port → Adapter → MySQL と呼び出しが流れますが、ソースコードの依存は Adapter → Port の向き（Adapter が Port を実装する）になります。この「制御の流れと依存の向きが逆になる」点が依存性逆転です（<a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a>）。</p>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li>外側（DB・UI）が内側（ルール）に合わせる形で、<strong>依存の向きを逆転</strong> する</li>
+      <li>DB や UI を差し替えても、コアはほぼ変更しなくて済む</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>ドメインルールが複雑で、インフラを差し替えたいモノリス。</p></div>
+      <div class="card bad"><h4>限界</h4><p>小さな CRUD アプリでは抽象化が過剰になる。</p></div>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>オニオンアーキテクチャ（2008年）</h2>
+    <p><span class="badge accent">提唱</span> Jeffrey Palermo <span class="badge">一言</span> 依存の向きを内側（ドメイン）へ<br><span class="badge">詳しく</span> <a href="23-3_オニオンと3つの比較.html">オニオンアーキテクチャと3つの比較</a></p>
+    <h4>その前の課題 — 依存関係の整理不足</h4>
+    <ul>
+      <li>ヘキサゴナルと同様に、<strong>フレームワークや DB が主役</strong> になりがち</li>
+      <li>「ドメイン層」「アプリケーションサービス」といった <strong>層の役割</strong> がチーム内で曖昧</li>
+      <li>依存性逆転（DIP）を <strong>フォルダ構成</strong> として表現したい</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p><strong>タマネギ状</strong> に層を重ね、<strong>Domain Model を最も中心</strong> に置きます。</p>
+    <figure>
+    <svg viewBox="0 0 640 300" role="img" aria-label="オニオンアーキテクチャの同心円">
+      <defs><marker id="arw7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <circle cx="300" cy="150" r="140" class="d-box"/>
+      <circle cx="300" cy="150" r="100" class="d-box-accent"/>
+      <circle cx="300" cy="150" r="48" class="d-box-good"/>
+      <text x="300" y="31" text-anchor="middle" class="d-text-bold">Infrastructure</text>
+      <text x="300" y="46" text-anchor="middle" class="d-text-sub">DB・UI・外部連携</text>
+      <text x="300" y="73" text-anchor="middle" class="d-text-accent">Application Service</text>
+      <text x="300" y="91" text-anchor="middle" class="d-text-sub">ユースケース</text>
+      <text x="300" y="146" text-anchor="middle" class="d-text-bold">Domain</text>
+      <text x="300" y="164" text-anchor="middle" class="d-text-bold">Model</text>
+      <line x1="470" y1="150" x2="348" y2="150" class="d-line-accent" marker-end="url(#arw7)"/>
+      <text x="480" y="146" class="d-text-accent">依存はすべて</text>
+      <text x="480" y="164" class="d-text-accent">内側へ</text>
+    </svg>
+    <figcaption>図：オニオン。中心のドメインモデルが最も安定し、外側ほど変わりやすい</figcaption>
+    </figure>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li>ドメインモデルを <strong>最も安定した中心</strong> として明示する</li>
+      <li>ヘキサゴナルと同じ思想だが、<strong>層の名前と同心円の図</strong> によってチームで共有しやすい</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>DDD と組み合わせた長期保守システム。</p></div>
+      <div class="card bad"><h4>限界</h4><p>クリーン・ヘキサゴナルと <strong>思想はほぼ同じ</strong> で、違いは主に用語。小規模では過剰。</p></div>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>クリーンアーキテクチャ（2012年）</h2>
+    <p><span class="badge accent">提唱</span> Robert C. Martin（Uncle Bob。2012年のブログ記事、2017年に書籍化） <span class="badge">一言</span> これまでの考え方を1つに統合<br><span class="badge">詳しく</span> <a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a>、<a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a></p>
+    <h4>その前の課題 — 層・依存・責務の全体整理</h4>
+    <ul>
+      <li>ヘキサゴナル・オニオン・DDD がそれぞれ別の言葉で語られ、<strong>初学者が混乱</strong> する</li>
+      <li>UseCase と Entity の境界、Adapter の置き場所がプロジェクトごとにバラバラ</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p><strong>同心円の層</strong> と <strong>依存は常に内側へ</strong> というルール（依存性のルール）を、1つの図に統合しました。</p>
+    <figure>
+    <svg viewBox="0 0 640 330" role="img" aria-label="クリーンアーキテクチャの同心円">
+      <defs><marker id="arw8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <circle cx="300" cy="165" r="150" class="d-box"/>
+      <circle cx="300" cy="165" r="110" class="d-box-purple"/>
+      <circle cx="300" cy="165" r="70" class="d-box-accent"/>
+      <circle cx="300" cy="165" r="32" class="d-box-good"/>
+      <text x="300" y="40" text-anchor="middle" class="d-text-sub">Frameworks &amp; Drivers</text>
+      <text x="300" y="78" text-anchor="middle" class="d-text-sub">Interface Adapters</text>
+      <text x="300" y="118" text-anchor="middle" class="d-text-sub">Use Cases</text>
+      <text x="300" y="170" text-anchor="middle" class="d-text-accent">Entities</text>
+      <line x1="490" y1="190" x2="334" y2="172" class="d-line-accent" marker-end="url(#arw8)"/>
+      <text x="470" y="140" class="d-text-accent">依存は常に内側へ</text>
+      <text x="470" y="158" class="d-text-sub">（最も安定＝Entities）</text>
+      <text x="10" y="300" class="d-text-sub">外側＝詳細（DB・Web・UI）</text>
+      <text x="470" y="300" class="d-text-sub">内側＝方針（業務ルール）</text>
+    </svg>
+    <figcaption>図：クリーンアーキテクチャ。4つの同心円と、内向きの依存</figcaption>
+    </figure>
+<pre><code>        ┌─────────────────────────────┐
+        │  Frameworks &amp; Drivers（外）   │
+        ├─────────────────────────────┤
+        │  Interface Adapters          │
+        ├─────────────────────────────┤
+        │  Use Cases                   │
+        ├─────────────────────────────┤
+        │  Entities                    │  ← 最も安定
+        └─────────────────────────────┘</code></pre>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li>MVC・3層・ヘキサゴナル・オニオン・DDD の <strong>共通思想に1つの名前</strong> を付けた</li>
+      <li>エンティティとユースケースを中心に置き、UI・DB の変更の影響を最小化する</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>長期保守する業務システム（DDD と相性が良い）。</p></div>
+      <div class="card bad"><h4>限界</h4><p>学習コストとボイラープレート（定型コード）の多さ。短命・小規模のプロジェクトでは過剰設計になる。</p></div>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>イベント駆動アーキテクチャ — EDA（1990年代〜2010年代）</h2>
+    <p><span class="badge accent">背景</span> メッセージキュー（IBM MQ など）、書籍 <em>Enterprise Integration Patterns</em>（2003年）、Kafka（2011年にオープンソース化） <span class="badge">一言</span> 「起きたこと」をイベントで通知し、非同期に反応する<br><span class="badge">詳しく</span> <a href="40-3_同期API・メッセージ・イベント駆動.html">同期 API・メッセージ・イベント駆動</a></p>
+    <h4>その前の課題 — システム間の直接依存・同期連鎖</h4>
+    <ul>
+      <li>システム A が B を <strong>直接 HTTP で呼ぶ</strong> と、B の障害の影響をそのまま受ける</li>
+      <li>注文・在庫・配送・メールを <strong>1本の同期フロー</strong> に詰め込むと、1か所の失敗で全体が止まる</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p><strong>「何が起きたか（イベント）」</strong> を発行し、必要な側が後から反応する形にします。</p>
+    <figure>
+    <svg viewBox="0 0 640 240" role="img" aria-label="イベント駆動アーキテクチャ">
+      <defs><marker id="arw9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="92" width="140" height="56" rx="8" class="d-box-accent"/>
+      <text x="90" y="116" text-anchor="middle" class="d-text-bold">注文サービス</text>
+      <text x="90" y="135" text-anchor="middle" class="d-text-sub">発行者</text>
+      <line x1="160" y1="120" x2="228" y2="120" class="d-line" marker-end="url(#arw9)"/>
+      <text x="194" y="84" text-anchor="middle" class="d-text-sub">OrderCreated</text>
+      <rect x="230" y="92" width="140" height="56" rx="8" class="d-box-purple"/>
+      <text x="300" y="116" text-anchor="middle" class="d-text-bold">ブローカー</text>
+      <text x="300" y="135" text-anchor="middle" class="d-text-sub">Kafka・MQ など</text>
+      <line x1="370" y1="120" x2="468" y2="44" class="d-line" marker-end="url(#arw9)"/>
+      <line x1="370" y1="120" x2="468" y2="120" class="d-line" marker-end="url(#arw9)"/>
+      <line x1="370" y1="120" x2="468" y2="196" class="d-line" marker-end="url(#arw9)"/>
+      <rect x="470" y="20" width="150" height="48" rx="8" class="d-box-good"/>
+      <text x="545" y="49" text-anchor="middle" class="d-text">在庫サービス</text>
+      <rect x="470" y="96" width="150" height="48" rx="8" class="d-box-good"/>
+      <text x="545" y="125" text-anchor="middle" class="d-text">ポイントサービス</text>
+      <rect x="470" y="172" width="150" height="48" rx="8" class="d-box-good"/>
+      <text x="545" y="201" text-anchor="middle" class="d-text">通知サービス</text>
+    </svg>
+    <figcaption>図：EDA。注文サービスは購読者の存在を知らず、イベントを発行するだけ</figcaption>
+    </figure>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li><strong>疎結合</strong>：注文サービスは在庫サービスの URL を知らなくてよい</li>
+      <li><strong>非同期</strong>：API はすぐに応答し、重い処理は後回しにできる</li>
+      <li><strong>拡張</strong>：新しい購読者を、既存のコードを触らずに追加できる</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>複数サービス・複数チームの連携、ピーク時の負荷分散。</p></div>
+      <div class="card bad"><h4>限界</h4><p>結果がすぐにはそろわない（結果整合性：eventual consistency）。運用コストが高い。</p></div>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>マイクロサービス（2014年頃）</h2>
+    <p><span class="badge accent">背景</span> Netflix などの実践、James Lewis と Martin Fowler による整理（2014年の記事） <span class="badge">一言</span> 機能ごとに小さなサービスに分割して独立デプロイ<br><span class="badge">詳しく</span> <a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a></p>
+    <h4>その前の課題 — 巨大モノリスのデプロイ・スケール・チームの瓶頸</h4>
+    <ul>
+      <li>小さな修正でも <strong>全体を再デプロイ</strong> する必要がある</li>
+      <li>100人規模のチームが1つのコードベースでコンフリクトする</li>
+      <li>在庫機能だけスケールしたいのに、全部が同じサーバーで動いている</li>
+    </ul>
+    <h4>何を提案したか</h4>
+    <p>システムを <strong>小さな独立サービス</strong> に分割し、各サービスが <strong>自分のデータを所有</strong> します。</p>
+    <figure>
+    <svg viewBox="0 0 640 250" role="img" aria-label="マイクロサービスの構造">
+      <defs><marker id="arw10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="40" y="20" width="560" height="40" rx="8" class="d-box-purple"/>
+      <text x="320" y="45" text-anchor="middle" class="d-text">API（同期）／ イベント（非同期）で連携</text>
+      <line x1="120" y1="62" x2="120" y2="88" class="d-line" marker-start="url(#arw10)" marker-end="url(#arw10)"/>
+      <line x1="320" y1="62" x2="320" y2="88" class="d-line" marker-start="url(#arw10)" marker-end="url(#arw10)"/>
+      <line x1="520" y1="62" x2="520" y2="88" class="d-line" marker-start="url(#arw10)" marker-end="url(#arw10)"/>
+      <rect x="40" y="90" width="160" height="56" rx="8" class="d-box-accent"/>
+      <text x="120" y="114" text-anchor="middle" class="d-text-bold">注文サービス</text>
+      <text x="120" y="133" text-anchor="middle" class="d-text-sub">注文チーム</text>
+      <rect x="240" y="90" width="160" height="56" rx="8" class="d-box-accent"/>
+      <text x="320" y="114" text-anchor="middle" class="d-text-bold">在庫サービス</text>
+      <text x="320" y="133" text-anchor="middle" class="d-text-sub">在庫チーム</text>
+      <rect x="440" y="90" width="160" height="56" rx="8" class="d-box-accent"/>
+      <text x="520" y="114" text-anchor="middle" class="d-text-bold">ユーザーサービス</text>
+      <text x="520" y="133" text-anchor="middle" class="d-text-sub">会員チーム</text>
+      <line x1="120" y1="146" x2="120" y2="182" class="d-line" marker-end="url(#arw10)"/>
+      <line x1="320" y1="146" x2="320" y2="182" class="d-line" marker-end="url(#arw10)"/>
+      <line x1="520" y1="146" x2="520" y2="182" class="d-line" marker-end="url(#arw10)"/>
+      <text x="128" y="170" class="d-text-sub">所有</text>
+      <text x="328" y="170" class="d-text-sub">所有</text>
+      <text x="528" y="170" class="d-text-sub">所有</text>
+      <rect x="70" y="184" width="100" height="44" rx="14" class="d-box-warn"/>
+      <text x="120" y="211" text-anchor="middle" class="d-text">注文 DB</text>
+      <rect x="270" y="184" width="100" height="44" rx="14" class="d-box-warn"/>
+      <text x="320" y="211" text-anchor="middle" class="d-text">在庫 DB</text>
+      <rect x="470" y="184" width="100" height="44" rx="14" class="d-box-warn"/>
+      <text x="520" y="211" text-anchor="middle" class="d-text">ユーザー DB</text>
+    </svg>
+    <figcaption>図：マイクロサービス。サービスごとにデータとチームを持ち、他サービスの DB には直接触れない</figcaption>
+    </figure>
+    <h4>どう解決したか</h4>
+    <ul>
+      <li><strong>独立したデプロイ・スケール</strong>：在庫サービスだけを修正・リリース・増強できる</li>
+      <li><strong>チームの自律</strong>：サービス単位でチームを分けやすい</li>
+      <li>サービスの内部は <strong>クリーンアーキテクチャ</strong>、サービス間の連携は <strong>EDA</strong> と組み合わせることが多い</li>
+    </ul>
+    <h4>向いている場面・限界</h4>
+    <div class="grid c2">
+      <div class="card good"><h4>向いている</h4><p>大規模なプロダクト、複数チーム、部分ごとにリリース頻度が違う場合。</p></div>
+      <div class="card bad"><h4>限界</h4><p>分散システム特有の難しさ（<a href="40-4_データ所有権とSAGA.html">データ所有権・分散トランザクション・SAGA</a>）。小さなチームでは <strong>モノリスから始める</strong> 方が合理的なことが多い。</p></div>
+    </div>
+
+    <h2 id="sec-14"><span class="num">14.</span>3要素の進化 — コンポーネント・関係性・原則</h2>
+    <p><a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a>で扱う <strong>3つの要素</strong>（コンポーネント・関係性・原則と制約）は、アーキテクチャの「名前」が増えるたびに、<strong>何を部品とみなすか・どうつなぐか・何を守るか</strong> が段階的に洗練されてきました。ここでは、上の年表と対応させてその変化を整理します。</p>
+
+    <h3 id="sec-14-1">14-1. コンポーネント（部品）— 「何を1単位とみなすか」</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>主なコンポーネント</th><th>変化のポイント</th></tr></thead>
+      <tbody>
+        <tr><td><strong>スパゲッティ</strong></td><td>なし（1ファイルが全部）</td><td>部品という概念自体がない</td></tr>
+        <tr><td><strong>MVC</strong></td><td>Model ／ View ／ Controller</td><td><strong>UI・操作・データ</strong> を3つに分けた最初の型</td></tr>
+        <tr><td><strong>3層</strong></td><td>プレゼンテーション ／ ビジネス ／ データ層</td><td>MVC の Model を <strong>サーバー側の水平層</strong> に再分割</td></tr>
+        <tr><td><strong>MVP</strong></td><td>View ／ Presenter ／ Model</td><td>Controller を <strong>Presenter</strong> に特化（画面制御専用の部品）</td></tr>
+        <tr><td><strong>DDD</strong></td><td>エンティティ・値オブジェクト・集約・<strong>境界づけられたコンテキスト</strong></td><td>技術の層ではなく <strong>ビジネス概念</strong> を部品にする</td></tr>
+        <tr><td><strong>MVVM</strong></td><td>View ／ ViewModel ／ Model</td><td>画面用の状態を担う <strong>ViewModel</strong> が新しい部品として登場</td></tr>
+        <tr><td><strong>ヘキサゴナル</strong></td><td>Application Core ／ Port ／ Adapter</td><td>中心の <strong>コア</strong> と、外側を差し替える <strong>アダプタ</strong> を明示</td></tr>
+        <tr><td><strong>オニオン</strong></td><td>Domain Model ／ Application Service ／ Infrastructure</td><td>コアを <strong>同心円の層</strong> として名前付け</td></tr>
+        <tr><td><strong>クリーン</strong></td><td>Entities ／ Use Cases ／ Interface Adapters ／ Frameworks</td><td>ヘキサゴナル・オニオン・DDD の部品名を <strong>1セットに統合</strong></td></tr>
+        <tr><td><strong>EDA</strong></td><td>イベント発行者 ／ ブローカー ／ 購読者</td><td>部品の境界が <strong>プロセス・サービスをまたぐ</strong> 単位へ</td></tr>
+        <tr><td><strong>マイクロサービス</strong></td><td>注文・在庫・ユーザー…などの <strong>独立サービス</strong></td><td>1つのアプリ内のモジュールから、<strong>デプロイ単位</strong> そのものが部品になる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>流れの要約：</strong>「1塊のコード」→「UI 用の3分割」→「サーバー側の層」→「ビジネス概念（ドメイン）」→「差し替え可能な外側」→「サービス単位の分割」。</p>
+
+    <h3 id="sec-14-2">14-2. 関係性（依存・通信・データの流れ）— 「どうつなぐか」</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>主な関係性</th><th>変化のポイント</th></tr></thead>
+      <tbody>
+        <tr><td><strong>スパゲッティ</strong></td><td>どこからでもどこへでも参照</td><td>依存の向きが <strong>無秩序</strong></td></tr>
+        <tr><td><strong>MVC</strong></td><td>View ⇄ Controller ⇄ Model</td><td><strong>関心ごと</strong> に経路を分ける</td></tr>
+        <tr><td><strong>3層</strong></td><td>上の層 → 下の層（一方向の呼び出し）</td><td><strong>層をまたぐ依存</strong> をルール化</td></tr>
+        <tr><td><strong>MVP</strong></td><td>View → Presenter → Model（View は受け身）</td><td>View と Model の <strong>直接結合を禁止</strong></td></tr>
+        <tr><td><strong>DDD</strong></td><td>ドメインモデルが中心、コンテキスト間は明示的に連携</td><td>部品間の関係を <strong>業務の境界</strong> で定義</td></tr>
+        <tr><td><strong>MVVM</strong></td><td>View ⇄ ViewModel（データバインディング）→ Model</td><td><strong>双方向の自動同期</strong> で手動更新を減らす</td></tr>
+        <tr><td><strong>ヘキサゴナル</strong></td><td>外側 → Port → Core（<strong>依存の向きを逆転</strong>）</td><td>DB・UI がコアに <strong>直接触れない</strong></td></tr>
+        <tr><td><strong>オニオン ／ クリーン</strong></td><td>すべての依存が <strong>内側（ドメイン）へ</strong></td><td>依存性逆転（DIP）を <strong>アーキテクチャの前提</strong> にする</td></tr>
+        <tr><td><strong>EDA</strong></td><td>発行者 → イベント → 購読者（<strong>非同期・疎結合</strong>）</td><td>呼び出し元は <strong>相手の存在を知らなくてよい</strong></td></tr>
+        <tr><td><strong>マイクロサービス</strong></td><td>API（同期）＋イベント（非同期）でサービス間を連携</td><td>関係性の単位が <strong>プロセス境界</strong> に拡大</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>流れの要約：</strong>密結合 → 役割ごとの経路 → 層の一方向 → 内側への依存集中 → イベントによる疎結合 → 分散システム間の連携。</p>
+
+    <h3 id="sec-14-3">14-3. 原則・制約（ルール）— 「何を守るか」</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>主な原則・制約</th><th>変化のポイント</th></tr></thead>
+      <tbody>
+        <tr><td><strong>スパゲッティ</strong></td><td>（暗黙のルールもない）</td><td>変更の影響範囲が <strong>予測不能</strong></td></tr>
+        <tr><td><strong>MVC</strong></td><td><strong>関心の分離</strong> — 見た目とデータ処理を分ける</td><td>アーキテクチャの <strong>最初の明示的なルール</strong></td></tr>
+        <tr><td><strong>3層</strong></td><td><strong>層の責務の固定</strong> — DB はデータ層だけ、など</td><td>「どこに何を書くか」を <strong>チームで共有</strong></td></tr>
+        <tr><td><strong>MVP</strong></td><td>View は <strong>描画だけ</strong>、ロジックは Presenter</td><td>UI をテスト可能にする <strong>役割の縛り</strong></td></tr>
+        <tr><td><strong>DDD</strong></td><td><strong>ユビキタス言語</strong>、境界づけられたコンテキスト</td><td>技術のルールに加えて <strong>ビジネス用語を統一</strong></td></tr>
+        <tr><td><strong>MVVM</strong></td><td>View にロジックを書かない、<strong>バインディング経由</strong></td><td>フレームワーク前提の <strong>UI 更新ルール</strong></td></tr>
+        <tr><td><strong>ヘキサゴナル</strong></td><td>外側は内側に合わせる、<strong>Port 経由のみ</strong></td><td>インフラの差し替えを <strong>設計段階で保証</strong></td></tr>
+        <tr><td><strong>オニオン ／ クリーン</strong></td><td><strong>依存は常に内側へ</strong>、フレームワークは詳細</td><td>変更に強い中心（Entities）を <strong>最優先</strong></td></tr>
+        <tr><td><strong>EDA</strong></td><td><strong>結果整合性</strong>、イベントは過去形で表現する</td><td>同期処理の <strong>即時一貫性</strong> を手放す代わりに拡張性を得る</td></tr>
+        <tr><td><strong>マイクロサービス</strong></td><td><strong>データ所有権</strong>、独立デプロイ、サービスの自律</td><td>チーム・リリース単位という <strong>組織的な制約</strong> も含む</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>流れの要約：</strong>ルールなし → 分離・層の責務 → ドメイン中心・依存逆転 → 分散環境での整合性と自律性。</p>
+
+    <h3 id="sec-14-4">14-4. 3要素を横断で見る — 各アーキテクチャは何を変えたか</h3>
+    <p>各アーキテクチャは、3要素のうち <strong>どこを主に変えたか</strong> が異なります（◎＝主に変えた、○＝変えた）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アーキテクチャ</th><th class="c">コンポーネント</th><th class="c">関係性</th><th class="c">原則・制約</th><th>主な焦点</th></tr></thead>
+      <tbody>
+        <tr><td>MVC ／ MVP ／ MVVM</td><td class="c">◎</td><td class="c">○</td><td class="c">○</td><td><strong>UI まわりの部品分割</strong></td></tr>
+        <tr><td>3層</td><td class="c">○</td><td class="c">◎</td><td class="c">○</td><td><strong>サーバー側の層と呼び出し方向</strong></td></tr>
+        <tr><td>DDD</td><td class="c">◎</td><td class="c">○</td><td class="c">◎</td><td><strong>部品の意味をビジネスに合わせる</strong></td></tr>
+        <tr><td>ヘキサゴナル ／ オニオン ／ クリーン</td><td class="c">○</td><td class="c">◎</td><td class="c">◎</td><td><strong>依存の向きと差し替え可能性</strong></td></tr>
+        <tr><td>EDA</td><td class="c">○</td><td class="c">◎</td><td class="c">○</td><td><strong>システム間のつなぎ方</strong></td></tr>
+        <tr><td>マイクロサービス</td><td class="c">◎</td><td class="c">◎</td><td class="c">◎</td><td><strong>3要素すべてをサービスの粒度で再定義</strong></td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 760 390" role="img" aria-label="3要素それぞれの進化">
+      <defs><marker id="arw11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="130" y="30" text-anchor="middle" class="d-text-bold">コンポーネント</text>
+      <text x="380" y="30" text-anchor="middle" class="d-text-bold">関係性</text>
+      <text x="630" y="30" text-anchor="middle" class="d-text-bold">原則・制約</text>
+
+      <rect x="20" y="50" width="220" height="44" rx="8" class="d-box-bad"/>
+      <text x="130" y="77" text-anchor="middle" class="d-text">1 塊</text>
+      <line x1="130" y1="94" x2="130" y2="138" class="d-line" marker-end="url(#arw11)"/>
+      <text x="142" y="122" class="d-text-sub">MVC</text>
+      <rect x="20" y="140" width="220" height="44" rx="8" class="d-box-accent"/>
+      <text x="130" y="167" text-anchor="middle" class="d-text">Model ／ View ／ …</text>
+      <line x1="130" y1="184" x2="130" y2="228" class="d-line" marker-end="url(#arw11)"/>
+      <text x="142" y="212" class="d-text-sub">DDD</text>
+      <rect x="20" y="230" width="220" height="44" rx="8" class="d-box-good"/>
+      <text x="130" y="257" text-anchor="middle" class="d-text">ドメイン概念</text>
+      <line x1="130" y1="274" x2="130" y2="318" class="d-line" marker-end="url(#arw11)"/>
+      <text x="142" y="302" class="d-text-sub">マイクロサービス</text>
+      <rect x="20" y="320" width="220" height="44" rx="8" class="d-box-purple"/>
+      <text x="130" y="347" text-anchor="middle" class="d-text">サービス単位</text>
+
+      <rect x="270" y="50" width="220" height="44" rx="8" class="d-box-bad"/>
+      <text x="380" y="77" text-anchor="middle" class="d-text">絡み合い</text>
+      <line x1="380" y1="94" x2="380" y2="138" class="d-line" marker-end="url(#arw11)"/>
+      <text x="392" y="122" class="d-text-sub">3つの経路</text>
+      <rect x="270" y="140" width="220" height="44" rx="8" class="d-box-accent"/>
+      <text x="380" y="167" text-anchor="middle" class="d-text">層の一方向</text>
+      <line x1="380" y1="184" x2="380" y2="228" class="d-line" marker-end="url(#arw11)"/>
+      <text x="392" y="212" class="d-text-sub">内側へ集中</text>
+      <rect x="270" y="230" width="220" height="44" rx="8" class="d-box-good"/>
+      <text x="380" y="257" text-anchor="middle" class="d-text">Port ／ Adapter</text>
+      <line x1="380" y1="274" x2="380" y2="318" class="d-line" marker-end="url(#arw11)"/>
+      <text x="392" y="302" class="d-text-sub">イベント／API</text>
+      <rect x="270" y="320" width="220" height="44" rx="8" class="d-box-purple"/>
+      <text x="380" y="347" text-anchor="middle" class="d-text">疎結合・非同期</text>
+
+      <rect x="520" y="50" width="220" height="44" rx="8" class="d-box-bad"/>
+      <text x="630" y="77" text-anchor="middle" class="d-text">なし</text>
+      <line x1="630" y1="94" x2="630" y2="138" class="d-line" marker-end="url(#arw11)"/>
+      <text x="642" y="122" class="d-text-sub">関心の分離</text>
+      <rect x="520" y="140" width="220" height="44" rx="8" class="d-box-accent"/>
+      <text x="630" y="167" text-anchor="middle" class="d-text">層の責務</text>
+      <line x1="630" y1="184" x2="630" y2="228" class="d-line" marker-end="url(#arw11)"/>
+      <text x="642" y="212" class="d-text-sub">ユビキタス言語</text>
+      <rect x="520" y="230" width="220" height="44" rx="8" class="d-box-good"/>
+      <text x="630" y="257" text-anchor="middle" class="d-text">依存逆転</text>
+      <line x1="630" y1="274" x2="630" y2="318" class="d-line" marker-end="url(#arw11)"/>
+      <text x="642" y="302" class="d-text-sub">データ所有権</text>
+      <rect x="520" y="320" width="220" height="44" rx="8" class="d-box-purple"/>
+      <text x="630" y="347" text-anchor="middle" class="d-text">独立デプロイ</text>
+    </svg>
+    <figcaption>図：3要素それぞれの進化。矢印の横は、その段階を進めたきっかけ（アーキテクチャや考え方）</figcaption>
+    </figure>
+    <div class="callout key">
+      <p class="callout-title">覚え方</p>
+      <p>歴史上の「新しいアーキテクチャ」は、毎回3要素すべてを発明したわけではありません。多くは <strong>前の時代の弱点（Controller の肥大化、DB への依存、同期の連鎖…）を、3要素のどこか1〜2か所で補正した結果</strong> です。だから「最新＝全部が新しい」ではなく、<strong>「今の課題が3要素のどこにあるか」で選ぶ</strong> のが実務的です。</p>
+    </div>
+
+    <h2 id="sec-15"><span class="num">15.</span>よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>新しいアーキテクチャほど優れている</td><td>多くは前の時代の弱点を3要素の1〜2か所で補正したもの。小さなアプリにマイクロサービスやクリーンは不要なことが多い</td></tr>
+        <tr><td>年表の年は「発明された年」</td><td>名前が広まった時期の目安。考え方の源流はもっと前からあることが多い（EDA は特に期間が長い）</td></tr>
+        <tr><td>DDD はアーキテクチャスタイルの1つ</td><td>アーキテクチャそのものというより設計の考え方。クリーン・オニオンなどと組み合わせて使う</td></tr>
+        <tr><td>ヘキサゴナル・オニオン・クリーンはまったく別物</td><td>「ドメインを中心に置き、依存を内側へ向ける」という思想はほぼ同じで、違いは主に用語と図の描き方</td></tr>
+        <tr><td>MVC やクリーンとマイクロサービスは、どれか1つを選ぶもの</td><td>扱うズームが違う。マイクロサービスの中身をクリーン＋DDD で書き、API 層は MVC、サービス間は EDA、のように組み合わせる</td></tr>
+        <tr><td>MVC の図は1種類</td><td>元祖 Smalltalk MVC（View が Model を監視）と、Web フレームワークの MVC（Controller が仲介）では矢印が違う</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-16"><span class="num">16.</span>まとめ — 歴史は「課題の積み重ね」</h2>
+    <p>ここまでの流れを1本にまとめると、次のようになります。各アーキテクチャは、前の段階で残った課題に答える形で登場してきました。</p>
+    <figure>
+    <svg viewBox="0 0 760 530" role="img" aria-label="アーキテクチャの歴史の流れ">
+      <defs><marker id="arw12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="150" y="20" width="320" height="44" rx="8" class="d-box-bad"/>
+      <text x="310" y="47" text-anchor="middle" class="d-text-bold">スパゲッティ</text>
+      <line x1="310" y1="64" x2="310" y2="92" class="d-line" marker-end="url(#arw12)"/>
+      <text x="322" y="83" class="d-text-sub">画面・操作・データを分ける</text>
+      <rect x="150" y="94" width="320" height="44" rx="8" class="d-box-accent"/>
+      <text x="310" y="121" text-anchor="middle" class="d-text-bold">MVC → MVP → MVVM</text>
+      <text x="490" y="121" class="d-text-sub">… UI まわりの進化</text>
+      <line x1="310" y1="138" x2="310" y2="166" class="d-line" marker-end="url(#arw12)"/>
+      <text x="322" y="157" class="d-text-sub">サーバー側を層で整理</text>
+      <rect x="150" y="168" width="320" height="44" rx="8" class="d-box-good"/>
+      <text x="310" y="195" text-anchor="middle" class="d-text-bold">3層（→ レイヤード／N 層）</text>
+      <line x1="310" y1="212" x2="310" y2="240" class="d-line" marker-end="url(#arw12)"/>
+      <text x="322" y="231" class="d-text-sub">ビジネスを中心にモデル化</text>
+      <rect x="150" y="242" width="320" height="44" rx="8" class="d-box-good"/>
+      <text x="310" y="269" text-anchor="middle" class="d-text-bold">DDD</text>
+      <line x1="310" y1="286" x2="310" y2="314" class="d-line" marker-end="url(#arw12)"/>
+      <text x="322" y="305" class="d-text-sub">依存を内側へ、外側を差し替え可能に</text>
+      <rect x="150" y="316" width="320" height="44" rx="8" class="d-box-good"/>
+      <text x="310" y="343" text-anchor="middle" class="d-text-bold">ヘキサゴナル → オニオン → クリーン</text>
+      <text x="490" y="343" class="d-text-sub">… モノリス内の依存管理</text>
+      <line x1="310" y1="360" x2="310" y2="388" class="d-line" marker-end="url(#arw12)"/>
+      <text x="322" y="379" class="d-text-sub">システム間を疎結合に</text>
+      <rect x="150" y="390" width="320" height="44" rx="8" class="d-box-purple"/>
+      <text x="310" y="417" text-anchor="middle" class="d-text-bold">イベント駆動</text>
+      <line x1="310" y1="434" x2="310" y2="462" class="d-line" marker-end="url(#arw12)"/>
+      <text x="322" y="453" class="d-text-sub">デプロイ・チーム単位で分割</text>
+      <rect x="150" y="464" width="320" height="44" rx="8" class="d-box-purple"/>
+      <text x="310" y="491" text-anchor="middle" class="d-text-bold">マイクロサービス</text>
+    </svg>
+    <figcaption>図：歴史は課題の積み重ね。矢印の横がその段階で取り組んだテーマ</figcaption>
+    </figure>
+
+    <h3 id="sec-16-1">3つの軸で整理すると分かりやすい</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>軸</th><th>該当するアーキテクチャ</th><th>主な問い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>UI の分離</strong></td><td>MVC、MVP、MVVM</td><td>画面とロジックをどう分けるか</td></tr>
+        <tr><td><strong>モノリス内の構造</strong></td><td>3層、DDD、ヘキサゴナル、オニオン、クリーン</td><td>ビジネスルールをどこに置き、何に依存させるか</td></tr>
+        <tr><td><strong>システム間の連携</strong></td><td>EDA、マイクロサービス</td><td>サービスをどう分け、どうつなぐか</td></tr>
+      </tbody>
+    </table></div>
+    <p>この3つの軸は、14章の <strong>コンポーネント・関係性・原則</strong> のどこを主に変えたか、という見方とも対応します。UI の分離は「部品と関係性」、モノリス内の構造は「関係性と原則」、システム間の連携は「関係性と部品の粒度」を主に変えてきました。</p>
+
+    <h3 id="sec-16-2">初心者が覚えておくとよいこと</h3>
+    <div class="grid c3">
+      <div class="card accent"><h4>1. 新しいほど良いわけではない</h4><p>小さなアプリに、マイクロサービスやクリーンアーキテクチャは不要なことが多いです。</p></div>
+      <div class="card good"><h4>2. 組み合わせて使う</h4><p>例：マイクロサービスの中身はクリーン＋DDD、API 層は MVC、サービス間は EDA。</p></div>
+      <div class="card warn"><h4>3. すべてはトレードオフ</h4><p>修正しやすさ、性能、運用コスト、チーム構成で選び方が変わります（<a href="12-3_トレードオフと原則.html">トレードオフとアーキテクチャに効く原則</a>）。</p></div>
+    </div>
+
+    <h2 id="sec-17"><span class="num">17.</span>関連ページ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>ページ</th></tr></thead>
+      <tbody>
+        <tr><td>分野全体の解説</td><td><a href="00-1_アーキテクチャ全体像.html">アーキテクチャ全体像</a></td></tr>
+        <tr><td>アーキテクチャの定義（3要素）</td><td><a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a></td></tr>
+        <tr><td>UI 分離（MVC ／ MVP ／ MVVM）</td><td><a href="22-1_MVC.html">MVC（定義・Web の MVC・MVC 違反）</a>、<a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a></td></tr>
+        <tr><td>層化・3層</td><td><a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード（4層）</a></td></tr>
+        <tr><td>DDD</td><td>（41 外のノート：42_ソフトウェア設計『02_DDDとは』）</td></tr>
+        <tr><td>依存性の管理</td><td><a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a>、<a href="23-2_ヘキサゴナルアーキテクチャ.html">ヘキサゴナルアーキテクチャ</a>、<a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a>、<a href="23-3_オニオンと3つの比較.html">オニオンアーキテクチャと3つの比較</a></td></tr>
+        <tr><td>分散・連携</td><td><a href="40-1_分散とスタイル.html">分散とスタイル</a>、<a href="40-3_同期API・メッセージ・イベント駆動.html">同期 API・メッセージ・イベント駆動</a>、<a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a></td></tr>
+        <tr><td>スタイルの★比較</td><td><a href="00-3_スタイル比較ツール.html">スタイル比較ツール</a></td></tr>
+        <tr><td>教材全体の目次</td><td><a href="00-0_目次.html">目次</a>（旧カリキュラムの目次は 41 外のノート：02_Foundations『目次』）</td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>もとのノート（00_全体像/アーキテクチャ.md）には外部の参考文献・URL の記載はありません。以下は、各アーキテクチャの提唱者による原典・代表的な解説です（年代や提唱者の確認に使用）。</li>
+      <li>MVC：Trygve Reenskaug, <a href="https://folk.universitetetioslo.no/trygver/themes/mvc/mvc-index.html">MVC — Xerox PARC 1978-79</a></li>
+      <li>MVC ／ MVP ／ Presentation Model の系譜：Martin Fowler, <a href="https://martinfowler.com/eaaDev/uiArchs.html">GUI Architectures</a></li>
+      <li>MVP：Mike Potel, <em>MVP: Model-View-Presenter — The Taligent Programming Model for C++ and Java</em>（Taligent, 1996）</li>
+      <li>DDD：Eric Evans, <em>Domain-Driven Design: Tackling Complexity in the Heart of Software</em>（Addison-Wesley, 2003）— <a href="https://www.domainlanguage.com/ddd/">domainlanguage.com</a></li>
+      <li>MVVM：John Gossman, <a href="https://learn.microsoft.com/en-us/archive/blogs/johngossman/introduction-to-modelviewviewmodel-pattern-for-building-wpf-apps">Introduction to Model/View/ViewModel pattern for building WPF apps</a>（2005）</li>
+      <li>ヘキサゴナル：Alistair Cockburn, <a href="https://alistair.cockburn.us/hexagonal-architecture/">Hexagonal Architecture</a></li>
+      <li>オニオン：Jeffrey Palermo, <a href="https://jeffreypalermo.com/2008/07/the-onion-architecture-part-1/">The Onion Architecture: part 1</a>（2008）</li>
+      <li>クリーン：Robert C. Martin, <a href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">The Clean Architecture</a>（2012）／ 書籍『Clean Architecture』（2017）</li>
+      <li>EDA：Gregor Hohpe, Bobby Woolf, <em>Enterprise Integration Patterns</em>（2003）— <a href="https://www.enterpriseintegrationpatterns.com/">enterpriseintegrationpatterns.com</a></li>
+      <li>マイクロサービス：James Lewis, Martin Fowler, <a href="https://martinfowler.com/articles/microservices.html">Microservices</a>（2014）／ Martin Fowler, <a href="https://martinfowler.com/bliki/MonolithFirst.html">MonolithFirst</a>（2015）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_アーキテクチャ全体像.html"><span class="lbl">← 前のページ</span>アーキテクチャ全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="00-3_スタイル比較ツール.html"><span class="lbl">次のページ →</span>スタイル比較ツール</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

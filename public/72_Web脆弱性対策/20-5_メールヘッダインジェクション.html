@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メールヘッダインジェクション｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 インジェクション › メールヘッダインジェクション</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 インジェクション</span>
+      <h1>メールヘッダインジェクション</h1>
+      <p class="lead">お問い合わせフォームや会員登録の確認メールなど、Webアプリは <strong>メール送信</strong> をよく使います。このページでは徳丸本第12章をもとに、メール送信まわりで起きやすい脆弱性として、メールヘッダインジェクション、Hidden パラメータによる宛先保持、メールサーバーの第三者中継の3つと、その対策を解説します。</p>
+      <p class="meta">もとにしたノート：20_インジェクション/06_メール送信の問題（徳丸本12章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>「メールのヘッダと宛先はアプリが決める。ユーザー入力は本文にだけ使う」</strong> のが、この章の要点です。入力値に改行を混ぜられると、宛先（Bcc など）を勝手に追加され、自社のサーバーがスパムの送信元にされてしまいます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>メール送信の問題の概要</h2>
+    <p>メール送信機能には、主に次の問題があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>概要</th></tr></thead>
+      <tbody>
+        <tr><td><strong>メールヘッダ・インジェクション</strong></td><td>外部入力で件名・送信元・宛先などを改変される</td></tr>
+        <tr><td><strong>Hidden パラメータによる宛先保持</strong></td><td>画面に隠した宛先を改ざんされ、別の人へ送られる</td></tr>
+        <tr><td><strong>第三者中継（参考）</strong></td><td>メールサーバーが誰でも中継でき、スパムの踏み台になる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>外部入力</strong> とは、フォームの入力値や URL のパラメータなど、利用者（攻撃者を含む）が自由に送ってこられる値のことです。<strong>踏み台</strong> とは、攻撃者が自分の身元を隠したり送信力を借りたりするために、他人のサーバーを中継点として悪用することをいいます。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>正常なメール送信</h4>
+        <p>お問い合わせフォームから、運営宛にだけメールが届きます。</p>
+      </div>
+      <div class="card">
+        <h4>攻撃された場合</h4>
+        <p>フォームが悪用され、他人へ迷惑メールやウイルス付きメールが送られます。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 なぜ危険か</h3>
+    <p>メール送信機能は、アプリが <strong>「メールを送る権限」</strong> を持っています。攻撃者にその権限を乗っ取られると、次のような被害が出ます。</p>
+    <ul>
+      <li>迷惑メール（<strong>スパム</strong>）の送信に悪用される</li>
+      <li>ウイルス付きメールの送信に悪用される</li>
+      <li>なりすましメールで <strong>フィッシング</strong>（偽サイトに誘導してパスワードなどをだまし取る詐欺）に使われる</li>
+      <li>自社ドメインの信頼が下がる（<strong>ブラックリスト</strong> 入り。ブラックリストとは、スパム送信元として登録された IP アドレスやドメインの一覧で、載ると受信を拒否されやすくなります）</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>メールヘッダインジェクション</h2>
+    <p><strong>メールヘッダインジェクション（Email Header Injection）</strong> とは、フォームなどの <strong>外部入力</strong> に改行やヘッダ用の文字列を混ぜ込み、メールのヘッダを勝手に追加・改変する攻撃です。「インジェクション（注入）」という名前のとおり、<a href="20-3_SQLインジェクション.html">SQLインジェクション</a> や <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> と同じく、<strong>データのつもりの入力が「命令・構造」として解釈されてしまう</strong> のが原因です（インジェクション全般の考え方は <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-2">インジェクションと暗号化の不備</a> を参照してください）。</p>
+
+    <h3 id="sec-2-1">2.1 メールの構造（ざっくり）</h3>
+    <p>メールは大きく <strong>ヘッダ</strong> と <strong>本文</strong> に分かれます。ヘッダは「誰から・誰へ・件名は何か」を表します。ヘッダと本文の間は空行1つで区切られます。</p>
+<pre><code>To: support@example.com
+From: user@example.com
+Subject: お問い合わせ
+Bcc: attacker@evil.com          ← 攻撃者が勝手に追加したい行
+
+こんにちは、質問があります。   ← 本文</code></pre>
+    <p><strong>Bcc</strong>（Blind Carbon Copy）は、ほかの受信者には見えない形でメールのコピーを送る宛先です。To・Cc と違って受信者からは見えないため、攻撃者が宛先をこっそり追加するのに好都合です。</p>
+    <p>ヘッダの各行は <strong>改行（<code>\r\n</code> や <code>\n</code>）</strong> で区切られます。<code>\r</code> は <strong>CR（キャリッジリターン）</strong>、<code>\n</code> は <strong>LF（ラインフィード）</strong> という改行用の制御文字です。そのため、入力値に改行を入れると、<strong>新しいヘッダ行を追加したように見える</strong> ことがあります。</p>
+
+    <h3 id="sec-2-2">2.2 攻撃のイメージ</h3>
+    <p>お問い合わせフォームで「メールアドレス」や「件名」をそのままヘッダに埋め込んでいる場合を考えます。</p>
+<pre><code>【正常な入力】
+メールアドレス: user@example.com
+
+【攻撃者の入力】
+メールアドレス: user@example.com%0ABcc: victim@example.com
+                ↑ %0A は改行（URLエンコード）</code></pre>
+    <p><strong>URLエンコード</strong> とは、URL やフォーム送信で特殊な文字を <code>%</code> ＋16進数で表す書き方です。<code>%0A</code> は LF、<code>%0D</code> は CR を表します。画面の入力欄には改行を打ち込めなくても、攻撃者はツールなどでリクエストを直接作り、改行入りの値を送ってきます。</p>
+    <p>サーバー側でそのままヘッダに連結すると、次のように解釈されます。</p>
+<pre><code>To: support@example.com
+From: user@example.com
+Bcc: victim@example.com   ← 攻撃者が追加した宛先
+Subject: お問い合わせ</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="フォームの入力値に含まれた改行によって、アプリが組み立てたメールヘッダにBcc行が1行追加される流れ">
+      <defs>
+        <marker id="arw205a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw205b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="20" width="310" height="130" rx="8" class="d-box-warn"/>
+      <text x="175" y="46" text-anchor="middle" class="d-text-bold">メールアドレス欄の入力値</text>
+      <text x="40" y="78" class="d-text">user@example.com</text>
+      <rect x="40" y="88" width="190" height="24" rx="4" class="d-box-bad"/>
+      <text x="135" y="105" text-anchor="middle" class="d-text-sub">改行 CR LF（%0D%0A）</text>
+      <text x="40" y="134" class="d-text">Bcc: victim@example.com</text>
+      <line x1="175" y1="150" x2="175" y2="188" class="d-line" marker-end="url(#arw205a)"/>
+      <rect x="20" y="190" width="310" height="80" rx="8" class="d-box"/>
+      <text x="175" y="220" text-anchor="middle" class="d-text-bold">アプリ</text>
+      <text x="175" y="244" text-anchor="middle" class="d-text-sub">"From: " ＋ 入力値 ＋ 改行 をそのまま連結</text>
+      <line x1="330" y1="230" x2="398" y2="230" class="d-line" marker-end="url(#arw205a)"/>
+      <rect x="400" y="20" width="300" height="250" rx="8" class="d-box-accent"/>
+      <text x="550" y="46" text-anchor="middle" class="d-text-bold">できあがるメールヘッダ</text>
+      <rect x="420" y="62" width="260" height="34" rx="6" class="d-box"/>
+      <text x="432" y="84" class="d-text">To: support@example.com</text>
+      <rect x="420" y="104" width="260" height="34" rx="6" class="d-box"/>
+      <text x="432" y="126" class="d-text">From: user@example.com</text>
+      <rect x="420" y="146" width="260" height="34" rx="6" class="d-box-bad"/>
+      <text x="432" y="168" class="d-text-bold">Bcc: victim@example.com</text>
+      <rect x="420" y="188" width="260" height="34" rx="6" class="d-box"/>
+      <text x="432" y="210" class="d-text">Subject: お問い合わせ</text>
+      <text x="550" y="250" text-anchor="middle" class="d-text-sub">改行の後ろが「別のヘッダ行」として扱われる</text>
+      <path d="M230,100 C300,100 340,163 418,163" class="d-line-bad" marker-end="url(#arw205b)"/>
+    </svg>
+    <figcaption>図：入力値に紛れた改行で行が分かれ、攻撃者の Bcc 行が本物のヘッダとして追加される</figcaption>
+    </figure>
+
+    <h3 id="sec-2-3">2.3 何を改変されるか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>改変対象</th><th>攻撃の例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>件名（Subject）</strong></td><td>迷惑な件名やフィッシング用の件名に差し替え</td></tr>
+        <tr><td><strong>送信元（From）</strong></td><td>信頼できる差出人に見せかける</td></tr>
+        <tr><td><strong>宛先（To / Cc / Bcc）</strong></td><td>第三者へ勝手にメールを送る</td></tr>
+        <tr><td><strong>本文</strong></td><td>ヘッダの後に本文を差し込み、ウイルスや詐欺文を送る</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-4">2.4 悪用の典型例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>悪用</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>迷惑メールの送信</strong></td><td>自社サーバーから大量のスパムを送らせる</td></tr>
+        <tr><td><strong>ウイルスメールの送信</strong></td><td><strong>マルウェア</strong>（ウイルスなどの悪意あるプログラムの総称）付きメールの踏み台にする</td></tr>
+        <tr><td><strong>なりすまし</strong></td><td>正規サイトからのメールに見せかけて詐欺</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-5">2.5 攻撃の流れ</h3>
+    <ol class="steps">
+      <li>攻撃者がお問い合わせフォームを見つける</li>
+      <li>メールアドレス欄などに「改行 ＋ Bcc: 被害者」を入力</li>
+      <li>アプリが入力値をそのままメールヘッダに埋め込む</li>
+      <li>メールサーバーが追加ヘッダを解釈して送信</li>
+      <li>被害者に迷惑メール・ウイルスメールが届く</li>
+      <li>送信元は正規サイトのサーバーに見える</li>
+    </ol>
+
+    <h2 id="sec-3"><span class="num">3.</span>メールヘッダインジェクションの対策</h2>
+    <p>対策の基本は <strong>「外部入力をヘッダにそのまま載せない」</strong> と <strong>「改行を許さない」</strong> です。</p>
+
+    <h3 id="sec-3-1">3.1 外部からのパラメータをメールヘッダに含ませない</h3>
+    <p>最も安全なのは、<strong>ユーザー入力をヘッダに使わない</strong> ことです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ヘッダ項目</th><th>推奨</th></tr></thead>
+      <tbody>
+        <tr><td><strong>To（宛先）</strong></td><td>アプリ側で固定（例: <code>support@example.com</code>）</td></tr>
+        <tr><td><strong>From（送信元）</strong></td><td>アプリ側で固定（例: <code>noreply@example.com</code>）</td></tr>
+        <tr><td><strong>Subject（件名）</strong></td><td>固定文、または許可した文言のみ</td></tr>
+        <tr><td><strong>本文</strong></td><td>ユーザー入力は本文側にだけ載せ、ヘッダとは分離</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">危険な例：ユーザー入力をヘッダに使う</span>
+<pre><code>From: （ユーザーが入力したメールアドレス）
+Subject: （ユーザーが入力した件名）</code></pre>
+    <span class="code-label good">安全な例：ヘッダは固定し、入力は本文へ</span>
+<pre><code>From: noreply@example.com（固定）
+Subject: 【お問い合わせ】受付完了（固定）
+本文: お名前・内容などユーザー入力を載せる</code></pre>
+    <p>返信先が必要な場合は、<code>From</code> ではなく <strong><code>Reply-To</code></strong>（返信ボタンを押したときの宛先を指定するヘッダ）に検証済みのアドレスを入れる、または本文にだけ書く方法が安全です。</p>
+
+    <h3 id="sec-3-2">3.2 外部パラメータに改行を含めないようチェックする</h3>
+    <p>ヘッダに載せる値がどうしても必要な場合は、<strong>改行文字を拒否</strong> します。</p>
+    <span class="code-label good">安全な例：改行が含まれていたらエラー（PHP）</span>
+<pre><code>// ✅ 改行が含まれていたらエラー
+function hasNewline(string $value): bool
+{
+    return preg_match('/[\r\n]/', $value) === 1;
+}
+
+$email = $_POST['email'] ?? '';
+$subject = $_POST['subject'] ?? '';
+
+if (hasNewline($email) || hasNewline($subject)) {
+    // 不正な入力として拒否
+    exit('不正な入力です');
+}</code></pre>
+    <p><code>preg_match</code> は正規表現（文字列のパターン）に一致するかを調べる PHP の関数で、<code>/[\r\n]/</code> は「CR か LF のどちらかを含む」という意味です。チェック対象の文字は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>文字</th><th>名前</th></tr></thead>
+      <tbody>
+        <tr><td><code>\r</code></td><td>キャリッジリターン（CR）</td></tr>
+        <tr><td><code>\n</code></td><td>ラインフィード（LF）</td></tr>
+        <tr><td><code>\r\n</code></td><td>Windows 系の改行</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：メールの改行は本来 CR LF です</p>
+      <p>ノートでは <code>\r\n</code> を「Windows 系の改行」としていますが、メールの規格（RFC 5322）では、OS に関係なく <strong><code>\r\n</code>（CR LF）がヘッダ行の正式な区切り</strong> です。ただし実際のメールソフトやサーバーは <code>\n</code> だけでも改行として扱うことが多いため、<strong><code>\r</code> と <code>\n</code> のどちらか1文字でも含まれていれば拒否</strong> する、という上のチェック方法で問題ありません。</p>
+    </div>
+    <p>改行チェックは <strong>最低限の防御</strong> です。可能ならヘッダ自体に外部入力を使わない方が確実です。</p>
+
+    <h3 id="sec-3-3">3.3 メール送信には専用の API やライブラリを使う</h3>
+    <p>昔の実装では、PHP の <code>mail()</code> 関数にヘッダ文字列を自分で組み立てて渡すことが多く、インジェクションが起きやすいです。</p>
+    <span class="code-label bad">危険な例：ヘッダを文字列連結で組み立てている</span>
+<pre><code>// ❌ 危険: ヘッダを文字列連結で組み立てている
+$to = 'support@example.com';
+$subject = $_POST['subject'];
+$headers = "From: " . $_POST['email'] . "\r\n";
+mail($to, $subject, $_POST['body'], $headers);</code></pre>
+    <p>専用ライブラリや <strong>API</strong>（外部サービスの機能をプログラムから呼び出すための窓口）を使うと、宛先・件名・本文を <strong>別々の引数</strong> で渡し、ライブラリ側がヘッダを安全に組み立てます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手段</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>言語のメールライブラリ</strong></td><td>PHPMailer、Swift Mailer / Symfony Mailer、Python の email パッケージ</td></tr>
+        <tr><td><strong>外部メール API</strong></td><td>SendGrid、Amazon SES、Mailgun など</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：Swift Mailer は開発終了しています</p>
+      <p>Swift Mailer は 2021年にメンテナンスが終了し、後継の <strong>Symfony Mailer</strong> へ移行するよう案内されています。これから使うなら Symfony Mailer（または PHPMailer）を選んでください。</p>
+    </div>
+    <span class="code-label good">安全な例（イメージ）：項目ごとにセットする</span>
+<pre><code>// ✅ 良い例（イメージ）: 項目ごとにセットする
+$mail = new PHPMailer();
+$mail-&gt;setFrom('noreply@example.com');
+$mail-&gt;addAddress('support@example.com');
+$mail-&gt;Subject = '【お問い合わせ】受付完了';
+$mail-&gt;Body = $safeBody;  // 本文のみユーザー入力を反映
+$mail-&gt;send();</code></pre>
+    <p>ポイントは、<strong>ヘッダ文字列を自分で連結しない</strong> ことです。</p>
+
+    <h3 id="sec-3-4">3.4 メールアドレスのチェック</h3>
+    <p>宛先や返信先にメールアドレスを使う場合は、<strong>形式チェック</strong> を行います。</p>
+    <span class="code-label good">安全な例：形式チェックの例（PHP）</span>
+<pre><code>// ✅ 形式チェックの例（PHP）
+$email = $_POST['email'] ?? '';
+
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    exit('メールアドレスの形式が正しくありません');
+}
+
+// 念のため改行も拒否
+if (preg_match('/[\r\n]/', $email)) {
+    exit('不正な入力です');
+}</code></pre>
+    <p><code>filter_var($email, FILTER_VALIDATE_EMAIL)</code> は、値がメールアドレスとして正しい形かを PHP 標準の機能で判定するものです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チェック内容</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>形式が正しいか</strong></td><td><code>user@example.com</code> のような形か確認</td></tr>
+        <tr><td><strong>改行がないか</strong></td><td>ヘッダインジェクション防止</td></tr>
+        <tr><td><strong>長さの上限</strong></td><td>異常に長い入力の拒否</td></tr>
+        <tr><td><strong>許可ドメイン（必要なら）</strong></td><td>社内メールのみ受け付ける等</td></tr>
+      </tbody>
+    </table></div>
+    <p>形式チェックだけでは不十分な場合もあるため、<strong>ヘッダに載せない設計</strong> と組み合わせます。</p>
+
+    <h3 id="sec-3-5">3.5 件名のチェック</h3>
+    <p>件名にユーザー入力を使う場合も、同様に検証します。</p>
+    <span class="code-label good">安全な例：件名の改行・長さを検証する（PHP）</span>
+<pre><code>$subject = $_POST['subject'] ?? '';
+
+// 改行禁止
+if (preg_match('/[\r\n]/', $subject)) {
+    exit('不正な入力です');
+}
+
+// 長さ制限（例: 100文字まで）
+if (mb_strlen($subject) &gt; 100) {
+    exit('件名が長すぎます');
+}
+
+// 可能なら固定件名にする方が安全
+// $subject = '【お問い合わせ】受付完了';</code></pre>
+    <p><code>mb_strlen</code> は日本語などのマルチバイト文字も1文字として数える、文字数取得の関数です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方針</th><th>安全性</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>件名を固定する</strong></td><td>最も安全</td><td>ユーザー入力を件名に使わない</td></tr>
+        <tr><td><strong>許可リスト</strong></td><td>安全</td><td>「質問」「要望」など選択肢のみ</td></tr>
+        <tr><td><strong>改行・長さチェック</strong></td><td>最低限</td><td>自由入力を許す場合の防御</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>Hidden パラメータによる宛先保持</h2>
+    <p>お問い合わせフォームなどで、宛先メールアドレスを <strong><code>&lt;input type="hidden"&gt;</code></strong>（画面には表示されないが、フォーム送信時に一緒に送られる入力欄）に入れて送信する実装があります。これは <strong>改ざんしやすい</strong> ため危険です。</p>
+
+    <h3 id="sec-4-1">4.1 脆弱な実装</h3>
+    <span class="code-label bad">危険な例：宛先が HTML に埋まっている</span>
+<pre><code>&lt;!-- ❌ 宛先が HTML に埋まっている --&gt;
+&lt;form action="/contact" method="POST"&gt;
+  &lt;input type="hidden" name="to" value="support@example.com"&gt;
+  &lt;input type="text" name="name"&gt;
+  &lt;textarea name="body"&gt;&lt;/textarea&gt;
+  &lt;button type="submit"&gt;送信&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+    <p>攻撃者はブラウザの <strong>開発者ツール</strong>（ページの HTML を見たり書き換えたりできる、ブラウザ標準の機能）で <code>to</code> の値を書き換え、<strong>任意の宛先</strong> へメールを送らせられます。</p>
+    <ol class="steps">
+      <li>ページの HTML を開く</li>
+      <li>hidden の value を <code>attacker@evil.com</code> に変更</li>
+      <li>フォームを送信</li>
+      <li>アプリが改ざんされた宛先へメール送信</li>
+    </ol>
+
+    <h3 id="sec-4-2">4.2 対策</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>宛先はサーバー側で固定</strong></td><td>HTML やリクエストに宛先を載せない</td></tr>
+        <tr><td><strong>どうしても切り替えるならサーバー側の対応表</strong></td><td><code>dept=sales</code> のような ID だけ受け取り、サーバーで <code>sales@example.com</code> に変換</td></tr>
+        <tr><td><strong>セッションに保持</strong></td><td>確認画面がある場合、宛先は <strong>セッション</strong>（サーバー側に利用者ごとの情報を一時保存する仕組み）に置き、hidden に出さない</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">安全な例：宛先はサーバー側だけで決める（PHP）</span>
+<pre><code>// ✅ 良い例: 宛先はサーバー側のみ
+$to = 'support@example.com';
+
+// ✅ 部署ごとに送る場合も、許可したキーだけ変換
+$deptMap = [
+    'sales' =&gt; 'sales@example.com',
+    'support' =&gt; 'support@example.com',
+];
+$dept = $_POST['dept'] ?? 'support';
+$to = $deptMap[$dept] ?? $deptMap['support'];</code></pre>
+    <p>対応表にないキーが送られてきても、<code>?? $deptMap['support']</code> によって既定の宛先になるため、攻撃者が任意のアドレスを指定する余地がありません。</p>
+    <div class="callout tip">
+      <p class="callout-title">同じ考え方：クライアント側の値を信じない</p>
+      <p>これは 74_セッション管理 の「クッキー出力にまつわる脆弱性（徳丸本第11章）」で扱う <strong>「クライアント側に重要な情報を置かない」</strong> と同じ考え方です。hidden も Cookie も、利用者の手元にある値は自由に書き換えられます。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>参考：メールサーバーによる第三者中継</h2>
+    <p><strong>第三者中継（オープンリレー）</strong> とは、メールサーバーが <strong>認証なしで誰のメールでも中継</strong> してしまう設定です。Webアプリ本体の脆弱性というより、<strong>メールサーバーの設定不備</strong> です。</p>
+
+    <h3 id="sec-5-1">5.1 何が起きるか</h3>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="攻撃者が自社メールサーバーを認証なしで使い、世界中の宛先へスパムを送る第三者中継の図">
+      <defs>
+        <marker id="arw205c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="80" width="150" height="70" rx="8" class="d-box-bad"/>
+      <text x="95" y="111" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="95" y="133" text-anchor="middle" class="d-text-sub">スパムを大量に依頼</text>
+      <line x1="170" y1="115" x2="248" y2="115" class="d-line-bad" marker-end="url(#arw205c)"/>
+      <rect x="250" y="70" width="200" height="90" rx="8" class="d-box-warn"/>
+      <text x="350" y="104" text-anchor="middle" class="d-text-bold">自社メールサーバー</text>
+      <text x="350" y="126" text-anchor="middle" class="d-text-sub">認証なしで中継してしまう</text>
+      <text x="350" y="146" text-anchor="middle" class="d-text-sub">（踏み台にされる）</text>
+      <line x1="450" y1="100" x2="548" y2="45" class="d-line-bad" marker-end="url(#arw205c)"/>
+      <line x1="450" y1="115" x2="548" y2="115" class="d-line-bad" marker-end="url(#arw205c)"/>
+      <line x1="450" y1="130" x2="548" y2="185" class="d-line-bad" marker-end="url(#arw205c)"/>
+      <rect x="550" y="22" width="150" height="46" rx="8" class="d-box"/>
+      <text x="625" y="50" text-anchor="middle" class="d-text">宛先A</text>
+      <rect x="550" y="92" width="150" height="46" rx="8" class="d-box"/>
+      <text x="625" y="120" text-anchor="middle" class="d-text">宛先B</text>
+      <rect x="550" y="162" width="150" height="46" rx="8" class="d-box"/>
+      <text x="625" y="190" text-anchor="middle" class="d-text">世界中の宛先…</text>
+    </svg>
+    <figcaption>図：オープンリレーのサーバーは、外部の誰からの依頼でもメールを転送してしまう</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>影響</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>スパムの踏み台</strong></td><td>自社サーバーから大量の迷惑メールが送られる</td></tr>
+        <tr><td><strong>IP・ドメインの評判低下</strong></td><td>ブラックリストに入り、正規メールも届かなくなる</td></tr>
+        <tr><td><strong>帯域・リソースの浪費</strong></td><td>サーバー負荷が増える</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-2">5.2 対策の要点</h3>
+    <ul>
+      <li>外部からの無認証リレーを禁止する</li>
+      <li>自アプリからの送信は認証付き（<strong>SMTP AUTH</strong>）や API 経由にする（SMTP はメールを送るための通信の決まり、SMTP AUTH はその送信時にユーザー名とパスワードで認証する仕組みです）</li>
+      <li>送信元 IP・<strong>レート制限</strong>（一定時間あたりの送信数の上限）を設ける</li>
+      <li>可能なら SendGrid / SES 等の外部メールサービスを使う</li>
+    </ul>
+    <p>Webアプリ側では「ヘッダインジェクション対策」と「宛先のサーバー側固定」を行い、メールサーバー側では「第三者中継を閉じる」ことがセットです。</p>
+    <p>なお、他人が自社ドメインを名乗って送る「なりすましメール」を受信側で見抜く仕組み（SPF・DKIM・DMARC）は、<a href="../../71_セキュリティ基礎/00_全体像/50-1_ネットワークと端末の防御.html#sec-8">ネットワークと端末の防御「メールのなりすまし対策 — SPF・DKIM・DMARC」</a> で解説しています。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ヘッダに外部入力を載せない</strong></td><td>To / From / Subject は固定またはサーバー側で決定</td></tr>
+        <tr><td><strong>改行チェック</strong></td><td><code>\r</code> <code>\n</code> を含む入力は拒否</td></tr>
+        <tr><td><strong>専用ライブラリ・API を使う</strong></td><td>ヘッダ文字列を自分で連結しない</td></tr>
+        <tr><td><strong>メールアドレス・件名の検証</strong></td><td>形式・長さ・改行をチェック</td></tr>
+        <tr><td><strong>宛先を Hidden に置かない</strong></td><td>クライアント側の値を信じない</td></tr>
+        <tr><td><strong>第三者中継を禁止</strong></td><td>メールサーバー設定・外部サービス利用</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-1">6.1 実装のチェックリスト</h3>
+    <ul>
+      <li>□ 宛先（To）はサーバー側で固定している</li>
+      <li>□ From は自社の固定アドレスを使っている</li>
+      <li>□ 件名は固定、または改行・長さを検証している</li>
+      <li>□ ユーザー入力は本文にのみ反映している</li>
+      <li>□ <code>mail()</code> のヘッダ連結ではなく、ライブラリ / API を使っている</li>
+      <li>□ Hidden パラメータに宛先を入れていない</li>
+      <li>□ メールサーバーがオープンリレーになっていない</li>
+    </ul>
+
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <p>この章の要点は、<strong>「メールのヘッダと宛先はアプリが決める。ユーザー入力は本文にだけ使う」</strong> です。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. お問い合わせフォームのメールアドレス欄に <code>user@example.com%0ABcc: victim@example.com</code> が送られてきました。アプリが <code>"From: " . $email</code> でヘッダを作っていると、何が起きますか？</summary>
+      <div class="body">
+        <p><code>%0A</code>（改行）の後ろが新しいヘッダ行として扱われ、<code>Bcc: victim@example.com</code> が追加されます。その結果、攻撃者が指定した第三者にもメールが送られ、スパムやなりすましの踏み台にされます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. メールヘッダインジェクションの対策として、最も確実なのは「改行チェック」と「外部入力をヘッダに使わない」のどちらですか？</summary>
+      <div class="body">
+        <p><strong>外部入力をヘッダに使わない</strong> ことです。To・From・Subject をアプリ側で固定し、ユーザー入力は本文にだけ載せます。改行チェックは、どうしてもヘッダに入力値を使う場合の <strong>最低限の防御</strong> です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 利用者の返信先アドレスを受け取りたいとき、From に入れるのがよくないのはなぜですか？ 代わりにどうしますか？</summary>
+      <div class="body">
+        <p>From に外部入力を入れると、差出人の偽装やヘッダインジェクションの入口になるためです。From は自社の固定アドレス（例: <code>noreply@example.com</code>）にし、返信先は検証済みのアドレスを <code>Reply-To</code> に入れるか、本文にだけ書きます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. 宛先を <code>&lt;input type="hidden"&gt;</code> に入れておく実装は、画面に表示されないのになぜ危険なのですか？</summary>
+      <div class="body">
+        <p>hidden は画面に見えないだけで、HTML としては利用者の手元にあり、開発者ツールなどで自由に書き換えられるからです。宛先はサーバー側で固定するか、<code>dept=sales</code> のようなキーだけ受け取ってサーバー側の対応表で変換します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. 第三者中継（オープンリレー）は、Webアプリの脆弱性ですか？ どんな対策が必要ですか？</summary>
+      <div class="body">
+        <p>Webアプリ本体ではなく、<strong>メールサーバーの設定不備</strong> です。外部からの無認証リレーを禁止し、自アプリからの送信は SMTP AUTH や API 経由にします。送信元 IP やレート制限、外部メールサービスの利用も有効です。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/20_インジェクション/06_メール送信の問題（徳丸本12章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』第12章（SBクリエイティブ）</li>
+      <li>IPA「安全なウェブサイトの作り方」 https://www.ipa.go.jp/security/vuln/websecurity/about.html</li>
+      <li>RFC 5322「Internet Message Format」 https://www.rfc-editor.org/rfc/rfc5322</li>
+      <li>PHP マニュアル「mail」 https://www.php.net/manual/ja/function.mail.php</li>
+      <li>Symfony「Sending Emails with Mailer」 https://symfony.com/doc/current/mailer.html</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-4_OSコマンドインジェクション.html"><span class="lbl">← 前のページ</span>OSコマンドインジェクション</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-6_ファイルインクルード.html"><span class="lbl">次のページ →</span>ファイルインクルード</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

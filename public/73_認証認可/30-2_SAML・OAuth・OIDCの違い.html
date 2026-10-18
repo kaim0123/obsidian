@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAML・OAuth・OIDCの違い｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 フェデレーション › SAML・OAuth・OIDCの違い</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 フェデレーション</span>
+      <h1>SAML・OAuth・OIDCの違い</h1>
+      <p class="lead">「Google でログイン」や「会社のアカウントで社内システムにまとめてログイン」の裏側では、<strong>SAML</strong>・<strong>OAuth 2.0</strong>・<strong>OpenID Connect（OIDC）</strong> という 3 つのプロトコルが使われています。名前はよく並べて出てきますが、目的もデータ形式も違います。このページでは、それぞれの仕組み・役割・メリットとデメリットを初心者向けに整理し、最後に「どれを選べばよいか」までをまとめます。</p>
+      <p class="meta">もとにしたノート：30_フェデレーション/03_SAML_OAuth2_OpenIDConnectの基礎</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>プロトコルとは何か、なぜ認証にプロトコルが必要なのか</li>
+        <li>SAML：エンタープライズ向けの XML ベースの認証プロトコル</li>
+        <li>OAuth 2.0：<strong>認証ではなく認可</strong> のプロトコルであること</li>
+        <li>OpenID Connect：OAuth 2.0 に「身元証明（ID トークン）」を足した認証プロトコル</li>
+        <li>3 つの比較と、用途別の使い分け</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>プロトコルとは</h2>
+    <p><strong>プロトコル</strong> は、異なるシステム間で情報をやり取りする際の「約束事」や「ルール」です。</p>
+
+    <h3 id="sec-1-1">1.1 簡単な例え</h3>
+    <ul>
+      <li><strong>プロトコル ＝ 共通の言語とルール</strong>
+        <ul>
+          <li>日本語で話す、英語で話す → 言語が違うと通じない</li>
+          <li>認証プロトコル ＝ 認証の方法を統一したルール</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h3 id="sec-1-2">1.2 なぜプロトコルが必要か</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>異なるシステム間で連携するため</h4>
+        <ul>
+          <li>Google アカウントで Web サイトにログイン</li>
+          <li>企業の複数システムに 1 回のログインでアクセス</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>標準化により実装が簡単になる</h4>
+        <ul>
+          <li>各社が独自の方法を開発する必要がない</li>
+          <li>既存のライブラリやツールが使える</li>
+        </ul>
+      </div>
+    </div>
+    <p>そもそも「認証」と「認可」の違いがあいまいな場合は、先に <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> を読んでおくと、このページが理解しやすくなります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>SAML（Security Assertion Markup Language）</h2>
+
+    <h3 id="sec-2-1">2.1 SAML とは</h3>
+    <p><strong>SAML（Security Assertion Markup Language）</strong> は、主にエンタープライズ（企業）向けの認証プロトコルです。XML ベースで、企業の <strong>シングルサインオン（SSO）</strong>（一度のログインで複数のシステムを使えるようにする仕組み）で広く使われています。</p>
+    <ul>
+      <li><strong>SAML ＝ 企業の社員証</strong>
+        <ul>
+          <li>社員証を見せれば、複数の部署や施設に入れる</li>
+          <li>各部署で個別に身分証明をする必要がない</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h3 id="sec-2-2">2.2 SAML の特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特徴</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>XML ベース</strong></td><td>データ形式が XML</td></tr>
+        <tr><td><strong>エンタープライズ向け</strong></td><td>主に企業の内部システムで使用</td></tr>
+        <tr><td><strong>セキュリティが高い</strong></td><td>XML 署名と暗号化をサポート</td></tr>
+        <tr><td><strong>Web アプリケーション向け</strong></td><td>主にブラウザベースのアプリで使用</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-3">2.3 SAML の仕組み</h3>
+    <ol class="steps">
+      <li>ユーザーがアプリケーションにアクセス</li>
+      <li>アプリケーションが ID プロバイダにリダイレクト</li>
+      <li>ユーザーが ID プロバイダでログイン</li>
+      <li>ID プロバイダが <strong>SAML アサーション</strong>（XML で書かれた「この人は本人です」という証明書）を発行</li>
+      <li>アプリケーションが SAML アサーションを検証</li>
+      <li>認証成功 → アプリケーションにアクセス可能</li>
+    </ol>
+    <p>この流れを図にしたものは <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-5-3">SSO の仕組み（SAML の場合）</a>（パスワード・MFA・暗号化の基礎）にあります。SSO そのものの考え方は <a href="10-2_ログイン方式と認証の概念.html#sec-10">シングルサインオン（SSO）とアイデンティティプロトコル</a>（ログイン方式と認証の概念）も参照してください。</p>
+
+    <h3 id="sec-2-4">2.4 SAML の主要な役割</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>説明</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ID プロバイダ（IdP）</strong></td><td>ユーザーを認証する側</td><td>Okta、Microsoft Azure AD</td></tr>
+        <tr><td><strong>サービスプロバイダ（SP）</strong></td><td>ユーザーがアクセスしたいアプリケーション</td><td>Salesforce、Slack</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-5">2.5 SAML のメリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>エンタープライズで標準化されている</strong></li>
+          <li><strong>セキュリティが高い</strong>（XML 署名と暗号化）</li>
+          <li><strong>一元管理が可能</strong>（企業の ID プロバイダで管理）</li>
+          <li><strong>コンプライアンス対応</strong>（企業のセキュリティポリシーに準拠）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>実装が複雑</strong>（XML ベースで複雑）</li>
+          <li><strong>モバイル対応が弱い</strong>（主に Web アプリ向け）</li>
+          <li><strong>設定が大変</strong>（証明書の管理、メタデータの交換など）</li>
+          <li><strong>デバッグが困難</strong>（XML の構造が複雑）</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-2-6">2.6 SAML の使用例</h3>
+    <ul>
+      <li>企業の内部システム（複数のアプリケーション）</li>
+      <li>クラウドサービスのエンタープライズ版（Salesforce、Slack など）</li>
+      <li>教育機関のシステム</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>OAuth 2.0</h2>
+
+    <h3 id="sec-3-1">3.1 OAuth 2.0 とは</h3>
+    <p><strong>OAuth 2.0</strong> は、<strong>認可（Authorization）</strong> のプロトコルです。ユーザーに代わって、アプリケーションがリソースにアクセスする権限を取得します。</p>
+    <ul>
+      <li><strong>OAuth 2.0 ＝ 代理アクセス権</strong>
+        <ul>
+          <li>例：写真アプリが Google フォトの写真にアクセスする権限</li>
+          <li>ユーザーは「このアプリに写真を見る権限を与える」と許可</li>
+          <li>アプリはユーザーのパスワードを知らなくてもアクセス可能</li>
+        </ul>
+      </li>
+    </ul>
+
+    <div class="callout warn">
+      <p class="callout-title">重要なポイント</p>
+      <p><strong>OAuth 2.0 は認証（Authentication）のプロトコルではありません。認可（Authorization）のプロトコルです。</strong></p>
+      <ul>
+        <li><strong>認証（Authentication）</strong>：「この人は誰か？」を確認</li>
+        <li><strong>認可（Authorization）</strong>：「この人は何をして良いか？」を決定</li>
+      </ul>
+      <p>ただし、OAuth 2.0 を拡張して認証にも使われることが多いです（その代表が次章の OpenID Connect です）。</p>
+    </div>
+
+    <h3 id="sec-3-2">3.2 OAuth 2.0 の特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特徴</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認可プロトコル</strong></td><td>リソースへのアクセス権限を管理</td></tr>
+        <tr><td><strong>トークンベース</strong></td><td><strong>アクセストークン</strong>（API を呼ぶための「通行証」）を使用</td></tr>
+        <tr><td><strong>広く使用されている</strong></td><td>Google、Facebook、GitHub など多くのサービスで使用</td></tr>
+        <tr><td><strong>モバイル対応</strong></td><td>モバイルアプリでも使用可能</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-3">3.3 OAuth 2.0 の仕組み（認可コードフロー）</h3>
+    <ol class="steps">
+      <li>ユーザーがアプリケーションにアクセス</li>
+      <li>アプリケーションが認証サーバーにリダイレクト</li>
+      <li>ユーザーが認証サーバーでログイン</li>
+      <li>ユーザーが「このアプリにアクセス権限を与える」と許可</li>
+      <li>認証サーバーが <strong>認可コード</strong>（一時的な引換券）を発行</li>
+      <li>アプリケーションが認可コードをアクセストークンと交換</li>
+      <li>アプリケーションがアクセストークンでリソースにアクセス</li>
+    </ol>
+    <p>このページでは他の 2 つとの違いに絞ります。各ステップで何が送られるか、PKCE がなぜ必要かといった詳しい流れは <a href="30-1_OAuth2.0の仕組み.html">OAuth 2.0の仕組み</a> で解説しています。流れの図は <a href="10-2_ログイン方式と認証の概念.html#sec-9-1">OAuth 2.0：認可フレームワーク</a>（ログイン方式と認証の概念）にもあります。</p>
+
+    <h3 id="sec-3-4">3.4 OAuth 2.0 の主要な役割</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>説明</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>リソースオーナー</strong>（Resource Owner）</td><td>ユーザー本人。リソースの所有者</td><td>—</td></tr>
+        <tr><td><strong>クライアント</strong>（Client）</td><td>ユーザーに代わってリソースにアクセスするアプリケーション</td><td>写真アプリ、SNS アプリ</td></tr>
+        <tr><td><strong>認証サーバー</strong>（Authorization Server）</td><td>アクセストークンを発行するサーバー</td><td>Google、Facebook</td></tr>
+        <tr><td><strong>リソースサーバー</strong>（Resource Server）</td><td>保護されたリソースを提供するサーバー</td><td>Google フォト、Facebook の API</td></tr>
+      </tbody>
+    </table></div>
+    <p>※ Authorization Server は、仕様の訳語としては「認可サーバー」と呼ばれることも多いです。</p>
+
+    <h3 id="sec-3-5">3.5 OAuth 2.0 のフロー種類</h3>
+    <p>OAuth 2.0 には、アプリの種類に合わせて複数の「フロー」（トークンを手に入れるまでの手順）があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フロー</th><th>用途</th><th>特徴</th><th>補足</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認可コードフロー</strong>（Authorization Code Flow）</td><td>Web アプリケーション（サーバーサイド）</td><td>最も安全なフロー</td><td>使用例：Next.js、Django、Rails などの Web アプリ</td></tr>
+        <tr><td><strong>インプリシットフロー</strong>（Implicit Flow）</td><td>シングルページアプリケーション（SPA）</td><td>アクセストークンが直接返される</td><td><mark>セキュリティ上の理由で非推奨</mark>（PKCE 推奨）</td></tr>
+        <tr><td><strong>クライアントクレデンシャルフロー</strong>（Client Credentials Flow）</td><td>サーバー間の通信</td><td>ユーザー認証なしでアクセストークンを取得</td><td>使用例：API 間の通信</td></tr>
+        <tr><td><strong>リソースオーナーパスワードクレデンシャルフロー</strong></td><td>信頼できるアプリケーション</td><td>ユーザー名とパスワードを直接送信</td><td><mark>セキュリティ上の理由で非推奨</mark></td></tr>
+        <tr><td><strong>PKCE</strong>（Proof Key for Code Exchange）</td><td>モバイルアプリ、SPA</td><td>認可コードフローをより安全にしたもの</td><td>モバイルアプリや SPA では PKCE を使用</td></tr>
+      </tbody>
+    </table></div>
+    <p>各フローの詳しい手順とリフレッシュトークンの扱いは <a href="30-1_OAuth2.0の仕組み.html">OAuth 2.0の仕組み</a> を参照してください。</p>
+
+    <h3 id="sec-3-6">3.6 OAuth 2.0 のメリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>広く使用されている</strong>（Google、Facebook、GitHub など）</li>
+          <li><strong>モバイル対応</strong>（モバイルアプリでも使用可能）</li>
+          <li><strong>柔軟性</strong>（複数のフローを選択可能）</li>
+          <li><strong>セキュリティ</strong>（パスワードを共有しない）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>実装が複雑</strong>（複数のフロー、トークンの管理など）</li>
+          <li><strong>認証ではない</strong>（認可のプロトコル、認証には拡張が必要）</li>
+          <li><strong>トークンの管理が必要</strong>（有効期限、リフレッシュなど）</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-3-7">3.7 OAuth 2.0 の使用例</h3>
+    <ul>
+      <li>Google アカウントでログイン</li>
+      <li>Facebook アカウントでログイン</li>
+      <li>GitHub アカウントでログイン</li>
+      <li>写真アプリが Google フォトにアクセス</li>
+      <li>SNS アプリが Twitter のタイムラインを取得</li>
+    </ul>
+    <div class="callout tip">
+      <p>「○○アカウントでログイン」は OAuth 2.0 の仕組みの上で動いていますが、「誰がログインしたか」を確かめる部分は、多くの場合 OAuth 2.0 を拡張した <strong>OpenID Connect</strong> が担っています（<a href="#sec-4-6">4.6</a> の使用例も参照）。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>OpenID Connect（OIDC）</h2>
+
+    <h3 id="sec-4-1">4.1 OpenID Connect とは</h3>
+    <p><strong>OpenID Connect（OIDC）</strong> は、<strong>OAuth 2.0 を拡張した認証プロトコル</strong> です。OAuth 2.0 が認可（Authorization）のプロトコルだったのに対し、OpenID Connect は認証（Authentication）のプロトコルです。</p>
+    <ul>
+      <li><strong>OpenID Connect ＝ OAuth 2.0 ＋ 身元証明</strong>
+        <ul>
+          <li>OAuth 2.0：「このアプリにアクセス権限を与える」</li>
+          <li>OpenID Connect：「このアプリにアクセス権限を与える」＋「この人は○○です」という情報も提供</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h3 id="sec-4-2">4.2 OpenID Connect の特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>特徴</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>OAuth 2.0 ベース</strong></td><td>OAuth 2.0 の上に構築されている</td></tr>
+        <tr><td><strong>認証プロトコル</strong></td><td>ユーザーの身元を確認する</td></tr>
+        <tr><td><strong>ID トークン</strong></td><td>ユーザー情報を含む <strong>JWT</strong>（署名付きの JSON をつめた文字列）トークンを発行</td></tr>
+        <tr><td><strong>モダン</strong></td><td>モバイルアプリ、SPA、Web アプリすべてに対応</td></tr>
+      </tbody>
+    </table></div>
+    <p>JWT そのものの形や Bearer トークンとの関係は <a href="10-2_ログイン方式と認証の概念.html#sec-7">トークンベース認証：Bearer と JWT</a>（ログイン方式と認証の概念）で扱っています。</p>
+
+    <h3 id="sec-4-3">4.3 OpenID Connect の仕組み</h3>
+    <ol class="steps">
+      <li>ユーザーがアプリケーションにアクセス</li>
+      <li>アプリケーションが認証サーバーにリダイレクト</li>
+      <li>ユーザーが認証サーバーでログイン</li>
+      <li>ユーザーが「このアプリにアクセス権限を与える」と許可</li>
+      <li>認証サーバーが認可コードを発行</li>
+      <li>アプリケーションが認可コードを <strong>ID トークン ＋ アクセストークン</strong> と交換</li>
+      <li>アプリケーションが ID トークンからユーザー情報を取得</li>
+      <li>認証成功 → アプリケーションにアクセス可能</li>
+    </ol>
+    <p>手順の 1〜6 は OAuth 2.0 の認可コードフローとほぼ同じで、違いは <strong>⑥ で ID トークンも返ってくること</strong> と、<strong>⑦ でアプリがそれを検証して「誰か」を確定すること</strong> です。ID トークンに入っていない情報が必要なときは、アクセストークンを使って OP の <strong>UserInfo エンドポイント</strong>（ユーザー情報を返す API）に問い合わせることもできます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 520" role="img" aria-label="OpenID Connectの流れ。ブラウザがアプリ（RP）にアクセスし、OPのログイン画面へリダイレクトされ、ログインと同意をする。OPは認可コードをブラウザ経由でRPに渡し、RPは認可コードをトークンと交換してIDトークンとアクセストークンを受け取る。RPはIDトークンの署名を検証してユーザーを確定し、必要ならアクセストークンでUserInfoエンドポイントに問い合わせてユーザー情報を受け取り、ログインを完了する">
+      <defs>
+        <marker id="arw3021a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <path d="M90,50 L90,510" class="d-line-dash"/>
+      <path d="M330,50 L330,510" class="d-line-dash"/>
+      <path d="M610,50 L610,510" class="d-line-dash"/>
+      <rect x="20" y="10" width="140" height="40" rx="8" class="d-box"/>
+      <text x="90" y="35" text-anchor="middle" class="d-text-bold">ユーザー（ブラウザ）</text>
+      <rect x="240" y="10" width="180" height="40" rx="8" class="d-box-accent"/>
+      <text x="330" y="35" text-anchor="middle" class="d-text-bold">アプリ（RP）</text>
+      <rect x="520" y="10" width="180" height="40" rx="8" class="d-box"/>
+      <text x="610" y="35" text-anchor="middle" class="d-text-bold">OP（例：Google）</text>
+
+      <text x="210" y="80" text-anchor="middle" class="d-text-sub">① アプリにアクセス</text>
+      <path d="M92,88 L328,88" class="d-line" marker-end="url(#arw3021a)"/>
+
+      <text x="470" y="122" text-anchor="middle" class="d-text-sub">② OP へリダイレクト（scope=openid）</text>
+      <path d="M92,130 L608,130" class="d-line" marker-end="url(#arw3021a)"/>
+
+      <rect x="505" y="144" width="210" height="46" rx="8" class="d-box"/>
+      <text x="610" y="163" text-anchor="middle" class="d-text">③ ログイン・同意</text>
+      <text x="610" y="181" text-anchor="middle" class="d-text-sub">パスワードは OP にだけ入力</text>
+
+      <text x="470" y="214" text-anchor="middle" class="d-text-sub">④ 認可コード（ブラウザ経由）</text>
+      <path d="M608,222 L332,222" class="d-line" marker-end="url(#arw3021a)"/>
+
+      <text x="470" y="256" text-anchor="middle" class="d-text-sub">⑤ 認可コードをトークンと交換</text>
+      <path d="M332,264 L608,264" class="d-line" marker-end="url(#arw3021a)"/>
+
+      <text x="470" y="298" text-anchor="middle" class="d-text-bold">⑥ ID トークン ＋ アクセストークン</text>
+      <path d="M608,306 L332,306" class="d-line" marker-end="url(#arw3021a)"/>
+
+      <rect x="230" y="322" width="200" height="56" rx="8" class="d-box-good"/>
+      <text x="330" y="345" text-anchor="middle" class="d-text">⑦ ID トークンの署名を検証</text>
+      <text x="330" y="366" text-anchor="middle" class="d-text-bold">「誰か」を確定</text>
+
+      <text x="470" y="404" text-anchor="middle" class="d-text-sub">⑧ アクセストークンで UserInfo へ（任意）</text>
+      <path d="M332,412 L608,412" class="d-line-dash" marker-end="url(#arw3021a)"/>
+      <text x="470" y="440" text-anchor="middle" class="d-text-sub">名前・メールアドレスなど</text>
+      <path d="M608,448 L332,448" class="d-line-dash" marker-end="url(#arw3021a)"/>
+
+      <text x="210" y="482" text-anchor="middle" class="d-text-sub">⑨ ログイン完了</text>
+      <path d="M328,490 L92,490" class="d-line" marker-end="url(#arw3021a)"/>
+    </svg>
+    <figcaption>図：OpenID Connect の流れ。OAuth 2.0 との違いは ⑥ の ID トークンと、⑦ でアプリが「誰か」を確かめる点</figcaption>
+    </figure>
+
+    <h3 id="sec-4-4">4.4 OpenID Connect の主要な役割</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>説明</th><th>OAuth 2.0 でいうと</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>エンドユーザー</strong>（End User）</td><td>ユーザー本人</td><td>リソースオーナー</td><td>—</td></tr>
+        <tr><td><strong>RP</strong>（Relying Party）</td><td>ユーザーを認証したいアプリケーション</td><td>クライアント</td><td>—</td></tr>
+        <tr><td><strong>OP</strong>（OpenID Provider）</td><td>ユーザーを認証するサーバー</td><td>認証サーバー</td><td>Google、Auth0、AWS Cognito</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-5">4.5 OpenID Connect のトークン</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トークン</th><th>形式</th><th>内容</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ID トークン</strong>（ID Token）</td><td>JWT（JSON Web Token）</td><td>ユーザー情報（名前、メールアドレスなど）</td><td>ユーザーの認証情報を提供</td></tr>
+        <tr><td><strong>アクセストークン</strong>（Access Token）</td><td>JWT または <strong>不透明な文字列</strong>（中身に意味を持たないランダムな文字列）</td><td>リソースへのアクセス権限</td><td>API へのアクセス</td></tr>
+        <tr><td><strong>リフレッシュトークン</strong>（Refresh Token）</td><td>不透明な文字列</td><td>新しいアクセストークンを取得するためのトークン</td><td>アクセストークンの更新</td></tr>
+      </tbody>
+    </table></div>
+    <p>アクセストークンとリフレッシュトークンの関係は <a href="10-2_ログイン方式と認証の概念.html#sec-8">アクセストークンとリフレッシュトークン</a>（ログイン方式と認証の概念）でも説明しています。</p>
+
+    <h3 id="sec-4-6">4.6 OpenID Connect のメリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li><strong>認証と認可の両方</strong>（OAuth 2.0 の認可 ＋ 認証機能）</li>
+          <li><strong>モダンなプロトコル</strong>（モバイル、SPA、Web アプリすべてに対応）</li>
+          <li><strong>標準化されている</strong>（広く使用されている）</li>
+          <li><strong>セキュリティ</strong>（JWT、PKCE などをサポート）</li>
+          <li><strong>実装が比較的簡単</strong>（OAuth 2.0 よりシンプル）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li><strong>OAuth 2.0 より新しい</strong>（一部の古いシステムでは未対応）</li>
+          <li><strong>実装の複雑さ</strong>（トークンの管理、検証など）</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>使用例：</strong></p>
+    <ul>
+      <li>Google アカウントでログイン（OpenID Connect を使用）</li>
+      <li>Auth0 でログイン</li>
+      <li>AWS Cognito でログイン</li>
+      <li>Microsoft アカウントでログイン</li>
+      <li>モバイルアプリのログイン</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>3 つのプロトコルの比較</h2>
+
+    <h3 id="sec-5-1">5.1 比較表</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>SAML</th><th>OAuth 2.0</th><th>OpenID Connect</th></tr></thead>
+      <tbody>
+        <tr><td><strong>主な目的</strong></td><td>認証（Authentication）</td><td>認可（Authorization）</td><td>認証（Authentication）</td></tr>
+        <tr><td><strong>データ形式</strong></td><td>XML</td><td>JSON</td><td>JSON（JWT）</td></tr>
+        <tr><td><strong>主な用途</strong></td><td>エンタープライズ SSO</td><td>API アクセス</td><td>ユーザーログイン</td></tr>
+        <tr><td><strong>モバイル対応</strong></td><td>弱い</td><td>強い</td><td>強い</td></tr>
+        <tr><td><strong>実装の複雑さ</strong></td><td>高い</td><td>中程度</td><td>中程度</td></tr>
+        <tr><td><strong>使用例</strong></td><td>企業の内部システム</td><td>Google API、Facebook API</td><td>Google ログイン、Auth0</td></tr>
+        <tr><td><strong>トークン</strong></td><td>SAML アサーション</td><td>アクセストークン</td><td>ID トークン ＋ アクセストークン</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="3つのプロトコルの比較。SAMLは認証、XML、SAMLアサーション、企業のSSO。OAuth 2.0は認可、JSON、アクセストークン、APIアクセス。OpenID Connectは認証、JSON（JWT）、IDトークンとアクセストークン、ユーザーログイン。OAuth 2.0とOpenID Connectは共通の土台としてOAuth 2.0のフローを使い、SAMLは別の系統">
+      <rect x="20" y="10" width="200" height="40" rx="8" class="d-box"/>
+      <text x="120" y="35" text-anchor="middle" class="d-text-bold">SAML</text>
+      <rect x="260" y="10" width="200" height="40" rx="8" class="d-box"/>
+      <text x="360" y="35" text-anchor="middle" class="d-text-bold">OAuth 2.0</text>
+      <rect x="500" y="10" width="200" height="40" rx="8" class="d-box-accent"/>
+      <text x="600" y="35" text-anchor="middle" class="d-text-bold">OpenID Connect</text>
+
+      <rect x="20" y="60" width="200" height="160" rx="8" class="d-box"/>
+      <text x="120" y="86" text-anchor="middle" class="d-text-sub">目的</text>
+      <text x="120" y="106" text-anchor="middle" class="d-text-bold">認証（誰か）</text>
+      <text x="120" y="132" text-anchor="middle" class="d-text-sub">形式：XML</text>
+      <text x="120" y="158" text-anchor="middle" class="d-text-sub">渡すもの</text>
+      <text x="120" y="177" text-anchor="middle" class="d-text">SAML アサーション</text>
+      <text x="120" y="204" text-anchor="middle" class="d-text-sub">用途：企業の SSO</text>
+
+      <rect x="260" y="60" width="200" height="160" rx="8" class="d-box-warn"/>
+      <text x="360" y="86" text-anchor="middle" class="d-text-sub">目的</text>
+      <text x="360" y="106" text-anchor="middle" class="d-text-bold">認可（何をして良いか）</text>
+      <text x="360" y="132" text-anchor="middle" class="d-text-sub">形式：JSON</text>
+      <text x="360" y="158" text-anchor="middle" class="d-text-sub">渡すもの</text>
+      <text x="360" y="177" text-anchor="middle" class="d-text">アクセストークン</text>
+      <text x="360" y="204" text-anchor="middle" class="d-text-sub">用途：API アクセス</text>
+
+      <rect x="500" y="60" width="200" height="160" rx="8" class="d-box-good"/>
+      <text x="600" y="86" text-anchor="middle" class="d-text-sub">目的</text>
+      <text x="600" y="106" text-anchor="middle" class="d-text-bold">認証（誰か）</text>
+      <text x="600" y="132" text-anchor="middle" class="d-text-sub">形式：JSON（JWT）</text>
+      <text x="600" y="158" text-anchor="middle" class="d-text-sub">渡すもの</text>
+      <text x="600" y="176" text-anchor="middle" class="d-text">ID トークン</text>
+      <text x="600" y="194" text-anchor="middle" class="d-text">＋ アクセストークン</text>
+      <text x="600" y="212" text-anchor="middle" class="d-text-sub">用途：ユーザーログイン</text>
+
+      <rect x="20" y="236" width="200" height="50" rx="8" class="d-box"/>
+      <text x="120" y="258" text-anchor="middle" class="d-text">別の系統</text>
+      <text x="120" y="277" text-anchor="middle" class="d-text-sub">XML 署名・暗号化</text>
+      <rect x="260" y="236" width="440" height="50" rx="8" class="d-box-accent"/>
+      <text x="480" y="258" text-anchor="middle" class="d-text-bold">共通の土台：OAuth 2.0 のフロー（認可コードフローなど）</text>
+      <text x="480" y="277" text-anchor="middle" class="d-text-sub">OIDC ＝ OAuth 2.0 ＋ 身元証明（ID トークン）</text>
+    </svg>
+    <figcaption>図：3 つの違い。OIDC は OAuth 2.0 の上に「誰か」を伝える ID トークンを足したもの。SAML は別の系統</figcaption>
+    </figure>
+
+    <h3 id="sec-5-2">5.2 詳細な比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>SAML</th><th>OAuth 2.0</th><th>OpenID Connect</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. 目的</strong></td><td>認証（「この人は誰か？」を確認）</td><td>認可（「この人は何をして良いか？」を決定）</td><td>認証（「この人は誰か？」を確認）</td></tr>
+        <tr><td><strong>2. データ形式</strong></td><td>XML（複雑だが構造化されている）</td><td>JSON（シンプルで読みやすい）</td><td>JSON（JWT 形式）</td></tr>
+        <tr><td><strong>3. モバイル対応</strong></td><td>主に Web アプリ向け（モバイル対応が弱い）</td><td>モバイルアプリでも使用可能</td><td>モバイルアプリでも使用可能</td></tr>
+        <tr><td><strong>4. 実装の複雑さ</strong></td><td>高い（XML、証明書管理など）</td><td>中程度（複数のフロー、トークン管理）</td><td>中程度（OAuth 2.0 よりシンプル）</td></tr>
+        <tr><td><strong>5. セキュリティ</strong></td><td>高い（XML 署名と暗号化）</td><td>高い（PKCE、トークンベース）</td><td>高い（JWT、PKCE）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>使い分けのガイド</h2>
+
+    <h3 id="sec-6-1">6.1 用途別の選び方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>推奨</th><th>理由</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. エンタープライズ SSO</strong>（企業の内部システム）</td><td><strong>SAML</strong></td><td>企業で標準化されている、セキュリティが高い</td><td>Okta、Microsoft Azure AD を使用した SSO</td></tr>
+        <tr><td><strong>2. API アクセス</strong>（アプリが API にアクセス）</td><td><strong>OAuth 2.0</strong></td><td>API アクセスに特化している</td><td>写真アプリが Google フォト API にアクセス</td></tr>
+        <tr><td><strong>3. ユーザーログイン</strong>（Web アプリ、モバイルアプリ）</td><td><strong>OpenID Connect</strong></td><td>認証と認可の両方をサポート、モダン</td><td>Google アカウントでログイン、Auth0 でログイン</td></tr>
+        <tr><td><strong>4. Next.js アプリケーション</strong></td><td><strong>OpenID Connect</strong></td><td>モダンなプロトコル、実装が比較的簡単</td><td>NextAuth.js（Next.js の認証ライブラリ）は OpenID Connect をサポート</td></tr>
+      </tbody>
+    </table></div>
+    <p>社内システムに限った選び方（OIDC を第一候補にする理由、SAML が必要になる場面など）は <a href="10-4_社内システム向け認証方式の選び方.html">社内システム向け認証方式の選び方</a> でさらに詳しく扱っています。</p>
+
+    <h3 id="sec-6-2">6.2 選択のフローチャート</h3>
+    <figure>
+    <svg viewBox="0 0 720 290" role="img" aria-label="選択のフローチャート。ユーザーログインが必要かを問い、いいえ（APIアクセスのみ）ならOAuth 2.0。はいなら企業の内部システムかを問い、はいならSAML、いいえ（Webアプリ、SPA、モバイルアプリ）ならOpenID Connect">
+      <defs>
+        <marker id="arw3021b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="230" y="10" width="260" height="44" rx="8" class="d-box"/>
+      <text x="360" y="38" text-anchor="middle" class="d-text-bold">ユーザーログインが必要？</text>
+
+      <path d="M300,54 L140,160" class="d-line" marker-end="url(#arw3021b)"/>
+      <text x="150" y="95" text-anchor="middle" class="d-text-sub">いいえ</text>
+      <text x="150" y="111" text-anchor="middle" class="d-text-sub">（API アクセスのみ）</text>
+      <path d="M420,54 L520,96" class="d-line" marker-end="url(#arw3021b)"/>
+      <text x="490" y="68" text-anchor="middle" class="d-text-sub">はい</text>
+
+      <rect x="40" y="162" width="200" height="50" rx="8" class="d-box-warn"/>
+      <text x="140" y="192" text-anchor="middle" class="d-text-bold">OAuth 2.0</text>
+
+      <rect x="380" y="98" width="320" height="44" rx="8" class="d-box"/>
+      <text x="540" y="126" text-anchor="middle" class="d-text-bold">企業の内部システム？</text>
+
+      <path d="M480,142 L430,218" class="d-line" marker-end="url(#arw3021b)"/>
+      <text x="438" y="180" text-anchor="end" class="d-text-sub">はい</text>
+      <path d="M600,142 L630,218" class="d-line" marker-end="url(#arw3021b)"/>
+      <text x="628" y="172" text-anchor="start" class="d-text-sub">いいえ</text>
+
+      <rect x="340" y="220" width="160" height="50" rx="8" class="d-box"/>
+      <text x="420" y="250" text-anchor="middle" class="d-text-bold">SAML</text>
+      <rect x="530" y="220" width="180" height="56" rx="8" class="d-box-good"/>
+      <text x="620" y="244" text-anchor="middle" class="d-text-bold">OpenID Connect</text>
+      <text x="620" y="264" text-anchor="middle" class="d-text-sub">Web・SPA・モバイル</text>
+    </svg>
+    <figcaption>図：選び方の目安。ログインが要らず API にアクセスするだけなら OAuth 2.0、社内システムなら SAML、それ以外のログインは OIDC</figcaption>
+    </figure>
+    <p>ノートのフローチャートをそのまま書くと次のとおりです。</p>
+<pre><code>ユーザーログインが必要？
+    ↓ はい
+企業の内部システム？
+    ↓ はい → SAML
+    ↓ いいえ
+モバイルアプリまたはSPA？
+    ↓ はい → OpenID Connect
+    ↓ いいえ
+Webアプリケーション？
+    ↓ はい → OpenID Connect
+    ↓
+APIアクセスのみ？
+    ↓ はい → OAuth 2.0</code></pre>
+
+    <h3 id="sec-6-3">6.3 実装の難易度と学習順序</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>初心者向けの難易度（やさしい順）</h4>
+        <ol>
+          <li><strong>OpenID Connect</strong>：モダンで実装が比較的簡単</li>
+          <li><strong>OAuth 2.0</strong>：中程度の難易度</li>
+          <li><strong>SAML</strong>：実装が複雑</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h4>推奨の学習順序</h4>
+        <ol>
+          <li><strong>OpenID Connect</strong>：まずはこれから始める</li>
+          <li><strong>OAuth 2.0</strong>：OpenID Connect の基礎を理解してから</li>
+          <li><strong>SAML</strong>：エンタープライズ環境で必要になったら</li>
+        </ol>
+      </div>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
+    <div class="grid c3">
+      <div class="card">
+        <h4>SAML</h4>
+        <ul>
+          <li>エンタープライズ向けの認証プロトコル</li>
+          <li>XML ベース、企業の SSO で使用</li>
+          <li>実装が複雑だが、セキュリティが高い</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>OAuth 2.0</h4>
+        <ul>
+          <li>認可のプロトコル（認証ではない）</li>
+          <li>API アクセスに使用</li>
+          <li>広く使用されている</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>OpenID Connect</h4>
+        <ul>
+          <li>OAuth 2.0 を拡張した認証プロトコル</li>
+          <li>ユーザーログインに使用</li>
+          <li>モダンで実装が比較的簡単</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">Next.js アプリケーションの場合</p>
+      <p><strong>OpenID Connect</strong> が最も適しています。</p>
+      <ul>
+        <li>モダンなプロトコル</li>
+        <li>モバイル、SPA、Web アプリすべてに対応</li>
+        <li>NextAuth.js などのライブラリがサポート</li>
+        <li>実装が比較的簡単</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>理解度チェック</h2>
+    <details><summary>Q1. 認証プロトコルのような「プロトコル」が必要なのはなぜですか？</summary><div class="body"><p>異なるシステム同士（例：Web サイトと Google）が連携するには、共通の約束事が必要だからです。標準化されていれば、各社が独自の方法を作らなくてよく、既存のライブラリやツールも使えます。</p></div></details>
+    <details><summary>Q2. SAML で、ユーザーを認証する側と、ユーザーが使いたいアプリをそれぞれ何と呼びますか？ また、認証結果は何で伝えますか？</summary><div class="body"><p>認証する側が <strong>ID プロバイダ（IdP）</strong>、アプリ側が <strong>サービスプロバイダ（SP）</strong> です。認証結果は XML で書かれた <strong>SAML アサーション</strong> で伝え、SP はそれを検証してログインさせます。</p></div></details>
+    <details><summary>Q3. 「OAuth 2.0 は認証のプロトコルである」は正しいですか？</summary><div class="body"><p>正しくありません。OAuth 2.0 は <strong>認可</strong>（何をして良いか）のプロトコルです。アクセストークンは「この API にアクセスしてよい」という権限の証明であり、「この人は誰か」を確かめたものではありません。認証に使うには OpenID Connect のような拡張が必要です。</p></div></details>
+    <details><summary>Q4. OpenID Connect が OAuth 2.0 に加えたいちばん大きなものは何ですか？</summary><div class="body"><p><strong>ID トークン</strong> です。トークン交換のときにアクセストークンと一緒に JWT 形式の ID トークンが返り、アプリはその署名を検証して「この人は○○です」と確定できます。つまり OIDC ＝ OAuth 2.0 ＋ 身元証明です。</p></div></details>
+    <details><summary>Q5. OIDC の RP と OP は、OAuth 2.0 のどの役割に相当しますか？</summary><div class="body"><p><strong>RP（Relying Party）</strong> はクライアント（ユーザーを認証したいアプリ）、<strong>OP（OpenID Provider）</strong> は認証サーバー（ユーザーを認証してトークンを発行するサーバー）に相当します。</p></div></details>
+    <details><summary>Q6. インプリシットフローとリソースオーナーパスワードクレデンシャルフローが非推奨なのはなぜで、代わりに何を使いますか？</summary><div class="body"><p>インプリシットフローはアクセストークンが直接返されるため、パスワードクレデンシャルフローはユーザー名とパスワードを直接アプリに送るため、どちらもセキュリティ上の理由で非推奨です。モバイルアプリや SPA では、認可コードフローをより安全にした <strong>PKCE</strong> を使います。</p></div></details>
+    <details><summary>Q7. 次の 3 つのケースでは、それぞれどのプロトコルが推奨されますか？ ①社内の複数システムに Okta で SSO ②写真アプリが Google フォト API を読む ③Next.js アプリに「Google でログイン」を付ける</summary><div class="body"><p>① <strong>SAML</strong>（エンタープライズ SSO）、② <strong>OAuth 2.0</strong>（API アクセス）、③ <strong>OpenID Connect</strong>（ユーザーログイン。NextAuth.js などがサポート）です。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li><a href="https://www.oasis-open.org/standards#samlv2.0">SAML 2.0 仕様</a></li>
+      <li><a href="https://oauth.net/2/">OAuth 2.0 仕様</a></li>
+      <li><a href="https://openid.net/connect/">OpenID Connect 仕様</a></li>
+      <li><a href="https://next-auth.js.org/">NextAuth.js 公式ドキュメント</a></li>
+      <li>関連ページ：<a href="10-1_認証と認可の違い.html">認証と認可の違い</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="10-2_ログイン方式と認証の概念.html#sec-9">OAuth 2.0 と OpenID Connect（ソーシャルログイン）</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-5-3">SSO の仕組み（SAML の場合）</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="10-4_社内システム向け認証方式の選び方.html">社内システム向け認証方式の選び方</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="30-1_OAuth2.0の仕組み.html">OAuth 2.0の仕組み</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#signature">電子署名</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="30-1_OAuth2.0の仕組み.html"><span class="lbl">← 前のページ</span>OAuth 2.0の仕組み</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-3_IDプロバイダとSSOプロバイダ.html"><span class="lbl">次のページ →</span>IDプロバイダとSSOプロバイダ</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

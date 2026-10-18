@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アーキテクチャ量子と粒度・論理コンポーネント｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">10 基礎 › 13 モジュール性・結合 › アーキテクチャ量子と論理コンポーネント</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎 ／ 13 モジュール性・結合</span>
+      <h1>アーキテクチャ量子と粒度・論理コンポーネント</h1>
+      <p class="lead">システムを複数のサービスに分けたとき、「独立して動かせる単位」はいくつあるのか。アーキテクチャ量子・静的結合と動的結合・粒度の分解要因と統合要因を解説し、後半では白紙の状態から論理コンポーネントを見つける方法（分割の軸・繰り返しの手順・3つの手法・エンティティの罠）を扱います。</p>
+      <p class="meta">もとにしたノート：10_基礎/13_モジュール性・結合/05_アーキテクチャ量子と粒度、06_論理コンポーネントの見つけ方</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><a href="13-2_結合の指標.html">結合の指標</a> と <a href="13-3_コナーセンス.html">コナーセンス</a> では、<strong>コードの中の結合</strong> を見てきました。しかし、システムを複数のサービスに分けると、新しい問いが出てきます。</p>
+    <ul>
+      <li>「サービスを5つに分けた」のに、<strong>全部一緒にデプロイしないと動かない</strong> のはなぜか</li>
+      <li>サービスは <strong>どのくらいの大きさ（粒度）</strong> に分けるのが適切か</li>
+      <li>「分けすぎ」と「分けなさすぎ」をどう判断するか</li>
+      <li>そもそも、白紙の状態から <strong>最初の部品をどうやって見つけるのか</strong></li>
+    </ul>
+    <p>このページの前半（2〜5章）では、『進化的アーキテクチャ』『ソフトウェアアーキテクチャ・ハードパーツ』『ソフトウェアアーキテクチャの基礎』で使われている次の考え方を解説します。13 モジュール性・結合 と 40 システム・分散 をつなぐ内容です。</p>
+    <div class="grid c3">
+      <div class="card accent"><h4>アーキテクチャ量子</h4><p>独立して動かせる単位</p></div>
+      <div class="card accent"><h4>静的結合と動的結合</h4><p>量子の境界を決める2種類の結合</p></div>
+      <div class="card accent"><h4>分解要因と統合要因</h4><p>粒度を決める逆向きの2つの力</p></div>
+    </div>
+    <p>後半（6〜10章）では、『基礎』の <strong>コンポーネントベース思考</strong> にもとづいて、論理コンポーネントの見つけ方を解説します。</p>
+    <div class="grid c3">
+      <div class="card purple"><h4>分割の軸</h4><p>技術による分割とドメインによる分割</p></div>
+      <div class="card purple"><h4>手順と手法</h4><p>繰り返しのサイクル、アクター／アクション・ワークフロー・イベントストーミング</p></div>
+      <div class="card purple"><h4>典型的な失敗</h4><p>エンティティの罠</p></div>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>アーキテクチャ量子とは</h2>
+    <h3>2.1 定義</h3>
+    <blockquote><p><strong>アーキテクチャ量子</strong>（Architecture Quantum）とは、<strong>独立してデプロイできる成果物</strong> であり、<strong>高い機能的凝集</strong>・<strong>高い静的結合</strong>・<strong>同期的な動的結合</strong> を持つもの。</p></blockquote>
+    <p>「量子」は物理学の言葉で「それ以上分けられない最小単位」を意味します。アーキテクチャ量子は <strong>「独立して動かせる最小のまとまり」</strong> です。複数形は quanta（クアンタ）です。</p>
+    <p>定義は次のように発展してきました。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>年</th><th>書籍</th><th>定義</th></tr></thead>
+      <tbody>
+        <tr><td>2017</td><td>『進化的アーキテクチャ』初版</td><td>独立してデプロイできる、高い機能的凝集を持つコンポーネント</td></tr>
+        <tr><td>2021</td><td>『ソフトウェアアーキテクチャ・ハードパーツ』</td><td>上に加えて <strong>高い静的結合</strong>、<strong>同期的な動的結合</strong> を追加</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>2.2 定義を分解する</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>意味</th><th>確認する問い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>独立してデプロイできる</strong></td><td>他の部分と切り離して、単独でリリース・起動できる。<strong>動くのに必要なもの（DB など）はすべて量子に含まれる</strong></td><td>「これだけをデプロイして動くか？」</td></tr>
+        <tr><td><strong>高い機能的凝集</strong></td><td>1つの目的のためにまとまっている（1つのワークフロー・1つのドメイン）</td><td>「何をする単位か、一言で言えるか？」</td></tr>
+        <tr><td><strong>高い静的結合</strong></td><td>動くために必要なもの（DB・フレームワーク・共有ライブラリ・ブローカー）と強く結びついている</td><td>「動かすのに何が必要か？」</td></tr>
+        <tr><td><strong>同期的な動的結合</strong></td><td>実行時に <strong>同期呼び出し</strong>（相手の返事を待つ）でつながっている部分は、同じ量子とみなす</td><td>「相手が落ちたら自分も止まるか？」</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>2.3 いちばん大事な判断基準</h3>
+    <div class="callout key">
+      <p class="callout-title">量子を数えるときの基準</p>
+      <p><strong>サービス A とサービス B を一緒にデプロイしなければならないなら、名前が何であれ、それは1つの量子である。</strong></p>
+    </div>
+    <p>「サービス」という名前や、リポジトリが分かれていることは関係ありません。<strong>実際に独立して動かせるかどうか</strong> で数えます。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>静的結合と動的結合</h2>
+    <p>量子の境界を決めるのは、2種類の結合です。</p>
+    <h3>3.1 静的結合 —「動くために何が必要か」</h3>
+    <p>コンポーネントが <strong>動作するために依存しているもの</strong> です。デプロイ時・起動時に決まります。</p>
+    <ul>
+      <li>データベース（とくに <strong>共有 DB</strong>）</li>
+      <li>共有ライブラリ・共通モジュール</li>
+      <li>メッセージブローカー</li>
+      <li>フレームワーク・ランタイム</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">もっとも影響が大きいのは共有データベース</p>
+      <p>サービスを10個に分けても、全サービスが1つの DB を共有していれば、DB のスキーマ変更のたびに全サービスが影響を受けます。この場合、量子は <strong>1つ</strong> です。</p>
+    </div>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="共有DBによって量子が1つになる例">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="20" width="680" height="210" rx="12" class="d-line-dash"/>
+      <text x="36" y="44" class="d-text-accent">量子は1つ</text>
+      <rect x="50" y="60" width="130" height="46" rx="8" class="d-box"/>
+      <text x="115" y="88" text-anchor="middle" class="d-text">注文</text>
+      <rect x="210" y="60" width="130" height="46" rx="8" class="d-box"/>
+      <text x="275" y="88" text-anchor="middle" class="d-text">決済</text>
+      <rect x="380" y="60" width="130" height="46" rx="8" class="d-box"/>
+      <text x="445" y="88" text-anchor="middle" class="d-text">在庫</text>
+      <rect x="540" y="60" width="130" height="46" rx="8" class="d-box"/>
+      <text x="605" y="88" text-anchor="middle" class="d-text">通知</text>
+      <rect x="260" y="160" width="200" height="50" rx="8" class="d-box-bad"/>
+      <text x="360" y="190" text-anchor="middle" class="d-text-bold">共有データベース</text>
+      <line x1="115" y1="106" x2="290" y2="158" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="275" y1="106" x2="335" y2="158" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="445" y1="106" x2="385" y2="158" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="605" y1="106" x2="430" y2="158" class="d-line" marker-end="url(#arw1)"/>
+    </svg>
+    <figcaption>図：サービスが4つあっても、1つの DB を共有していれば静的結合で量子は1つ</figcaption>
+    </figure>
+
+    <h3>3.2 動的結合 —「実行時にどうやり取りするか」</h3>
+    <p>実行中にコンポーネント同士が <strong>どう通信するか</strong> です。『ハードパーツ』では、次の3つの観点で整理しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>選択肢</th><th>影響</th></tr></thead>
+      <tbody>
+        <tr><td><strong>通信</strong></td><td>同期（返事を待つ）／非同期（待たない）</td><td>同期だと、相手の遅延・障害が自分に波及する</td></tr>
+        <tr><td><strong>一貫性</strong></td><td>アトミック（全部成功か全部失敗か）／結果整合性（いずれ整合する）</td><td>アトミックを求めるほど、分散は難しくなる</td></tr>
+        <tr><td><strong>調整</strong></td><td>オーケストレーション（指揮役がいる）／コレオグラフィ（各自がイベントに反応する）</td><td>指揮役がいると流れは見えやすいが、指揮役が結合点になる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>同期通信</strong> でつながったサービス同士は、実行時には <strong>運命共同体</strong> です。片方が遅くなればもう片方も遅くなり、片方が落ちればもう片方も止まります。だから「同期的な動的結合」がある部分は、同じ量子とみなすのです。</p>
+
+    <h3>3.3 例で考える</h3>
+    <figure>
+    <svg viewBox="0 0 760 400" role="img" aria-label="4つのサービスと3つの量子">
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="arw2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <rect x="20" y="50" width="360" height="300" rx="12" class="d-box-accent"/>
+      <text x="36" y="74" class="d-text-accent">量子1</text>
+      <rect x="40" y="90" width="140" height="50" rx="8" class="d-box"/>
+      <text x="110" y="120" text-anchor="middle" class="d-text">注文サービス</text>
+      <rect x="230" y="90" width="130" height="50" rx="8" class="d-box"/>
+      <text x="295" y="120" text-anchor="middle" class="d-text">決済サービス</text>
+      <line x1="180" y1="115" x2="228" y2="115" class="d-line-accent" marker-end="url(#arw2a)"/>
+      <text x="205" y="84" text-anchor="middle" class="d-text-sub">同期</text>
+      <text x="200" y="205" text-anchor="middle" class="d-text-sub">決済が止まると注文も止まる</text>
+      <rect x="40" y="260" width="140" height="46" rx="8" class="d-box-good"/>
+      <text x="110" y="288" text-anchor="middle" class="d-text">注文DB</text>
+      <rect x="230" y="260" width="130" height="46" rx="8" class="d-box-good"/>
+      <text x="295" y="288" text-anchor="middle" class="d-text">決済DB</text>
+      <line x1="110" y1="140" x2="110" y2="258" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="295" y1="140" x2="295" y2="258" class="d-line" marker-end="url(#arw2)"/>
+      <rect x="420" y="60" width="320" height="120" rx="12" class="d-box-purple"/>
+      <text x="434" y="82" class="d-text-accent">量子2</text>
+      <rect x="440" y="90" width="130" height="46" rx="8" class="d-box"/>
+      <text x="505" y="118" text-anchor="middle" class="d-text">在庫サービス</text>
+      <rect x="600" y="90" width="120" height="46" rx="8" class="d-box-good"/>
+      <text x="660" y="118" text-anchor="middle" class="d-text">在庫DB</text>
+      <line x1="570" y1="113" x2="598" y2="113" class="d-line" marker-end="url(#arw2)"/>
+      <rect x="420" y="230" width="320" height="120" rx="12" class="d-box-purple"/>
+      <text x="434" y="252" class="d-text-accent">量子3</text>
+      <rect x="440" y="260" width="130" height="46" rx="8" class="d-box"/>
+      <text x="505" y="288" text-anchor="middle" class="d-text">通知サービス</text>
+      <rect x="600" y="260" width="120" height="46" rx="8" class="d-box-good"/>
+      <text x="660" y="288" text-anchor="middle" class="d-text">通知DB</text>
+      <line x1="570" y1="283" x2="598" y2="283" class="d-line" marker-end="url(#arw2)"/>
+      <path d="M150,90 L150,30 L400,30 L400,113 L438,113" class="d-line-dash" marker-end="url(#arw2)"/>
+      <path d="M400,113 L400,283 L438,283" class="d-line-dash" marker-end="url(#arw2)"/>
+      <text x="275" y="22" text-anchor="middle" class="d-text-sub">非同期イベント（OrderPlaced）</text>
+      <text x="380" y="388" text-anchor="middle" class="d-text-bold">サービスは4つ、量子は3つ</text>
+    </svg>
+    <figcaption>図：実線は同期呼び出し・DB アクセス、破線は非同期イベント。同期でつながる注文と決済は同じ量子</figcaption>
+    </figure>
+    <ul>
+      <li>注文サービスは決済サービスを <strong>同期で</strong> 呼び、返事を待つ → 決済が止まると注文も止まる → <strong>同じ量子</strong></li>
+      <li>在庫・通知へは <strong>非同期イベント</strong> で知らせるだけ → 在庫が止まっても注文は受け付けられる → <strong>別の量子</strong></li>
+      <li>サービスは4つだが、量子は <strong>3つ</strong></li>
+    </ul>
+    <p>もし全サービスが <strong>1つの共有 DB</strong> を使っていたら、前の図のように静的結合によって量子は <strong>1つ</strong> になります。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>なぜ量子が重要なのか — 特性のスコープ</h2>
+    <h3>4.1 アーキテクチャ特性は量子ごとに決まる</h3>
+    <p><a href="12-1_品質特性と非機能要件.html">品質特性と非機能要件・特性の見つけ方</a> で「特性はシステム全体で一律とは限らない」と学びました。量子はまさに、<strong>アーキテクチャ特性をそろえられる単位</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>量子が1つ（モノリス・分散モノリス）</th><th>量子が複数（真に分割されたシステム）</th></tr></thead>
+      <tbody>
+        <tr><td>システム全体で <strong>1組の特性</strong> しか持てない</td><td>量子ごとに <strong>違う特性</strong> を持てる</td></tr>
+        <tr><td>検索だけ弾力性を上げる、ということができない</td><td>検索の量子だけ弾力性を高め、管理画面の量子はシンプルに保てる</td></tr>
+        <tr><td>1か所の障害が全体に波及しやすい</td><td>障害が量子の中に閉じやすい</td></tr>
+      </tbody>
+    </table></div>
+    <p>『ソフトウェアアーキテクチャの基礎』では、この考え方を使って <strong>「システムに必要な特性が部分ごとに大きく違うなら、量子を分ける＝分散アーキテクチャを検討する。全体で同じなら、モノリスで十分」</strong> という判断の目安を示しています。</p>
+
+    <h3>4.2 スタイルと量子の数</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>スタイル</th><th>量子の数</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>レイヤード / モジュラーモノリス / マイクロカーネル</td><td>1</td><td>1つのデプロイ単位</td></tr>
+        <tr><td>サービスベース</td><td>1 になりやすい</td><td>サービスは分かれていても、<strong>DB を共有</strong> することが多い</td></tr>
+        <tr><td>イベント駆動</td><td>複数になりうる</td><td>非同期通信で動的結合が弱い。ただし DB を共有すれば 1</td></tr>
+        <tr><td>マイクロサービス</td><td>複数</td><td>サービスごとに DB を持ち、独立してデプロイする</td></tr>
+      </tbody>
+    </table></div>
+    <p>スタイル比較表（→ <a href="00-3_スタイル比較ツール.html">スタイル比較ツール</a>）で、サービスベースとマイクロサービスの「拡張性」「進化しやすさ」の★が違うのは、この <strong>量子の数の違い</strong> が大きな理由です。</p>
+
+    <h3>4.3 分散モノリスの正体</h3>
+    <p><strong>分散モノリス</strong> とは、「サービスに分けたのに、量子は1つのまま」の状態です。</p>
+    <ul>
+      <li>共有 DB（静的結合）</li>
+      <li>サービス同士の同期呼び出しの連鎖（動的結合）</li>
+      <li>一緒にリリースしないと動かない</li>
+    </ul>
+    <div class="callout bad">
+      <p class="callout-title">最悪の組み合わせ</p>
+      <p>分散モノリスは、<strong>モノリスの欠点（独立できない）と分散の欠点（ネットワーク越しで遅い・運用が複雑）を両方持つ</strong> 状態です（→ <a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a>）。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>粒度 — サービスはどのくらいの大きさにするか</h2>
+    <p>量子を分けると決めたら、次は「どのくらい細かく分けるか」です。『ハードパーツ』では、粒度を <strong>2つの逆向きの力の釣り合い</strong> として考えます。</p>
+    <figure>
+    <svg viewBox="0 0 720 290" role="img" aria-label="分解要因と統合要因の天秤">
+      <rect x="20" y="20" width="310" height="180" rx="10" class="d-box-warn"/>
+      <text x="175" y="46" text-anchor="middle" class="d-text-bold">分解要因（分けたくなる力）</text>
+      <text x="40" y="74" class="d-text-sub">・サービスの範囲と機能</text>
+      <text x="40" y="96" class="d-text-sub">・コードの変動性</text>
+      <text x="40" y="118" class="d-text-sub">・スケーラビリティとスループット</text>
+      <text x="40" y="140" class="d-text-sub">・耐障害性</text>
+      <text x="40" y="162" class="d-text-sub">・セキュリティ</text>
+      <text x="40" y="184" class="d-text-sub">・拡張性</text>
+      <rect x="390" y="20" width="310" height="180" rx="10" class="d-box-accent"/>
+      <text x="545" y="46" text-anchor="middle" class="d-text-bold">統合要因（まとめたくなる力）</text>
+      <text x="410" y="74" class="d-text-sub">・データベーストランザクション</text>
+      <text x="410" y="96" class="d-text-sub">・ワークフローとコレオグラフィ</text>
+      <text x="410" y="118" class="d-text-sub">・共有コード</text>
+      <text x="410" y="140" class="d-text-sub">・データの関係</text>
+      <line x1="40" y1="220" x2="680" y2="220" class="d-line-accent"/>
+      <line x1="175" y1="200" x2="175" y2="220" class="d-line"/>
+      <line x1="545" y1="200" x2="545" y2="220" class="d-line"/>
+      <polygon points="360,222 330,262 390,262" class="d-box"/>
+      <text x="360" y="284" text-anchor="middle" class="d-text-accent">釣り合う点が、ちょうどよい粒度</text>
+    </svg>
+    <figcaption>図：粒度は、分解要因（Disintegrators）と統合要因（Integrators）の釣り合いで決める</figcaption>
+    </figure>
+
+    <h3>5.1 分解要因 — 分けるべき理由</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分解要因</th><th>問い</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>サービスの範囲と機能</strong></td><td>無関係なことを1つのサービスでやりすぎていないか？</td><td>「通知サービス」がメール・SMS・プッシュ・請求書 PDF 生成までやっている</td></tr>
+        <tr><td><strong>コードの変動性</strong></td><td>変更が一部に集中していないか？</td><td>決済手段の追加は頻繁だが、請求処理はほぼ変わらない</td></tr>
+        <tr><td><strong>スケーラビリティとスループット</strong></td><td>部分ごとに必要な処理量が大きく違わないか？</td><td>商品検索は秒間1万件、商品登録は1日100件</td></tr>
+        <tr><td><strong>耐障害性</strong></td><td>一部の障害が、重要な機能まで止めていないか？</td><td>画像変換のメモリ不足で、注文受付まで落ちる</td></tr>
+        <tr><td><strong>セキュリティ</strong></td><td>一部だけ高いセキュリティが必要ではないか？</td><td>カード情報を扱う部分だけ、アクセスを厳しく制限したい</td></tr>
+        <tr><td><strong>拡張性</strong></td><td>今後、種類が増えていく部分ではないか？</td><td>決済手段が今後も増え続ける</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">※表中の件数は、処理量の差をイメージするための例です。</p>
+
+    <h3>5.2 統合要因 — まとめるべき理由</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>統合要因</th><th>問い</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>データベーストランザクション</strong></td><td>1つのトランザクション（全部成功か全部失敗か）が必要ではないか？</td><td>「注文の作成」と「在庫の引当」を必ず同時に成功させたい</td></tr>
+        <tr><td><strong>ワークフローとコレオグラフィ</strong></td><td>分けるとサービス間の呼び出しが多くなりすぎないか？</td><td>1つの画面表示に5サービスの同期呼び出しが必要 → 遅く、障害にも弱くなる</td></tr>
+        <tr><td><strong>共有コード</strong></td><td>同じ <strong>業務ロジック</strong> を複数サービスが使っていないか？</td><td>料金計算ロジックを3サービスが共有ライブラリで使い、変更のたびに3つ同時にリリースが必要</td></tr>
+        <tr><td><strong>データの関係</strong></td><td>データ同士が強く結びついていないか？</td><td>分けると、互いのデータを頻繁に問い合わせる必要がある</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>5.3 よくある失敗</h3>
+    <div class="callout bad">
+      <p class="callout-title">分解要因ばかり見て、統合要因を無視する</p>
+      <p>多くのチームは、分ける理由だけを数えて、まとめる理由を検討しません。その結果、次のような状態に陥ります。</p>
+      <ul>
+        <li>サービスが細かくなりすぎて、1つの処理に多数のサービス呼び出しが必要になる</li>
+        <li>分散トランザクションや SAGA が大量に必要になる（→ <a href="40-4_データ所有権とSAGA.html">データ所有権・分散トランザクション・SAGA</a>）</li>
+        <li>共有コードの変更のたびに複数サービスを同時リリースする（＝分散モノリス）</li>
+      </ul>
+    </div>
+    <p><strong>分ける理由と同じくらい、まとめる理由を真剣に検討する</strong> ことが大切です。これは <a href="13-3_コナーセンス.html">コナーセンス</a> の「強いコナーセンス（値・同一性）は近くに置く」と同じ考え方です。</p>
+
+    <h3>5.4 判断の進め方</h3>
+    <ol class="steps">
+      <li>分解要因・統合要因を <strong>表に書き出す</strong>（どちらか一方だけでなく両方）</li>
+      <li>それぞれが、このシステムでどれだけ重要かを <strong>ビジネスの言葉で</strong> 説明する（例：「決済だけ切り出すと、PCI DSS の監査範囲を小さくできる」）</li>
+      <li>釣り合いを判断し、<strong>理由を ADR に残す</strong>（→ <a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a>）</li>
+      <li>迷ったら <strong>粗めに分ける</strong>。細かいサービスを後からまとめるより、粗いサービスを後から分ける方が簡単</li>
+    </ol>
+
+    <h2 id="sec-6"><span class="num">6.</span>論理コンポーネントとは</h2>
+    <p>ここまでで、部品の <strong>良し悪しを評価する方法</strong>（凝集・結合・コナーセンス・量子）がそろいました。では、そもそも <strong>最初の部品はどうやって見つけるのか</strong>。白紙の状態から「このシステムは、どんな部品で構成されるか」を考えるのが、ここからのテーマです。</p>
+    <p>『ソフトウェアアーキテクチャの基礎』では、これを <strong>コンポーネントベース思考</strong>（Component-Based Thinking）と呼び、アーキテクチャの4つの側面の1つ <strong>論理コンポーネント</strong> として扱っています（→ <a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a>）。</p>
+
+    <h3>6.1 定義</h3>
+    <p><strong>論理コンポーネント</strong> とは、システムが <strong>何をするか</strong>（振る舞い）を表す、機能のまとまりです。</p>
+    <ul>
+      <li>例：「注文受付」「在庫管理」「支払い処理」「通知」</li>
+      <li>コード上は、<strong>名前空間・パッケージ・ディレクトリ</strong> として表れることが多い（例：<code>app/order/placement</code>）</li>
+      <li>C4 モデルのレベル3「コンポーネント」に対応します（→ <a href="60-2_C4モデルとarc42.html">図と文書化（C4 モデル・arc42）</a>）</li>
+    </ul>
+
+    <h3>6.2 論理アーキテクチャと物理アーキテクチャ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>論理アーキテクチャ</th><th>物理アーキテクチャ</th></tr></thead>
+      <tbody>
+        <tr><th>何を表すか</th><td>システムが <strong>何をするか</strong>（機能の部品と関係）</td><td>システムが <strong>どう動くか</strong>（サービス・DB・サーバー・通信方式）</td></tr>
+        <tr><th>例</th><td>注文受付 → 在庫引当 → 支払い → 通知</td><td>注文サービス（コンテナ）、PostgreSQL、Kafka</td></tr>
+        <tr><th>決めるもの</th><td>機能の分け方</td><td>アーキテクチャスタイル（モノリス／マイクロサービスなど）</td></tr>
+      </tbody>
+    </table></div>
+    <p>『基礎』では、<strong>論理コンポーネントを先に考え、それをアーキテクチャ特性と照らし合わせて物理構成（スタイル）を選ぶ</strong> 流れを勧めています。いきなり「マイクロサービスで行こう」と物理構成から決めると、機能の分け方が技術の都合に引きずられます。</p>
+    <figure>
+    <svg viewBox="0 0 720 210" role="img" aria-label="論理コンポーネントから物理構成へ">
+      <defs><marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="30" width="170" height="64" rx="8" class="d-box"/>
+      <text x="105" y="58" text-anchor="middle" class="d-text-bold">要件</text>
+      <text x="105" y="80" text-anchor="middle" class="d-text-sub">ユーザーストーリー</text>
+      <rect x="260" y="30" width="190" height="64" rx="8" class="d-box-purple"/>
+      <text x="355" y="58" text-anchor="middle" class="d-text-bold">論理コンポーネント</text>
+      <text x="355" y="80" text-anchor="middle" class="d-text-sub">何をするか</text>
+      <rect x="260" y="126" width="190" height="64" rx="8" class="d-box-warn"/>
+      <text x="355" y="154" text-anchor="middle" class="d-text-bold">アーキテクチャ特性</text>
+      <text x="355" y="176" text-anchor="middle" class="d-text-sub">上位3つ</text>
+      <rect x="520" y="78" width="180" height="64" rx="8" class="d-box-accent"/>
+      <text x="610" y="106" text-anchor="middle" class="d-text-bold">スタイル</text>
+      <text x="610" y="128" text-anchor="middle" class="d-text-sub">物理構成</text>
+      <line x1="190" y1="62" x2="258" y2="62" class="d-line" marker-end="url(#arw3)"/>
+      <line x1="450" y1="62" x2="518" y2="98" class="d-line" marker-end="url(#arw3)"/>
+      <line x1="450" y1="158" x2="518" y2="122" class="d-line" marker-end="url(#arw3)"/>
+    </svg>
+    <figcaption>図：論理コンポーネントを先に見つけ、特性と照らし合わせてからスタイル（物理構成）を選ぶ</figcaption>
+    </figure>
+
+    <h2 id="sec-7"><span class="num">7.</span>分割の軸 — 技術か、ドメインか</h2>
+    <p>コンポーネントを分けるとき、最初に決めるのが <strong>最上位の分割の軸</strong> です。</p>
+    <h3>7.1 技術による分割（Technical Partitioning）</h3>
+    <p>技術的な役割ごとに分けます。</p>
+    <pre><code>app/
+  presentation/   ← 画面・API
+  business/       ← 業務ロジック
+  persistence/    ← DB アクセス</code></pre>
+    <ul>
+      <li>代表例：レイヤードアーキテクチャ、MVC</li>
+      <li>良い点：技術ごとの専門家が担当しやすい。構造が分かりやすい</li>
+      <li>悪い点：「注文に割引機能を追加する」という <strong>1つの業務変更が、全層に散らばる</strong></li>
+    </ul>
+
+    <h3>7.2 ドメインによる分割（Domain Partitioning）</h3>
+    <p>業務の領域（ドメイン）ごとに分けます。</p>
+    <pre><code>app/
+  order/          ← 注文に関するすべて（画面・ロジック・DB アクセス）
+  inventory/
+  payment/
+  notification/</code></pre>
+    <ul>
+      <li>代表例：モジュラーモノリス、マイクロサービス、垂直スライスアーキテクチャ（→ <a href="21-3_垂直スライスアーキテクチャ.html">垂直スライスアーキテクチャ</a>）</li>
+      <li>良い点：<strong>業務の変更が1つのコンポーネントに閉じやすい</strong>。チームを業務ごとに分けやすい</li>
+      <li>悪い点：共通処理（ログ・認証など）が各所に重複しやすい</li>
+    </ul>
+    <figure>
+    <svg viewBox="0 0 740 300" role="img" aria-label="技術による分割とドメインによる分割の比較">
+      <text x="190" y="28" text-anchor="middle" class="d-text-bold">技術による分割</text>
+      <rect x="30" y="46" width="320" height="52" rx="8" class="d-box"/>
+      <text x="50" y="77" class="d-text">presentation</text>
+      <rect x="30" y="108" width="320" height="52" rx="8" class="d-box"/>
+      <text x="50" y="139" class="d-text">business</text>
+      <rect x="30" y="170" width="320" height="52" rx="8" class="d-box"/>
+      <text x="50" y="201" class="d-text">persistence</text>
+      <rect x="240" y="38" width="80" height="192" rx="6" class="d-line-dash"/>
+      <text x="280" y="77" text-anchor="middle" class="d-text-sub">変更</text>
+      <text x="280" y="139" text-anchor="middle" class="d-text-sub">変更</text>
+      <text x="280" y="201" text-anchor="middle" class="d-text-sub">変更</text>
+      <text x="190" y="258" text-anchor="middle" class="d-text-sub">「割引機能の追加」が</text>
+      <text x="190" y="278" text-anchor="middle" class="d-text-sub">全層に散らばる</text>
+      <text x="560" y="28" text-anchor="middle" class="d-text-bold">ドメインによる分割</text>
+      <rect x="390" y="46" width="80" height="176" rx="8" class="d-box-accent"/>
+      <text x="430" y="70" text-anchor="middle" class="d-text-sub">order</text>
+      <rect x="398" y="84" width="64" height="36" rx="4" class="d-box"/>
+      <text x="430" y="107" text-anchor="middle" class="d-text-sub">画面</text>
+      <rect x="398" y="128" width="64" height="36" rx="4" class="d-box"/>
+      <text x="430" y="151" text-anchor="middle" class="d-text-sub">ロジック</text>
+      <rect x="398" y="172" width="64" height="36" rx="4" class="d-box"/>
+      <text x="430" y="195" text-anchor="middle" class="d-text-sub">DB</text>
+      <rect x="480" y="46" width="80" height="176" rx="8" class="d-box"/>
+      <text x="520" y="70" text-anchor="middle" class="d-text-sub">inventory</text>
+      <rect x="570" y="46" width="80" height="176" rx="8" class="d-box"/>
+      <text x="610" y="70" text-anchor="middle" class="d-text-sub">payment</text>
+      <rect x="660" y="46" width="80" height="176" rx="8" class="d-box"/>
+      <text x="700" y="70" text-anchor="middle" class="d-text-sub">notification</text>
+      <rect x="384" y="38" width="92" height="192" rx="8" class="d-line-dash"/>
+      <text x="560" y="258" text-anchor="middle" class="d-text-sub">「割引機能の追加」が</text>
+      <text x="560" y="278" text-anchor="middle" class="d-text-sub">order の中に閉じる</text>
+    </svg>
+    <figcaption>図：同じ業務変更（破線の範囲）が、技術による分割では全層に、ドメインによる分割では1つのコンポーネントに収まる</figcaption>
+    </figure>
+
+    <h3>7.3 どちらを選ぶか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>技術による分割</th><th>ドメインによる分割</th></tr></thead>
+      <tbody>
+        <tr><td>変更の単位</td><td>技術の変更（DB の差し替えなど）が閉じる</td><td><strong>業務の変更</strong> が閉じる</td></tr>
+        <tr><td>チーム構成</td><td>フロント・バック・DB の専門チーム</td><td>業務ごとのクロスファンクショナルチーム</td></tr>
+        <tr><td>向いている</td><td>小規模、業務がシンプル、変更の多くが技術的</td><td>中〜大規模、業務が複雑、変更の多くが業務的</td></tr>
+        <tr><td>コンウェイの法則</td><td>技術別の組織と相性が良い</td><td>業務別の組織と相性が良い（→ <a href="70-3_コンウェイの法則とTeamTopologies.html">コンウェイの法則と Team Topologies</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p>現代の多くのシステムでは <strong>業務の変更の方が技術の変更より頻繁</strong> なので、ドメインによる分割が主流になりつつあります。ただし、ドメインで分けた各コンポーネントの <strong>中</strong> を技術で分ける（例：<code>order/</code> の中を domain・application・infrastructure に分ける）のはよくある組み合わせです（→ <a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード</a>、<a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a>）。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>コンポーネントを見つける手順</h2>
+    <p>『基礎』では、コンポーネントの特定を <strong>一度で終わる作業ではなく、繰り返すサイクル</strong> として説明しています。</p>
+    <figure>
+    <svg viewBox="0 0 740 200" role="img" aria-label="コンポーネント特定のサイクル">
+      <defs><marker id="arw4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="arw4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <rect x="22" y="30" width="128" height="70" rx="8" class="d-box"/>
+      <text x="86" y="60" text-anchor="middle" class="d-text-bold">① 仮置き</text>
+      <text x="86" y="82" text-anchor="middle" class="d-text-sub">最初の部品</text>
+      <rect x="164" y="30" width="128" height="70" rx="8" class="d-box-accent"/>
+      <text x="228" y="60" text-anchor="middle" class="d-text-bold">② 割り当て</text>
+      <text x="228" y="82" text-anchor="middle" class="d-text-sub">要件を担当へ</text>
+      <rect x="306" y="30" width="128" height="70" rx="8" class="d-box-accent"/>
+      <text x="370" y="60" text-anchor="middle" class="d-text-bold">③ 責務分析</text>
+      <text x="370" y="82" text-anchor="middle" class="d-text-sub">多すぎ・少なすぎ</text>
+      <rect x="448" y="30" width="128" height="70" rx="8" class="d-box-warn"/>
+      <text x="512" y="60" text-anchor="middle" class="d-text-bold">④ 特性分析</text>
+      <text x="512" y="82" text-anchor="middle" class="d-text-sub">要求の違い</text>
+      <rect x="590" y="30" width="128" height="70" rx="8" class="d-box-accent"/>
+      <text x="654" y="60" text-anchor="middle" class="d-text-bold">⑤ 再構成</text>
+      <text x="654" y="82" text-anchor="middle" class="d-text-sub">分割・統合</text>
+      <line x1="150" y1="65" x2="162" y2="65" class="d-line" marker-end="url(#arw4)"/>
+      <line x1="292" y1="65" x2="304" y2="65" class="d-line" marker-end="url(#arw4)"/>
+      <line x1="434" y1="65" x2="446" y2="65" class="d-line" marker-end="url(#arw4)"/>
+      <line x1="576" y1="65" x2="588" y2="65" class="d-line" marker-end="url(#arw4)"/>
+      <path d="M654,100 L654,150 L228,150 L228,102" class="d-line-accent" marker-end="url(#arw4a)"/>
+      <text x="441" y="176" text-anchor="middle" class="d-text-accent">要件や特性の違いが見えるたびに繰り返す</text>
+    </svg>
+    <figcaption>図：①で仮置きしたあと、②〜⑤を繰り返してコンポーネントを磨いていく</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ステップ</th><th>内容</th><th>確認する問い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>① 最初のコンポーネントを決める</strong></td><td>分割の軸（技術／ドメイン）に沿って、まず仮のコンポーネントを置く。<strong>最初から正解を出そうとしない</strong></td><td>「大まかに何の部品がありそうか？」</td></tr>
+        <tr><td><strong>② 要件を割り当てる</strong></td><td>ユーザーストーリーや要件を、どのコンポーネントが担当するかを決める</td><td>「この要件は、どこが担当する？ どこにも入らない要件はないか？」</td></tr>
+        <tr><td><strong>③ 役割と責務を分析する</strong></td><td>担当が多すぎるコンポーネント（神コンポーネント）、少なすぎるコンポーネントを見つける</td><td>「このコンポーネントの責務を一文で言えるか？」</td></tr>
+        <tr><td><strong>④ アーキテクチャ特性を分析する</strong></td><td>同じコンポーネントの中で、<strong>必要な特性が大きく違う部分</strong> がないかを見る</td><td>「この中の一部だけ、スケール・セキュリティ・可用性の要求が違わないか？」</td></tr>
+        <tr><td><strong>⑤ 再構成する</strong></td><td>分割・統合・移動・名前の変更を行い、②に戻る</td><td>「前より凝集が高く、結合が低くなったか？」</td></tr>
+      </tbody>
+    </table></div>
+    <p>④がアーキテクチャ特有のステップです。機能的には1つにまとまっていても、<strong>一部だけ特性の要求が違うなら分ける</strong> 理由になります（5章の分解要因と同じ考え方）。</p>
+    <div class="callout tip">
+      <p class="callout-title">例：チケット販売</p>
+      <p>「チケット販売」コンポーネントのうち、「座席の検索と予約」は発売開始の瞬間に弾力性が必要ですが、「販売実績のレポート」には不要です。→ 2つに分けます。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>コンポーネントを見つける3つの手法</h2>
+    <p>手順の①②で使える、代表的な手法です。</p>
+    <h3>9.1 アクター／アクション・アプローチ</h3>
+    <p><strong>誰が（アクター）、何をするか（アクション）</strong> を洗い出し、アクションのまとまりをコンポーネントにします。オンライン書店で考えてみます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アクター</th><th>アクション</th></tr></thead>
+      <tbody>
+        <tr><td>購入者</td><td>本を検索する、カートに入れる、注文する、注文状況を確認する、レビューを書く</td></tr>
+        <tr><td>店舗スタッフ</td><td>在庫を登録する、注文を発送する、返品を処理する</td></tr>
+        <tr><td>システム（自動処理）</td><td>在庫が減ったら発注する、発送通知を送る</td></tr>
+      </tbody>
+    </table></div>
+    <p>ここから見えてくるコンポーネントの候補は次のとおりです。</p>
+    <div class="grid c3">
+      <div class="card"><h4>商品検索</h4><p>検索する</p></div>
+      <div class="card"><h4>カート・注文</h4><p>カートに入れる・注文する・状況を確認する</p></div>
+      <div class="card"><h4>レビュー</h4><p>レビューを書く</p></div>
+      <div class="card"><h4>在庫管理</h4><p>在庫を登録する・自動発注</p></div>
+      <div class="card"><h4>出荷</h4><p>発送する・返品処理</p></div>
+      <div class="card"><h4>通知</h4><p>発送通知</p></div>
+    </div>
+    <ul>
+      <li>良い点：要件からそのまま始められ、分かりやすい。<strong>利用者ごとの使い方</strong> を意識できる</li>
+      <li>向いている：ユーザーの操作が中心のシステム、要件がユースケースで書かれているとき</li>
+    </ul>
+
+    <h3>9.2 ワークフロー・アプローチ</h3>
+    <p><strong>業務の流れ（ワークフロー）</strong> を時系列で書き出し、ステップのまとまりをコンポーネントにします。</p>
+    <figure>
+    <svg viewBox="0 0 740 120" role="img" aria-label="注文のワークフロー">
+      <defs><marker id="arw5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="22" y="30" width="128" height="60" rx="8" class="d-box-accent"/>
+      <text x="86" y="56" text-anchor="middle" class="d-text">注文を</text>
+      <text x="86" y="76" text-anchor="middle" class="d-text">受け付ける</text>
+      <rect x="164" y="30" width="128" height="60" rx="8" class="d-box-accent"/>
+      <text x="228" y="56" text-anchor="middle" class="d-text">在庫を</text>
+      <text x="228" y="76" text-anchor="middle" class="d-text">引き当てる</text>
+      <rect x="306" y="30" width="128" height="60" rx="8" class="d-box-accent"/>
+      <text x="370" y="56" text-anchor="middle" class="d-text">支払いを</text>
+      <text x="370" y="76" text-anchor="middle" class="d-text">処理する</text>
+      <rect x="448" y="30" width="128" height="60" rx="8" class="d-box-accent"/>
+      <text x="512" y="56" text-anchor="middle" class="d-text">出荷を</text>
+      <text x="512" y="76" text-anchor="middle" class="d-text">手配する</text>
+      <rect x="590" y="30" width="128" height="60" rx="8" class="d-box-accent"/>
+      <text x="654" y="56" text-anchor="middle" class="d-text">配送状況を</text>
+      <text x="654" y="76" text-anchor="middle" class="d-text">通知する</text>
+      <line x1="150" y1="60" x2="162" y2="60" class="d-line" marker-end="url(#arw5)"/>
+      <line x1="292" y1="60" x2="304" y2="60" class="d-line" marker-end="url(#arw5)"/>
+      <line x1="434" y1="60" x2="446" y2="60" class="d-line" marker-end="url(#arw5)"/>
+      <line x1="576" y1="60" x2="588" y2="60" class="d-line" marker-end="url(#arw5)"/>
+    </svg>
+    <figcaption>図：注文業務のワークフロー。ステップのまとまりがコンポーネントの候補になる</figcaption>
+    </figure>
+    <ul>
+      <li>アクターよりも <strong>業務の流れ</strong> に注目します</li>
+      <li>良い点：処理の順序や、ステップ間で受け渡すデータがはっきりする</li>
+      <li>向いている：手順が決まった業務（受発注・審査・申請承認など）</li>
+    </ul>
+
+    <h3>9.3 イベントストーミング</h3>
+    <p>DDD（ドメイン駆動設計）から生まれた、ワークショップ形式の手法です（Alberto Brandolini が考案）。</p>
+    <ol class="steps">
+      <li>業務の専門家と開発者が集まる</li>
+      <li><strong>「業務で起きる出来事（ドメインイベント）」</strong> を過去形で付箋に書き出す（例：「注文が確定した」「支払いが完了した」「商品が発送された」）</li>
+      <li>時系列に並べ、イベントを引き起こす <strong>コマンド</strong>（「注文を確定する」）や <strong>アクター</strong> を加える</li>
+      <li>関係の深いイベントのまとまりを見つけ、それを <strong>コンポーネント（境界づけられたコンテキストの候補）</strong> にする</li>
+    </ol>
+    <ul>
+      <li>良い点：業務の専門家と一緒に、<strong>業務の言葉で</strong> 境界を見つけられる</li>
+      <li>向いている：業務が複雑なシステム、イベント駆動やマイクロサービスを検討しているとき</li>
+      <li>『基礎』では、イベントストーミングは <strong>イベントやメッセージでコンポーネントが通信すること</strong> を前提にした手法である点に注意を促しています</li>
+    </ul>
+
+    <h3>9.4 手法の比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手法</th><th>起点</th><th>得意なこと</th><th>向いているシステム</th></tr></thead>
+      <tbody>
+        <tr><td>アクター／アクション</td><td>利用者と操作</td><td>利用者視点の機能の洗い出し</td><td>画面操作が中心の Web アプリ</td></tr>
+        <tr><td>ワークフロー</td><td>業務の流れ</td><td>処理の順序と受け渡しの明確化</td><td>手順が決まった業務システム</td></tr>
+        <tr><td>イベントストーミング</td><td>業務で起きる出来事</td><td>業務の専門家との協働、境界の発見</td><td>複雑な業務、イベント駆動</td></tr>
+      </tbody>
+    </table></div>
+    <p>1つに決める必要はなく、<strong>アクター／アクションで洗い出し、ワークフローで流れを確認する</strong> のように組み合わせて使えます。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>典型的な失敗 — エンティティの罠と粒度</h2>
+    <h3>10.1 エンティティの罠とは</h3>
+    <p><strong>DB のテーブル（エンティティ）ごとに、1つずつコンポーネントを作ってしまう</strong> 失敗です。</p>
+    <pre><code>CustomerManager   ← customers テーブルの CRUD
+OrderManager      ← orders テーブルの CRUD
+ProductManager    ← products テーブルの CRUD
+InventoryManager  ← inventory テーブルの CRUD</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="エンティティの罠">
+      <defs><marker id="arw6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="250" y="20" width="220" height="50" rx="8" class="d-box-warn"/>
+      <text x="360" y="50" text-anchor="middle" class="d-text-bold">業務「注文する」</text>
+      <rect x="20" y="130" width="160" height="46" rx="8" class="d-box"/>
+      <text x="100" y="158" text-anchor="middle" class="d-text-sub">CustomerManager</text>
+      <rect x="196" y="130" width="160" height="46" rx="8" class="d-box"/>
+      <text x="276" y="158" text-anchor="middle" class="d-text-sub">OrderManager</text>
+      <rect x="372" y="130" width="160" height="46" rx="8" class="d-box"/>
+      <text x="452" y="158" text-anchor="middle" class="d-text-sub">ProductManager</text>
+      <rect x="548" y="130" width="160" height="46" rx="8" class="d-box"/>
+      <text x="628" y="158" text-anchor="middle" class="d-text-sub">InventoryManager</text>
+      <line x1="300" y1="70" x2="110" y2="128" class="d-line-dash" marker-end="url(#arw6)"/>
+      <line x1="340" y1="70" x2="280" y2="128" class="d-line-dash" marker-end="url(#arw6)"/>
+      <line x1="380" y1="70" x2="448" y2="128" class="d-line-dash" marker-end="url(#arw6)"/>
+      <line x1="420" y1="70" x2="618" y2="128" class="d-line-dash" marker-end="url(#arw6)"/>
+      <text x="360" y="104" text-anchor="middle" class="d-text-sub">どこに書く？</text>
+      <text x="100" y="204" text-anchor="middle" class="d-text-sub">customers</text>
+      <text x="276" y="204" text-anchor="middle" class="d-text-sub">orders</text>
+      <text x="452" y="204" text-anchor="middle" class="d-text-sub">products</text>
+      <text x="628" y="204" text-anchor="middle" class="d-text-sub">inventory</text>
+      <text x="360" y="244" text-anchor="middle" class="d-text">テーブル構造をなぞっただけ＝アーキテクチャではなく ORM</text>
+    </svg>
+    <figcaption>図：1つの業務が複数のエンティティにまたがるため、業務ロジックの置き場所が決まらない</figcaption>
+    </figure>
+    <p>一見きれいに分かれていますが、次の問題があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>これはアーキテクチャではなく、ORM（DB とオブジェクトの対応づけ）</strong></td><td>テーブル構造をなぞっているだけで、システムが <strong>何をするか</strong>（振る舞い）が見えない</td></tr>
+        <tr><td><strong>実際の業務は複数のエンティティにまたがる</strong></td><td>「注文する」には顧客・注文・商品・在庫のすべてが関わる。どの Manager に書くべきか分からない</td></tr>
+        <tr><td><strong>Manager が肥大化する</strong></td><td>「顧客に関係すること」がすべて CustomerManager に集まり、神クラス化する</td></tr>
+        <tr><td><strong>業務ロジックがあちこちに散らばる</strong></td><td>注文のルールが OrderManager・InventoryManager・CustomerManager に分散する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>10.2 どう避けるか</h3>
+    <ul>
+      <li>コンポーネントを <strong>データ（名詞）</strong> ではなく <strong>振る舞い（動詞・業務）</strong> で考える
+        <ul><li>✕ <code>OrderManager</code> → ○ <code>注文受付</code>・<code>注文追跡</code>・<code>返品処理</code></li></ul>
+      </li>
+      <li>アクター／アクションやワークフローのように、<strong>何をするか</strong> から出発する手法を使う</li>
+      <li>「Manager」「Service」「Handler」のような曖昧な名前が多いときは、エンティティの罠に陥っているサイン</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">補足：単純な CRUD アプリの場合</p>
+      <p>単純な CRUD（作成・読み取り・更新・削除）が中心のアプリなら、エンティティ単位の構成でも問題ないことがあります。その場合は無理に複雑なアーキテクチャを選ばず、ローコードツールや CRUD 向けフレームワークで十分なこともあります。</p>
+    </div>
+
+    <h3>10.3 コンポーネントの粒度</h3>
+    <p>コンポーネントは大きすぎても小さすぎても困ります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>粒度</th><th>症状</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>大きすぎる</strong></td><td>責務を一文で言えない。変更のたびに多くの人が同じコンポーネントを触る</td><td>責務・特性の違いで分割する</td></tr>
+        <tr><td><strong>小さすぎる</strong></td><td>1つの処理に多数のコンポーネントの連携が必要。呼び出し関係が複雑になる</td><td>一緒に変わるものをまとめる（凝集の単位＝変更の単位）</td></tr>
+      </tbody>
+    </table></div>
+    <p>目安は、<a href="13-1_モジュール性と疎結合高凝集.html">モジュール性・疎結合と高凝集</a> の <strong>「一緒に変わるものを一緒に置く」</strong> と、<a href="13-3_コナーセンス.html">コナーセンス</a> の <strong>「強いコナーセンスはコンポーネントの内側に」</strong> です。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある誤解</h2>
+    <h3>11.1 量子と粒度について</h3>
+    <details open>
+      <summary>「サービスの数＝独立した単位の数」</summary>
+      <div class="body"><p><strong>誤りです。</strong> 共有 DB や同期呼び出しの連鎖があれば、サービスが10個でも量子は1つです。数えるべきは <strong>独立してデプロイ・運用できる単位</strong> です。</p></div>
+    </details>
+    <details open>
+      <summary>「細かく分けるほどマイクロサービスらしい」</summary>
+      <div class="body"><p><strong>誤りです。</strong> 粒度は分解要因と統合要因の <strong>釣り合い</strong> で決まります。細かすぎると、トランザクションやワークフローの問題が爆発的に増えます。</p></div>
+    </details>
+    <details open>
+      <summary>「非同期にすれば結合はなくなる」</summary>
+      <div class="body"><p><strong>誤りです。</strong> 非同期にすると <strong>動的結合</strong> は弱まりますが、共有 DB やイベントの形式（スキーマ）を通じた <strong>静的結合</strong> は残ります。両方を見る必要があります。</p></div>
+    </details>
+    <h3>11.2 論理コンポーネントについて</h3>
+    <details open>
+      <summary>「コンポーネントは最初の設計で確定させるもの」</summary>
+      <div class="body"><p><strong>誤りです。</strong> コンポーネントの特定は <strong>繰り返しのサイクル</strong> です。要件が増えたり、特性の違いが見えたりするたびに見直します。</p></div>
+    </details>
+    <details open>
+      <summary>「テーブルごとに分ければきれいな設計になる」</summary>
+      <div class="body"><p><strong>誤りです。</strong> それは <strong>エンティティの罠</strong> です。業務は複数のエンティティにまたがるため、振る舞いで分けます。</p></div>
+    </details>
+    <details open>
+      <summary>「先にマイクロサービスにすると決めてから、サービスを考える」</summary>
+      <div class="body"><p><strong>順番が逆です。</strong> 論理コンポーネントを先に見つけ、アーキテクチャ特性と照らし合わせてから、物理構成（スタイル）を選びます。</p></div>
+    </details>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">アーキテクチャ量子と粒度</p>
+      <ul>
+        <li><strong>アーキテクチャ量子</strong>：独立してデプロイできる、高い機能的凝集・高い静的結合・同期的な動的結合を持つ単位</li>
+        <li><strong>一緒にデプロイしなければならないなら、それは1つの量子</strong></li>
+        <li><strong>静的結合</strong>（DB・共有ライブラリ）と <strong>動的結合</strong>（同期／非同期・一貫性・調整）が量子の境界を決める</li>
+        <li>アーキテクチャ特性は <strong>量子ごと</strong> に持てる。部分ごとに必要な特性が違うことが、分散を選ぶ理由になる</li>
+        <li><strong>分散モノリス</strong> は、分けたのに量子が1つのままの状態</li>
+        <li>粒度は <strong>分解要因</strong>（範囲・変動性・スケール・耐障害性・セキュリティ・拡張性）と <strong>統合要因</strong>（トランザクション・ワークフロー・共有コード・データの関係）の釣り合いで決める。分解要因だけを見て統合要因を無視するのが典型的な失敗</li>
+      </ul>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">論理コンポーネント</p>
+      <ul>
+        <li><strong>論理コンポーネント</strong>：システムが何をするか（振る舞い）を表す機能のまとまり。物理構成より先に考える</li>
+        <li>分割の軸は <strong>技術による分割</strong>（レイヤード）と <strong>ドメインによる分割</strong>（モジュラーモノリス・マイクロサービス）。業務の変更が多いならドメインで分ける</li>
+        <li>特定の手順は <strong>① 仮置き → ② 要件の割り当て → ③ 責務の分析 → ④ 特性の分析 → ⑤ 再構成</strong> の繰り返し</li>
+        <li>見つける手法：<strong>アクター／アクション</strong>（利用者と操作）・<strong>ワークフロー</strong>（業務の流れ）・<strong>イベントストーミング</strong>（業務で起きる出来事）</li>
+        <li><strong>エンティティの罠</strong>：テーブルごとに Manager を作るのはアーキテクチャではなく ORM。振る舞いで分ける</li>
+      </ul>
+    </div>
+    <p>これで 10 基礎 の「ものさし」はそろいました。次は 20 アプリ内部構造 で、1つのアプリの中の具体的なスタイルを学びます。最初のページは <a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード（4層）</a> です。</p>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Neal Ford, Rebecca Parsons, Patrick Kua『進化的アーキテクチャ』（<em>Building Evolutionary Architectures</em>）</li>
+      <li>Neal Ford, Mark Richards, Pramod Sadalage, Zhamak Dehghani『ソフトウェアアーキテクチャ・ハードパーツ』（<em>Software Architecture: The Hard Parts</em>）第2章・第7章</li>
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』第7章（アーキテクチャ特性のスコープ）・第8章（コンポーネントベース思考）</li>
+      <li>Alberto Brandolini『Introducing EventStorming』</li>
+      <li><a href="https://www.thoughtworks.com/content/dam/thoughtworks/documents/books/bk_software_architecture_hard_parts_ch7_en.pdf">Software Architecture: The Hard Parts 第7章（Thoughtworks 公開 PDF）</a></li>
+      <li><a href="https://danlebrero.com/2022/03/30/software-architecture-the-hard-parts-book-summary/">Book notes: Software Architecture: The Hard Parts（Dan Lebrero）</a></li>
+      <li><a href="https://vijayanant.com/posts/architectural-quantum-modular-deployable-architecture/">Architectural Quanta: The Secret to Independent Deployability（vijayanant.com）</a></li>
+      <li><a href="https://iam.slys.dev/p/architecture-quantum">Architecture Quantum (Quanta)（slys.dev）</a></li>
+      <li><a href="https://blog.devgenius.io/granularity-integrators-and-disintegrators-11b72dce7a46?gi=8b3faffb55af">Granularity Integrators and Disintegrators（Dev Genius）</a></li>
+      <li><a href="https://medium.com/@mohamedsallam953/component-based-thinking-fundamental-of-software-architecture-chapter-8-c0c65951eee4">Component-Based Thinking — Fundamentals of Software Architecture Chapter 8（Medium）</a></li>
+      <li><a href="https://developertoarchitect.com/lessons/lesson193.html">Lesson 193 - Identifying Components: The Actor/Action Approach（developertoarchitect.com）</a></li>
+      <li><a href="https://danlebrero.com/2021/11/17/fundamentals-of-software-architecture-summary/">Book notes: Fundamentals of Software Architecture（Dan Lebrero）</a></li>
+      <li><a href="https://romerogabriel.github.io/mastering-software-architecture/components/">Components — Mastering Software Architecture</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="13-3_コナーセンス.html"><span class="lbl">← 前のページ</span>コナーセンス</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="21-1_層化・三層・レイヤード.html"><span class="lbl">次のページ →</span>層化・三層・レイヤード（4層）</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

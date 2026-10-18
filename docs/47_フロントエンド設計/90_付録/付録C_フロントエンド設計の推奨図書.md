@@ -1,0 +1,89 @@
+# 付録C　フロントエンド設計の推奨図書・学習リソース
+
+## 使い方
+
+- まず **入門** の 1〜2 冊で全体像をつかみ、次に扱うテーマに合わせて **テーマ別** から選びます
+- フロントエンドは変化が速いため、書籍で考え方を、オンラインリソースで最新の実践を補う組み合わせを勧めます
+
+---
+
+## 入門 — 全体像をつかむ
+
+| タイトル | 著者・発行 | 内容 | 47 の対応 |
+|---|---|---|---|
+| 『フロントエンドの知識地図』 | 技術評論社, 2023 | フロントエンド開発で必要になる知識領域を地図のように俯瞰する | [[01_フロントエンド設計とは]] |
+| 『Frontend Architecture for Design Systems』 | Micah Godbolt, O'Reilly Media, 2016 | フロントエンドアーキテクチャを Code / Process / Testing / Documentation の 4 本柱で整理する | [[01_フロントエンド設計とは]] / [[01_デザインシステムの構成要素]] |
+
+## テーマ別
+
+### コンポーネント設計・デザインシステム
+
+| タイトル | 著者・発行 | 内容 | 47 の対応 |
+|---|---|---|---|
+| 『Atomic Design』 | Brad Frost, 2016（Web 版: atomicdesign.bradfrost.com） | Atoms → Molecules → Organisms → Templates → Pages の 5 段階と、パターンライブラリの運用 | [[04_Atomic_Design]] |
+| patterns.dev | Lydia Hallie, Addy Osmani（Web） | デザインパターン・レンダリングパターン・パフォーマンスパターンを図解で解説 | [[03_コンポーネントパターンの比較]] / [[03_パフォーマンスを設計で作り込む]] |
+
+### ディレクトリ・モジュール構成
+
+| タイトル | 著者・発行 | 内容 | 47 の対応 |
+|---|---|---|---|
+| Feature-Sliced Design ドキュメント | feature-sliced.design（Web） | layer / slice / segment による構成と依存ルールの公式ガイド | [[02_Feature-Sliced_Design]] |
+| bulletproof-react | alan2207（GitHub） | 機能別フォルダ・API レイヤ・依存の向きを示す React アプリの構成例と docs | [[03_bulletproof-reactの構成]] |
+
+### 状態・サーバーとの境界
+
+| タイトル | 著者・発行 | 内容 | 47 の対応 |
+|---|---|---|---|
+| React ドキュメント「Managing State」 | react.dev（Web） | 状態の構造化・持ち上げ・派生値の扱い | [[01_状態の分類と置き場所]] / [[02_Single_Source_of_Truthと派生状態]] |
+| TanStack Query ドキュメント | tanstack.com（Web） | サーバー状態をキャッシュとして扱う考え方 | [[01_状態の分類と置き場所]] |
+
+### 品質（テスト・アクセシビリティ・パフォーマンス）
+
+| タイトル | 著者・発行 | 内容 | 47 の対応 |
+|---|---|---|---|
+| Testing Library「Guiding Principles」 | testing-library.com（Web） | 「テストがソフトウェアの使われ方に近いほど、信頼できる」という原則 | [[01_テストしやすいコンポーネントと構成]] |
+| WAI-ARIA Authoring Practices Guide（APG） | W3C WAI（Web） | タブ・コンボボックス・ダイアログなど、部品ごとのキーボード操作と ARIA の実装パターン | [[02_アクセシビリティを部品設計に組み込む]] |
+| web.dev（Core Web Vitals） | Google（Web） | LCP・INP・CLS の定義・計測・改善方法 | [[03_パフォーマンスを設計で作り込む]] |
+
+### 設計演習（システムデザイン）
+
+| タイトル | 著者・発行 | 内容 | 47 の対応 |
+|---|---|---|---|
+| Front End System Design Playbook | GreatFrontEnd（Web） | RADIO フレームワークと、ニュースフィード・オートコンプリートなどの設計例 | [[01_RADIOテンプレート]] / [[02_ケーススタディ_ニュースフィード]] / [[03_ケーススタディ_オートコンプリート]] |
+| Front End Interview Handbook（System Design） | frontendinterviewhandbook.com（Web） | フロントエンドのシステムデザインの進め方と観点 | [[01_RADIOテンプレート]] |
+
+### スケールと組織
+
+| タイトル | 著者・発行 | 内容 | 47 の対応 |
+|---|---|---|---|
+| 『Building Micro-Frontends』 | Luca Mezzalira, O'Reilly Media | マイクロフロントエンドの分割方法・組み立て方・組織との関係 | [[02_マイクロフロントエンドの判断]] |
+| Micro Frontends（martinfowler.com） | Cam Jackson, 2019（Web） | マイクロフロントエンドの定義・統合方式・トレードオフ | [[02_マイクロフロントエンドの判断]] |
+
+---
+
+## 学習のすすめ方
+
+1. 『フロントエンドの知識地図』で全体の地図を持つ
+2. [[00_フロントエンド設計の変遷]] で、各設計思想がどんな課題から生まれたかを押さえる
+3. React ドキュメントの状態管理と Feature-Sliced Design / bulletproof-react で、状態とフォルダの置き方を決める
+4. GreatFrontEnd の RADIO で、1 つの UI を最初から設計してみる
+
+---
+
+## 本 Vault 内の関連
+
+| ノート | 位置づけ |
+|---|---|
+| [[MOC_フロントエンド設計体系]] | 47 の入口 |
+| [[MOC_状態管理体系]] | 状態管理の実装（36） |
+| [[MOC_HTTPクライアント体系]] | API レイヤ・HTTP クライアントの実装（37） |
+| [[00_解説_フロントエンド構成]] | レンダリング方式・BFF・マイクロフロントエンドの構成（41） |
+| [[MOC_モジュール設計体系]] | モジュール分割の一般論（43） |
+| [[MOC_API設計体系]] | サーバー側の API 設計（45） |
+| [[CSS設計（BEM-OOCSS）]] | CSS 設計の方式（22） |
+| [[12-アクセシビリティ]] | HTML のアクセシビリティ基礎（21） |
+| [[01_パフォーマンスとは何か|パフォーマンスとは何か]] | パフォーマンスの考え方（66） |
+
+## 関連
+
+- [[付録A_フロントエンド設計用語集]] / [[付録B_フロントエンド設計チェックリスト]]

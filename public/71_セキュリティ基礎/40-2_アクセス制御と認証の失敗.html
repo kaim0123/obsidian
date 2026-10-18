@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アクセス制御と認証の失敗｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 OWASP Top 10 › アクセス制御と認証の失敗</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 OWASP Top 10</span>
+      <h1>アクセス制御と認証の失敗</h1>
+      <p class="lead">「あなたは誰？」を確かめる <strong>認証</strong> と、「それをやっていい？」を確かめる <strong>認可（アクセス制御）</strong>。どちらが壊れても、他人のデータが見られたり、他人になりすまされたりします。このページでは OWASP Top 10 の A01 と A07 を、よくある攻撃・脆弱なコードと安全なコードの対比・チェックリストで解説します。</p>
+      <p class="meta">もとにしたノート：40_OWASP_Top10/A01_アクセス制御の不備、A07_認証と識別の失敗</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>A01 アクセス制御の不備〔2025: A01〕</strong> は「ログインはできているのに、他人のものまで触れてしまう」問題、<strong>A07 認証と識別の失敗〔2025: A07 認証の失敗〕</strong> は「ログインの仕組みが甘く、他人になりすまされる」問題です。守り方の基本は、<strong>サーバー側でリソースごとに持ち主を確認すること</strong> と、<strong>パスワードの安全な保存・MFA・試行回数の制限</strong> です。</p>
+    </div>
+    <p>見出しの番号は2021年版、〔 〕内は2025年版の番号です（<a href="40-1_OWASP_Top10とは.html">40-1 OWASP Top 10 とは</a> の対応表を参照）。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>まず整理：認証と認可の違い</h2>
+    <p>この2つは名前が似ていて混同しやすいので、最初にはっきり分けておきます。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>認証（Authentication / AuthN）</h4>
+        <p>「<strong>あなたは誰ですか？</strong>」を確認する。→ ログイン</p>
+        <p>壊れると：A07 認証の失敗（なりすまし）</p>
+      </div>
+      <div class="card">
+        <h4>認可（Authorization / AuthZ）</h4>
+        <p>「<strong>あなたはそれをやっていいですか？</strong>」を確認する。→ 権限チェック</p>
+        <p>壊れると：A01 アクセス制御の不備（他人のデータに触れる）</p>
+      </div>
+    </div>
+    <p>ホテルにたとえると、フロントで身分証を見せて本人だと確かめるのが <strong>認証</strong>、渡されたルームキーで「自分の部屋にだけ入れる」ようにするのが <strong>認可</strong> です。フロントの確認が甘ければ他人がチェックインでき（A07）、どの部屋のドアも開くキーを渡してしまえば他人の部屋に入れます（A01）。</p>
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="リクエストが認証と認可の2つの関門を通ってデータに届く流れ">
+      <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="60" width="100" height="70" rx="8" class="d-box"/>
+      <text x="60" y="92" text-anchor="middle" class="d-text-bold">利用者</text>
+      <text x="60" y="112" text-anchor="middle" class="d-text-sub">リクエスト</text>
+      <rect x="150" y="60" width="190" height="70" rx="8" class="d-box-accent"/>
+      <text x="245" y="90" text-anchor="middle" class="d-text-bold">関門1：認証</text>
+      <text x="245" y="112" text-anchor="middle" class="d-text-sub">あなたは誰？（ログイン）</text>
+      <rect x="380" y="60" width="190" height="70" rx="8" class="d-box"/>
+      <text x="475" y="90" text-anchor="middle" class="d-text-bold">関門2：認可</text>
+      <text x="475" y="112" text-anchor="middle" class="d-text-sub">それをやっていい？</text>
+      <rect x="610" y="60" width="100" height="70" rx="8" class="d-box-good"/>
+      <text x="660" y="92" text-anchor="middle" class="d-text-bold">データ</text>
+      <text x="660" y="112" text-anchor="middle" class="d-text-sub">請求書など</text>
+      <line x1="110" y1="95" x2="146" y2="95" class="d-line" marker-end="url(#a1)"/>
+      <line x1="340" y1="95" x2="376" y2="95" class="d-line" marker-end="url(#a1)"/>
+      <line x1="570" y1="95" x2="606" y2="95" class="d-line" marker-end="url(#a1)"/>
+      <line x1="245" y1="130" x2="245" y2="166" class="d-line-dash" marker-end="url(#a1)"/>
+      <line x1="475" y1="130" x2="475" y2="166" class="d-line-dash" marker-end="url(#a1)"/>
+      <rect x="150" y="170" width="190" height="56" rx="8" class="d-box-bad"/>
+      <text x="245" y="194" text-anchor="middle" class="d-text-bold">A07 認証の失敗</text>
+      <text x="245" y="214" text-anchor="middle" class="d-text-sub">他人になりすまされる</text>
+      <rect x="380" y="170" width="190" height="56" rx="8" class="d-box-bad"/>
+      <text x="475" y="194" text-anchor="middle" class="d-text-bold">A01 アクセス制御の不備</text>
+      <text x="475" y="214" text-anchor="middle" class="d-text-sub">他人のデータに触れる</text>
+      <text x="360" y="30" text-anchor="middle" class="d-text-bold">2つの関門を両方ともサーバー側で通す</text>
+      <text x="360" y="256" text-anchor="middle" class="d-text-sub">ホテルなら：フロントで本人確認（認証）→ キーで入れる部屋が決まる（認可）</text>
+    </svg>
+    <figcaption>図：リクエストは「認証」と「認可」の2つの関門を通る。どちらが壊れても被害につながる</figcaption>
+    </figure>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「ログインチェックしているから安全」</p>
+      <p>ログインチェックは関門1（認証）だけです。「ログイン済みの人なら誰でも、どの請求書でも見られる」状態は、関門2（認可）が抜けています。<strong>A01 の大半はこの「認証はあるが認可がない」パターン</strong> です。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>A01 アクセス制御の不備〔2025: A01〕</h2>
+    <p><strong>アクセス制御</strong>（Access Control）とは、「<strong>誰が</strong>」「<strong>何に対して</strong>」「<strong>どんな操作を</strong>」できるかをコントロールする仕組みです。これが壊れていると、本来アクセスできない情報や機能に、他人がアクセスできてしまいます。</p>
+    <p>2021年版で5位から <strong>第1位</strong> に上がり、2025年版でも1位のままの、<strong>いま最もよく発見される脆弱性</strong> です。2025年版では SSRF（サーバーを踏み台にする攻撃）もこのカテゴリに統合されました（SSRF は <a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a> で解説）。</p>
+    <h3 id="sec-2-1">2.1 具体例でイメージする</h3>
+    <ul>
+      <li>通販サイトで、URL を書き換えただけで <strong>他人の注文履歴</strong> が見えてしまう</li>
+      <li>社内の管理画面が、<strong>URL を知っていれば誰でも</strong> 入れてしまう</li>
+      <li>一般ユーザーが、API（プログラムから呼び出す窓口）を直接叩いて <strong>他人のプロフィールを変更</strong> できる</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>A01 のよくある攻撃パターン</h2>
+    <h3 id="sec-3-1">3.1 IDOR（安全でない直接オブジェクト参照）</h3>
+    <p><strong>IDOR</strong>（Insecure Direct Object Reference）は <strong>最も頻繁に見つかる</strong> パターンです。URL やリクエストに含まれる ID を書き換えて、他人のデータにアクセスします。</p>
+    <pre><code># 自分の請求書
+https://example.com/invoices/12345
+
+# 番号を変えるだけで他人の請求書が見える！
+https://example.com/invoices/12346</code></pre>
+    <p>サーバーが「ログイン済みか」しかチェックせず、「<strong>その請求書がそのユーザーのものか</strong>」を確認していないと成立します。ロッカーの番号札を書き換えたら他人のロッカーが開いた、という状態です。</p>
+    <h3 id="sec-3-2">3.2 権限昇格（Privilege Escalation）</h3>
+    <p>一般ユーザーが、管理者用の URL や API を直接叩いて管理機能を使ってしまいます。</p>
+    <pre><code># 一般ユーザーがこのURLにアクセスできてしまう
+https://example.com/admin/users/delete?id=100</code></pre>
+    <h3 id="sec-3-3">3.3 URL を推測して非公開ページにアクセス</h3>
+    <pre><code># トップページからはリンクされていないが、推測でたどり着ける
+https://example.com/old_admin/
+https://example.com/backup.zip</code></pre>
+    <p>「リンクを張っていないから見つからない」は守りになりません。攻撃者はよくある名前を機械的に試します。</p>
+    <h3 id="sec-3-4">3.4 クッキーや JWT の改ざん</h3>
+    <p>クッキーや JWT（JSON Web Token：ログイン情報などを詰めて持ち運ぶトークン）の中の <code>role=user</code> を <code>role=admin</code> に書き換えて送る攻撃です。サーバー側で <strong>署名検証</strong>（改ざんされていないかの確認）をせずに中身を信じてしまうと成立します。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>A01 のコード例：所有者チェック</h2>
+    <p>請求書を取得する API で、IDOR の典型例と、その直し方を比べます。</p>
+    <span class="code-label bad">✕ 脆弱：ログインしか見ていない（IDOR）</span>
+    <pre><code>// 請求書を取得するAPI
+app.get('/api/invoices/:id', requireLogin, async (req, res) =&gt; {
+  const invoice = await db.getInvoice(req.params.id);
+  res.json(invoice); // ← 誰のでも返してしまう！
+});</code></pre>
+    <p><code>requireLogin</code> で「ログイン済みか」だけを見ていて、「この請求書が本当にこのユーザーのものか」をチェックしていません。</p>
+    <span class="code-label good">○ 安全：所有者チェックを追加</span>
+    <pre><code>app.get('/api/invoices/:id', requireLogin, async (req, res) =&gt; {
+  const invoice = await db.getInvoice(req.params.id);
+
+  // ★ 所有者チェック
+  if (!invoice || invoice.userId !== req.user.id) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  res.json(invoice);
+});</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント：403 ではなく 404 を返す理由</p>
+      <p>権限がないときに <code>403 Forbidden</code>（禁止）を返すと、「その ID の請求書は存在する」と攻撃者に教えてしまいます。<code>404 Not Found</code>（見つからない）を返せば、<strong>リソースの存在そのものを隠せます</strong>（情報漏洩の防止）。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>A01 の防御の原則</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>① デフォルト拒否（Deny by Default）</h4>
+        <p>「明示的に許可されていないものはすべて拒否」が原則。新しい画面や API を追加したら、「誰がアクセスしていいか」を必ず定義します。</p>
+      </div>
+      <div class="card">
+        <h4>② 認可はサーバー側で</h4>
+        <p>画面で「管理者ボタンを隠す」だけでは不十分です。攻撃者は API を直接叩きます。<strong>認可は必ずバックエンドで</strong> 行います。</p>
+      </div>
+      <div class="card">
+        <h4>③ リソースごとの所有権チェック</h4>
+        <p>「ログイン済み」だけでなく、「<strong>そのリソースに触る権限があるか</strong>」を必ず確認します。</p>
+      </div>
+      <div class="card">
+        <h4>④ 推測困難な ID（UUID など）</h4>
+        <p><code>/users/1, 2, 3...</code> のような連番は推測されます。<strong>UUID</strong>（例：<code>550e8400-e29b-41d4-a716-446655440000</code>）を使うと推測による攻撃を減らせます。<span>ただしこれは補助策。本命は所有権チェックです。</span></p>
+      </div>
+      <div class="card">
+        <h4>⑤ RBAC / ABAC で設計する</h4>
+        <p>権限の決め方を仕組みとして整理します（下の表）。</p>
+      </div>
+      <div class="card">
+        <h4>⑥ JWT・セッションに改ざん耐性を</h4>
+        <ul>
+          <li>JWT は必ず署名検証する</li>
+          <li><code>alg=none</code>（署名なし）を許可しない</li>
+          <li>セッション ID は十分に長くランダムに</li>
+        </ul>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>何で権限を決めるか</th><th>向いている場面</th></tr></thead>
+      <tbody>
+        <tr><td><strong>RBAC</strong>（Role-Based Access Control）</td><td>役割（admin / editor / viewer など）</td><td>小規模ならこれで十分</td></tr>
+        <tr><td><strong>ABAC</strong>（Attribute-Based Access Control）</td><td>役割に加えて属性（部署・時刻・IP アドレスなど）</td><td>条件が複雑になってきたら検討</td></tr>
+      </tbody>
+    </table></div>
+    <p>「デフォルト拒否」は、必要な人に必要な分だけ権限を与える <a href="20-1_最小権限とデータ最小化.html">最小権限の原則</a> と同じ考え方です。</p>
+
+    <h3 id="sec-5-1">5.1 A01 のチェックリスト</h3>
+    <p>新しい API・画面を作るときに自問しましょう。</p>
+    <ul>
+      <li>ログインチェックをしているか？</li>
+      <li>「そのリソースがそのユーザーのものか」を確認しているか？</li>
+      <li>管理者専用機能に、一般ユーザーがアクセスできないか？</li>
+      <li>URL 書き換え・パラメータ改ざんに耐えるか？</li>
+      <li>認可ロジックはフロントエンドだけに依存していないか？</li>
+      <li>エラー応答が、存在の有無のヒントを与えていないか？</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>A07 認証と識別の失敗〔2025: A07 認証の失敗〕</h2>
+    <p><strong>認証</strong>（Authentication）とは、「あなたは本当にあなたですか？」を確認する仕組みで、ログイン処理の正体がこれです。認証が破られると、他人になりすまして何でもできます。預金を引き出されたり、メールを勝手に送られたり、個人情報を盗まれたり……。認証は <strong>アプリのセキュリティの土台</strong> です。</p>
+    <p>2025年版では名前から「識別（Identification）」が外れ、「認証の失敗（Authentication Failures）」に改名されました。順位は7位のままです。</p>
+    <h3 id="sec-6-1">6.1 認証の3要素と MFA</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>意味</th><th>具体例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>知識要素</strong>（What you know）</td><td>本人だけが知っている</td><td>パスワード、PIN、秘密の質問</td></tr>
+        <tr><td><strong>所持要素</strong>（What you have）</td><td>本人だけが持っている</td><td>スマホ、ハードウェアトークン、IC カード</td></tr>
+        <tr><td><strong>生体要素</strong>（What you are）</td><td>本人そのもの</td><td>指紋、顔、虹彩、声</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>多要素認証（MFA：Multi-Factor Authentication）</strong> とは、これらのうち <strong>異なる種類を2つ以上</strong> 組み合わせることです。銀行の ATM が「キャッシュカード（所持）＋暗証番号（知識）」を求めるのが身近な例です。</p>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「パスワードを2つ聞けば MFA」</p>
+      <p>「パスワード＋もう1つのパスワード」や「パスワード＋秘密の質問」は、どちらも <strong>知識要素</strong> なので MFA になりません。種類が違うことが大事です。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>A07 のよくある攻撃パターン</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃</th><th>何をするか</th><th>成立する条件・手口</th></tr></thead>
+      <tbody>
+        <tr><td><strong>パスワードリスト攻撃</strong><br><span>Credential Stuffing</span></td><td>他サービスから漏れた ID・パスワードのリストで一斉にログインを試す</td><td><strong>パスワードの使い回し</strong>。多くの人が引っかかる</td></tr>
+        <tr><td><strong>総当たり攻撃</strong><br><span>Brute Force</span></td><td>ありうる組み合わせを全部試す</td><td>弱いパスワードほど早く突破される</td></tr>
+        <tr><td><strong>辞書攻撃</strong></td><td>よく使われるパスワードや単語リストから試す</td><td><code>password123</code>、<code>qwerty</code>、<code>admin</code> など</td></tr>
+        <tr><td><strong>セッションハイジャック</strong></td><td>セッション ID（ログイン状態を表す合言葉。Cookie 等）を盗んでなりすます</td><td>HTTP 通信の盗聴、XSS で <code>document.cookie</code> を盗む、共有 PC でのログアウト忘れ</td></tr>
+        <tr><td><strong>セッション固定化</strong><br><span>Session Fixation</span></td><td>攻撃者が事前に用意したセッション ID を被害者に使わせ、後からそのIDで乗り込む</td><td>ログイン前後で同じセッション ID を使い続けている</td></tr>
+        <tr><td><strong>パスワードリセットの悪用</strong></td><td>リセット機能の弱さを突いて乗っ取る</td><td>秘密の質問が弱い（母親の旧姓など SNS で分かる）、リセットトークンが推測可能、リセット URL の有効期限が長すぎる</td></tr>
+        <tr><td><strong>アカウント列挙</strong></td><td>どのメールアドレスが登録済みかを調べる</td><td>ログイン失敗時に「そのアドレスは登録されていません」と返している</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-8"><span class="num">8.</span>パスワードの保存：平文・MD5・bcrypt</h2>
+    <p>データベースが漏れたときに被害を最小にできるかどうかは、パスワードの保存方法で決まります（暗号化の観点は <a href="40-3_インジェクションと暗号化の不備.html">40-3</a> も参照）。</p>
+    <span class="code-label bad">✕ 最悪：平文で保存</span>
+    <pre><code>db.users.insert({ email, password }); // そのまま保存</code></pre>
+    <span class="code-label bad">✕ 悪い：MD5 / SHA-1 でハッシュ化</span>
+    <pre><code>const hash = crypto.createHash('md5').update(password).digest('hex');</code></pre>
+    <p>ハッシュ（データから一方向に作る「指紋」のような値）にしてはいますが、MD5 や SHA-1 は計算が速すぎます。GPU で1秒に数十億回計算できるので、総当たりで元のパスワードを割り出されます。</p>
+    <span class="code-label good">○ 良い：bcrypt / scrypt / Argon2</span>
+    <pre><code>import bcrypt from 'bcrypt';
+
+// 登録時
+const hash = await bcrypt.hash(password, 12);
+
+// 検証時
+const ok = await bcrypt.compare(password, hash);</code></pre>
+    <div class="grid c3">
+      <div class="card"><h4>わざと遅い</h4><p>パスワード用途では「遅さ」が武器。総当たりのコストを跳ね上げます。</p></div>
+      <div class="card"><h4>ソルト自動付加</h4><p>ソルト（パスワードごとに混ぜるランダム値）により、同じパスワードでも違うハッシュに。レインボーテーブル（事前計算した対応表）が使えなくなります。</p></div>
+      <div class="card"><h4>コスト調整</h4><p>コストパラメータ（上の <code>12</code>）を上げれば、将来コンピュータが速くなっても対応できます。</p></div>
+    </div>
+    <p>現代の推奨は <strong>Argon2id</strong>、次点で <strong>bcrypt / scrypt</strong> です。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>パスワードポリシーの最新推奨</h2>
+    <p>昔よく言われた「複雑にしろ」「定期的に変えろ」は、米国の <strong>NIST SP 800-63B</strong>（デジタル認証のガイドライン）により改訂されました。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>○ 現代の推奨</h4>
+        <ul>
+          <li><strong>最低8文字、できれば12文字以上</strong>（長さを重視）</li>
+          <li><strong>既知の漏洩パスワードを禁止</strong>（<code>password</code>、<code>123456</code> など）</li>
+          <li><strong>定期変更は強制しない</strong>（パターン化して逆に弱くなるため）</li>
+          <li><strong>複雑性要件</strong>（大文字・小文字・記号の混在）<strong>は必須にしない</strong></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>✕ 推奨しない</h4>
+        <ul>
+          <li>「90日ごとに変更」</li>
+          <li>「大文字・小文字・記号・数字を混ぜろ」</li>
+          <li>「秘密の質問」による本人確認</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout tip">
+      <p class="callout-title">なぜ定期変更がダメなのか</p>
+      <p>変更を強制されると、人は <code>Spring2024!</code> → <code>Summer2024!</code> のように規則的に少しだけ変えがちです。攻撃者はそのパターンを知っているので、かえって推測されやすくなります。長くて、漏洩リストにないパスワードを長く使うほうが安全です。</p>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>セッション管理とログイン試行の制限</h2>
+    <p><strong>セッション</strong> とは、一度ログインした人を「ログイン済み」として覚えておく仕組みです。サーバーは <strong>セッション ID</strong> という合言葉を発行し、ブラウザは以後それを Cookie で送り続けます。つまりセッション ID は「入館証」で、盗まれればそのまま入られてしまいます。</p>
+    <h3 id="sec-10-1">10.1 セッション ID の要件</h3>
+    <ul>
+      <li>十分に長くランダム（<strong>128ビット以上</strong>）</li>
+      <li>予測不可能（<strong>暗号論的乱数</strong> で生成）</li>
+      <li>推測可能な情報（ユーザー名・時刻）から生成しない</li>
+    </ul>
+    <h3 id="sec-10-2">10.2 Cookie の属性</h3>
+    <pre><code>Set-Cookie: sessionId=abc123;
+  HttpOnly;         ← JSからアクセス不可（XSS対策）
+  Secure;           ← HTTPS のみ送信
+  SameSite=Lax;     ← CSRF対策
+  Path=/;
+  Max-Age=3600</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>属性</th><th>意味</th><th>防げること</th></tr></thead>
+      <tbody>
+        <tr><td><code>HttpOnly</code></td><td>JavaScript から Cookie を読めなくする</td><td>XSS で Cookie を盗まれること</td></tr>
+        <tr><td><code>Secure</code></td><td>HTTPS 通信のときだけ送る</td><td>暗号化されていない通信での盗聴</td></tr>
+        <tr><td><code>SameSite=Lax</code></td><td>他サイトからのリクエストには基本的に付けない</td><td>CSRF（他サイトから勝手に操作させる攻撃）</td></tr>
+        <tr><td><code>Max-Age</code></td><td>有効期限（秒）</td><td>古いセッションがいつまでも使えること</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-10-3">10.3 セッション ID を URL に入れない</h3>
+    <span class="code-label bad">✕ 脆弱：セッション ID を URL に含める</span>
+    <pre><code>https://example.com/page?sid=abc123</code></pre>
+    <p>URL は Referer（遷移元として相手サイトに送られる情報）、ブックマーク、各種ログに残り、そこから漏れます。</p>
+    <span class="code-label good">○ 安全：HttpOnly Cookie で管理する</span>
+    <pre><code>Set-Cookie: sessionId=（長いランダム値）; HttpOnly; Secure; SameSite=Lax</code></pre>
+    <h3 id="sec-10-4">10.4 ログアウト・タイムアウト</h3>
+    <ul>
+      <li>ログアウト時は <strong>サーバー側でもセッションを無効化</strong>（Cookie を消すだけでは不十分）</li>
+      <li>一定時間操作がなければ自動ログアウト</li>
+      <li>パスワード変更時は <strong>全セッションを無効化</strong></li>
+    </ul>
+    <h3 id="sec-10-5">10.5 ログイン試行回数の制限</h3>
+    <span class="code-label bad">✕ 脆弱：試行回数が無制限</span>
+    <pre><code>app.post('/login', async (req, res) =&gt; {
+  const user = await db.getUser(req.body.email);
+  if (user &amp;&amp; user.password === hashedPassword) { ... }
+  // 何回失敗しても、いくらでも試せてしまう
+});</code></pre>
+    <span class="code-label good">○ 安全：レート制限＋アカウントロック</span>
+    <pre><code>import rateLimit from 'express-rate-limit';
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分
+  max: 5, // 5回失敗でブロック
+});
+
+app.post('/login', loginLimiter, async (req, res) =&gt; { ... });</code></pre>
+    <ul>
+      <li><strong>IP 単位＋アカウント単位</strong> の両方でレート制限（一定時間の試行回数の上限）をかける</li>
+      <li>N 回連続で失敗したらアカウントを一時ロック</li>
+      <li>失敗時のメッセージは「<strong>メールアドレスまたはパスワードが違います</strong>」で統一（アカウント列挙の防止）</li>
+    </ul>
+
+    <h2 id="sec-11"><span class="num">11.</span>MFA・パスキー、そして「自前実装しない」</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>MFA の方式</th><th>仕組み</th><th>セキュリティ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SMS コード</strong></td><td>電話番号に番号を送信</td><td><strong>低</strong> SIM スワップ攻撃（電話番号を乗っ取る）のリスク</td></tr>
+        <tr><td><strong>メールコード</strong></td><td>メールに番号を送信</td><td><strong>中</strong></td></tr>
+        <tr><td><strong>TOTP</strong>（Google Authenticator 等）</td><td>30秒ごとに変わる6桁コード</td><td><strong>高</strong></td></tr>
+        <tr><td><strong>プッシュ通知</strong></td><td>スマホアプリで承認</td><td><strong>高</strong></td></tr>
+        <tr><td><strong>FIDO2 / パスキー</strong></td><td>端末の秘密鍵で認証</td><td><strong>最高</strong> フィッシング耐性あり</td></tr>
+      </tbody>
+    </table></div>
+    <p>MFA を導入するだけで、認証情報の漏洩による不正ログインを <strong>99%以上防げる</strong> と言われています。</p>
+    <h3 id="sec-11-1">11.1 パスワードレス認証（パスキー）</h3>
+    <p><strong>パスキー</strong> は FIDO2 / WebAuthn という標準をもとに、<strong>パスワードそのものをなくす</strong> 認証方式です。秘密の鍵は端末から出ず、本物のサイトにしか反応しないため、偽サイトに誘導するフィッシングに極めて強いのが特徴です。Apple・Google・Microsoft などの大手が推進しています。</p>
+    <h3 id="sec-11-2">11.2 認証を自前実装しない</h3>
+    <p>認証を自作すると、OAuth2 / OIDC（外部サービスでログインさせる標準）、パスワードハッシュ、MFA、セッション管理などをすべて自力で正しく作る必要があり、リスクが大きくなります。モダンな開発では <strong>実績のある認証サービス・ライブラリを使うのが定石</strong> です。</p>
+    <div class="grid c3">
+      <div class="card"><h4>IDaaS（認証の外部サービス）</h4><p>Auth0 / Okta / Firebase Auth / Clerk / Supabase Auth</p></div>
+      <div class="card"><h4>ライブラリ</h4><p>Passport.js / NextAuth.js</p></div>
+      <div class="card"><h4>OSS</h4><p>Keycloak</p></div>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>A07 のチェックリスト</h2>
+    <ul>
+      <li>パスワードは bcrypt / Argon2 で保存しているか？</li>
+      <li>ログイン試行にレート制限・アカウントロックがあるか？</li>
+      <li>MFA を用意しているか（少なくとも管理者権限には必須）？</li>
+      <li>セッション ID は十分にランダムで、HttpOnly ＋ Secure ＋ SameSite か？</li>
+      <li>ログアウト時にサーバー側で無効化しているか？</li>
+      <li>パスワードリセットのトークンは有効期限付き・使い切りか？</li>
+      <li>既知の漏洩パスワードを禁止しているか？</li>
+      <li>エラーメッセージでアカウントの存在の有無が漏れていないか？</li>
+      <li>パスワード変更で全セッションを無効化しているか？</li>
+    </ul>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>認証</strong>（あなたは誰？）と <strong>認可</strong>（やっていい？）は別物。A07 は認証、A01 は認可の失敗</li>
+        <li>A01 は現在 <strong>最も多発している脆弱性</strong>。鉄則は <strong>サーバー側で、リソースごとに所有権を確認</strong> すること。基本姿勢は「デフォルト拒否」と最小権限</li>
+        <li>権限がないときは 404 を返してリソースの存在を隠す。UUID は補助策</li>
+        <li>A07 の基本3点は <strong>bcrypt / Argon2 でのハッシュ保存・MFA・レート制限</strong></li>
+        <li>セッションは HttpOnly・Secure・SameSite 付き Cookie で管理し、ログアウト時はサーバー側でも無効化</li>
+        <li>今後の主流は <strong>パスキー</strong>。認証は <strong>自前実装を避け</strong>、信頼できるサービスを使う</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-14"><span class="num">14.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ログインを必須にした請求書 API で、ID を書き換えると他人の請求書が見えました。何が足りませんか？</summary>
+      <div class="body"><p><strong>認可（所有者チェック）</strong> です。ログイン確認（認証）だけでなく、「その請求書の持ち主がリクエストしたユーザーか」をサーバー側で確認する必要があります。これは A01 の IDOR と呼ばれる典型パターンです。権限がない場合は 404 を返すと、存在自体を隠せます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 「パスワード＋秘密の質問」は多要素認証（MFA）ですか？</summary>
+      <div class="body"><p>いいえ。どちらも「本人が知っていること」＝ <strong>知識要素</strong> なので、MFA にはなりません。MFA は知識・所持・生体のうち <strong>異なる種類</strong> を2つ以上組み合わせる必要があります（例：パスワード＋スマホの TOTP コード）。</p></div>
+    </details>
+    <details>
+      <summary>Q3. パスワードの保存に SHA-256 単体ではなく bcrypt や Argon2 を使うのはなぜですか？</summary>
+      <div class="body"><p>SHA-256 などの汎用ハッシュは <strong>速すぎて</strong>、漏洩したハッシュを GPU で総当たりされると元のパスワードを割り出されます。bcrypt / Argon2 は <strong>わざと遅く</strong>、<strong>ソルトを自動で付け</strong>、<strong>コストを調整できる</strong> ため、総当たりやレインボーテーブルに強くなります。</p></div>
+    </details>
+    <details>
+      <summary>Q4. ログイン失敗時に「そのメールアドレスは登録されていません」と表示すると、何が問題ですか？</summary>
+      <div class="body"><p><strong>アカウント列挙</strong> を許してしまいます。攻撃者はどのアドレスが登録済みかを調べ、パスワードリスト攻撃の的を絞れます。「メールアドレスまたはパスワードが違います」と統一しましょう。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>OWASP Top 10:2021 A01 Broken Access Control ／ A07 Identification and Authentication Failures：<a href="https://owasp.org/Top10/">https://owasp.org/Top10/</a></li>
+      <li>OWASP Top 10:2025：<a href="https://top10.owasp.org/2025/">https://top10.owasp.org/2025/</a></li>
+      <li>NIST SP 800-63B（Digital Identity Guidelines：認証とライフサイクル管理）</li>
+      <li>OWASP Cheat Sheet Series（Authentication / Session Management / Authorization）</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-1_OWASP_Top10とは.html"><span class="lbl">← 前のページ</span>OWASP Top 10 とは</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-3_インジェクションと暗号化の不備.html"><span class="lbl">次のページ →</span>インジェクションと暗号化の不備</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

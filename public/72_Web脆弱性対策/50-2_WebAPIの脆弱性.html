@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebAPIの脆弱性｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 API・JavaScript › WebAPIの脆弱性</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 API・JavaScript</span>
+      <h1>WebAPIの脆弱性</h1>
+      <p class="lead">スマートフォンアプリやシングルページアプリケーション（SPA：画面を切り替えずに JavaScript で中身を書き換える Web アプリ）では、画面の裏側で <strong>WebAPI</strong> が JSON などのデータをやり取りします。このページでは、徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）第19章に沿って、WebAPI の実装で起きやすい脆弱性と対策を解説します。最後に、2026年の国内事例から「API からの大量取得」も追記しています。</p>
+      <p class="meta">もとにしたノート：50_API・JavaScript/02_WebAPI実装における脆弱性（徳丸本19章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>「API が返すのは <strong>データ</strong> か、それとも <strong>実行可能なプログラム</strong> か」「<strong>誰のサイトから、誰の権限で</strong> 呼ばれているか」を疑うことが本章の中心です。現代的な基本形は <strong>CORS + JSON + 正しいヘッダ + CSRF 対策</strong> で、古い JSONP や手作業の文字列連結から離れるほど事故は起きにくくなります。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>WebAPI実装における脆弱性の概要</h2>
+    <p>第19章で扱う問題は次の7つです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>問題</th><th>概要</th></tr></thead>
+        <tbody>
+          <tr><td><strong>JSONエスケープの不備</strong></td><td>JSON の作り方・読み方が甘く、スクリプトとして実行されてしまう</td></tr>
+          <tr><td><strong>JSON直接閲覧によるXSS</strong></td><td>ブラウザが JSON を HTML として解釈し、XSS が起きる</td></tr>
+          <tr><td><strong>JSONPのコールバック関数名によるXSS</strong></td><td>コールバック名にスクリプトを埋め込まれ、XSS が起きる</td></tr>
+          <tr><td><strong>WebAPIのCSRF</strong></td><td>別サイトから、ログイン済み利用者の権限で API を呼ばれる</td></tr>
+          <tr><td><strong>JSONハイジャック</strong></td><td>古いブラウザなどで、他サイトから秘密の JSON を盗み取る</td></tr>
+          <tr><td><strong>JSONPの不適切な利用</strong></td><td>秘密情報を JSONP で返し、他サイトから読まれてしまう</td></tr>
+          <tr><td><strong>CORSの検証不備</strong></td><td>許可オリジンの設定が甘く、意図しないサイトから API を使われる</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>第5章の XSS（<a href="20-1_XSSの基本.html">XSSの基本</a>）、第8章の CSRF（<a href="30-1_CSRF.html">CSRF</a>）は主に <strong>HTML ページ</strong> が舞台でした。本章は、<strong>API が返す JSON / JSONP</strong> と、<strong>ブラウザのオリジン制限（CORS）</strong> がポイントです。「データだけ返しているから安全」とは限りません。</p>
+
+    <p>WebAPI は、ブラウザやアプリから「データをください」「この操作をしてください」と頼まれる窓口です。応答は多くの場合 <strong>JSON</strong>（または昔ながらの <strong>JSONP</strong>）です。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>用語</th><th>意味</th></tr></thead>
+        <tbody>
+          <tr><td><strong>WebAPI</strong></td><td>HTTP でデータをやり取りするプログラムの窓口</td></tr>
+          <tr><td><strong>JSON</strong></td><td>データをテキストで表す形式（<a href="#sec-2">2章</a>）</td></tr>
+          <tr><td><strong>JSONP</strong></td><td><code>&lt;script&gt;</code> タグ経由でデータを取る古い手法（<a href="#sec-3">3章</a>）</td></tr>
+          <tr><td><strong>CORS</strong></td><td>別オリジンからのアクセスを、サーバーが許可する仕組み</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>オリジン</strong> とは「スキーム（https など）＋ホスト名＋ポート番号」の組のことで、ブラウザはこれが同じかどうかでアクセスの可否を判断します（詳しくは <a href="10-1_受動的攻撃と同一オリジンポリシー.html">受動的攻撃と同一オリジンポリシー</a>）。便利な一方で、応答の作り方・読み方・呼び出し方を誤ると、XSS・CSRF・情報漏洩につながります。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>窓口で「自分の注文内容」を紙で受け取り、自分だけが読む。</p></div>
+      <div class="card"><h4>問題が起きた場合</h4><p>紙の書き方が悪く、読んだ人が「命令」として実行してしまう。あるいは、隣の店の人が勝手に窓口へ注文を出す。</p></div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 なぜ危険か</h3>
+    <p>WebAPI は、ログイン済み利用者の <strong>個人情報や操作権限</strong> に触れることが多いです。実装を誤ると、次のような被害が出ます。</p>
+<pre><code>・ブラウザ上で悪意あるスクリプトが動く（XSS）
+・利用者が意図しない操作が実行される（CSRF）
+・メールアドレスやトークンなどの秘密情報が他サイトに漏れる
+・攻撃者のサイトから、正規ユーザーの権限で API が呼ばれる</code></pre>
+    <p>「画面がないから XSS は起きない」「JSON だから安全」と思い込むと、対策が抜け落ちます。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>JSONとは</h2>
+    <p><strong>JSON（JavaScript Object Notation）</strong> は、データをテキストで表すための形式です。人間にも読みやすく、多くの言語で扱えます。</p>
+<pre><code>【JSON の例】
+{
+  "name": "田中",
+  "age": 30,
+  "admin": false
+}</code></pre>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>特徴</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>テキスト形式</strong></td><td>文字列として送受信できる</td></tr>
+          <tr><td><strong>型がある</strong></td><td>文字列・数値・真偽値・配列・オブジェクトなど</td></tr>
+          <tr><td><strong>言語非依存</strong></td><td>JavaScript 以外（PHP、Python、Java など）でも使える</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>WebAPI では、「サーバーが JSON を返す → クライアントが読み取る」という流れが一般的です。</p>
+
+    <h3 id="sec-2-1">2.1 JavaScript側のJSONとオブジェクトの相互変換</h3>
+    <p>ブラウザ上の JavaScript では、次の API で <strong>オブジェクト ↔ JSON文字列</strong> を変換します。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>API</th><th>役割</th><th>例</th></tr></thead>
+        <tbody>
+          <tr><td><strong><code>JSON.stringify</code></strong></td><td>オブジェクト → JSON文字列</td><td><code>JSON.stringify({a:1})</code> → <code>'{"a":1}'</code></td></tr>
+          <tr><td><strong><code>JSON.parse</code></strong></td><td>JSON文字列 → オブジェクト</td><td><code>JSON.parse('{"a":1}')</code> → <code>{a:1}</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【安全な読み取りのイメージ】
+1. サーバーから '{"name":"田中"}' という文字列を受け取る
+2. JSON.parse でオブジェクトに変換する
+3. data.name のように値だけを使う</code></pre>
+    <p>ここで <strong>やってはいけない</strong> のが、<code>eval</code>（文字列を JavaScript のプログラムとして実行する関数）で JSON を解釈することです。</p>
+    <p class="code-label bad">危険な例</p>
+<pre><code>eval('(' + jsonText + ')')
+→ JSON のつもりが、任意の JavaScript として実行され得る</code></pre>
+    <p class="code-label good">安全な例</p>
+<pre><code>const data = JSON.parse(jsonText);   // JSON として正しくなければ例外になるだけ
+console.log(data.name);</code></pre>
+    <p><code>JSON.parse</code> は「JSON として正しいデータだけ」をオブジェクトにします。<code>eval</code> は「プログラムとして実行」するため、攻撃コードまで動いてしまいます。<code>eval</code> 一般の危険性は <a href="40-3_Evalインジェクション・デシリアライズ・XXE.html">Evalインジェクション・デシリアライズ・XXE</a> も参照してください。</p>
+
+    <h3 id="sec-2-2">2.2 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4><code>JSON.parse</code></h4><p>「注文票」として読み、商品名と個数だけ取り出す。</p></div>
+      <div class="card"><h4><code>eval</code></h4><p>注文票に書かれた文字を「作業指示」としてそのまま実行する。</p></div>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>JSONPとは</h2>
+    <p><strong>JSONP（JSON with Padding）</strong> は、CORS が普及する前に使われた、<strong>別オリジンからデータを取る古い手法</strong> です。</p>
+    <p>通常、ブラウザは <code>&lt;script src="..."&gt;</code> で <strong>別サイトの JavaScript も読み込めます</strong>。JSONP はこの性質を使い、サーバーに「関数呼び出しの形」でデータを返させます。</p>
+<pre><code>【呼び出し側（HTML）】
+&lt;script src="https://api.example.com/data?callback=showData"&gt;&lt;/script&gt;
+
+【サーバーの応答（イメージ）】
+showData({"name":"田中","age":30});</code></pre>
+    <p>ブラウザはこれを JavaScript として実行し、<code>showData</code> 関数にデータが渡ります。<strong>コールバック関数</strong> とは、このように「データが届いたら呼んでもらう関数」のことです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>JSON（通常の API）</th><th>JSONP</th></tr></thead>
+        <tbody>
+          <tr><td><strong>取り方</strong></td><td><code>fetch</code> / <code>XMLHttpRequest</code> など</td><td><code>&lt;script&gt;</code> タグ</td></tr>
+          <tr><td><strong>応答の形</strong></td><td><code>{"name":"田中"}</code></td><td><code>callback({"name":"田中"})</code></td></tr>
+          <tr><td><strong>オリジン制限</strong></td><td>CORS で制御できる</td><td><code>&lt;script&gt;</code> なので別オリジンでも読める</td></tr>
+          <tr><td><strong>現状</strong></td><td>推奨</td><td>できるだけ使わない</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><code>XMLHttpRequest</code>（XHR）と <code>fetch</code> は、JavaScript からサーバーへ HTTP リクエストを送るためのブラウザの機能です。JSONP は「別サイトからでも読める」ことが前提の仕組みです。そのため、<strong>秘密情報を返す用途には向きません</strong>。現代では <strong>CORS + JSON</strong> に移行するのが基本です（ページ内に JSON を埋め込む「インライン JSON」との違いは <a href="20-2_XSS発展編.html#sec-9-4">XSS発展編 9.4</a>）。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>JSONエスケープの不備</h2>
+    <p><strong>JSONエスケープの不備</strong> とは、JSON 文字列を作るときに <strong>特殊文字のエスケープ</strong>（記号を「ただの文字」として扱われる形に変換すること）が足りない、あるいは <strong>危険な方法で JSON を解釈する</strong> ことで、意図しないスクリプト実行につながる問題です。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>インジェクション / XSS に近い</td></tr>
+          <tr><td><strong>典型的な原因</strong></td><td>文字列連結で JSON を手作りする、<code>eval</code> や JSONP で評価する</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>ブラウザ上での任意スクリプト実行</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-4-1">4.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>「名前は田中です」とメモに書く。引用符などは正しくエスケープされている。</p></div>
+      <div class="card"><h4>攻撃</h4><p>名前欄に <code>"); 悪い命令(); //</code> と書き、メモ全体が「命令文」として読まれてしまう。</p></div>
+    </div>
+
+    <h3 id="sec-4-2">4.2 原因</h3>
+    <p>主に次の2点です。</p>
+<pre><code>1. JSON文字列の生成時に、適切なエスケープ処理が行われていない
+   （手作業の文字列連結で "{"name":"" + 入力 + ""}" のように作る）
+
+2. JSON の評価に eval などを用いている、または JSONP を用いている
+   （データとして読むのではなく、プログラムとして実行している）</code></pre>
+    <p>悪い生成例のイメージです。</p>
+    <p class="code-label bad">危険な例（擬似コード）</p>
+<pre><code>入力 name = '"); alert(1);//'
+応答 = '{"name":"' + name + '"}'
+→ {"name":""); alert(1);//"}
+→ これを eval や script として評価すると、alert が動く</code></pre>
+    <p>信頼できるライブラリの <code>json_encode</code>（PHP）や <code>JSON.stringify</code>（JavaScript）を使えば、引用符や制御文字は正しくエスケープされます。</p>
+    <p class="code-label good">安全な例（PHP）</p>
+<pre><code>header('Content-Type: application/json; charset=utf-8');
+echo json_encode(['name' =&gt; $name]);   // " は \" に、制御文字も正しく変換される</code></pre>
+
+    <h3 id="sec-4-3">4.3 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>文字列連結で JSON を作らない</strong></td><td>手作業の <code>"{" + ... + "}"</code> はミスしやすい</td></tr>
+          <tr><td><strong>信頼できるライブラリで生成する</strong></td><td>PHP の <code>json_encode</code>、言語標準の JSON API など</td></tr>
+          <tr><td><strong><code>eval</code> ではなく <code>JSON.parse</code> で解釈する</strong></td><td>データとしてだけ読む</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【対策の優先順位】
+1. JSON は必ずライブラリ / 標準 API で生成する
+2. クライアント側は JSON.parse（または同等の安全な API）で読む
+3. 新規開発では JSONP を使わない（後述）</code></pre>
+    <p>「エスケープを自分で書く」より、「正しい生成関数に任せる」方が安全です。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>JSON直接閲覧によるXSS</h2>
+    <p><strong>JSON直接閲覧によるXSS</strong> とは、API が返した JSON を、利用者がブラウザのアドレスバーなどで <strong>直接開いたとき</strong>、ブラウザがそれを HTML として解釈し、中のスクリプトが動いてしまう問題です。</p>
+    <p>昔の Internet Explorer（IE）などでは、<code>Content-Type</code>（応答の中身の種類を伝えるヘッダ。MIME タイプとも呼びます）が正しくても、中身を見て HTML と判断する <strong>コンテンツスニッフィング</strong> がありました。JSON の中に <code>&lt;script&gt;</code> のような文字列があると、HTML として実行される危険がありました。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>XSS</td></tr>
+          <tr><td><strong>典型的な原因</strong></td><td>MIME タイプ不備、<code>&lt;</code> <code>&gt;</code> の未エスケープ、nosniff 未設定</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>直接 URL を開いた利用者のブラウザでスクリプト実行</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-5-1">5.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>「データ一覧」と書かれた紙を、データとしてだけ読む。</p></div>
+      <div class="card"><h4>攻撃</h4><p>紙の一部が「命令書」に見え、受け取った人が命令として実行してしまう。</p></div>
+    </div>
+
+    <h3 id="sec-5-2">5.2 原因と IE のサポート状況</h3>
+    <p>現代の主要ブラウザでは、この問題は起きにくくなっています。ただし、次の理由で対策は今も有効です。</p>
+<pre><code>・古いブラウザや特殊な環境が残っている場合がある
+・防御の多層化（Defense in Depth）として有効
+・MIME タイプや nosniff は、他の攻撃の緩和にも役立つ</code></pre>
+    <p>防御の多層化（深層防御）の考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">71 セキュリティ基礎「深層防御」</a> で解説しています。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：IE のサポートは終了しています</p>
+      <p>Internet Explorer 11 は 2022年6月にサポートが終了し、その後 Windows 上でも無効化されました。現在の Chrome・Edge・Firefox・Safari は、<code>application/json</code> で返された JSON を HTML として実行しません。したがってこの攻撃が現実に起きる場面はかなり限られます。それでも、正しい <code>Content-Type</code> と <code>nosniff</code> は他の攻撃の緩和にも効くため、ノートのとおり「付けておくのが当たり前」の設定です。</p>
+    </div>
+
+    <h3 id="sec-5-3">5.3 JSONでも <code>&lt;</code> <code>&gt;</code> までエスケープする</h3>
+    <p>JSON の仕様上、<code>&lt;</code> や <code>&gt;</code> は必ずしもエスケープ必須ではありません。しかし、<strong>HTML として誤解釈されるのを防ぐ</strong> ため、Unicode エスケープ（<code>\u003C</code> のように文字コードで書く方法）することが推奨されます。</p>
+    <p>PHP の <code>json_encode</code> では、オプションで制御できます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>オプション</th><th>エスケープ対象文字</th><th>エスケープ結果の例</th></tr></thead>
+        <tbody>
+          <tr><td><strong><code>JSON_HEX_TAG</code></strong></td><td><code>&lt;</code> <code>&gt;</code></td><td><code>\u003C</code> <code>\u003E</code></td></tr>
+          <tr><td><strong><code>JSON_HEX_AMP</code></strong></td><td><code>&amp;</code></td><td><code>\u0026</code></td></tr>
+          <tr><td><strong><code>JSON_HEX_APOS</code></strong></td><td><code>'</code></td><td><code>\u0027</code></td></tr>
+          <tr><td><strong><code>JSON_HEX_QUOT</code></strong></td><td><code>"</code></td><td><code>\u0022</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【例】
+入力に &lt;script&gt; が含まれる場合
+
+通常の JSON:
+{"msg":"&lt;script&gt;alert(1)&lt;/script&gt;"}
+
+JSON_HEX_TAG 適用後:
+{"msg":"\u003Cscript\u003Ealert(1)\u003C/script\u003E"}</code></pre>
+    <p class="code-label good">安全な例（PHP）</p>
+<pre><code>echo json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);</code></pre>
+    <p>ブラウザが HTML として見ても、<code>&lt;script&gt;</code> というタグにはならないため、実行されにくくなります。同じフラグは、HTML の中に JSON を埋め込む場面でも使われます（<a href="20-2_XSS発展編.html#sec-9-2">XSS発展編 9.2</a>）。</p>
+
+    <h3 id="sec-5-4">5.4 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>MIMEタイプを正しく設定する</strong></td><td><code>Content-Type: application/json</code> など</td></tr>
+          <tr><td><strong><code>X-Content-Type-Options: nosniff</code></strong></td><td>ブラウザに「中身を推測して HTML 扱いしない」と指示する</td></tr>
+          <tr><td><strong><code>&lt;</code> などを Unicode エスケープする</strong></td><td><code>JSON_HEX_TAG</code> など</td></tr>
+          <tr><td><strong>XHR / fetch などからのみ呼べるようにする</strong></td><td>直接閲覧や <code>&lt;script&gt;</code> 経由を想定しない設計にする</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【レスポンスヘッダの例】
+Content-Type: application/json; charset=utf-8
+X-Content-Type-Options: nosniff</code></pre>
+    <p>「正しい MIME タイプ」「nosniff」「危険文字のエスケープ」を組み合わせると、直接閲覧による XSS をかなり抑えられます。<code>nosniff</code> の詳しい働きは <a href="10-5_セキュリティヘッダ.html#sec-4">セキュリティヘッダ 4章</a> を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>JSONPのコールバック関数名によるXSS</h2>
+    <p><strong>JSONPのコールバック関数名によるXSS</strong> とは、利用者が指定した <strong>コールバック関数名</strong> を、サーバーが検証せずそのまま応答に埋め込み、スクリプトとして実行されてしまう問題です。</p>
+<pre><code>【正常な JSONP】
+リクエスト: /api?callback=showData
+応答:       showData({"name":"田中"});
+
+【攻撃のイメージ】
+リクエスト: /api?callback=alert(1)//
+応答:       alert(1)//({"name":"田中"});
+→ alert(1) が実行される</code></pre>
+    <p><code>//</code> は JavaScript の「ここから行末までコメント」という記号なので、後ろに続く本来のデータ部分は無視され、<code>alert(1)</code> だけが動きます。さらに悪い場合、コールバック名に HTML を混ぜ、<code>Content-Type</code> が <code>text/html</code> だと、HTML としての XSS にもなります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>XSS</td></tr>
+          <tr><td><strong>典型的な原因</strong></td><td>コールバック名の未検証、MIME タイプの誤り</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>任意スクリプトの実行、Cookie 窃取など</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-6-1">6.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>「田中さん宛て」と封筒に書き、田中さんだけが開ける。</p></div>
+      <div class="card"><h4>攻撃</h4><p>宛名欄に「開けたら爆弾を起動せよ」と書かれ、そのとおり実行される。</p></div>
+    </div>
+
+    <h3 id="sec-6-2">6.2 原因</h3>
+<pre><code>1. 外部から指定されたコールバック関数名を、検証せずそのまま表示している
+2. MIMEタイプを text/javascript とすべきところを text/html としている</code></pre>
+    <p>コールバック名は「関数名」であるべきなのに、任意の文字列を許すと、そこがスクリプトの入り口になります。</p>
+
+    <h3 id="sec-6-3">6.3 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>文字種と文字数を制限する</strong></td><td>英数字とアンダースコアのみ、長さ上限あり、など</td></tr>
+          <tr><td><strong>許可リスト方式にする</strong></td><td>あらかじめ決めた関数名だけ許可する</td></tr>
+          <tr><td><strong>MIMEタイプを正しく設定する</strong></td><td><code>application/javascript</code> や <code>text/javascript</code>（HTML にしない）</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【コールバック名の検証イメージ】
+・許可: showData, callback, cb_1
+・拒否: alert(1), &lt;script&gt;, a;evil()
+
+正規表現の例（イメージ）:
+/^[A-Za-z_][A-Za-z0-9_]*$/
+かつ長さは 1〜32 文字など</code></pre>
+    <p class="code-label bad">危険な例（PHP）</p>
+<pre><code>$cb = $_GET['callback'];
+header('Content-Type: text/html');               // HTML として返している
+echo $cb . '(' . json_encode($data) . ');';     // 名前を検証せずそのまま出力</code></pre>
+    <p class="code-label good">安全な例（PHP）</p>
+<pre><code>$cb = $_GET['callback'] ?? '';
+if (!preg_match('/\A[A-Za-z_][A-Za-z0-9_]{0,31}\z/', $cb)) {
+    http_response_code(400);
+    exit;
+}
+header('Content-Type: text/javascript; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
+echo $cb . '(' . json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ');';</code></pre>
+    <p>正規表現（文字列のパターンを表す記法）の <code>\A</code> と <code>\z</code> は「文字列の先頭」と「末尾」を表し、名前全体がパターンに一致することを確認しています。</p>
+    <div class="callout tip">
+      <p class="callout-title">補足：MIME タイプの表記</p>
+      <p>JavaScript の MIME タイプは、現在の標準（RFC 9239）では <code>text/javascript</code> が正式です。<code>application/javascript</code> も実際には問題なく動きます。どちらにしても「<code>text/html</code> にしない」ことが要点です。</p>
+    </div>
+    <p>そもそも JSONP をやめて CORS + JSON にすれば、この問題自体を避けられます。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>WebAPIのクロスサイト・リクエストフォージェリ</h2>
+    <p><strong>WebAPI に対する CSRF</strong> は、第8章の CSRF と同じ考え方です。利用者がログインした状態で、<strong>攻撃者のサイトから、その利用者の権限で API を呼び出させる</strong> 攻撃です。CSRF の基本的な仕組み・トークンの作り方は <a href="30-1_CSRF.html">CSRF</a> で詳しく解説しているので、ここでは WebAPI に特有の点を中心に見ます。</p>
+    <p>WebAPI でも Cookie でセッションを維持している場合、ブラウザは別サイトからのリクエストに Cookie を付けることがあります。その結果、「本人が操作した」とサーバーが誤認します。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>CSRF</td></tr>
+          <tr><td><strong>典型的な原因</strong></td><td>状態変更 API に CSRF 対策がない、CORS の設定ミス</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>不正な投稿・設定変更・送金・退会など</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-7-1">7.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>本人が窓口で「住所変更」を申請する。</p></div>
+      <div class="card"><h4>攻撃</h4><p>別の店で「ここにサインして」と渡された紙が、実は住所変更届で、本人の印鑑（Cookie）が勝手に押される。</p></div>
+    </div>
+
+    <h3 id="sec-7-2">7.2 WebAPIに対するCSRF攻撃経路</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>経路</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>GETリクエストによる攻撃</strong></td><td><code>&lt;img src="https://api.example.com/delete?id=1"&gt;</code> のように、画像読み込みで GET を飛ばす</td></tr>
+          <tr><td><strong>HTMLフォームによる攻撃</strong></td><td>攻撃ページの <code>&lt;form&gt;</code> が、対象 API へ POST する</td></tr>
+          <tr><td><strong>クロスオリジン対応のXHRによる攻撃</strong></td><td>CORS が緩いと、JavaScript から別オリジンの API を呼べる</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="code-label bad">GET による攻撃のイメージ</p>
+<pre><code>攻撃ページ:
+&lt;img src="https://bank.example.com/api/transfer?to=attacker&amp;amount=10000"&gt;
+
+→ 被害者が攻撃ページを開くだけで、ログイン中なら振込 API が呼ばれる
+（※ 本来、状態変更を GET で行うこと自体が問題）</code></pre>
+    <p class="code-label bad">フォームによる攻撃のイメージ</p>
+<pre><code>攻撃ページ:
+&lt;form action="https://api.example.com/change-email" method="POST"&gt;
+  &lt;input name="email" value="attacker@evil.example"&gt;
+&lt;/form&gt;
+&lt;script&gt;document.forms[0].submit();&lt;/script&gt;</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">補足：SameSite Cookie による変化</p>
+      <p>本の出版後、Chrome や Edge は <code>SameSite</code> 属性のない Cookie を <code>SameSite=Lax</code> として扱うようになりました。Lax の Cookie は、別サイトからの <code>&lt;img&gt;</code> 読み込みや POST フォーム送信には付きません。そのため上の2例は、これらのブラウザでは Cookie が付かず失敗することが多くなっています。ただし、Lax のままではない Cookie（<code>SameSite=None</code>）を使っている場合や、既定値が異なるブラウザもあるため、<strong>アプリ側の CSRF 対策は引き続き必須</strong> です（<a href="30-1_CSRF.html#sec-9-3">CSRF 9.3</a>、<a href="10-3_CORSエラーの対処法とCookie.html#sec-6">CORSエラーの対処法とCookie 6章</a>）。</p>
+    </div>
+
+    <h3 id="sec-7-3">7.3 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>CSRFトークン</strong></td><td>秘密のトークンをフォームやヘッダに付け、サーバーで検証する</td></tr>
+          <tr><td><strong>二重送信クッキー</strong></td><td>Cookie の値と同じ値を、リクエスト本体やヘッダにも送らせて照合する</td></tr>
+          <tr><td><strong>カスタムリクエストヘッダ</strong></td><td><code>X-Requested-With: XMLHttpRequest</code> など、単純リクエストでは付けられないヘッダを必須にする</td></tr>
+          <tr><td><strong>入力データのMIMEタイプを検証する</strong></td><td><code>Content-Type: application/json</code> のみ受け付ける、など</td></tr>
+          <tr><td><strong>CORSを適切に実装する</strong></td><td>許可オリジンを必要最小限にし、資格情報付きを安易に許可しない</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>単純リクエスト</strong>（シンプルリクエスト）とは、HTML フォームでも送れる範囲のリクエストで、ブラウザが事前確認（プリフライト）なしで送るものです。独自ヘッダを付けたり <code>Content-Type: application/json</code> にしたりすると単純リクエストではなくなり、ブラウザは先にプリフライトでサーバーの許可を確認します（<a href="10-2_CORSの仕組み.html#sec-6">CORSの仕組み 6章・7章</a>）。</p>
+<pre><code>【カスタムヘッダ対策の考え方】
+・ブラウザの「単純リクエスト」では、独自ヘッダを付けられない
+・API が「独自ヘッダ必須」なら、HTMLフォームだけでは呼べない
+・ただし、CORS が緩いと XHR から独自ヘッダ付きで呼べるので、CORS も正しくする</code></pre>
+    <p class="code-label good">安全な例（サーバー側の確認、Express の擬似コード）</p>
+<pre><code>app.post('/api/change-email', (req, res) =&gt; {
+  if (req.get('X-Requested-With') !== 'XMLHttpRequest') return res.sendStatus(403);
+  if (!req.is('application/json')) return res.sendStatus(415);
+  if (req.get('X-CSRF-Token') !== req.session.csrfToken) return res.sendStatus(403);
+  // ここで初めて変更処理を行う
+});</code></pre>
+    <p>状態を変える操作（登録・変更・削除）は <strong>GET で行わない</strong> ことも重要です。GET は「取得」専用にし、変更は POST / PUT / PATCH / DELETE と CSRF 対策をセットにします。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>JSONハイジャック</h2>
+    <p><strong>JSONハイジャック</strong> とは、他サイトのページから、ログイン済み利用者向けの <strong>秘密の JSON</strong> を盗み取る攻撃です。古いブラウザでは、<code>&lt;script&gt;</code> で JSON 配列を読み、JavaScript の配列コンストラクタ（配列を作るときに呼ばれる仕組み）を書き換えて中身を横取りする、といった手法がありました。</p>
+    <p>現代の主要ブラウザでは、この古典的な手口はほぼ使えません。ただし、<strong>防御の習慣としては今も有効</strong> な対策があります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>情報漏洩</td></tr>
+          <tr><td><strong>典型的な原因</strong></td><td>秘密 JSON を GET で誰でも取れる、<code>&lt;script&gt;</code> でも読める応答</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>個人情報・トークンなどの漏洩</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">補足：現代のブラウザでの位置づけ</p>
+      <p>配列コンストラクタの書き換えで JSON を盗む手口は、2010年前後にブラウザ側で塞がれました。さらに現在のブラウザは、<code>nosniff</code> 付きの <code>application/json</code> を <code>&lt;script&gt;</code> として実行することを拒否し、別オリジンの JSON 応答をページに渡さない仕組み（CORB・ORB と呼ばれる読み込み制限）も備えています。そのため「JSONハイジャック」は歴史的な攻撃と考えてかまいません。一方で、<strong>JSONP で秘密情報を返す</strong> と同じ被害が今でも起きる点（<a href="#sec-9">9章</a>）は変わらないので注意してください。</p>
+    </div>
+
+    <h3 id="sec-8-1">8.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>自分宛ての手紙は、自分だけがポストから取り出す。</p></div>
+      <div class="card"><h4>攻撃</h4><p>手紙の書き方が「誰でも読める掲示」になっていて、通りがかりが中身を写し取る。</p></div>
+    </div>
+
+    <h3 id="sec-8-2">8.2 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong><code>X-Content-Type-Options: nosniff</code></strong></td><td>コンテンツの誤判定を防ぐ</td></tr>
+          <tr><td><strong><code>X-Requested-With: XMLHttpRequest</code> の確認</strong></td><td><code>&lt;script&gt;</code> や単純な遷移ではなく、XHR / fetch からの呼び出しだけ許可する</td></tr>
+          <tr><td><strong>認証と認可</strong></td><td>ログイン必須にし、本人のデータだけ返す</td></tr>
+          <tr><td><strong>秘密情報を JSONP で返さない</strong></td><td><code>&lt;script&gt;</code> 経由で読まれる前提の仕組みを使わない</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【X-Requested-With 確認のイメージ】
+サーバー側:
+if (リクエストヘッダに X-Requested-With: XMLHttpRequest がない) {
+  エラーを返す
+}</code></pre>
+    <p>自前の JavaScript からはヘッダを付けられますが、他サイトの <code>&lt;script src="..."&gt;</code> では付けられません。その差を利用して、「正規のクライアントだけ」に絞ります。なお、<code>fetch</code> はこのヘッダを自動では付けないので、自前のコードで明示的に付ける必要があります。</p>
+    <p>認証（本人確認）と認可（その人に許された操作かの確認）の違いは <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-1">71 セキュリティ基礎「アクセス制御と認証の失敗」</a> を参照してください。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>JSONPの不適切な利用</h2>
+    <p><strong>JSONPの不適切な利用</strong> とは、JSONP の性質（別オリジンの <code>&lt;script&gt;</code> からも読める）を理解せず、<strong>秘密情報を JSONP で返してしまう</strong> ことです。</p>
+    <p>JSONP は「公開データを、別サイトのページからも使う」ための仕組みです。メールアドレス、セッション情報、個人設定などを JSONP で返すと、攻撃者のサイトからも同じデータを読めます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>情報漏洩</td></tr>
+          <tr><td><strong>典型的な原因</strong></td><td>秘密 API を JSONP 対応にしてしまう</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>個人情報・認証情報のクロスオリジン漏洩</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-9-1">9.1 JSONPによる秘密情報提供</h3>
+    <p class="code-label bad">危険な例</p>
+<pre><code>https://example.com/api/me?callback=cb
+応答: cb({"email":"user@example.com","token":"secret"});
+
+攻撃者のページ:
+&lt;script src="https://example.com/api/me?callback=steal"&gt;&lt;/script&gt;
+→ 被害者がログイン中なら、攻撃者の steal 関数に秘密情報が渡る</code></pre>
+    <p>Cookie が付く GET リクエストなので、「本人として」秘密 API が呼ばれてしまいます。流れを図にすると次のとおりです。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 320" role="img" aria-label="JSONPによる秘密情報の漏洩の流れ。被害者のブラウザで攻撃者のページが開かれ、そこに書かれたscriptタグがexample.comのapi/me?callback=stealをCookie付きで読み込む。example.comはログイン中の本人として秘密情報をsteal関数の呼び出しの形で返し、ブラウザがそれを実行すると攻撃者のsteal関数に秘密情報が渡り、攻撃者のサーバーへ送信される">
+      <defs>
+        <marker id="arw502a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw502b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="20" width="300" height="250" rx="8" class="d-box"/>
+      <text x="36" y="44" class="d-text-bold">被害者のブラウザ</text>
+      <text x="36" y="64" class="d-text-sub">example.com にログイン中（Cookie あり）</text>
+      <rect x="40" y="80" width="260" height="72" rx="8" class="d-box-bad"/>
+      <text x="170" y="106" text-anchor="middle" class="d-text-bold">攻撃者のページ evil.example</text>
+      <text x="170" y="130" text-anchor="middle" class="d-text-sub">&lt;script src="…/api/me?callback=steal"&gt;</text>
+      <rect x="40" y="178" width="260" height="64" rx="8" class="d-box-bad"/>
+      <text x="170" y="204" text-anchor="middle" class="d-text-bold">steal(秘密情報) が実行</text>
+      <text x="170" y="226" text-anchor="middle" class="d-text-sub">攻撃者の関数にデータが渡る</text>
+
+      <rect x="440" y="80" width="260" height="72" rx="8" class="d-box-accent"/>
+      <text x="570" y="106" text-anchor="middle" class="d-text-bold">example.com/api/me</text>
+      <text x="570" y="130" text-anchor="middle" class="d-text-sub">ログイン中の本人として応答</text>
+
+      <line x1="300" y1="104" x2="438" y2="104" class="d-line" marker-end="url(#arw502a)"/>
+      <text x="370" y="94" text-anchor="middle" class="d-text-sub">① GET + Cookie</text>
+      <path d="M570,152 L570,210 L302,210" class="d-line-bad" marker-end="url(#arw502b)"/>
+      <text x="580" y="186" class="d-text-sub">② 応答</text>
+      <text x="440" y="232" text-anchor="middle" class="d-text-sub">steal({"email":…,"token":…});</text>
+
+      <rect x="440" y="262" width="260" height="46" rx="8" class="d-box-bad"/>
+      <text x="570" y="290" text-anchor="middle" class="d-text-bold">攻撃者のサーバー</text>
+      <path d="M170,242 L170,285 L438,285" class="d-line-bad" marker-end="url(#arw502b)"/>
+      <text x="230" y="302" class="d-text-sub">③ 秘密情報を送信</text>
+    </svg>
+    <figcaption>図1：JSONP で秘密情報を返すと、攻撃者のページからも「本人として」読み取れる</figcaption>
+    </figure>
+
+    <p>通常の JSON + <code>fetch</code> であれば、別オリジンの応答はブラウザの同一オリジンポリシーで攻撃者のページに渡されません。JSONP は <code>&lt;script&gt;</code> として「実行」されるため、この壁をすり抜けてしまいます。</p>
+
+    <h3 id="sec-9-2">9.2 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>JSONPはできるだけ使わない</strong></td><td>CORS + JSON に移行する</td></tr>
+          <tr><td><strong>使うなら公開情報のみ</strong></td><td>誰が呼んでもよいデータだけ</td></tr>
+          <tr><td><strong>信頼できる提供元のみを使う</strong></td><td>クライアント側も、怪しい JSONP を読み込まない</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【方針】
+・新規開発: JSONP は使わない
+・既存の JSONP: 公開データ以外は廃止し、CORS + JSON へ
+・やむを得ず残す場合: 秘密情報を絶対に載せない</code></pre>
+    <p>「昔のライブラリが JSONP 前提」でも、秘密情報の API まで JSONP 対応にする必要はありません。クライアント側で JSONP を読み込むことは、提供元のサーバーに「自分のページで任意の JavaScript を実行する権限」を渡すのと同じです。提供元が乗っ取られると自分のサイトも巻き込まれるため、外部スクリプト一般のリスクと同様に考えます。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>CORSの検証不備</h2>
+    <p><strong>CORS（Cross-Origin Resource Sharing）</strong> は、ブラウザが「別オリジンのスクリプトから、この API を呼んでよいか」をサーバーに確認する仕組みです。サーバーは応答ヘッダで許可オリジンを伝えます。仕組みの全体は <a href="10-2_CORSの仕組み.html">CORSの仕組み</a>、Cookie 付きリクエストの設定は <a href="10-3_CORSエラーの対処法とCookie.html#sec-5">CORSエラーの対処法とCookie 5章</a> で解説しています。</p>
+    <p><strong>CORSの検証不備</strong> とは、許可するオリジンの判定が甘く、<strong>意図しないサイトから API を読まれたり、資格情報付きで呼ばれたりする</strong> 問題です。<strong>資格情報</strong>（クレデンシャル）とは、Cookie や認証ヘッダなど「誰としてアクセスしているか」を示す情報のことです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td><strong>分類</strong></td><td>アクセス制御の不備</td></tr>
+          <tr><td><strong>典型的な原因</strong></td><td><code>*</code> の安易な使用、Origin チェックの緩和しすぎ</td></tr>
+          <tr><td><strong>典型的な被害</strong></td><td>秘密 API の読み取り、CSRF 的な不正操作</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-10-1">10.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>来客リストに載っている人だけ入館できる。</p></div>
+      <div class="card"><h4>問題</h4><p>受付が「誰でもどうぞ」と書いてある、または名簿チェックをサボっている。</p></div>
+    </div>
+
+    <h3 id="sec-10-2">10.2 よくある失敗</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>失敗</th><th>何が起きるか</th></tr></thead>
+        <tbody>
+          <tr><td><strong>オリジンとして <code>*</code> を指定する</strong></td><td>あらゆるサイトから読み取りが許可される（資格情報付きでは本来 <code>*</code> は使えないが、実装ミスで危険な組み合わせになることがある）</td></tr>
+          <tr><td><strong>Origin のチェックをわざと緩和する</strong></td><td>リクエストの <code>Origin</code> をそのまま <code>Access-Control-Allow-Origin</code> に返す、部分一致だけで許可する、など</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="code-label bad">危険な実装のイメージ</p>
+<pre><code>// リクエストの Origin を無条件で許可してしまう
+Access-Control-Allow-Origin: （リクエストの Origin をそのまま）
+Access-Control-Allow-Credentials: true
+
+→ 攻撃者のサイト（https://evil.example）からも、
+  Cookie 付きで API を呼べてしまう</code></pre>
+    <p class="code-label bad">部分一致の罠</p>
+<pre><code>許可したい: https://example.com
+誤った判定: Origin に "example.com" が含まれるか？
+
+攻撃者のオリジン例:
+https://example.com.evil.example
+https://notexample.com
+→ 意図せず許可されることがある</code></pre>
+    <p class="code-label good">安全な例（Express の擬似コード：許可リストで完全一致）</p>
+<pre><code>const ALLOWED = new Set(['https://example.com', 'https://app.example.com']);
+
+app.use((req, res, next) =&gt; {
+  const origin = req.get('Origin');
+  if (origin &amp;&amp; ALLOWED.has(origin)) {          // 完全一致だけ許可
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Access-Control-Allow-Credentials', 'true');
+    res.set('Vary', 'Origin');
+  }
+  next();
+});</code></pre>
+    <p><code>Vary: Origin</code> は「Origin ごとに応答が変わる」とキャッシュに伝えるヘッダです。届いた Origin をそのまま返してはいけない理由は <a href="10-3_CORSエラーの対処法とCookie.html#sec-9-2">CORSエラーの対処法とCookie 9.2</a> でも説明しています。</p>
+
+    <h3 id="sec-10-3">10.3 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>許可オリジンは許可リストで厳密に</strong></td><td>完全一致で比較する</td></tr>
+          <tr><td><strong><code>*</code> と Credentials を安易に組み合わせない</strong></td><td>認証付き API では、必要なオリジンだけ明示する</td></tr>
+          <tr><td><strong>不要なら CORS を有効にしない</strong></td><td>同一オリジンだけで足りるなら、余計な許可をしない</td></tr>
+          <tr><td><strong>プリフライトを正しく扱う</strong></td><td>許可メソッド・ヘッダも最小限にする</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>【安全な考え方】
+1. デフォルトは拒否
+2. 必要なオリジンだけを許可リストに載せる
+3. 完全一致で判定する（部分一致や末尾一致にしない）
+4. 認証が必要な API では、Allow-Credentials と許可オリジンを慎重に組む</code></pre>
+    <p>CORS は「ブラウザの親切な制限」を、サーバーが一部ゆるめる仕組みです。ゆるめすぎると、CSRF や情報漏洩の穴になります。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>セキュリティを強化するレスポンスヘッダ</h2>
+    <p>WebAPI や Web アプリ全体で、次のレスポンスヘッダを付けると、攻撃の影響を小さくできます。各ヘッダの詳しい説明と設定例は <a href="10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>、CSP は <a href="10-4_CSP.html">CSP</a> にまとめています。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ヘッダ</th><th>役割</th></tr></thead>
+        <tbody>
+          <tr><td><strong><code>X-Frame-Options</code></strong></td><td>ページを iframe に埋め込まれないようにし、クリックジャッキングを防ぐ</td></tr>
+          <tr><td><strong><code>X-Content-Type-Options</code></strong></td><td><code>nosniff</code> で、MIME タイプの誤判定を防ぐ</td></tr>
+          <tr><td><strong><code>X-XSS-Protection</code></strong></td><td>古いブラウザの XSS フィルタを制御する（現代では CSP を優先し、<code>0</code> で無効化する方針もある）</td></tr>
+          <tr><td><strong><code>Content-Security-Policy</code></strong></td><td>読み込んでよいスクリプトやリソースを制限し、XSS の被害を抑える</td></tr>
+          <tr><td><strong><code>Strict-Transport-Security</code></strong></td><td>HTTPS の利用を強制し、平文 HTTP へのダウングレードを防ぐ</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">補足：X-XSS-Protection は「付けないか 0」が現在の推奨</p>
+      <p>ブラウザの XSS フィルタ（XSS Auditor）は、フィルタ自体が情報漏洩に悪用されたため、主要ブラウザから削除されました。現在は「方針もある」ではなく、<strong>付けないか <code>0</code> を指定する</strong> のが一般的な推奨です。<code>1; mode=block</code> を新たに付ける必要はありません（<a href="10-5_セキュリティヘッダ.html#sec-9">セキュリティヘッダ 9章</a>、<a href="20-1_XSSの基本.html#sec-12">XSSの基本 12章</a>）。</p>
+    </div>
+<pre><code>【WebAPI で特に重要なもの】
+・X-Content-Type-Options: nosniff
+  → JSON の誤解釈やハイジャック対策の土台
+・Content-Type: application/json
+  → 応答が JSON であることを明示する
+・（ブラウザ向けページなら）Content-Security-Policy
+  → XSS 時の被害範囲を狭める</code></pre>
+    <p>ヘッダだけで全ての脆弱性が消えるわけではありません。<strong>正しい JSON 生成・CSRF 対策・CORS の許可リスト</strong> が本筋で、ヘッダはそれを補強する防御層です。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>APIからの大量取得（2026年の事例から・追記）</h2>
+    <p>徳丸本の第19章の範囲外ですが、2026年の国内の情報漏洩で問題になった論点です（全体は <a href="../../71_セキュリティ基礎/00_全体像/50-5_サプライチェーン攻撃と2026年の事例.html">71 セキュリティ基礎「サプライチェーン攻撃と2026年の事例」</a>）。</p>
+    <p>アフラック生命の事例（約440万人分）では、攻撃は <strong>通常の利用と同じ形式のアクセス</strong> で行われ、<strong>短時間の大量照会を監視・制御する機能が不足</strong> していたとされました。API が 1 件ずつ正しく認可していても、<strong>何件でも取れる</strong> と大量漏洩につながります。OWASP API Security Top 10（API に特化した重大リスクのランキング）の <strong>API4:2023 Unrestricted Resource Consumption</strong>（リソース消費の制限なし）や、<strong>API1:2023 BOLA</strong>（Broken Object Level Authorization：オブジェクト単位の認可の不備）に当たります。BOLA は、Web アプリで IDOR（安全でない直接オブジェクト参照）と呼ばれる問題の API 版です（<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-3-1">71「アクセス制御と認証の失敗」3.1</a>）。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="APIからの大量取得の比較。対策なしでは、攻撃者が正規と同じ形式でIDを1から順に照会し、APIは1件ずつの認可は通すが件数の制限がないため、全件が取得される。対策ありでは、APIが所有者チェック、limitの最大値、時間あたりの取得件数の集計を行い、上限を超えると429または403を返してアラートを出す">
+      <defs>
+        <marker id="arw502c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw502d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">対策なし：1件ずつは正常でも、何件でも取れる</text>
+      <rect x="20" y="40" width="150" height="64" rx="8" class="d-box-bad"/>
+      <text x="95" y="66" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="95" y="88" text-anchor="middle" class="d-text-sub">正規と同じ形式</text>
+      <rect x="260" y="40" width="200" height="64" rx="8" class="d-box"/>
+      <text x="360" y="66" text-anchor="middle" class="d-text-bold">API</text>
+      <text x="360" y="88" text-anchor="middle" class="d-text-sub">件数・速度の制限なし</text>
+      <rect x="540" y="40" width="160" height="64" rx="8" class="d-box-bad"/>
+      <text x="620" y="66" text-anchor="middle" class="d-text-bold">全件が漏洩</text>
+      <text x="620" y="88" text-anchor="middle" class="d-text-sub">数百万件</text>
+      <line x1="170" y1="72" x2="258" y2="72" class="d-line-bad" marker-end="url(#arw502d)"/>
+      <text x="214" y="122" text-anchor="middle" class="d-text-sub">id=1, 2, 3 … 連番</text>
+      <line x1="460" y1="72" x2="538" y2="72" class="d-line-bad" marker-end="url(#arw502d)"/>
+
+      <text x="20" y="164" class="d-text-bold">対策あり：認可＋上限＋監視で止める</text>
+      <rect x="20" y="186" width="150" height="64" rx="8" class="d-box-bad"/>
+      <text x="95" y="212" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="95" y="234" text-anchor="middle" class="d-text-sub">大量に照会</text>
+      <rect x="260" y="176" width="200" height="110" rx="8" class="d-box-accent"/>
+      <text x="360" y="200" text-anchor="middle" class="d-text-bold">API（制限あり）</text>
+      <text x="360" y="224" text-anchor="middle" class="d-text-sub">① 毎回 所有者チェック</text>
+      <text x="360" y="246" text-anchor="middle" class="d-text-sub">② limit は最大 100</text>
+      <text x="360" y="268" text-anchor="middle" class="d-text-sub">③ 1時間の取得件数を集計</text>
+      <rect x="540" y="186" width="160" height="64" rx="8" class="d-box-good"/>
+      <text x="620" y="212" text-anchor="middle" class="d-text-bold">429 / 403</text>
+      <text x="620" y="234" text-anchor="middle" class="d-text-sub">アラート → 調査</text>
+      <line x1="170" y1="218" x2="258" y2="218" class="d-line" marker-end="url(#arw502c)"/>
+      <line x1="460" y1="218" x2="538" y2="218" class="d-line" marker-end="url(#arw502c)"/>
+    </svg>
+    <figcaption>図2：1件ごとの認可だけでは大量取得を防げない。上限と監視を組み合わせる</figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>ページサイズの上限</td><td><code>?limit=100000</code> を受け付けない。サーバー側で最大値を決める</td></tr>
+          <tr><td>レート制限</td><td>ユーザー・トークン・IP ごとに、時間あたりのリクエスト数を制限する</td></tr>
+          <tr><td>取得件数の上限</td><td>一定時間に取得できる <strong>レコード数の合計</strong> を制限し、超えたら止めてアラートを出す（<a href="../../71_セキュリティ基礎/00_全体像/40-6_ログ不足・SSRF・例外処理.html#sec-2-7">71「ログ不足・SSRF・例外処理」2.7</a>）</td></tr>
+          <tr><td>ID を推測させない</td><td>連番 ID だと 1 から順に取得される。UUID などにし、<strong>毎回、所有者かどうかをチェック</strong> する</td></tr>
+          <tr><td>一括エクスポートは別扱い</td><td>CSV 出力などは権限を分け、実行を記録・通知する</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>レート制限</strong> とは「一定時間に受け付けるリクエスト数の上限」、<strong>UUID</strong> とは推測しにくいランダムな長い識別子です。HTTP ステータスの <strong>429</strong> は「リクエストが多すぎる」、<strong>403</strong> は「権限がない（禁止）」を意味します。</p>
+    <p class="code-label bad">危険な例</p>
+<pre><code>GET /api/customers?page=1&amp;limit=100000  → 全件返す</code></pre>
+    <p class="code-label good">安全な例</p>
+<pre><code>limit は最大 100。1 時間の取得件数が上限を超えたら 429/403 を返し、アラート</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">補足：UUID だけでは対策にならない</p>
+      <p>ID を推測しにくくするのは「当てにくくする」効果しかありません。ID が一覧 API やログなどから漏れれば取得されてしまうため、表のとおり <strong>毎回の所有者チェック</strong> とセットで使うことが前提です。</p>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>本質</th><th>基本対策</th></tr></thead>
+        <tbody>
+          <tr><td><strong>JSONエスケープの不備</strong></td><td>手作り JSON や <code>eval</code> でスクリプト実行</td><td>ライブラリで生成、<code>JSON.parse</code> で解釈</td></tr>
+          <tr><td><strong>JSON直接閲覧によるXSS</strong></td><td>JSON が HTML として誤解釈される</td><td>正しい MIME、<code>nosniff</code>、<code>&lt;</code> 等の Unicode エスケープ</td></tr>
+          <tr><td><strong>JSONPコールバック名XSS</strong></td><td>コールバック名にコードを埋め込まれる</td><td>文字種・長さ制限、正しい MIME、JSONP 廃止</td></tr>
+          <tr><td><strong>WebAPIのCSRF</strong></td><td>別サイトから本人権限で API を呼ばれる</td><td>CSRF トークン、カスタムヘッダ、CORS の適切な実装</td></tr>
+          <tr><td><strong>JSONハイジャック</strong></td><td>秘密 JSON を他サイトから読む</td><td><code>nosniff</code>、XHR ヘッダ確認、JSONP で秘密を返さない</td></tr>
+          <tr><td><strong>JSONPの不適切な利用</strong></td><td>秘密情報を <code>&lt;script&gt;</code> 経由で渡す</td><td>CORS + JSON へ移行、公開情報のみ</td></tr>
+          <tr><td><strong>CORSの検証不備</strong></td><td>許可オリジンが広すぎる</td><td>許可リストの完全一致、最小権限</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre><code>WebAPI 実装の安全の基本:
+
+1. JSON は標準 API / ライブラリで生成し、eval で読まない
+2. Content-Type: application/json と X-Content-Type-Options: nosniff を付ける
+3. JSONP は使わず、CORS + JSON にする（使うなら公開情報のみ）
+4. 状態変更 API には CSRF 対策を入れる（GET で変更しない）
+5. CORS の許可オリジンは、必要最小限を完全一致で許可する
+6. セキュリティヘッダで防御を多層化する</code></pre>
+    <p>本章に共通する考え方は、<strong>「API が返すのはデータか、それとも実行可能なプログラムか」「誰のサイトから、誰の権限で呼ばれているか」</strong> を疑うことです。JSON は便利ですが、生成・解釈・呼び出し経路のどこかが甘いと、XSS・CSRF・情報漏洩につながります。現代的な基本形は <strong>CORS + JSON + 正しいヘッダ + CSRF 対策</strong> です。古い JSONP や手作業の文字列連結から離れるほど、事故は起きにくくなります。さらに 2026年の事例が示すように、<strong>1件ごとの認可に加えて、量と速度の上限・監視</strong> も API の守りに欠かせません。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. サーバーから受け取った JSON 文字列を <code>eval</code> で解釈してはいけないのはなぜですか？ 代わりに何を使いますか？</summary>
+      <div class="body">
+        <p><code>eval</code> は文字列を <strong>プログラムとして実行</strong> するため、JSON に攻撃コードが混ざっているとそのまま動いてしまうからです。代わりに <code>JSON.parse</code> を使えば、JSON として正しいデータだけがオブジェクトになり、プログラムは実行されません。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. JSONP の API に <code>?callback=alert(1)//</code> を渡すと XSS になるのはなぜですか？ どう防ぎますか？</summary>
+      <div class="body">
+        <p>サーバーがコールバック名を検証せずに応答の先頭に埋め込むと、応答が <code>alert(1)//({...});</code> になり、ブラウザが JavaScript として実行するからです（<code>//</code> 以降はコメント扱い）。コールバック名を英数字とアンダースコア・長さ上限で制限する（または許可リストにする）、MIME タイプを <code>text/javascript</code> にする、そもそも JSONP をやめて CORS + JSON にする、が対策です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. ログイン中の利用者のメールアドレスを JSONP で返す API は、なぜ危険なのですか？</summary>
+      <div class="body">
+        <p>JSONP は <code>&lt;script src&gt;</code> で読み込むため、<strong>別オリジンの攻撃者のページからも読み込めます</strong>。そのとき被害者の Cookie が付くので、API は「本人として」秘密情報を返し、攻撃者が用意した関数にデータが渡ります。JSONP は公開情報専用と考え、秘密情報は CORS + JSON で返します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. API で <code>X-Requested-With: XMLHttpRequest</code> などのカスタムヘッダを必須にすると、なぜ CSRF 対策になるのですか？ 注意点も答えてください。</summary>
+      <div class="body">
+        <p>HTML フォームや <code>&lt;img&gt;</code>・<code>&lt;script&gt;</code> から送られる単純リクエストには独自ヘッダを付けられないため、攻撃ページからの送信を拒否できるからです。注意点は、CORS の設定が緩いと攻撃者のページの JavaScript から独自ヘッダ付きで呼べてしまうことです。CORS の許可リストも正しく設定する必要があります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. CORS の判定で「Origin に <code>example.com</code> が含まれていれば許可する」とすると、何が問題ですか？</summary>
+      <div class="body">
+        <p><code>https://example.com.evil.example</code> や <code>https://notexample.com</code> のような攻撃者のオリジンも許可されてしまいます。許可オリジンは許可リストに載せ、<strong>完全一致</strong> で判定します。届いた Origin をそのまま <code>Access-Control-Allow-Origin</code> に返し、<code>Allow-Credentials: true</code> と組み合わせるのも危険です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. JSON の応答に付けるべき2つのレスポンスヘッダと、その役割を答えてください。</summary>
+      <div class="body">
+        <p><code>Content-Type: application/json; charset=utf-8</code>（応答が JSON であることを明示する）と、<code>X-Content-Type-Options: nosniff</code>（ブラウザに中身を推測させず、HTML やスクリプトとして誤解釈させない）です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. API が1件ごとに正しく認可しているのに、大量漏洩が起きることがあるのはなぜですか？ 対策を3つ挙げてください。</summary>
+      <div class="body">
+        <p>正規の利用と同じ形式のリクエストを大量に送られると、1件ずつは正常に見えるため、件数や速度に上限がなければ <strong>何件でも取れてしまう</strong> からです。対策は、ページサイズ（<code>limit</code>）の上限、ユーザー・トークン・IP ごとのレート制限、一定時間の取得レコード数の上限とアラート、連番でない ID と毎回の所有者チェック、一括エクスポートの権限分離と記録、などです。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/50_API・JavaScript/02_WebAPI実装における脆弱性（徳丸本19章）</li>
+      <li>関連ノート：71_セキュリティ基礎/50_運用・監視・インシデント/10_2026年_国内情報漏洩の動向と対策、71_セキュリティ基礎/40_OWASP_Top10/A09_ログとモニタリングの不備</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>OWASP「API Security Top 10 2023」 https://owasp.org/API-Security/editions/2023/en/0x11-t10/</li>
+      <li>OWASP「Cross-Site Request Forgery Prevention Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html</li>
+      <li>MDN「オリジン間リソース共有 (CORS)」 https://developer.mozilla.org/ja/docs/Web/HTTP/CORS</li>
+      <li>MDN「X-Content-Type-Options」 https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/X-Content-Type-Options</li>
+      <li>PHP マニュアル「json_encode」 https://www.php.net/manual/ja/function.json-encode.php</li>
+      <li>RFC 9239「Updates to ECMAScript Media Types」 https://www.rfc-editor.org/rfc/rfc9239</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-1_競合状態とキャッシュ.html"><span class="lbl">← 前のページ</span>競合状態とキャッシュからの情報漏洩</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-3_JavaScriptの脆弱性.html"><span class="lbl">次のページ →</span>JavaScriptの脆弱性</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

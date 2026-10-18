@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>層化・三層・レイヤード（4層）｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">20 アプリ内部構造 › 21 レイヤー › 層化・三層・レイヤード（4層）</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 アプリ内部構造 ／ 21 レイヤー</span>
+      <h1>層化・三層・レイヤード（4層）</h1>
+      <p class="lead">ソフトウェアの内部を整理する最も基本的な方法が「層化（Layering）」です。このページでは、層化の考え方と依存ルール、古典的な三層アーキテクチャ、ドメイン層を独立させたレイヤードアーキテクチャ（4層）、そして N 層への拡張までを、コード例・Next.js での対応・落とし穴とあわせて詳しく解説します。</p>
+      <p class="meta">もとにしたノート：01層化 ／ 三層アーキテクチャ ／ レイヤードアーキテクチャ（＋ 00_解説_アプリ内部構造）</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>アプリを作っていると、必ず「<strong>どこにどのコードを書けばいいのか</strong>」という問題にぶつかります。画面・業務ロジック・データ保存といった<strong>役割の違い</strong>でコードを水平に切り分け、<strong>上から下へ</strong>依存させる——これが層化です。このページでは次のことを扱います。</p>
+    <ul>
+      <li>層化とは何か、なぜ採用されるのか（メリット）</li>
+      <li><strong>三層</strong>・<strong>レイヤード（4層）</strong>・<strong>N 層</strong>の違いと関係</li>
+      <li>各層の役割と、層ごとの具体的なコード例</li>
+      <li>「Layer（層）」と「Tier（ティア）」の違い</li>
+      <li>Next.js（App Router）で三層を当てはめるときの置き場所</li>
+      <li>層化の<strong>典型的な落とし穴</strong>と、何層構成にするかの判断軸</li>
+    </ul>
+    <p>前提として <a href="11-1_アーキテクチャとは・設計との違い.html">アーキテクチャとは・設計との違い</a> と <a href="12-3_トレードオフと原則.html">トレードオフとアーキテクチャに効く原則</a>（関心の分離）を読んでおくと、理解が深まります。</p>
+
+    <div class="callout key">
+      <p class="callout-title">このフォルダ（20 アプリ内部構造）の位置づけ</p>
+      <p>20 アプリ内部構造は「<strong>1つのアプリケーション（1つのプロセス・1つのデプロイ単位）の中を、どう部品に分け、どの向きにつなぐか</strong>」を扱います。C4 モデルでいえば「コンテナの中身（コンポーネント）」のズームレベルです。アプリ内部構造のアーキテクチャは、大きく<strong>「上下に積む（層）」</strong>から<strong>「中心と周辺に分ける（同心円）」</strong>へと発展してきました。このページの「層」はその出発点です。</p>
+    </div>
+
+    <figure>
+    <svg viewBox="0 0 760 250" role="img" aria-label="アプリ内部構造の発展：層から同心円へ">
+      <defs><marker id="arw0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="20" width="200" height="120" rx="10" class="d-box-accent"/>
+      <text x="120" y="45" text-anchor="middle" class="d-text-accent">21 層で分ける</text>
+      <text x="120" y="78" text-anchor="middle" class="d-text">三層 → レイヤード</text>
+      <text x="120" y="104" text-anchor="middle" class="d-text-sub">上から下へ依存</text>
+      <rect x="20" y="160" width="200" height="70" rx="10" class="d-box"/>
+      <text x="120" y="188" text-anchor="middle" class="d-text-bold">22 UI を分ける</text>
+      <text x="120" y="212" text-anchor="middle" class="d-text-sub">MVC → MVP → MVVM</text>
+      <rect x="290" y="45" width="180" height="70" rx="10" class="d-box-warn"/>
+      <text x="380" y="73" text-anchor="middle" class="d-text-bold">24 依存性の管理</text>
+      <text x="380" y="97" text-anchor="middle" class="d-text-sub">DIP（原則）＋DI（手段）</text>
+      <rect x="540" y="20" width="200" height="210" rx="10" class="d-box-good"/>
+      <text x="640" y="45" text-anchor="middle" class="d-text-bold">23 中心と周辺で分ける</text>
+      <text x="640" y="90" text-anchor="middle" class="d-text">ヘキサゴナル</text>
+      <text x="640" y="125" text-anchor="middle" class="d-text">オニオン</text>
+      <text x="640" y="160" text-anchor="middle" class="d-text">クリーン</text>
+      <text x="640" y="200" text-anchor="middle" class="d-text-sub">依存は内側へ</text>
+      <line x1="220" y1="80" x2="288" y2="80" class="d-line" marker-end="url(#arw0)"/>
+      <text x="254" y="70" text-anchor="middle" class="d-text-sub">DB依存を</text>
+      <text x="254" y="102" text-anchor="middle" class="d-text-sub">逆転したい</text>
+      <line x1="470" y1="80" x2="538" y2="80" class="d-line" marker-end="url(#arw0)"/>
+      <path d="M220,195 L540,195" class="d-line-dash" marker-end="url(#arw0)"/>
+      <text x="380" y="185" text-anchor="middle" class="d-text-sub">View を薄く・ドメインを独立</text>
+    </svg>
+    <figcaption>図：アプリ内部構造の全体像。21・22 は「何をどこに書くか」、23 は「依存の矢印をどちらに向けるか」、24 はそれを実現する道具</figcaption>
+    </figure>
+
+    <h2 id="sec-2"><span class="num">2.</span>層化とは</h2>
+    <p><strong>層化（Layering）</strong>とは、ソフトウェアを<strong>役割の異なる水平の層</strong>に分け、次の<strong>一方向の依存ルール</strong>で構造化する手法です。</p>
+    <div class="grid c2">
+      <div class="card good"><h4>してよいこと</h4><p><strong>上の層</strong>は<strong>下の層</strong>を呼び出してよい。</p></div>
+      <div class="card bad"><h4>してはいけないこと</h4><p><strong>下の層</strong>は<strong>上の層</strong>を呼び出してはならない（存在すら知らない）。</p></div>
+    </div>
+    <p>たとえばピザ屋のシステムなら、次のように分けます。</p>
+    <ul>
+      <li>注文画面（プレゼンテーション層）</li>
+      <li>注文受付ロジック（ビジネスロジック層）</li>
+      <li>注文 DB（データ層）</li>
+    </ul>
+    <p>画面はビジネスロジックを呼び、ビジネスロジックは DB を触ります。しかし<strong>DB が画面を呼び出すことはない</strong>、というルールにします。</p>
+
+    <h3>日常生活での例え：レストラン</h3>
+    <div class="grid c3">
+      <div class="card accent"><h4>ウェイター</h4><p>＝表示層（プレゼンテーション）。お客様との接点です。</p></div>
+      <div class="card good"><h4>シェフ</h4><p>＝業務層（ビジネスロジック）。料理のルールを知っています。</p></div>
+      <div class="card warn"><h4>冷蔵庫・食材庫</h4><p>＝データ層。材料を保存しています。</p></div>
+    </div>
+    <p>ウェイターはシェフに注文を伝え、シェフは食材庫から材料を出します。食材庫がお客様に話しかけることはありません。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>なぜ層化するのか（メリット）</h2>
+    <h3>3.1 関心の分離が自然になる</h3>
+    <p>関心の分離（<a href="12-3_トレードオフと原則.html">トレードオフとアーキテクチャに効く原則</a>）が、<strong>層という形</strong>で物理的に表現されます。「画面の話はこの層」「DB の話はこの層」と、<strong>どこに何を書くか</strong>が一意に決まります。画面の都合・業務の都合・DB の都合が混ざりません。</p>
+    <h3>3.2 変更の影響が局所化する</h3>
+    <ul>
+      <li>画面を改修する → プレゼンテーション層だけを直す</li>
+      <li>DB を切り替える → データ層だけを直す</li>
+    </ul>
+    <p>このようにできれば、<strong>変更コスト</strong>が大きく下がります（<a href="11-2_アーキテクトの役割と思考.html">なぜ早く意識するか・アーキテクトの役割と思考</a> の変更コストの話）。画面のデザイン変更が DB 処理を壊すこともありません。</p>
+    <h3>3.3 チームの分業が成立しやすい</h3>
+    <ul>
+      <li>フロントエンド担当 → プレゼンテーション層</li>
+      <li>バックエンド担当 → ビジネスロジック層・データ層</li>
+    </ul>
+    <p>このように<strong>担当範囲</strong>を層で切れるので、UI チームとバックエンドチームが並行して作業できます。</p>
+    <h3>3.4 テストしやすい</h3>
+    <ul>
+      <li>ビジネスロジック層を<strong>画面なし</strong>で単体テストできる</li>
+      <li>データ層を<strong>偽物の DB</strong>で動かしてテストできる</li>
+    </ul>
+    <h3>3.5 三層ノートでのメリットの内訳</h3>
+    <ol>
+      <li><strong>保守性</strong> — UI だけ変えたいときに、業務層・データ層を触らなくてよいことが多い</li>
+      <li><strong>再利用</strong> — 同じ業務 API を Web・モバイル・管理画面から使える</li>
+      <li><strong>テスト</strong> — 業務層を UI 抜きで検証しやすい</li>
+      <li><strong>スケール</strong> — 層ごとにサーバーや DB を伸ばしやすい（物理的に分けた Tier の場合）</li>
+      <li><strong>役割分担</strong> — フロント／バックエンド／データ担当で境界を描きやすい</li>
+    </ol>
+    <p>そして何より、<strong>フォルダ構成を見るだけで分担がわかる</strong>ので「どこに書くべきか迷わない」ことが、日々の開発では大きな効果になります。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>三層・レイヤード・N 層の関係</h2>
+    <p>三つの言葉は対立するものではなく、<strong>同じ層化という考え方の、粒度の違い</strong>です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>構成</th><th>層</th><th>特徴</th></tr></thead>
+      <tbody>
+        <tr><td><strong>三層</strong></td><td>表示層 / 業務層 / データアクセス層</td><td>最も古典的。業務層にユースケースも業務ルールも入る。小〜中規模の CRUD 向き</td></tr>
+        <tr><td><strong>レイヤード（4層）</strong></td><td>プレゼンテーション / アプリケーション / ドメイン / インフラ</td><td>業務層を「アプリケーション層（手順）」と「ドメイン層（業務ルール）」に分ける。中〜大規模向き</td></tr>
+        <tr><td><strong>N 層</strong></td><td>必要に応じて増やす</td><td>層を増やすほど分離は進むが、素通りする層も増える</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>レイヤードアーキテクチャ（Layered Architecture）</strong>は層化を<strong>設計手法として一般化</strong>したもので、層の数や名前は固定ではありません。一般には、ドメイン層を独立させた4層の形を指して「レイヤード」と呼ぶことが多く、このページでもその意味で使います。<strong>三層</strong>はその最も基本的な形、<strong>N 層</strong>は必要に応じた拡張です。</p>
+
+    <figure>
+    <svg viewBox="0 0 760 330" role="img" aria-label="三層とレイヤード4層の対応">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="170" y="24" text-anchor="middle" class="d-text-bold">三層アーキテクチャ</text>
+      <text x="590" y="24" text-anchor="middle" class="d-text-bold">レイヤードアーキテクチャ（4層）</text>
+      <!-- three tier -->
+      <rect x="40" y="40" width="260" height="60" rx="8" class="d-box-accent"/>
+      <text x="170" y="67" text-anchor="middle" class="d-text-bold">表示層</text>
+      <text x="170" y="88" text-anchor="middle" class="d-text-sub">画面・UI・HTTP</text>
+      <rect x="40" y="120" width="260" height="120" rx="8" class="d-box-good"/>
+      <text x="170" y="170" text-anchor="middle" class="d-text-bold">業務層</text>
+      <text x="170" y="194" text-anchor="middle" class="d-text-sub">ユースケース＋業務ルール</text>
+      <text x="170" y="214" text-anchor="middle" class="d-text-sub">が全部入る</text>
+      <rect x="40" y="260" width="260" height="60" rx="8" class="d-box-warn"/>
+      <text x="170" y="287" text-anchor="middle" class="d-text-bold">データアクセス層</text>
+      <text x="170" y="308" text-anchor="middle" class="d-text-sub">DB・ファイル</text>
+      <line x1="170" y1="100" x2="170" y2="118" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="170" y1="240" x2="170" y2="258" class="d-line" marker-end="url(#arw1)"/>
+      <!-- four layer -->
+      <rect x="460" y="40" width="260" height="60" rx="8" class="d-box-accent"/>
+      <text x="590" y="67" text-anchor="middle" class="d-text-bold">プレゼンテーション層</text>
+      <text x="590" y="88" text-anchor="middle" class="d-text-sub">ユーザーが触る部分</text>
+      <rect x="460" y="120" width="260" height="50" rx="8" class="d-box-good"/>
+      <text x="590" y="142" text-anchor="middle" class="d-text-bold">アプリケーション層</text>
+      <text x="590" y="161" text-anchor="middle" class="d-text-sub">ユースケースの流れ</text>
+      <rect x="460" y="190" width="260" height="50" rx="8" class="d-box-purple"/>
+      <text x="590" y="212" text-anchor="middle" class="d-text-bold">ドメイン層</text>
+      <text x="590" y="231" text-anchor="middle" class="d-text-sub">ビジネスルール</text>
+      <rect x="460" y="260" width="260" height="60" rx="8" class="d-box-warn"/>
+      <text x="590" y="287" text-anchor="middle" class="d-text-bold">インフラ層</text>
+      <text x="590" y="308" text-anchor="middle" class="d-text-sub">DB・外部 API</text>
+      <line x1="590" y1="100" x2="590" y2="118" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="590" y1="170" x2="590" y2="188" class="d-line" marker-end="url(#arw1)"/>
+      <line x1="590" y1="240" x2="590" y2="258" class="d-line" marker-end="url(#arw1)"/>
+      <!-- mapping -->
+      <line x1="300" y1="70" x2="458" y2="70" class="d-line-dash"/>
+      <line x1="300" y1="145" x2="458" y2="145" class="d-line-dash"/>
+      <line x1="300" y1="215" x2="458" y2="215" class="d-line-dash"/>
+      <line x1="300" y1="290" x2="458" y2="290" class="d-line-dash"/>
+      <text x="380" y="185" text-anchor="middle" class="d-text-accent">業務層を2つに分ける</text>
+    </svg>
+    <figcaption>図：三層の「業務層」を、アプリケーション層（手順）とドメイン層（業務ルール）に分けたものがレイヤード（4層）。矢印は依存の向き（上から下へ）</figcaption>
+    </figure>
+
+    <h2 id="sec-5"><span class="num">5.</span>三層アーキテクチャ</h2>
+    <p><strong>三層アーキテクチャ（Three-Tier / 3-Layer Architecture）</strong>は、最もシンプルで広く使われているアーキテクチャのひとつで、レイヤードの<strong>最も基本的な形</strong>です。アプリを<strong>「表示」「業務」「データ」</strong>の3つに分けることで、<strong>誰でも迷わずどこに書くかを判断できる</strong>ようにします。この3つに分けるだけでも、関心の分離は十分に機能します。</p>
+    <ul>
+      <li><strong>上の層 → 下の層</strong> を呼び出す</li>
+      <li><strong>下の層は上の層を知らない</strong></li>
+    </ul>
+
+    <h3>5.1 表示層（Presentation Layer）</h3>
+    <ul>
+      <li><strong>役割</strong>：ユーザーが見る・触る部分</li>
+      <li><strong>技術例</strong>：HTML、CSS、React、Vue、HTTP エンドポイント</li>
+      <li><strong>やること</strong>：入力を受け取る／業務層に処理を依頼する／結果を整形して表示する</li>
+    </ul>
+    <span class="code-label">例：HTTP コントローラ（表示層）</span>
+<pre><code>app.post('/orders', async (req, res) =&gt; {
+  const result = await orderService.placeOrder(req.body); // 業務層に依頼
+  res.json(result);
+});</code></pre>
+
+    <h3>5.2 業務層（Business Logic Layer, BLL）</h3>
+    <ul>
+      <li><strong>役割</strong>：アプリケーションの<strong>中核</strong>。業務ルールを扱う</li>
+      <li><strong>技術例</strong>：Service クラス、UseCase クラス</li>
+      <li><strong>やること</strong>：業務ルールを計算する／データアクセス層に読み書きを依頼する／複数の処理をまとめる</li>
+    </ul>
+    <span class="code-label">例：OrderService（業務層）</span>
+<pre><code>class OrderService {
+  async placeOrder(input) {
+    if (input.items.length === 0) throw new Error('商品がない');
+    const total = input.items.reduce((sum, i) =&gt; sum + i.price, 0);
+    const order = { id: uuid(), total, items: input.items };
+    await orderRepo.save(order); // データ層に依頼
+    return order;
+  }
+}</code></pre>
+
+    <h3>5.3 データアクセス層（Data Access Layer, DAL）</h3>
+    <ul>
+      <li><strong>役割</strong>：<strong>DB やファイル</strong>との読み書き</li>
+      <li><strong>技術例</strong>：Repository、DAO、ORM（Prisma、Sequelize、TypeORM）</li>
+      <li><strong>やること</strong>：SQL・クエリを発行する／オブジェクトとレコードを変換する</li>
+    </ul>
+    <span class="code-label">例：OrderRepository（データアクセス層）</span>
+<pre><code>class OrderRepository {
+  async save(order) {
+    await db.query('INSERT INTO orders ...', order);
+  }
+  async find(id) {
+    return db.query('SELECT * FROM orders WHERE id = ?', id);
+  }
+}</code></pre>
+
+    <h3>5.4 データの流れの例</h3>
+    <h4>商品検索</h4>
+    <ol class="steps">
+      <li>ユーザーが「ラーメン」と検索する</li>
+      <li><strong>[表示層]</strong> <code>SearchController</code> が <code>searchService.search('ラーメン')</code> を呼ぶ</li>
+      <li><strong>[業務層]</strong> <code>SearchService</code> が検索ルールを適用し、<code>productRepo.findByName('ラーメン')</code> を呼ぶ</li>
+      <li><strong>[データ層]</strong> <code>ProductRepository</code> が <code>SELECT * FROM products WHERE name LIKE '%ラーメン%'</code> を DB に発行する</li>
+    </ol>
+    <h4>ログイン</h4>
+    <ol class="steps">
+      <li>ユーザーがフォームを送信する</li>
+      <li><strong>表示層</strong>：HTTP リクエストを受け取る</li>
+      <li><strong>業務層</strong>：入力を検証し、認証の流れを進める</li>
+      <li><strong>データ層</strong>：ユーザーを検索する</li>
+      <li><strong>業務層</strong>：パスワードを検証し、セッションを作成する</li>
+      <li><strong>表示層</strong>：レスポンスを画面に反映する</li>
+    </ol>
+
+    <h3>5.5 フォルダ分けの例</h3>
+<pre><code>my-app/
+├── frontend/     # 表示層（React など）
+├── backend/      # 業務層（ルート・サービス）
+└── database/     # スキーマ・マイグレーション（データ層の都合を集約）</code></pre>
+
+    <h3>5.6 Next.js（App Router）での対応の目安</h3>
+    <p>Next.js は「<strong>どのフォルダが層を決める</strong>」と公式に定めているわけではないので、ルールはチームで決め、業務・データの処理は <code>lib/</code> などに置くことが多いです。三層の考え方でよく当てはまる配置は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>Next.js 上の置き場所の例</th><th>役割のイメージ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>表示層</strong></td><td><code>app/**/page.tsx</code>、<code>layout.tsx</code>、<code>loading.tsx</code>、<code>error.tsx</code>、<code>not-found.tsx</code> などルート配下の UI</td><td>画面の描画・入力の受け取り。業務は<strong>サービスや Server Action へ委譲</strong>する</td></tr>
+        <tr><td><strong>表示層（HTTP 境界）</strong></td><td><code>app/api/**/route.ts</code>（Route Handlers）</td><td>REST 的な入出力。中身は薄くし、<strong>業務層の関数を呼ぶだけ</strong>にすると三層に近い</td></tr>
+        <tr><td><strong>表示層（部品）</strong></td><td><code>components/</code>（クライアント／サーバーを問わず、<strong>見た目とイベント</strong>が主なもの）</td><td>ボタン・フォーム・レイアウトなど。DB 直叩きや複雑なルールは避ける</td></tr>
+        <tr><td><strong>業務層</strong></td><td><code>lib/services/</code>、<code>lib/use-cases/</code>、<code>server/actions/</code> 内の<strong>薄いラッパー以外</strong>の処理など（命名はプロジェクト次第）</td><td>バリデーション（ドメインルール）、計算、複数リポジトリの組み合わせ</td></tr>
+        <tr><td><strong>データアクセス層</strong></td><td><code>lib/repositories/</code>、<code>lib/dao/</code>、Prisma／Drizzle のクエリをまとめたモジュール、<code>prisma/schema.prisma</code></td><td>DB・外部ストレージへの読み書き。ORM の利用自体はここに寄せる</td></tr>
+      </tbody>
+    </table></div>
+    <h4>迷いやすい場所</h4>
+    <ul>
+      <li><strong><code>middleware.ts</code>（ルート直下）</strong> — 認可・リダイレクトなど<strong>横断的な HTTP 前処理</strong>で、厳密には三層のどれか一つに閉じません。<strong>薄く</strong>保つのが無難です。</li>
+      <li><strong>Server Actions</strong>（<code>app/.../actions.ts</code> や <code>lib/actions/</code> など） — <strong>HTTP 的な入口</strong>に近いので表示層寄りとも言えますが、中に業務処理や SQL をべた書きすると層が混ざります。<strong>入口は薄く、本体はサービス／リポジトリ</strong>と分けると整理しやすくなります。</li>
+      <li><strong>Server Component 内での <code>fetch</code> / ORM 直呼び</strong> — ファイルの場所が <code>app/</code> でも、<strong>呼んでいる処理の種類</strong>で層が決まります。ページにロジックを詰め込まず、<strong>業務・データは <code>lib/</code> 側に出す</strong>と三層の意図に沿います。</li>
+      <li><strong><code>public/</code></strong> — 静的アセットのみです。業務層・データ層ではありません。</li>
+    </ul>
+    <p>Pages Router の場合も考え方は同じで、<code>pages/**/*</code> のページコンポーネントが表示層、<code>pages/api/*</code> が HTTP 境界、業務・データは App Router と同様に <code>lib/</code> などへ置く、という対応になります。</p>
+
+    <h3>5.7 三層のメリットとデメリット</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>メリット</h4>
+        <ul>
+          <li><strong>覚えることが少ない</strong></li>
+          <li><strong>多くのフレームワークが前提とする構造</strong>（Spring、Rails、Laravel…）</li>
+          <li><strong>小規模チームでも運用できる</strong></li>
+          <li><strong>教科書どおりで伝わりやすい</strong></li>
+        </ul>
+      </div>
+      <div class="card bad"><h4>デメリット</h4>
+        <ul>
+          <li>業務ロジックが肥大化すると<strong>業務層が太る</strong>（Fat Service 問題）</li>
+          <li><strong>ドメインが育たない</strong>（ビジネスルールが Service 層に散らばる）</li>
+          <li><strong>データ層の都合がロジックに漏れやすい</strong>（JOIN 前提の設計など）</li>
+          <li>小規模では層分割が<strong>過剰</strong>に感じることがある（ファイル数だけ増える）</li>
+          <li>層をまたぐたびに<strong>わずかなオーバーヘッド</strong>がある</li>
+          <li><strong>層の境界</strong>を誤ると、かえって変更が難しくなる</li>
+        </ul>
+      </div>
+    </div>
+    <p>小さいアプリには十分ですが、<strong>複雑な業務</strong>を扱うようになったら、レイヤードアーキテクチャやクリーンアーキテクチャへの移行を検討します。</p>
+
+    <h3>5.8 よくある変種</h3>
+    <div class="grid c2">
+      <div class="card accent"><h4>三層＋プレゼンターパターン</h4><p>表示層を Controller / View / Presenter の3つに分け、MVP パターンと組み合わせます（→ <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a>）。</p></div>
+      <div class="card accent"><h4>三層＋リポジトリパターン</h4><p>データ層を <strong>Repository インターフェース＋実装</strong>に分け、業務層はインターフェースだけに依存させます（DIP。→ <a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a>）。</p></div>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>「Layer（層）」と「Tier（ティア）」の違い</h2>
+    <p>英語の <strong>Tier</strong> と <strong>Layer</strong> はほぼ同じ意味で使われますが、ニュアンスに違いがあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th><th>典型例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Layer（層）</strong></td><td><strong>論理的な分け方</strong>（同じプロセス内で分けてもよい）</td><td>コード上のパッケージ／モジュール分割</td></tr>
+        <tr><td><strong>Tier（ティア）</strong></td><td><strong>物理的な分け方</strong>（別サーバー／プロセスに分ける）</td><td>Web サーバー・AP サーバー・DB サーバー</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 760 230" role="img" aria-label="Layer と Tier の違い">
+      <text x="185" y="24" text-anchor="middle" class="d-text-bold">Layer：1つのプロセス内の論理分割</text>
+      <text x="570" y="24" text-anchor="middle" class="d-text-bold">Tier：別マシン・別プロセス</text>
+      <rect x="40" y="40" width="290" height="175" rx="10" class="d-line-dash"/>
+      <text x="185" y="62" text-anchor="middle" class="d-text-sub">1つのアプリ（プロセス）</text>
+      <rect x="70" y="75" width="230" height="36" rx="6" class="d-box-accent"/>
+      <text x="185" y="99" text-anchor="middle" class="d-text">presentation/</text>
+      <rect x="70" y="121" width="230" height="36" rx="6" class="d-box-good"/>
+      <text x="185" y="145" text-anchor="middle" class="d-text">business/</text>
+      <rect x="70" y="167" width="230" height="36" rx="6" class="d-box-warn"/>
+      <text x="185" y="191" text-anchor="middle" class="d-text">data/</text>
+      <rect x="420" y="90" width="90" height="70" rx="8" class="d-box-accent"/>
+      <text x="465" y="122" text-anchor="middle" class="d-text">Web</text>
+      <text x="465" y="142" text-anchor="middle" class="d-text-sub">サーバー</text>
+      <rect x="545" y="90" width="90" height="70" rx="8" class="d-box-good"/>
+      <text x="590" y="122" text-anchor="middle" class="d-text">AP</text>
+      <text x="590" y="142" text-anchor="middle" class="d-text-sub">サーバー</text>
+      <rect x="670" y="90" width="80" height="70" rx="8" class="d-box-warn"/>
+      <text x="710" y="122" text-anchor="middle" class="d-text">DB</text>
+      <text x="710" y="142" text-anchor="middle" class="d-text-sub">サーバー</text>
+      <line x1="510" y1="125" x2="545" y2="125" class="d-line"/>
+      <line x1="635" y1="125" x2="670" y2="125" class="d-line"/>
+      <text x="585" y="190" text-anchor="middle" class="d-text-sub">ネットワーク越しに通信</text>
+    </svg>
+    <figcaption>図：「3層構造」はどちらの意味でも使われる。左はコードの分け方、右は配置（デプロイ）の分け方</figcaption>
+    </figure>
+    <div class="callout tip">
+      <p class="callout-title">文脈で読み分ける</p>
+      <p>「3層構造」と言うとき、<strong>3つのモジュールに論理的に分かれている</strong>場合と、<strong>Web・AP・DB の3台に物理的に分かれている</strong>場合の両方を指します。どちらの意味かは文脈で読み分けるのが現実的です。三層ノートのメリット「層ごとにサーバーや DB を伸ばしやすい」は、物理的に分けた Tier の話です。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>レイヤードアーキテクチャ（4層）</h2>
+    <p>レイヤードでは、上の層は下の層の機能を使えますが、<strong>下の層は上の層を知りません</strong>。三層との最大の違いは、<strong>ドメイン層（業務ルール）を独立した層</strong>にすることです。</p>
+
+    <h3>7.1 プレゼンテーション層</h3>
+    <ul>
+      <li><strong>役割</strong>：ユーザーとの接点（画面、HTTP エンドポイント、CLI）。API のリクエスト／レスポンス処理</li>
+      <li><strong>具体例</strong>：React コンポーネント、Express のルートハンドラ、REST API のコントローラ</li>
+      <li><strong>書くべきこと</strong>：入力の受け付け、出力の整形</li>
+      <li><strong>書くべきでないこと</strong>：ビジネスルール、DB アクセス</li>
+    </ul>
+    <span class="code-label good">良い例：コントローラは受けて渡して返すだけ</span>
+<pre><code>app.post('/users', async (req, res) =&gt; {
+  const user = await userService.register(req.body);
+  res.json(user);
+});</code></pre>
+
+    <h3>7.2 アプリケーション層</h3>
+    <ul>
+      <li><strong>役割</strong>：「ユースケース」を1つずつ表現し、処理の流れをまとめる。複数ドメインをコーディネートする</li>
+      <li><strong>具体例</strong>：<code>RegisterUserUseCase</code>、<code>PlaceOrderService</code></li>
+      <li><strong>書くべきこと</strong>：処理の流れ、トランザクション境界</li>
+      <li><strong>書くべきでないこと</strong>：ビジネスルールの中身、UI 処理</li>
+    </ul>
+<pre><code>class RegisterUserUseCase {
+  async execute(input) {
+    const user = User.create(input);          // ドメインに依頼
+    await this.userRepo.save(user);           // インフラに保存を依頼
+    await this.mailer.sendWelcome(user.email);
+  }
+}</code></pre>
+
+    <h3>7.3 ドメイン層（業務ロジック層）</h3>
+    <ul>
+      <li><strong>役割</strong>：<strong>業務ルール・計算・状態遷移</strong>を持つ中核</li>
+      <li><strong>具体例</strong>：<code>User</code>、<code>Order</code>、<code>Product</code> などのエンティティ、<code>Price</code>、<code>Email</code> などの値オブジェクト</li>
+      <li><strong>書くべきこと</strong>：業務のルール（「未成年はお酒を買えない」など）</li>
+      <li><strong>書くべきでないこと</strong>：DB の都合、UI の都合</li>
+    </ul>
+<pre><code>class User {
+  constructor(email, age) {
+    if (!email.includes('@')) throw new Error('メール不正');
+    this.email = email;
+    this.age = age;
+  }
+  canBuyAlcohol() {
+    return this.age &gt;= 20;
+  }
+}</code></pre>
+
+    <h3>7.4 インフラ層（インフラストラクチャ層）</h3>
+    <ul>
+      <li><strong>役割</strong>：<strong>外の世界</strong>との接続（DB、外部 API、ファイルシステム、メール送信）</li>
+      <li><strong>具体例</strong>：<code>MySQLUserRepository</code>、<code>SendGridMailer</code></li>
+      <li><strong>書くべきこと</strong>：永続化・外部通信・フレームワーク固有のコード</li>
+      <li><strong>書くべきでないこと</strong>：業務ルール</li>
+    </ul>
+
+    <h3>7.5 具体例：ユーザー登録の流れ</h3>
+    <ol class="steps">
+      <li><code>HTTP POST /users</code> を受ける ← プレゼンテーション層</li>
+      <li><code>RegisterUserUseCase.execute</code> が流れを進める ← アプリケーション層</li>
+      <li><code>User.create(input)</code> がルールを検証する ← ドメイン層</li>
+      <li><code>userRepository.save(user)</code> が DB に書き込む ← インフラ層</li>
+    </ol>
+
+    <h3>7.6 三層との違い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>三層アーキテクチャ</th><th>レイヤードアーキテクチャ</th></tr></thead>
+      <tbody>
+        <tr><td>層の数</td><td>3層</td><td>4層以上（ドメイン層を分離）</td></tr>
+        <tr><td>ドメイン層</td><td>業務層に含まれる</td><td>独立した層</td></tr>
+        <tr><td>主な使い道</td><td>小〜中規模の CRUD アプリ</td><td>中〜大規模・複雑な業務</td></tr>
+        <tr><td>学習コスト</td><td>低い</td><td>やや高い</td></tr>
+      </tbody>
+    </table></div>
+    <p>簡単に言えば、<strong>三層は「業務層」の中にビジネスルールもユースケースも全部入っている</strong>のに対し、<strong>レイヤードでは「アプリケーション層（ユースケース）」と「ドメイン層（業務ルール）」に分ける</strong>のが違いです。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>層の間のルール</h2>
+    <h3>8.1 原則：上から下への依存のみ</h3>
+    <p>古典的なレイヤードでは、次の順に依存します。</p>
+    <blockquote><p>プレゼンテーション層 → アプリケーション層 → ドメイン層 → インフラストラクチャ層</p></blockquote>
+    <p>逆向きの依存（インフラがドメインを呼ぶ、ドメインが UI を知る）が起きると、層化のメリットが崩れます。</p>
+    <h3>8.2 禁止されていること</h3>
+    <ul>
+      <li><strong>下位層が上位層を直接呼ぶ</strong>（ドメインが UI を知る）</li>
+      <li><strong>層をスキップする</strong>（UI から直接 DB を叩く）。ただし、意図して「飛ばしてよい層」を設計する考え方もあります（→ <a href="21-2_閉じた層と開いた層.html">閉じた層と開いた層・シンクホール</a>）</li>
+      <li><strong>業務ルールを UI に書く</strong></li>
+      <li><strong>DB の都合をドメインに漏らす</strong></li>
+    </ul>
+    <h3>8.3 古典的レイヤードの弱点と、その先</h3>
+    <div class="callout warn">
+      <p class="callout-title">ドメイン層が DB に依存している</p>
+      <p>伝統的なレイヤードでは<strong>ドメイン層がインフラ層（DB）に依存</strong>します。これが「DB を変えると業務ロジックまで影響する」問題の原因になり、23 の同心円型アーキテクチャ（クリーン／ヘキサゴナル／オニオン）が生まれるきっかけになりました。現代的なレイヤードでは、インフラ層の側が<strong>ドメインに定義されたインターフェースに依存する</strong>ように逆転させる考え方（DIP）がよく使われます（→ <a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a>）。クリーンアーキテクチャ／オニオンは、この依存の向きを<strong>ドメインを中心に</strong>整理し直したもの、と理解できます。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>N 層アーキテクチャ</h2>
+    <h3>9.1 必要に応じて層を増やす</h3>
+    <p><strong>N 層アーキテクチャ（N-Tier Architecture）</strong>は、三層を<strong>必要に応じて拡張</strong>したものです。</p>
+    <ul>
+      <li>4層：プレゼン／アプリケーション／ドメイン／インフラ</li>
+      <li>5層：プレゼン／API ゲートウェイ／アプリケーション／ドメイン／インフラ</li>
+      <li>6層：さらに上に BFF（Backends For Frontends）を足す、など</li>
+    </ul>
+    <p>「<strong>何層が正解</strong>」というものはなく、<strong>システムの複雑さ</strong>と<strong>チームの規模</strong>に応じて選びます。</p>
+    <h3>9.2 層を増やすメリットとコスト</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>増やすメリット</th><th>増やすコスト</th></tr></thead>
+      <tbody>
+        <tr><td>関心の分離</td><td>より細かく整理できる</td><td>1つの変更で<strong>多くの層を通過</strong>する</td></tr>
+        <tr><td>テスト容易性</td><td>各層を個別にテストできる</td><td>テストする層が増える</td></tr>
+        <tr><td>チーム分業</td><td>細かく担当を切れる</td><td>層をまたぐ仕様調整が増える</td></tr>
+        <tr><td>性能</td><td>層単位でキャッシュできる</td><td>層間の通信オーバーヘッド</td></tr>
+      </tbody>
+    </table></div>
+    <p>「<strong>多ければ良い</strong>」わけではありません。<strong>何の関心を分けるための層か</strong>を明確に説明できるなら追加する、というのが原則です。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>層化の落とし穴・よくある罠</h2>
+    <h3>10.1 層を「素通り」する</h3>
+    <p>層を増やしても、各層が<strong>何もせずに次の層に渡すだけ</strong>だと、コードが膨らむだけで意味がありません。<strong>それぞれの層が固有の責任を持っている</strong>ことが大前提です。この「素通り」はアーキテクチャ・シンクホールと呼ばれ、<a href="21-2_閉じた層と開いた層.html">閉じた層と開いた層・シンクホール</a> で詳しく扱います。</p>
+    <h3>10.2 ビジネスロジックがプレゼンテーション層に染み出す</h3>
+    <p>「画面の都合で、ここで税計算しちゃおう」のような実装をすると、</p>
+    <ul>
+      <li>別の画面で<strong>同じロジックを再実装</strong>する羽目になる</li>
+      <li>ビジネスルールの変更時に<strong>画面を漏れなく直す</strong>必要が出る</li>
+    </ul>
+    <p>関連する典型的なアンチパターン（モデルに HTML/CSS を含める例など）は <a href="22-1_MVC.html">MVC（定義・Web の MVC・MVC 違反）</a> を、MVC 系全体の整理は <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a> を参照してください。</p>
+    <h3>10.3 データ層への直接アクセス</h3>
+    <p>プレゼンテーション層からデータ層を<strong>直接呼ぶ</strong>と、層化の意味が崩れます。「ちょっと早く実装したい」誘惑に負けると、後から<strong>ビジネスロジックを差し込む場所がなくなる</strong>ことに気づきます。</p>
+    <h3>10.4 層が固定的になりすぎて変えにくい</h3>
+    <p>層を<strong>厳密に守りすぎる</strong>と、ちょっとした処理を書くために<strong>毎回4層を貫通</strong>する必要が出て、開発速度が落ちます。「<strong>何を厳密に守り、何を緩める</strong>か」はチームのコンテキストで判断します。</p>
+    <h3>10.5 「ただの MVC」と混同する</h3>
+    <p>MVC は「画面まわりの分担」なので、レイヤードアーキテクチャとは<strong>抽象度が違う</strong>ものです。Controller は<strong>プレゼンテーション層の中</strong>にあります。</p>
+    <h3>10.6 ドメイン層が空っぽ</h3>
+    <p>初心者がよくやる失敗です。<strong>ビジネスロジックを全部サービス層やコントローラに書いてしまい</strong>、ドメイン層がただのデータ置き場（<strong>貧血ドメインモデル</strong>）になります。結果として、構造はただの「Controller → Service → DB」になってしまいます。</p>
+    <h3>10.7 層を横断する関心</h3>
+    <p>ログ・認証・トランザクションは<strong>すべての層に関係</strong>します。これらは<strong>ミドルウェアや AOP（アスペクト指向プログラミング）</strong>として別扱いにします（→ <a href="50-1_横断的関心事と認証認可.html">横断的関心事と認証・認可の境界</a>）。</p>
+    <h3>10.8 分けすぎ</h3>
+    <p>必ずしも4層である必要はありません。小さいアプリなら<strong>プレゼンテーション＋ドメイン＋インフラ</strong>の3層で十分です。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>層構成の選び方</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロジェクトの規模・複雑さ</th><th>おすすめの層数</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td>学習・プロトタイプ</td><td>2〜3層</td><td>UI ＋ ロジック（DB なしも可）</td></tr>
+        <tr><td>個人開発・小規模</td><td>3層</td><td>プレゼン／業務／データ</td></tr>
+        <tr><td>中規模 Web アプリ</td><td>4層</td><td>プレゼン／アプリ／ドメイン／インフラ</td></tr>
+        <tr><td>大規模・複雑な業務</td><td>4〜5層＋クリーン系の同心円</td><td>DDD と組み合わせる</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">迷ったら少なめから</p>
+      <p>迷ったら<strong>少なめから始める</strong>のが鉄則です。後から層を足すのは比較的楽ですが、<strong>最初から多すぎる層</strong>を整理するのは大変です（YAGNI 原則）。三層で始め、業務ルールが育ってきたら「業務層」を「アプリケーション層」と「ドメイン層」に分ける、という段階的な進め方が安全です。</p>
+    </div>
+
+    <h3>11.1 スタイルとしての評価（★1〜5）</h3>
+    <p>MOC のスタイル比較表では、レイヤードは次のように評価されています（『ソフトウェアアーキテクチャの基礎』に基づく。★が多いほど優れ、「手軽さ・コスト」は★が多いほど安く済む）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>スタイル</th><th>手軽さ・コスト</th><th>シンプルさ</th><th>デプロイ容易性</th><th>テスト容易性</th><th>拡張性</th><th>耐障害性</th><th>進化しやすさ</th></tr></thead>
+      <tbody>
+        <tr><td>レイヤード</td><td class="c"><span class="stars">★★★★★</span></td><td class="c"><span class="stars">★★★★★</span></td><td class="c"><span class="stars">★</span></td><td class="c"><span class="stars">★★</span></td><td class="c"><span class="stars">★</span></td><td class="c"><span class="stars">★</span></td><td class="c"><span class="stars">★</span></td></tr>
+      </tbody>
+    </table></div>
+    <p>テスト容易性は資料によって★1〜2と揺れがあります。低い評価の理由は <a href="21-2_閉じた層と開いた層.html">閉じた層と開いた層・シンクホール</a> の「★評価の理由」で説明しています。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>よくある誤解</h2>
+    <details open><summary>「層化＝古い設計」</summary><div class="body">
+      <p><strong>誤りです。</strong>クリーンアーキテクチャ・ヘキサゴナル・オニオンも、すべて層化の発展形です。層化は<strong>過去の設計</strong>ではなく、<strong>現代の設計の基礎</strong>です。</p>
+    </div></details>
+    <details open><summary>「層が多いほど良い」</summary><div class="body">
+      <p><strong>誤りです。</strong>層は<strong>必要な分だけ</strong>です。意味のない層は<strong>負担</strong>にしかなりません。</p>
+    </div></details>
+    <details open><summary>「層化すれば自動的にクリーンになる」</summary><div class="body">
+      <p><strong>誤りです。</strong>層を切っても、<strong>依存の向き</strong>を意識しないと、画面と DB が直接つながったまま、ということが起きます。重要なのは<strong>依存ルール</strong>であって、層の本数ではありません（23 で深掘りします）。</p>
+    </div></details>
+    <details open><summary>「MVC を使っているからレイヤードは要らない」</summary><div class="body">
+      <p><strong>誤りです。</strong>MVC は<strong>アプリ全体の構造ではなく、UI まわりの構造</strong>です。MVC の Controller と View はプレゼンテーション層の中の話で、業務ルールをどこに置くかは別に決める必要があります。</p>
+    </div></details>
+
+    <h2 id="sec-13"><span class="num">13.</span>まとめ</h2>
+    <ul>
+      <li><strong>層化</strong>は、ソフトウェアを<strong>役割の異なる水平の層</strong>に分け、<strong>上から下への一方向</strong>で依存させる、最も基本的な構造化手法です。</li>
+      <li><strong>三層</strong>は古典的な形（表示 → 業務 → データ）で、小〜中規模ならこれで十分です。</li>
+      <li><strong>レイヤード（4層）</strong>は、業務層を<strong>アプリケーション層（ユースケース）</strong>と<strong>ドメイン層（業務ルール）</strong>に分けたもの、<strong>N 層</strong>は必要に応じた拡張です。</li>
+      <li>メリットは<strong>関心の分離・変更の局所化・分業・テスト容易性</strong>。落とし穴は<strong>素通り層・ロジックの染み出し・直接アクセス・過剰な厳密さ・空っぽのドメイン層</strong>です。</li>
+      <li>「<strong>Layer（論理）</strong>」と「<strong>Tier（物理）</strong>」はニュアンスが違うので、文脈で読み分けます。</li>
+      <li>層数は<strong>少なめから始め、必要に応じて増やす</strong>のが安全です。</li>
+      <li>古典的レイヤードは<strong>ドメインが DB に依存</strong>する弱点を持ち、それを解決したのがクリーン／ヘキサ／オニオンです。</li>
+    </ul>
+    <p>次は <a href="21-2_閉じた層と開いた層.html">閉じた層と開いた層・シンクホール</a> で、「層を飛ばしてよいか」という実務の疑問を扱います。その後、<a href="22-1_MVC.html">MVC</a> や <a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM</a> で、層化の中でも特に<strong>プレゼンテーション層を整える</strong>パターン群を見ていきます。</p>
+
+    <h3>関連ページ・ノート</h3>
+    <ul>
+      <li><a href="23-1_依存性のルールとクリーンアーキテクチャ.html">依存性のルールとクリーンアーキテクチャ</a> — 依存性を逆転させた進化版</li>
+      <li><a href="22-2_MVP・MVVMとGUIの系譜.html">MVP・MVVM と GUI アーキテクチャの系譜</a></li>
+      <li><a href="21-3_垂直スライスアーキテクチャ.html">垂直スライスアーキテクチャ</a> — 横ではなく縦に切る</li>
+      <li>（41 外のノート：48_原則『01_関心の分離』）</li>
+    </ul>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』第10章（レイヤードアーキテクチャ）</li>
+      <li>Robert C. Martin『Clean Architecture』</li>
+      <li>（もとのノート「01層化」「三層アーキテクチャ」「レイヤードアーキテクチャ」には個別の URL の記載はありません）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="13-4_アーキテクチャ量子と論理コンポーネント.html"><span class="lbl">← 前のページ</span>アーキテクチャ量子と粒度・論理コンポーネント</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="21-2_閉じた層と開いた層.html"><span class="lbl">次のページ →</span>閉じた層と開いた層・シンクホール</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

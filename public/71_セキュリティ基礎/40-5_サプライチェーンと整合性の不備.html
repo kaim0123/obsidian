@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サプライチェーンと整合性の不備｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 OWASP Top 10 › サプライチェーンと整合性の不備</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 OWASP Top 10</span>
+      <h1>サプライチェーンと整合性の不備</h1>
+      <p class="lead">ソフトウェアは「作る → ビルドする → 配る → 更新する」という長い流れを通って届きます。その途中のどこかを乗っ取られると、正規の更新や正規のパッケージとして悪意あるコードが届いてしまいます。このページでは、2025年版で新設された「ソフトウェアサプライチェーンの不備」と、それと深く重なる「ソフトウェアとデータの整合性の不備」を、実際の事件と悪い例・良い例のコードで解説します。</p>
+      <p class="meta">もとにしたノート：40_OWASP_Top10/2025_A03_ソフトウェアサプライチェーンの不備、A08_ソフトウェアとデータの整合性の不備、01_OWASP_Top10_2025の変更点</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>サプライチェーンの不備</strong> は「部品の仕入れ先・工場・配送ルートのどこかが乗っ取られている」問題、<strong>整合性の不備</strong> は「届いた荷物が途中ですり替えられていないか確かめずに使ってしまう」問題です。守り方の柱は、<strong>部品表（SBOM）で中身を把握し、ビルドと配布の仕組みを固め、署名やハッシュで「本物であること」を確かめてから使う</strong> ことです。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>2つの項目と、2021年版・2025年版の番号</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>このページの項目</th><th>2021年版</th><th>2025年版</th><th>変化</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ソフトウェアサプライチェーンの不備</strong>（Software Supply Chain Failures）</td><td>（A06 を拡張）</td><td>A03</td><td><strong>新設</strong>。2021年版 A06「脆弱で古いコンポーネント」から範囲を広げた</td></tr>
+        <tr><td><strong>ソフトウェアとデータの整合性の不備</strong>（Software and Data Integrity Failures）</td><td>A08</td><td>A08</td><td>8位のまま。2025年版の英語名は「Software <em>or</em> Data Integrity Failures」</td></tr>
+      </tbody>
+    </table></div>
+    <p>A06:2021「脆弱で古いコンポーネント」の基本（SCA・Dependabot・SBOM の使い方）は前のページ <a href="40-4_安全でない設計・設定ミス・古い部品.html">安全でない設計・設定ミス・古い部品</a> で扱いました。このページはその続きです。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>まずイメージ：ソフトウェアのサプライチェーンとは</h2>
+    <p><strong>サプライチェーン</strong> はもともと「原材料の調達 → 製造 → 物流 → 販売」という供給の連鎖のことです。食品なら、農家・工場・運送会社・お店のどこか1か所で異物が混入しても、お客さんの口に入ってしまいます。</p>
+    <p>ソフトウェアも同じで、開発者の端末で書かれたコードが、リポジトリ（コードの保管場所）→ CI/CD（自動でビルド・テスト・配布する仕組み）→ パッケージレジストリ（npm などの部品の配布所）を経て利用者に届きます。<strong>攻撃者はこの流れのどこかに入り込めば、正規の経路でマルウェアを届けられます。</strong></p>
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="ソフトウェアサプライチェーンと攻撃ポイント">
+      <defs><marker id="arw45a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="40" width="120" height="60" rx="8" class="d-box-accent"/>
+      <text x="70" y="66" text-anchor="middle" class="d-text-bold">開発者の端末</text>
+      <text x="70" y="86" text-anchor="middle" class="d-text-sub">IDE・拡張機能</text>
+      <rect x="157" y="40" width="120" height="60" rx="8" class="d-box-accent"/>
+      <text x="217" y="66" text-anchor="middle" class="d-text-bold">リポジトリ</text>
+      <text x="217" y="86" text-anchor="middle" class="d-text-sub">GitHub など</text>
+      <rect x="304" y="40" width="120" height="60" rx="8" class="d-box-accent"/>
+      <text x="364" y="66" text-anchor="middle" class="d-text-bold">CI/CD</text>
+      <text x="364" y="86" text-anchor="middle" class="d-text-sub">ビルドサーバー</text>
+      <rect x="451" y="40" width="120" height="60" rx="8" class="d-box-accent"/>
+      <text x="511" y="66" text-anchor="middle" class="d-text-bold">レジストリ</text>
+      <text x="511" y="86" text-anchor="middle" class="d-text-sub">npm・コンテナ</text>
+      <rect x="598" y="40" width="112" height="60" rx="8" class="d-box-good"/>
+      <text x="654" y="66" text-anchor="middle" class="d-text-bold">利用者</text>
+      <text x="654" y="86" text-anchor="middle" class="d-text-sub">本番・顧客</text>
+      <line x1="130" y1="70" x2="155" y2="70" class="d-line" marker-end="url(#arw45a)"/>
+      <line x1="277" y1="70" x2="302" y2="70" class="d-line" marker-end="url(#arw45a)"/>
+      <line x1="424" y1="70" x2="449" y2="70" class="d-line" marker-end="url(#arw45a)"/>
+      <line x1="571" y1="70" x2="596" y2="70" class="d-line" marker-end="url(#arw45a)"/>
+      <line x1="70" y1="100" x2="70" y2="140" class="d-line-dash"/>
+      <line x1="217" y1="100" x2="217" y2="140" class="d-line-dash"/>
+      <line x1="364" y1="100" x2="364" y2="140" class="d-line-dash"/>
+      <line x1="511" y1="100" x2="511" y2="140" class="d-line-dash"/>
+      <rect x="10" y="140" width="120" height="70" rx="8" class="d-box-bad"/>
+      <text x="70" y="166" text-anchor="middle" class="d-text">認証情報を</text>
+      <text x="70" y="188" text-anchor="middle" class="d-text">盗まれる</text>
+      <rect x="157" y="140" width="120" height="70" rx="8" class="d-box-bad"/>
+      <text x="217" y="166" text-anchor="middle" class="d-text">不正な</text>
+      <text x="217" y="188" text-anchor="middle" class="d-text">コミット</text>
+      <rect x="304" y="140" width="120" height="70" rx="8" class="d-box-bad"/>
+      <text x="364" y="166" text-anchor="middle" class="d-text">ビルドに</text>
+      <text x="364" y="188" text-anchor="middle" class="d-text">混入</text>
+      <rect x="451" y="140" width="120" height="70" rx="8" class="d-box-bad"/>
+      <text x="511" y="166" text-anchor="middle" class="d-text">悪意ある版</text>
+      <text x="511" y="188" text-anchor="middle" class="d-text">を公開</text>
+      <text x="70" y="236" text-anchor="middle" class="d-text-sub">Shai-Hulud</text>
+      <text x="364" y="236" text-anchor="middle" class="d-text-sub">SolarWinds</text>
+      <text x="511" y="236" text-anchor="middle" class="d-text-sub">event-stream</text>
+      <text x="654" y="166" text-anchor="middle" class="d-text-sub">正規の更新として</text>
+      <text x="654" y="186" text-anchor="middle" class="d-text-sub">受け取ってしまう</text>
+    </svg>
+    <figcaption>図：上の段が正規の流れ、下の段が攻撃ポイント。どこを乗っ取られても、利用者には「正規の更新」に見える</figcaption>
+    </figure>
+
+    <!-- ============ A03:2025 ============ -->
+    <h2 id="sec-3"><span class="num">3.</span>ソフトウェアサプライチェーンの不備（A03:2025 新設 ／ 2021 A06 を拡張）</h2>
+    <h3 id="sec-3-1">3.1 どんな問題か</h3>
+    <p>2021年版の A06 は「<strong>既知の脆弱性を持つライブラリを使っている</strong>」問題でした。2025年版の A03 はそこから範囲を広げ、</p>
+    <div class="callout key"><p><strong>ソフトウェアが「作られ・配布され・更新される」仕組みのどこかが壊れている、または乗っ取られている</strong></p></div>
+    <p>ことすべてを扱います。対象は依存ライブラリだけでなく、<strong>CI/CD・ビルドサーバー・開発者の端末・IDE 拡張・パッケージレジストリ・コンテナレジストリ・SaaS 連携</strong> まで含みます。</p>
+
+    <h3 id="sec-3-2">3.2 名前の移り変わり</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>版</th><th>名称</th></tr></thead>
+      <tbody>
+        <tr><td>2013</td><td>A9 – Using Components with Known Vulnerabilities</td></tr>
+        <tr><td>2017</td><td>A9 – Using Components with Known Vulnerabilities</td></tr>
+        <tr><td>2021</td><td>A06 – Vulnerable and Outdated Components</td></tr>
+        <tr><td><strong>2025</strong></td><td><strong>A03 – Software Supply Chain Failures</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>「既知の脆弱性がある部品を使う」→「古い部品を使う」→「供給の仕組み全体の失敗」と、見る範囲がだんだん広がってきたことが分かります。</p>
+
+    <h3 id="sec-3-3">3.3 数字で見る A03</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指標</th><th>値</th></tr></thead>
+      <tbody>
+        <tr><td>対応する CWE（弱点の種類の分類番号）の数</td><td>6</td></tr>
+        <tr><td>平均発生率</td><td>5.72%（<strong>全カテゴリ中で最も高い</strong>）</td></tr>
+        <tr><td>最大発生率</td><td>9.56%</td></tr>
+        <tr><td>平均悪用容易性 ／ 平均影響</td><td>8.17 ／ 5.23</td></tr>
+        <tr><td>関連 CVE 数</td><td>11（CVE としては少ない）</td></tr>
+        <tr><td>コミュニティ調査</td><td>回答者の <strong>ちょうど50%が1位</strong> に選んだ</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">なぜ CVE が少ないのか</p>
+      <p>CVE は「ソフトウェアの欠陥」に付く番号です。ところがサプライチェーン攻撃の多くは、欠陥ではなく <strong>仕組みの悪用</strong>（アカウントの乗っ取り、悪意あるパッケージの公開）なので、CVE 番号が付きにくいのです。ツールのテストデータだけでは拾えないため、<strong>コミュニティ調査の枠</strong> でも選ばれました。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>実際の攻撃シナリオ</h2>
+    <h3 id="sec-4-1">4.1 信頼しているベンダーが侵害される（SolarWinds、2019〜2020年）</h3>
+    <p>攻撃者が SolarWinds 社のビルド環境に侵入し、監視製品 Orion の <strong>正規アップデートにバックドア</strong>（こっそり出入りできる裏口）を混入しました。<strong>約18,000の組織</strong>（米国政府機関を含む）が、署名された正規の更新としてマルウェアを取り込みました。署名は「この会社が作った」ことは保証しますが、「ビルド環境が汚染されていない」ことまでは保証しない、という教訓を残しました。</p>
+
+    <h3 id="sec-4-2">4.2 特定の条件でだけ動く悪意あるコード（Bybit、2025年）</h3>
+    <p>暗号資産取引所 Bybit から <strong>約15億ドル</strong> が盗まれた事件です。ウォレットソフトウェアのサプライチェーンが侵害され、<strong>標的のウォレットを使うときだけ</strong> 悪意ある動作をするよう仕込まれていました。ふだんは正常に動くため、テストや監視で見つけにくいのが特徴です。</p>
+
+    <h3 id="sec-4-3">4.3 自己増殖する npm ワーム（Shai-Hulud、2025年）</h3>
+    <p>初めて成功した <strong>自己増殖型の npm ワーム</strong>（自分で自分をコピーして広がるマルウェア）とされます。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="Shai-Hulud の自己増殖の流れ">
+      <defs><marker id="arw45b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="40" y="30" width="270" height="70" rx="8" class="d-box-bad"/>
+      <text x="175" y="60" text-anchor="middle" class="d-text-bold">① 悪意ある版が公開される</text>
+      <text x="175" y="82" text-anchor="middle" class="d-text-sub">人気パッケージの新バージョンとして</text>
+      <rect x="410" y="30" width="270" height="70" rx="8" class="d-box-warn"/>
+      <text x="545" y="60" text-anchor="middle" class="d-text-bold">② postinstall が実行される</text>
+      <text x="545" y="82" text-anchor="middle" class="d-text-sub">開発者の端末や CI でインストール時に</text>
+      <rect x="410" y="190" width="270" height="70" rx="8" class="d-box-warn"/>
+      <text x="545" y="220" text-anchor="middle" class="d-text-bold">③ 認証情報を盗む</text>
+      <text x="545" y="242" text-anchor="middle" class="d-text-sub">トークン・クラウドの鍵を外部へ</text>
+      <rect x="40" y="190" width="270" height="70" rx="8" class="d-box-bad"/>
+      <text x="175" y="220" text-anchor="middle" class="d-text-bold">④ 盗んだ npm トークンで</text>
+      <text x="175" y="242" text-anchor="middle" class="d-text-sub">被害者の別パッケージにも悪意ある版</text>
+      <line x1="310" y1="65" x2="406" y2="65" class="d-line" marker-end="url(#arw45b)"/>
+      <line x1="545" y1="100" x2="545" y2="186" class="d-line" marker-end="url(#arw45b)"/>
+      <line x1="410" y1="225" x2="314" y2="225" class="d-line" marker-end="url(#arw45b)"/>
+      <line x1="175" y1="190" x2="175" y2="104" class="d-line" marker-end="url(#arw45b)"/>
+      <text x="360" y="150" text-anchor="middle" class="d-text-bold">連鎖して広がる</text>
+    </svg>
+    <figcaption>図：Shai-Hulud は「インストール → 盗む → 別のパッケージを汚す」を繰り返して広がった</figcaption>
+    </figure>
+    <ol class="steps">
+      <li>人気パッケージの悪意あるバージョンが公開される</li>
+      <li>インストール時に自動で動く <code>postinstall</code> スクリプトが、開発者の端末や CI から認証情報（トークン・クラウドの鍵）を盗み、公開 GitHub リポジトリに書き出す</li>
+      <li>盗んだ <strong>npm トークン</strong> を使い、被害者がメンテナンスしている別のパッケージにも悪意あるバージョンを公開する</li>
+      <li>2 に戻って連鎖する</li>
+    </ol>
+    <p>npm が止めるまでに <strong>500以上のパッケージバージョン</strong> が影響を受けました。<strong>開発者の端末そのものがサプライチェーン攻撃の主要な標的になった</strong> ことを示した事件です。</p>
+
+    <h3 id="sec-4-4">4.4 強い権限を持つ部品の欠陥</h3>
+    <p>部品は通常、アプリと同じ権限で動きます。そのため、どれか1つの欠陥がアプリ全体の乗っ取りにつながります。</p>
+    <ul>
+      <li><code>CVE-2017-5638</code>（Apache Struts 2 のリモートコード実行）：大規模な情報漏洩につながった</li>
+      <li><code>CVE-2021-44228</code>（Log4Shell）：ランサムウェアや暗号資産の不正採掘などに悪用された（→ <a href="40-4_安全でない設計・設定ミス・古い部品.html#sec-4-7">Log4Shell から学ぶ教訓</a>）</li>
+    </ul>
+
+    <h3 id="sec-4-5">4.5 こんな状態なら危ない（OWASP の挙げる条件）</h3>
+    <ul>
+      <li>推移的な依存（依存の依存）を含め、<strong>クライアント側・サーバー側すべての部品のバージョンを把握していない</strong></li>
+      <li>OS・Web サーバー・DBMS・API・ランタイム・ライブラリに、脆弱・サポート切れ・古いものがある</li>
+      <li>定期的な脆弱性スキャンや、セキュリティ情報の購読をしていない</li>
+      <li>サプライチェーン全体（IDE・拡張機能・リポジトリ・サンドボックス・成果物の保管場所）の <strong>変更管理・変更履歴</strong> がない</li>
+      <li>サプライチェーンの各要素（特にアクセス制御）を強化していない</li>
+      <li><strong>職務分離がない</strong>：1人がコードを書いて、誰のチェックも受けずに本番へ出せる</li>
+      <li>信頼できない提供元の部品が本番に影響しうる</li>
+      <li>パッチを月次・四半期ごとにしか当てず、数日〜数か月の無防備な期間がある</li>
+      <li>更新したライブラリの互換性をテストしていない</li>
+      <li><strong>CI/CD パイプラインのセキュリティが、それがビルド・デプロイするシステムより弱い</strong></li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>サプライチェーンの守り方</h2>
+    <h3 id="sec-5-1">5.1 部品とパッチを管理する</h3>
+    <ul>
+      <li><strong>SBOM</strong>（ソフトウェア部品表）を組織のソフトウェア全体について一元的に生成・管理する（形式は CycloneDX、SPDX）</li>
+      <li>直接依存だけでなく <strong>推移的な依存</strong> も追跡する</li>
+      <li>使っていない依存・機能・ファイルを削除し、攻撃対象を減らす</li>
+      <li>OWASP Dependency-Track / Dependency-Check、Retire.js などで継続的に棚卸しする</li>
+      <li>CVE・NVD・<strong>OSV</strong>（脆弱性情報のデータベース）を監視し、SCA ツールで自動化、アラートを購読する</li>
+      <li>信頼できる提供元から安全な経路で取得し、<strong>署名付きパッケージ</strong> を優先する</li>
+      <li>依存のバージョンは意図して選び、必要なときに上げる（<strong>無条件の最新追従はしない</strong>）</li>
+      <li>保守されていない部品に注意。パッチが出ないなら代替へ移行、移行もできないなら <strong>仮想パッチ</strong>（WAF などで攻撃を検知・遮断する）</li>
+      <li>CI/CD・IDE・開発ツール自体も定期的に更新する</li>
+      <li><strong>一斉に更新しない</strong>。段階的な展開やカナリア（一部の環境だけ先に更新して様子を見る方法）で、ベンダーが侵害された場合の影響を限定する</li>
+    </ul>
+
+    <h3 id="sec-5-2">5.2 変更を追跡する（変更管理）</h3>
+    <p>「いつ・誰が・何を変えたか」を記録しておく対象は、コードだけではありません。</p>
+    <div class="grid c3">
+      <div class="card"><p>CI/CD の設定、ビルドツール、パイプライン</p></div>
+      <div class="card"><p>コードリポジトリ、サンドボックス</p></div>
+      <div class="card"><p>開発者の IDE と拡張機能</p></div>
+      <div class="card"><p>SBOM ツールと生成物</p></div>
+      <div class="card"><p>ログ基盤とログ、SaaS を含む外部連携</p></div>
+      <div class="card"><p>成果物リポジトリ、コンテナレジストリ</p></div>
+    </div>
+
+    <h3 id="sec-5-3">5.3 仕組みを固める（ハードニング）</h3>
+    <p>すべてで <strong>MFA（多要素認証）を有効にし、IAM（権限）を最小限に</strong> します（<a href="20-1_最小権限とデータ最小化.html">最小権限</a>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対象</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td>コードリポジトリ</td><td>秘密情報をコミットしない、保護ブランチ（レビューなしで直接変更できない設定）、バックアップ</td></tr>
+        <tr><td>開発者の端末</td><td>定期的なパッチ、MFA、監視（EDR：端末の不審な動きを検知する仕組み）</td></tr>
+        <tr><td>ビルドサーバー・CI/CD</td><td>職務分離、アクセス制御、<strong>署名付きビルド</strong>、環境ごとにスコープを絞った秘密情報、改ざんを検知できるログ</td></tr>
+        <tr><td>成果物</td><td>来歴（provenance：いつ・どこで・何から作られたかの記録）・署名・タイムスタンプで整合性を確認。<strong>環境ごとに再ビルドせず、同じ成果物を昇格させる</strong>。ビルドは不変（immutable）に</td></tr>
+        <tr><td>IaC</td><td>他のコードと同じく、プルリクエストとバージョン管理で扱う</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">覚えておきたい一文</p>
+      <p><strong>CI/CD は、それがデプロイするシステムと同じか、それ以上に守る。</strong> CI/CD は本番に何でも送り込める「マスターキー」を持っているので、ここが弱いと本番をいくら固めても意味がありません。</p>
+    </div>
+
+    <h3 id="sec-5-4">5.4 開発者の端末と npm での実践</h3>
+    <p>Shai-Hulud 型の攻撃を踏まえた、すぐできる対策です。</p>
+    <span class="code-label bad">✕ 危険：インストール時スクリプトを無条件に実行し、ロックファイルも無視しがち</span>
+    <pre><code># CI でも開発端末でも、毎回これ
+npm install</code></pre>
+    <span class="code-label good">○ 安全：スクリプトを既定で止め、ロックファイルどおりに入れる</span>
+    <pre><code># インストールスクリプトを既定で実行しない（必要なパッケージだけ許可）
+npm config set ignore-scripts true
+
+# ロックファイルどおりに入れる（CI では npm install ではなく npm ci）
+npm ci
+
+# 公開から一定期間たっていない新しいバージョンを避ける（pnpm の例）
+# pnpm-workspace.yaml
+# minimumReleaseAge: 1440   # 分。公開から24時間未満のバージョンは入れない</code></pre>
+    <ul>
+      <li>npm への公開は <strong>Trusted Publishing（OIDC）</strong> を使い、長期間有効な公開トークンを持たない（盗まれても使える鍵を置かない）</li>
+      <li>パッケージの公開アカウントには <strong>フィッシング耐性のある MFA</strong>（パスキー・セキュリティキー）</li>
+      <li>CI の秘密情報は必要なジョブ・環境だけに渡す。外部からの PR で動くワークフローに秘密情報を渡さない</li>
+      <li>GitHub Actions は <strong>コミット SHA で固定</strong> する（タグは後から書き換えられる）</li>
+    </ul>
+    <span class="code-label bad">✕ タグ参照：乗っ取られると中身が差し替わる</span>
+    <pre><code>- uses: some-org/some-action@v3</code></pre>
+    <span class="code-label good">○ コミット SHA で固定（Dependabot / Renovate で更新）</span>
+    <pre><code>- uses: some-org/some-action@3f1c2b7e9a0d4c5b6e7f8a9b0c1d2e3f4a5b6c7d # v3.2.1</code></pre>
+    <p>タグ（<code>v3</code>）は「付箋」のようなもので、後から別のコミットに貼り替えられます。SHA はコードの中身から計算される「指紋」なので、中身が変われば必ず変わります。</p>
+
+    <h3 id="sec-5-5">5.5 使えるフレームワーク</h3>
+    <div class="grid c2">
+      <div class="card"><h4>SLSA</h4><p>Supply-chain Levels for Software Artifacts。ビルドの来歴と改ざん耐性を段階的なレベルで示す。</p></div>
+      <div class="card"><h4>Sigstore / cosign</h4><p>成果物・コンテナイメージへの署名と検証。</p></div>
+      <div class="card"><h4>OpenSSF Scorecard</h4><p>OSS プロジェクトのセキュリティ慣行を自動で評価する。</p></div>
+      <div class="card"><h4>NIST SSDF（SP 800-218）</h4><p>セキュアなソフトウェア開発の枠組み。</p></div>
+    </div>
+
+    <h3 id="sec-5-6">5.6 対応する CWE</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>CWE</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>CWE-447</td><td>廃止された関数の使用</td></tr>
+        <tr><td>CWE-1035</td><td>2017 Top 10 A9：既知の脆弱性を持つコンポーネントの使用</td></tr>
+        <tr><td>CWE-1104</td><td>メンテナンスされていないサードパーティ部品の使用</td></tr>
+        <tr><td>CWE-1329</td><td>更新できない部品への依存</td></tr>
+        <tr><td>CWE-1357</td><td>信頼性が不十分な部品への依存</td></tr>
+        <tr><td>CWE-1395</td><td>脆弱なサードパーティ部品への依存</td></tr>
+      </tbody>
+    </table></div>
+
+    <details>
+      <summary>サプライチェーン対策のチェックリスト</summary>
+      <div class="body">
+        <ul>
+          <li>全サービスの SBOM を生成し、一元管理しているか？</li>
+          <li>推移的依存の脆弱性まで自動で検知・通知されるか？</li>
+          <li>使っていない依存を定期的に削除しているか？</li>
+          <li>本番へのデプロイに、作成者以外のレビュー・承認が必須か（職務分離）？</li>
+          <li>CI/CD・リポジトリ・レジストリ・パッケージ公開アカウントに MFA と最小権限を適用しているか？</li>
+          <li>CI の秘密情報は環境ごとにスコープが絞られ、長期トークンを使っていないか？</li>
+          <li>外部の GitHub Actions を SHA で固定しているか？</li>
+          <li>開発者端末でインストールスクリプトの実行を制限しているか？</li>
+          <li>成果物に署名し、デプロイ時に検証しているか？ 環境ごとに再ビルドしていないか？</li>
+          <li>更新を段階的に展開しているか？</li>
+          <li>メンテナンスが止まった部品の移行計画があるか？</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- ============ A08 ============ -->
+    <h2 id="sec-6"><span class="num">6.</span>ソフトウェアとデータの整合性の不備（A08:2021 ／ A08:2025）</h2>
+    <h3 id="sec-6-1">6.1 どんな問題か</h3>
+    <p><strong>整合性</strong>（Integrity：完全性とも訳す）とは、「データやコードが正規のまま、改ざんされていない」ことです（<a href="10-1_CIA三原則と脅威・脆弱性・リスク.html">CIA三原則</a> の I）。この項目は、<strong>信頼できないところからコードやデータを取り込み、本物か確かめずに使ってしまう</strong> ことで起きる問題を扱います。2021年版で新設され、2025年版でも8位のままです。</p>
+    <p>宅配便にたとえると、封がされていない荷物や、差出人が分からない荷物を、中身を確かめずにそのまま使うようなものです。</p>
+    <ul>
+      <li>npm のパッケージが乗っ取られ、正規のライブラリを装ったマルウェアが配られる</li>
+      <li>CDN（外部の配信サーバー）から読み込む JavaScript が差し替えられ、全ユーザーのブラウザで悪意あるコードが動く</li>
+      <li>Jenkins のプラグインや CI/CD が改ざんされ、ビルド成果物にバックドアが埋め込まれる</li>
+      <li>署名を確かめない自動アップデートで、偽のファームウェアを配られる</li>
+      <li>信頼できないデータをデシリアライズして、リモートコード実行される</li>
+    </ul>
+
+    <h3 id="sec-6-2">6.2 現実に起きた事件</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>事件</th><th>何が起きたか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SolarWinds</strong>（2020年）</td><td>Orion のビルドシステムが侵害され、<strong>正規の署名付きアップデート</strong> にバックドア。18,000の組織（米国政府機関を含む）が影響を受けた、史上最大級のサプライチェーン攻撃</td></tr>
+        <tr><td><strong>event-stream</strong>（2018年）</td><td>npm の人気パッケージのメンテナー権限が悪意ある第三者に譲られ、依存パッケージに暗号通貨を盗むコードが埋め込まれた</td></tr>
+        <tr><td><strong>Codecov</strong>（2021年）</td><td>CI ツール Codecov の Bash Uploader スクリプトが改ざんされ、CI 環境の環境変数（API キー・トークン）が外部に送られていた</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-3">6.3 3つのリスク</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>① ソフトウェアの整合性</h4>
+        <p>信頼できない場所からコードを取得して実行してしまう。</p>
+        <ul><li>npm / PyPI / Docker Hub の汚染</li><li>CDN の JavaScript の改ざん</li><li>ビルドシステム・CI/CD の侵害</li></ul>
+      </div>
+      <div class="card">
+        <h4>② CI/CD パイプラインの整合性</h4>
+        <p>パイプライン自体が守られていないと、作られた成果物も信頼できない。</p>
+        <ul><li>CI/CD の権限管理が甘い</li><li>ビルド環境が共有されて汚染される</li><li>デプロイ時に署名を確かめない</li></ul>
+      </div>
+      <div class="card">
+        <h4>③ 安全でないデシリアライゼーション</h4>
+        <p>外から来たデータをオブジェクトに戻すとき、任意のコードが実行される恐れがある（次の章）。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>安全でないデシリアライゼーション</h2>
+    <p><strong>シリアライズ</strong> とは、プログラムの中のデータ（オブジェクト）を、保存や送信ができる形（文字列やバイト列）に変換することです。その逆に、受け取った文字列やバイト列をオブジェクトに戻すことを <strong>デシリアライズ</strong> といいます。引っ越しにたとえると、家具を分解して箱に詰めるのがシリアライズ、届いた箱から組み立て直すのがデシリアライズです。</p>
+    <p>問題は、形式によっては <strong>「組み立て直す」途中で、箱の中の指示書どおりにプログラムを動かしてしまう</strong> ものがあることです。攻撃者が細工した箱を送るだけで、サーバー上で好きなコードを動かせてしまいます。</p>
+    <span class="code-label bad">✕ 危険：Python の pickle で外部データを復元</span>
+    <pre><code>import pickle
+data = pickle.loads(user_input)  # ← 超危険</code></pre>
+    <p>pickle は Python のオブジェクトを復元する過程で <strong>任意のコードを実行できます</strong>。攻撃者は仕掛けをしたデータを送るだけでサーバーを乗っ取れます。</p>
+    <span class="code-label bad">✕ 危険：Java の標準デシリアライズ</span>
+    <pre><code>ObjectInputStream in = new ObjectInputStream(request.getInputStream());
+Object obj = in.readObject(); // ← 信頼できないデータを渡すと危険</code></pre>
+    <p>Java 標準の <code>ObjectInputStream.readObject()</code> に信頼できないデータを渡すと、<strong>ガジェットチェーン</strong>（アプリにもともとあるクラスを数珠つなぎに悪用する手法）でリモートコード実行される脆弱性が多数見つかっています。</p>
+    <span class="code-label good">○ 安全：コード実行能力のない形式（JSON など）を使う</span>
+    <pre><code>import json
+data = json.loads(user_input)  # JSON はデータしか表せない
+# さらにスキーマ（期待する形）で検証してから使う</code></pre>
+    <ul>
+      <li><strong>JSON</strong> はコードを実行する能力がない、安全な形式</li>
+      <li><strong>Protocol Buffers</strong>、<strong>MessagePack</strong> など、コード実行を含まない形式を選ぶ</li>
+      <li>どうしても言語固有のシリアライズが必要なら、<strong>署名検証</strong> と <strong>許可リスト型の復元</strong>（決めたクラスしか復元しない）を組み合わせる</li>
+    </ul>
+
+    <h2 id="sec-8"><span class="num">8.</span>整合性を守る4つの対策</h2>
+    <h3 id="sec-8-1">8.1 信頼できる場所からだけ取得し、ハッシュで確かめる</h3>
+    <span class="code-label good">○ 取得元を固定し、インストール時スクリプトを止める</span>
+    <pre><code># npm: 公式レジストリのみ
+npm config set registry https://registry.npmjs.org/
+
+# インストール時スクリプトを無効化（サプライチェーン対策）
+npm install --ignore-scripts
+
+# 内部プロキシを経由（Artifactory、Nexus など）
+npm config set registry https://npm.internal.company/</code></pre>
+    <p><code>package-lock.json</code> や <code>yarn.lock</code> には、各パッケージの <strong>ハッシュ値</strong>（integrity）が記録されます。ハッシュ値は、ファイルの中身から計算される「指紋」で、1文字でも変われば別の値になります。</p>
+    <pre><code>{
+  "lodash": {
+    "version": "4.17.21",
+    "integrity": "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg=="
+  }
+}</code></pre>
+    <p>インストール時にハッシュが一致しなければ失敗するので、途中での改ざんを検知できます。</p>
+    <span class="code-label bad">✕ 本番・CI で使わない（依存関係を更新する可能性がある）</span>
+    <pre><code>npm install</code></pre>
+    <span class="code-label good">○ 本番・CI 用（ロックファイルに厳密に従う）</span>
+    <pre><code>npm ci</code></pre>
+
+    <h3 id="sec-8-2">8.2 CDN の JavaScript には SRI を付ける</h3>
+    <p>外部の CDN から JavaScript を読み込む場合、<strong>SRI</strong>（Subresource Integrity：読み込むファイルのハッシュ値をあらかじめ書いておく仕組み）で改ざんを検知します。</p>
+    <span class="code-label bad">✕ SRI なし：CDN 側で差し替えられても気づけない</span>
+    <pre><code>&lt;script src="https://cdn.example.com/lib.js"&gt;&lt;/script&gt;</code></pre>
+    <span class="code-label good">○ SRI 付き：ハッシュが一致しなければブラウザが実行しない</span>
+    <pre><code>&lt;script
+  src="https://cdn.example.com/lib.js"
+  integrity="sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC"
+  crossorigin="anonymous"
+&gt;&lt;/script&gt;</code></pre>
+
+    <h3 id="sec-8-3">8.3 コード署名と検証</h3>
+    <p><strong>署名</strong> は、荷物の封に押す「本人の印鑑」のようなものです。作った人だけが押せる印で、受け取る側はその印が本物か、封が破られていないかを確かめます。</p>
+    <ul>
+      <li><strong>アプリ配布</strong>：配布時にコード署名（Apple Developer Certificate、Microsoft Authenticode）を行い、アップデート取得時には <strong>必ず署名を検証</strong> する。自動アップデート機構（Sparkle、Squirrel）の署名検証を有効化する</li>
+      <li><strong>コンテナイメージ</strong>：Docker Content Trust や <strong>Sigstore / Cosign</strong> で署名・検証する</li>
+      <li><strong>Git のコミット</strong>：コミットに署名すると GitHub で「Verified」バッジが付く</li>
+    </ul>
+    <pre><code># Docker Content Trust
+export DOCKER_CONTENT_TRUST=1
+docker push myimage:v1  # 署名付きでpush
+docker pull myimage:v1  # 署名検証してpull
+
+# Gitコミット署名
+git config --global commit.gpgsign true
+git config --global user.signingkey &lt;key-id&gt;</code></pre>
+
+    <h3 id="sec-8-4">8.4 CI/CD パイプラインを守る</h3>
+    <ol class="steps">
+      <li><strong>権限を分けて最小にする</strong>：ビルド用のロボットアカウントは必要最小限の権限。本番デプロイには人間の承認ステップを必須に。CI の機密情報（API キーなど）は必要なジョブにだけ渡す。</li>
+      <li><strong>ビルド環境を隔離する</strong>：各ビルドを独立したコンテナ・VM で実行し、前のビルドの影響を受けないようにする。プルリクエストのビルドは権限を制限する。</li>
+      <li><strong>GitHub Actions を固める</strong>：サードパーティのアクションはコミット SHA で固定し、ワークフローのデフォルト権限を最小にする（下の例）。</li>
+      <li><strong>SLSA で段階的に強化する</strong>：Google 主導のサプライチェーンセキュリティ成熟度フレームワーク。レベルごとに、来歴・署名・改ざん検知・独立したビルド環境などの要求が定められている。</li>
+    </ol>
+    <span class="code-label bad">✕ タグ参照＋権限の指定なし</span>
+    <pre><code>- uses: someone/action@v1</code></pre>
+    <span class="code-label good">○ SHA 固定＋デフォルト権限は読み取りのみ</span>
+    <pre><code>permissions:
+  contents: read
+
+steps:
+  - uses: someone/action@abc1234567890abcdef1234567890abcdef12</code></pre>
+
+    <details>
+      <summary>整合性対策のチェックリスト</summary>
+      <div class="body">
+        <ul>
+          <li>依存関係は公式／社内プロキシ経由のみから取得しているか？</li>
+          <li>ロックファイル（package-lock.json など）をコミットしているか？</li>
+          <li>本番ビルドで <code>npm ci</code> などの厳密モードを使っているか？</li>
+          <li>CDN の JavaScript に SRI を設定しているか？</li>
+          <li>自動アップデート機構で署名検証しているか？</li>
+          <li>Docker イメージ／バイナリに署名しているか？</li>
+          <li>CI/CD の権限は最小化されているか？</li>
+          <li>デシリアライズで pickle / Java Serialization を避け、JSON などを使っているか？</li>
+          <li>インストール時スクリプト（postinstall）を無効化できる構成か？</li>
+        </ul>
+      </div>
+    </details>
+
+    <h2 id="sec-9"><span class="num">9.</span>3つの項目の関係を整理する</h2>
+    <p>「古いコンポーネント」「サプライチェーン」「整合性」は重なり合っています。違いを表にまとめます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>A06:2021 脆弱で古いコンポーネント</th><th>A03:2025 サプライチェーンの不備</th><th>A08 整合性の不備</th></tr></thead>
+      <tbody>
+        <tr><td><strong>主な問題</strong></td><td>既知の脆弱性を持つ部品を使っている</td><td>部品の調達・ビルド・配布の仕組みが弱い／侵害されている</td><td>改ざんされたコード・データを検証せずに信用する</td></tr>
+        <tr><td><strong>攻撃者の動き</strong></td><td>公開された脆弱性を突く</td><td>上流（ベンダー・メンテナー・CI）を乗っ取り、正規の経路で悪意あるコードを届ける</td><td>署名なしの更新や、信頼できない入力のデシリアライズを悪用</td></tr>
+        <tr><td><strong>代表例</strong></td><td>Log4Shell、Struts 2</td><td>SolarWinds、Shai-Hulud、Bybit</td><td>署名なしの自動更新、CI での未検証プラグイン</td></tr>
+        <tr><td><strong>主な対策</strong></td><td>SCA、パッチ適用</td><td>SBOM、変更管理、CI/CD と開発端末の強化、段階的展開</td><td>署名、来歴（provenance）の検証</td></tr>
+      </tbody>
+    </table></div>
+    <p>A03:2025 は A06:2021 を <strong>包み込み</strong>、A08 とは「署名・来歴の検証」で <strong>重なります</strong>。委託先や組織どうしのサプライチェーン（ソフトウェア以外）は <a href="50-5_サプライチェーン攻撃と2026年の事例.html">サプライチェーン攻撃と2026年の事例</a> で扱います。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>よくある誤解</h2>
+    <details>
+      <summary>「署名付きのアップデートなら、中身は安全」</summary>
+      <div class="body">
+        <p><strong>限りません。</strong> SolarWinds 事件では、ビルド環境そのものが侵害されていたため、バックドア入りの更新に <strong>正規の署名</strong> が付いていました。署名は「この会社から届いた」ことを保証しますが、「作る過程が汚染されていない」ことまでは保証しません。だからこそ、ビルド環境の隔離・職務分離・来歴の記録（SLSA）・段階的な展開を組み合わせます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「有名で人気のあるパッケージなら安心」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> event-stream や Shai-Hulud は、人気パッケージが乗っ取られた例です。人気があるほど影響範囲が広いので、むしろ攻撃者に狙われます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「開発者のパソコンは本番ではないから、そこまで守らなくていい」</summary>
+      <div class="body">
+        <p><strong>危険な考えです。</strong> 開発者の端末には npm の公開トークンやクラウドの鍵が置かれていることが多く、Shai-Hulud はまさにそこを狙いました。端末にもパッチ・MFA・EDR を適用し、長期トークンを置かない（Trusted Publishing）ようにします。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「JSON なら何も気にせずに受け取ってよい」</summary>
+      <div class="body">
+        <p><strong>コード実行の心配は大きく減りますが、検証は必要です。</strong> JSON はコードを実行できないので pickle より安全ですが、想定外の項目や型、巨大なデータが来ることはあります。スキーマで形を検証してから使います。</p>
+      </div>
+    </details>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>サプライチェーンの不備</strong>（A03:2025 新設）は、2021年版 A06 を「部品の脆弱性」から <strong>「作る・配る・更新する仕組み全体」</strong> へ広げたカテゴリ。発生率は全カテゴリで最も高い</li>
+        <li>攻撃者は <strong>上流（ベンダー・メンテナー・CI・開発者の端末）</strong> を乗っ取り、正規の経路で届ける（SolarWinds、Bybit、Shai-Hulud）</li>
+        <li>対策の柱は <strong>SBOM と棚卸し・変更管理・CI/CD と開発端末の強化・署名と来歴・段階的展開</strong>。CI/CD はデプロイ先と同じかそれ以上に守る</li>
+        <li><strong>整合性の不備</strong>（A08:2021 ／ A08:2025）は、本物か確かめずにコードやデータを使う問題。<strong>ロックファイルのハッシュ・SRI・コード署名・CI/CD の保護</strong> が基本</li>
+        <li>デシリアライズは <strong>pickle や Java の ObjectInputStream を避け、JSON など</strong> コード実行能力のない形式へ</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 2021年版の「脆弱で古いコンポーネント」と、2025年版の「ソフトウェアサプライチェーンの不備」は何が違う？</summary>
+      <div class="body">
+        <p>2021年版 A06 は <strong>既知の脆弱性を持つ部品を使っている</strong> ことが中心でした。2025年版 A03 はそれを含みつつ、<strong>部品の調達・ビルド・配布・更新の仕組み全体</strong>（CI/CD、開発者の端末、IDE 拡張、レジストリなど）が弱い・乗っ取られている状態まで扱います。攻撃者が上流を乗っ取って正規の経路で届ける、というのが典型的な形です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. GitHub Actions を <code>uses: some-org/action@v3</code> ではなく、コミット SHA で指定するのはなぜ？</summary>
+      <div class="body">
+        <p>タグ（<code>v3</code>）は後から別のコミットに付け替えられるため、アクションの作者のアカウントが乗っ取られると、同じ <code>@v3</code> のまま中身を悪意あるコードに差し替えられてしまいます。コミット SHA は中身から計算される値なので、中身が変われば値も変わり、差し替えに巻き込まれません。更新は Dependabot / Renovate の PR として意図して取り込みます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 外部から受け取ったデータを <code>pickle.loads()</code> で復元しているコードを見つけた。何が危険で、どう直す？</summary>
+      <div class="body">
+        <p>pickle は復元の途中で <strong>任意のコードを実行できる</strong> ため、攻撃者が細工したデータを送るだけでサーバーを乗っ取られます（安全でないデシリアライゼーション）。<strong>JSON や Protocol Buffers など、コード実行能力のない形式</strong> に置き換え、受け取った後はスキーマで検証します。どうしても言語固有の形式が必要なら、署名検証と許可リスト型の復元を組み合わせます。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>OWASP Top 10:2025 A03 Software Supply Chain Failures: <a href="https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/">https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/</a></li>
+      <li>OWASP Top 10:2025: <a href="https://top10.owasp.org/2025/">https://top10.owasp.org/2025/</a></li>
+      <li>OWASP Cheat Sheet: Vulnerable Dependency Management / Dependency Graph SBOM</li>
+      <li>OWASP Dependency-Track / CycloneDX</li>
+      <li>SLSA: <a href="https://slsa.dev/">https://slsa.dev/</a></li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-4_安全でない設計・設定ミス・古い部品.html"><span class="lbl">← 前のページ</span>安全でない設計・設定ミス・古い部品</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-6_ログ不足・SSRF・例外処理.html"><span class="lbl">次のページ →</span>ログ不足・SSRF・例外処理</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

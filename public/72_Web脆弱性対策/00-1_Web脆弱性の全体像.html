@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web脆弱性の全体像｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › Web脆弱性の全体像</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>Web脆弱性の全体像</h1>
+      <p class="lead">Webアプリの弱点（<strong>脆弱性</strong>：攻撃者に悪用されうるセキュリティ上の欠陥）は、どこで生まれ、いつ何を対策すればよいのでしょうか。このページは、徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）の章立てとこのシリーズの各ページを結ぶ「地図」です。あわせて、すべての脆弱性対策の土台になる <strong>入力→処理→出力</strong> の考え方と入力値検証、代表的な攻撃のあらまし、「全アプリ必須」と「機能実装時」の判断軸、OSI参照モデルに沿った多層防御までを見渡します。</p>
+      <p class="meta">もとにしたノート：00_全体像/01_安全なWebアプリケーションの作り方_目次・02_Webアプリの機能と脆弱性（徳丸本4章）・03_Webアプリの攻撃と防御（基礎講座第3回）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>多くの脆弱性は、<strong>外から来たデータが、入力・処理・出力のどこかで「意図しない使われ方」をする</strong> ことで起きます。対策は段階ごとにあり、<strong>入力値の検証だけでは守り切れません</strong>。そして対策は「どのアプリでも必ずやること」と「その機能を作るときに考えること」に分けると漏れにくくなります。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このシリーズの地図</h2>
+    <p>学習の軸は次の3つです。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>① 基礎</h4>
+        <p>Webの仕組みと攻撃の前提を押さえる（HTTP・オリジン・CORS など）。</p>
+      </div>
+      <div class="card">
+        <h4>② 脆弱性（セキュリティバグ）</h4>
+        <p>何が起き、どう防ぐか（XSS・SQLインジェクション・CSRF など）。</p>
+      </div>
+      <div class="card">
+        <h4>③ セキュリティ機能</h4>
+        <p>認証・認可・ログなど、守りの仕組みを正しく作る。</p>
+      </div>
+    </div>
+    <p>加えて、実装時の判断軸として <strong>「全アプリ必須」と「機能実装時」</strong>（<a href="#sec-14">14章</a>）、インフラ視点として <strong>OSI参照モデルの多層防御</strong>（<a href="#sec-15">15章</a>）を整理します。</p>
+
+    <h3 id="sec-1-1">1.1 フォルダ別のページ一覧</h3>
+    <p>このシリーズ（72_Web脆弱性対策）のページは、次の5つのまとまりに分かれています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>まとまり</th><th>扱うこと</th><th>ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>10 ブラウザのセキュリティモデル</strong></td><td>ブラウザの側で効く守りの仕組み</td><td><a href="10-1_受動的攻撃と同一オリジンポリシー.html">10-1 受動的攻撃と同一オリジンポリシー</a><br><a href="10-2_CORSの仕組み.html">10-2 CORSの仕組み</a><br><a href="10-3_CORSエラーの対処法とCookie.html">10-3 CORSエラーの対処法とCookie</a><br><a href="10-4_CSP.html">10-4 CSP</a><br><a href="10-5_セキュリティヘッダ.html">10-5 セキュリティヘッダ</a></td></tr>
+        <tr><td><strong>20 インジェクション</strong></td><td>入力がプログラムの一部として解釈されてしまう脆弱性</td><td><a href="20-1_XSSの基本.html">20-1 XSSの基本</a><br><a href="20-2_XSS発展編.html">20-2 XSS発展編</a><br><a href="20-3_SQLインジェクション.html">20-3 SQLインジェクション</a><br><a href="20-4_OSコマンドインジェクション.html">20-4 OSコマンドインジェクション</a><br><a href="20-5_メールヘッダインジェクション.html">20-5 メールヘッダインジェクション</a><br><a href="20-6_ファイルインクルード.html">20-6 ファイルインクルード</a><br><a href="20-7_プロンプトインジェクション.html">20-7 プロンプトインジェクション</a></td></tr>
+        <tr><td><strong>30 リクエスト偽造・リダイレクト</strong></td><td>利用者やサーバーに意図しないリクエストを送らせる攻撃</td><td><a href="30-1_CSRF.html">30-1 CSRF</a><br><a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">30-2 リダイレクトとHTTPヘッダインジェクション</a><br><a href="30-3_SSRF.html">30-3 SSRF</a></td></tr>
+        <tr><td><strong>40 ファイル・データ処理</strong></td><td>ファイルや構造化データの扱いで生まれる脆弱性</td><td><a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">40-1 ファイルアクセスとディレクトリトラバーサル</a><br><a href="40-2_ファイルアップロード.html">40-2 ファイルアップロード</a><br><a href="40-3_Evalインジェクション・デシリアライズ・XXE.html">40-3 Evalインジェクション・デシリアライズ・XXE</a></td></tr>
+        <tr><td><strong>50 API・JavaScript</strong></td><td>共有資源・キャッシュ・Web API・クライアント側JavaScript</td><td><a href="50-1_競合状態とキャッシュ.html">50-1 競合状態とキャッシュ</a><br><a href="50-2_WebAPIの脆弱性.html">50-2 WebAPIの脆弱性</a><br><a href="50-3_JavaScriptの脆弱性.html">50-3 JavaScriptの脆弱性</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>認証・認可は <strong>73_認証認可</strong>、セッションとCookieは <strong>74_セッション管理</strong>、分野共通の基礎（設計原則・OWASP Top 10・運用など）は <a href="../../71_セキュリティ基礎/00_全体像/00-1_セキュリティの全体像.html">71_セキュリティ基礎</a> のフォルダで扱います。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>徳丸本の章とこのシリーズの対応</h2>
+    <p>徳丸本の各章ノートは、71〜74 のテーマ別フォルダに振り分けてあります（ノートの置き場所の一覧は MOC_Web脆弱性対策 の「徳丸本の章の所在」表にあります）。下の表では、このシリーズにページがある章はリンクに、別フォルダで扱う章はフォルダ名で示しています。</p>
+
+    <h3 id="sec-2-1">2.1 第I部　セキュリティの基礎（1〜3章）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>章</th><th>内容</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>HTTPの性質、ステートレス、セッション管理の基本</td><td>74_セッション管理（HTTPセッション管理）</td></tr>
+        <tr><td>2</td><td>受動的攻撃、同一オリジンポリシー（SOP）</td><td><a href="10-1_受動的攻撃と同一オリジンポリシー.html">10-1 受動的攻撃と同一オリジンポリシー</a></td></tr>
+        <tr><td>3</td><td>CORSの仕組みと安全な設定</td><td><a href="10-2_CORSの仕組み.html">10-2 CORSの仕組み</a>・<a href="10-3_CORSエラーの対処法とCookie.html">10-3 CORSエラーの対処法とCookie</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-2">2.2 第II部　セキュリティバグ（4〜20章）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>章</th><th>内容</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>4</td><td>入力→処理→出力モデル、インジェクションの全体像</td><td>このページ（<a href="#sec-3">3章</a>〜<a href="#sec-8">8章</a>）</td></tr>
+        <tr><td>5</td><td>XSSの基本と対策</td><td><a href="20-1_XSSの基本.html">20-1 XSSの基本</a></td></tr>
+        <tr><td>6</td><td>XSSの発展的な論点</td><td><a href="20-2_XSS発展編.html">20-2 XSS発展編</a></td></tr>
+        <tr><td>7</td><td>SQLインジェクション</td><td><a href="20-3_SQLインジェクション.html">20-3 SQLインジェクション</a></td></tr>
+        <tr><td>8</td><td>クロスサイトリクエストフォージェリ</td><td><a href="30-1_CSRF.html">30-1 CSRF</a></td></tr>
+        <tr><td>9</td><td>セッション固定化・漏洩など</td><td>74_セッション管理（セッション管理の不備）</td></tr>
+        <tr><td>10</td><td>オープンリダイレクトなど</td><td><a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">30-2 リダイレクトとHTTPヘッダインジェクション</a></td></tr>
+        <tr><td>11</td><td>Cookieの属性・出力まわり</td><td>74_セッション管理（クッキー出力にまつわる脆弱性）</td></tr>
+        <tr><td>12</td><td>メールヘッダインジェクションなど</td><td><a href="20-5_メールヘッダインジェクション.html">20-5 メールヘッダインジェクション</a></td></tr>
+        <tr><td>13</td><td>パストラバーサルなど</td><td><a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">40-1 ファイルアクセスとディレクトリトラバーサル</a></td></tr>
+        <tr><td>14</td><td>OSコマンドインジェクション</td><td><a href="20-4_OSコマンドインジェクション.html">20-4 OSコマンドインジェクション</a></td></tr>
+        <tr><td>15</td><td>不正ファイルアップロード</td><td><a href="40-2_ファイルアップロード.html">40-2 ファイルアップロード</a></td></tr>
+        <tr><td>16</td><td>ファイルインクルードなど</td><td><a href="20-6_ファイルインクルード.html">20-6 ファイルインクルード</a></td></tr>
+        <tr><td>17</td><td>XML/JSON等の読み込みリスク</td><td><a href="40-3_Evalインジェクション・デシリアライズ・XXE.html">40-3 Evalインジェクション・デシリアライズ・XXE</a></td></tr>
+        <tr><td>18</td><td>キャッシュ汚染・共有資源の扱い</td><td><a href="50-1_競合状態とキャッシュ.html">50-1 競合状態とキャッシュ</a></td></tr>
+        <tr><td>19</td><td>API固有の脆弱性</td><td><a href="50-2_WebAPIの脆弱性.html">50-2 WebAPIの脆弱性</a></td></tr>
+        <tr><td>20</td><td>クライアント側JSの問題</td><td><a href="50-3_JavaScriptの脆弱性.html">50-3 JavaScriptの脆弱性</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-3">2.3 第III部　代表的なセキュリティ機能（21〜24章）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>章</th><th>内容</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>21</td><td>本人確認（認証）の設計と実装</td><td>73_認証認可（認証）</td></tr>
+        <tr><td>22</td><td>登録・パスワード変更・リセットなどのアカウント管理</td><td>73_認証認可（アカウント管理）</td></tr>
+        <tr><td>23</td><td>権限チェック（認可）、IDOR対策</td><td>73_認証認可（認可）</td></tr>
+        <tr><td>24</td><td>監査・検知のためのログ設計</td><td><a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html">71 セキュアな運用とログ出力</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>徳丸本の章にはありませんが、このシリーズでは <a href="10-4_CSP.html">CSP</a>・<a href="10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>・<a href="20-7_プロンプトインジェクション.html">プロンプトインジェクション</a>・<a href="30-3_SSRF.html">SSRF</a> も独立したページで扱っています。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>脆弱性はどこで生まれるか：入力→処理→出力</h2>
+    <p>ここからは徳丸本4章の内容です。Webアプリケーションは、大きく <strong>入力 → 処理 → 出力</strong> の3段階で動作します。利用者から何かを受け取り（入力）、それを使ってDB検索やメール送信などを行い（処理）、結果をHTMLなどで返します（出力）。<strong>インジェクション</strong>（注入：データのつもりの文字列に命令を紛れ込ませること）系の脆弱性は、この流れのどこかで <strong>外部からのデータが意図しない形で使われる</strong> ときに起きます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="入力・処理・出力の3段階と、それぞれの段階の対策。入力は検証・正規化、処理は命令とデータの分離、出力はエスケープ">
+      <defs>
+        <marker id="arw001a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="30" y="20" width="180" height="76" rx="8" class="d-box-accent"/>
+      <text x="120" y="50" text-anchor="middle" class="d-text-bold">入力</text>
+      <text x="120" y="74" text-anchor="middle" class="d-text-sub">フォーム・URL・Cookie</text>
+      <rect x="270" y="20" width="180" height="76" rx="8" class="d-box-accent"/>
+      <text x="360" y="50" text-anchor="middle" class="d-text-bold">処理</text>
+      <text x="360" y="74" text-anchor="middle" class="d-text-sub">SQL・コマンド・メール</text>
+      <rect x="510" y="20" width="180" height="76" rx="8" class="d-box-accent"/>
+      <text x="600" y="50" text-anchor="middle" class="d-text-bold">出力</text>
+      <text x="600" y="74" text-anchor="middle" class="d-text-sub">HTML・ヘッダ・JSON</text>
+      <line x1="212" y1="58" x2="266" y2="58" class="d-line" marker-end="url(#arw001a)"/>
+      <line x1="452" y1="58" x2="506" y2="58" class="d-line" marker-end="url(#arw001a)"/>
+      <line x1="120" y1="98" x2="120" y2="148" class="d-line-dash"/>
+      <line x1="360" y1="98" x2="360" y2="148" class="d-line-dash"/>
+      <line x1="600" y1="98" x2="600" y2="148" class="d-line-dash"/>
+      <rect x="30" y="150" width="180" height="76" rx="8" class="d-box-good"/>
+      <text x="120" y="180" text-anchor="middle" class="d-text-bold">検証・正規化</text>
+      <text x="120" y="204" text-anchor="middle" class="d-text-sub">型・長さ・形式（補助的）</text>
+      <rect x="270" y="150" width="180" height="76" rx="8" class="d-box-good"/>
+      <text x="360" y="180" text-anchor="middle" class="d-text-bold">命令とデータを分ける</text>
+      <text x="360" y="204" text-anchor="middle" class="d-text-sub">プリペアドステートメントなど</text>
+      <rect x="510" y="150" width="180" height="76" rx="8" class="d-box-good"/>
+      <text x="600" y="180" text-anchor="middle" class="d-text-bold">エスケープする</text>
+      <text x="600" y="204" text-anchor="middle" class="d-text-sub">出力先の文法に合わせる</text>
+    </svg>
+    <figcaption>各段階にそれぞれの対策がある。入力チェックだけでは守り切れない</figcaption>
+    </figure>
+
+    <h3 id="sec-3-1">3.1 各段階の例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>具体例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>入力</strong></td><td>フォーム送信、URLパラメータ、Cookie、HTTPヘッダ、ファイルアップロード</td></tr>
+        <tr><td><strong>処理</strong></td><td>入力値の検証、DB検索、計算、メール送信、シェルコマンド実行</td></tr>
+        <tr><td><strong>出力</strong></td><td>HTMLページ表示、JSONレスポンス、HTTPヘッダ、メール本文</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-2">3.2 インジェクションとの関係</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>起きやすい問題</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>入力</strong></td><td>不正なデータを受け入れる</td><td><code>&lt;script&gt;</code> タグ、SQL断片、改行コード</td></tr>
+        <tr><td><strong>処理</strong></td><td>入力をそのまま命令に混ぜる</td><td>SQL文への連結、シェルコマンドへの連結</td></tr>
+        <tr><td><strong>出力</strong></td><td>エスケープせずに表示</td><td>XSS（HTMLへのそのまま出力）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-3">3.3 防御の基本方針</h3>
+<pre><code>入力  → 検証・正規化（ここで不正データを弾く）
+処理  → パラメータ化・安全なAPI（命令とデータを分離）
+出力  → エスケープ（表示先に合わせて変換）</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">重要</p>
+      <p>入力値検証だけでは不十分です。処理と出力でも、それぞれ適切な対策が必要です。入力値の検証は「明らかにおかしい値を弾く」ための補助で、本命の対策は、処理や出力の場面で「データがデータのまま扱われる」ようにすることです。</p>
+    </div>
+
+    <h3 id="sec-3-4">3.4 インジェクション系脆弱性の一覧</h3>
+    <p>徳丸本4章では、インジェクション系の脆弱性を「どのインターフェース（データを渡す先の言語や仕組み）で、何が注入されるか」で整理しています。詳しくは各ページで解説します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>脆弱性名</th><th>インターフェース</th><th>悪用手口</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td>クロスサイトスクリプティング</td><td>HTML</td><td>JavaScript の注入</td><td><a href="20-1_XSSの基本.html">20-1</a>・<a href="20-2_XSS発展編.html">20-2</a></td></tr>
+        <tr><td>HTTPヘッダインジェクション</td><td>HTTP</td><td>HTTPレスポンスヘッダの注入</td><td><a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">30-2</a></td></tr>
+        <tr><td>SQLインジェクション</td><td>SQL</td><td>SQL文の注入</td><td><a href="20-3_SQLインジェクション.html">20-3</a></td></tr>
+        <tr><td>OSコマンド</td><td>シェルスクリプト</td><td>コマンドの注入</td><td><a href="20-4_OSコマンドインジェクション.html">20-4</a></td></tr>
+        <tr><td>メールヘッダインジェクション</td><td>Sendmailコマンド</td><td>メールヘッダ・本文の注入</td><td><a href="20-5_メールヘッダインジェクション.html">20-5</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>どれも「<strong>改行・引用符・記号など、注入先の文法で意味を持つ文字</strong>」が鍵になります。だから対策は「文法ごと切り離す」（プリペアドステートメント・専用API）か、「意味を消す」（エスケープ）のどちらかが基本です。</p>
+
+    <h3 id="sec-3-5">3.5 段階ごとに見た脆弱性とページ</h3>
+    <p>このシリーズのページを「主にどの段階で問題が起きるか」で並べ直すと、次のようになります（複数の段階にまたがるものもあります）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>主な脆弱性</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>入力</strong></td><td>不正な文字エンコーディング・制御文字の混入、想定外のファイルの受け入れ</td><td>このページ（<a href="#sec-4">4章</a>〜<a href="#sec-8">8章</a>）、<a href="40-2_ファイルアップロード.html">40-2 ファイルアップロード</a></td></tr>
+        <tr><td><strong>処理</strong></td><td>SQLインジェクション、OSコマンドインジェクション、ファイルインクルード、ディレクトリトラバーサル、Eval・デシリアライズ・XXE、SSRF、競合状態、プロンプトインジェクション</td><td><a href="20-3_SQLインジェクション.html">20-3</a>・<a href="20-4_OSコマンドインジェクション.html">20-4</a>・<a href="20-6_ファイルインクルード.html">20-6</a>・<a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">40-1</a>・<a href="40-3_Evalインジェクション・デシリアライズ・XXE.html">40-3</a>・<a href="30-3_SSRF.html">30-3</a>・<a href="50-1_競合状態とキャッシュ.html">50-1</a>・<a href="20-7_プロンプトインジェクション.html">20-7</a></td></tr>
+        <tr><td><strong>出力</strong></td><td>XSS、HTTPヘッダインジェクション・オープンリダイレクト、メールヘッダインジェクション、キャッシュからの情報漏洩、JSON出力の不備</td><td><a href="20-1_XSSの基本.html">20-1</a>・<a href="20-2_XSS発展編.html">20-2</a>・<a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">30-2</a>・<a href="20-5_メールヘッダインジェクション.html">20-5</a>・<a href="50-1_競合状態とキャッシュ.html">50-1</a>・<a href="50-2_WebAPIの脆弱性.html">50-2</a></td></tr>
+        <tr><td><strong>ブラウザ側</strong></td><td>CSRF、DOM Based XSS、CORS の設定ミス</td><td><a href="30-1_CSRF.html">30-1</a>・<a href="50-3_JavaScriptの脆弱性.html">50-3</a>・<a href="10-2_CORSの仕組み.html">10-2</a></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">能動的攻撃と受動的攻撃</p>
+      <p>攻撃には、攻撃者がサーバーを直接狙う <strong>能動的攻撃</strong>（例：SQLインジェクション）と、正規の利用者に罠を踏ませてその人のブラウザ経由で攻撃する <strong>受動的攻撃</strong>（例：XSS・CSRF）があります。受動的攻撃では、サーバーから見ると「本物の利用者からのリクエスト」に見えるため、ブラウザ側の防御も重要になります。詳しくは <a href="10-1_受動的攻撃と同一オリジンポリシー.html">10-1 受動的攻撃と同一オリジンポリシー</a> で解説します。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>入力値に対する3つのステップ</h2>
+    <p>ユーザーから送られてくるデータ（入力値）は、<strong>常に信頼できない</strong> 前提で扱います。処理に渡す前に、次の3つのステップを順に行います。</p>
+    <ol class="steps">
+      <li><strong>文字エンコーディングの妥当性検証</strong>（<a href="#sec-5-1">5.1</a>）</li>
+      <li><strong>文字エンコーディングの変換</strong>（<a href="#sec-5-2">5.2</a>）</li>
+      <li><strong>入力値の妥当性検証</strong>（<a href="#sec-6">6章</a>・<a href="#sec-7">7章</a>）→ 処理へ渡す</li>
+    </ol>
+
+    <h2 id="sec-5"><span class="num">5.</span>文字エンコーディングの検証と変換</h2>
+    <p><strong>文字エンコーディング</strong> とは、文字をコンピュータが扱えるバイト列に変換する方式のことです。Webでは <strong>UTF-8</strong> が標準です。</p>
+
+    <h3 id="sec-5-1">5.1 文字エンコーディングの妥当性検証</h3>
+    <h4>なぜ検証が必要か</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>文字化け</strong></td><td>想定外のエンコーディングで解釈すると文字が壊れる</td></tr>
+        <tr><td><strong>エンコーディング攻撃</strong></td><td>同じ文字列でも解釈を変えてフィルタをすり抜ける</td></tr>
+        <tr><td><strong>不正バイト列</strong></td><td>UTF-8として解釈できないデータが混入する</td></tr>
+      </tbody>
+    </table></div>
+    <h4>検証の内容</h4>
+    <ul>
+      <li>受け取ったデータが <strong>UTF-8として正しいか</strong> を確認する</li>
+      <li>不正なバイト列が含まれていれば <strong>拒否または除去</strong> する</li>
+      <li>複数のエンコーディング（Shift_JIS、EUC-JP 等）を受け付ける場合は、<strong>先に統一形式に変換</strong> する</li>
+    </ul>
+    <span class="code-label">Node.js の例：UTF-8 として妥当かチェック</span>
+<pre><code>function isValidUtf8(buffer) {
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    decoder.decode(buffer);
+    return true;
+  } catch {
+    return false;  // 不正な UTF-8
+  }
+}</code></pre>
+
+    <h3 id="sec-5-2">5.2 文字エンコーディングの変換</h3>
+    <p>検証のあと、システム内部で使う <strong>統一のエンコーディング（通常は UTF-8）</strong> に変換します。</p>
+    <h4>変換が必要な場面</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>場面</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td>レガシーシステム連携</td><td>Shift_JIS のファイルを UTF-8 に変換</td></tr>
+        <tr><td>ブラウザからの送信</td><td><code>application/x-www-form-urlencoded</code> のデコード</td></tr>
+        <tr><td>ファイルアップロード</td><td>CSV（CP932）を UTF-8 に読み替え</td></tr>
+      </tbody>
+    </table></div>
+    <h4>注意点</h4>
+    <ul>
+      <li><strong>変換前後で文字が失われないか</strong> 確認する（「髙」など機種依存文字）</li>
+      <li>変換後に <strong>再度バリデーション</strong> を行う（変換で想定外の文字が生じる場合がある）</li>
+      <li>エンコーディングを <strong>推測で決め打ちしない</strong>（可能なら明示的に指定）</li>
+    </ul>
+    <span class="code-label">iconv-lite 等で Shift_JIS → UTF-8 に変換する例</span>
+<pre><code>const iconv = require('iconv-lite');
+const utf8String = iconv.decode(shiftJisBuffer, 'Shift_JIS');</code></pre>
+
+    <h2 id="sec-6"><span class="num">6.</span>入力値の妥当性検証</h2>
+    <p>エンコーディングを整えたうえで、<strong>ビジネスルール（業務上の決まり）に沿っているか</strong> を検証します。「この値はアプリとして受け入れてよいか？」を判断する段階です。</p>
+
+    <h3 id="sec-6-1">6.1 ホワイトリスト vs ブラックリスト</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>考え方</th><th>評価</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ホワイトリスト</strong>（許可リスト）</td><td>許可する形式・値だけを定義</td><td>推奨</td></tr>
+        <tr><td><strong>ブラックリスト</strong>（拒否リスト）</td><td>禁止する文字・パターンを定義</td><td>漏れが生じやすい</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>ホワイトリスト例：ユーザー名は「英小文字と数字、3〜16文字」のみ許可
+ブラックリスト例：「&lt;」「&gt;」「'」を禁止  → 見落としやすい</code></pre>
+
+    <h3 id="sec-6-2">6.2 検証すべき項目</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>型</strong></td><td>数値フィールドに文字列が来ていないか</td></tr>
+        <tr><td><strong>形式</strong></td><td>メールアドレス、電話番号、日付の形式</td></tr>
+        <tr><td><strong>範囲</strong></td><td>年齢 0〜150、数量 1〜999</td></tr>
+        <tr><td><strong>長さ</strong></td><td>コメント 500文字以内</td></tr>
+        <tr><td><strong>許可値</strong></td><td>都道府県は定義済みリストからのみ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-3">6.3 検証のタイミング</h3>
+    <ul>
+      <li><strong>サーバー側で必ず検証</strong> する（クライアント側だけでは不十分）</li>
+      <li>可能な限り <strong>処理の直前</strong> に行う</li>
+      <li>検証に失敗したら <strong>明確にエラーを返す</strong>（曖昧な値で処理を続けない）</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>入力値検証の具体例：制御文字・文字数・数値</h2>
+    <p><strong>入力値検証（バリデーション）</strong> は、入力値の妥当性検証を具体的なチェック項目に落とし込んだものです。インジェクション攻撃を防ぐ第一の防御線になります。</p>
+
+    <h3 id="sec-7-1">7.1 制御文字のチェック</h3>
+    <p><strong>制御文字</strong> は、画面に表示されない特殊な文字です（改行、タブ、NULL など）。HTTPヘッダインジェクションやログ改ざんの原因になります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>制御文字</th><th>コード</th><th>危険性</th></tr></thead>
+      <tbody>
+        <tr><td>改行（LF）</td><td><code>\n</code> (0x0A)</td><td>HTTPヘッダの注入</td></tr>
+        <tr><td>復帰（CR）</td><td><code>\r</code> (0x0D)</td><td>HTTPヘッダの注入</td></tr>
+        <tr><td>NULL</td><td><code>\0</code> (0x00)</td><td>文字列の途中で切れる</td></tr>
+        <tr><td>タブ</td><td><code>\t</code> (0x09)</td><td>ログの改ざん</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label">制御文字を含むかチェック（改行・NULL 等）</span>
+<pre><code>function containsControlChars(str) {
+  return /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(str);
+}
+
+// メールアドレス入力で改行が混入 → ヘッダインジェクションの恐れ
+// 悪意ある入力: "user@example.com\r\nBcc: attacker@evil.com"</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">注意：この正規表現は改行を見逃します</p>
+      <p>上の文字クラス <code>[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]</code> は、タブ（0x09）・LF（0x0A）・CR（0x0D）を <strong>わざと除外</strong> した範囲です。複数行テキスト欄のように改行を許したい場面向けの書き方なので、コメントの「改行」や、すぐ下の <code>\r\n</code> を使ったヘッダインジェクションの例は検出できません。メールアドレスや件名など <strong>1行であるべき値</strong> では、<code>/[\x00-\x1F\x7F]/</code> のように改行も含めて拒否してください（詳しくは <a href="20-5_メールヘッダインジェクション.html">20-5</a>・<a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">30-2</a>）。</p>
+    </div>
+    <p><strong>対策：</strong> 制御文字を検出したら拒否するか、除去する。</p>
+
+    <h3 id="sec-7-2">7.2 文字数のチェック</h3>
+    <p>入力値の <strong>長さに上限・下限</strong> を設けます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>目的</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>バッファオーバーフロー防止</strong></td><td>ユーザー名 最大64文字</td></tr>
+        <tr><td><strong>DoS対策</strong></td><td>コメント 最大5000文字</td></tr>
+        <tr><td><strong>業務ルール</strong></td><td>パスワード 最小8文字</td></tr>
+      </tbody>
+    </table></div>
+    <p>※ <strong>バッファオーバーフロー</strong>：確保したメモリ領域より長いデータを書き込み、隣の領域を壊す不具合。<strong>DoS</strong>：大量・巨大なリクエストでサービスを止める攻撃です。</p>
+<pre><code>function validateLength(str, min, max) {
+  if (str.length &lt; min) return '短すぎます';
+  if (str.length &gt; max) return '長すぎます';
+  return null;  // OK
+}
+
+validateLength(username, 3, 64);</code></pre>
+    <p><strong>注意：</strong> 文字数は <strong>バイト数</strong> と <strong>文字数</strong> が異なる場合がある（日本語1文字 = UTF-8で3バイト）。どちらで制限するかを決めておきます。</p>
+
+    <h3 id="sec-7-3">7.3 数値の最小値・最大値のチェック</h3>
+    <p>数値入力には <strong>型の確認</strong> と <strong>範囲の確認</strong> の両方が必要です。</p>
+<pre><code>function validateAge(value) {
+  const num = Number(value);
+
+  // 型チェック
+  if (!Number.isInteger(num)) {
+    return '整数で入力してください';
+  }
+
+  // 範囲チェック
+  if (num &lt; 0 || num &gt; 150) {
+    return '0〜150の範囲で入力してください';
+  }
+
+  return null;  // OK
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チェック</th><th>防げる問題</th></tr></thead>
+      <tbody>
+        <tr><td>整数かどうか</td><td><code>"abc"</code> や <code>"1.5"</code> の混入</td></tr>
+        <tr><td>最小値</td><td>マイナスの数量（<code>-1</code> 個注文）</td></tr>
+        <tr><td>最大値</td><td>異常に大きな値によるオーバーフロー</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-8"><span class="num">8.</span>正規表現を使った入力値検証</h2>
+    <p>形式チェック（メールアドレス、電話番号など）には <strong>正規表現（Regular Expression）</strong>：文字列のパターンを記号で表す書き方 がよく使われます。以下は正規表現の基本要素です。</p>
+    <p>※ 原文（徳丸本ノートの元資料）の「u装飾」「i装飾」は <strong>修飾子</strong>、「量子指定」は <strong>量詞指定</strong> の意味です。</p>
+
+    <h3 id="sec-8-1">8.1 修飾子（フラグ）</h3>
+    <p>正規表現の末尾に付けるオプションです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>修飾子</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>i</strong></td><td>大文字・小文字を区別しない</td><td><code>/abc/i</code> → <code>ABC</code> にもマッチ</td></tr>
+        <tr><td><strong>u</strong></td><td>Unicode モード（サロゲートペア等を正しく扱う）</td><td><code>/^[あ-ん]+$/u</code></td></tr>
+        <tr><td><strong>g</strong></td><td>全文からすべてのマッチを検索</td><td><code>/\d/g</code></td></tr>
+        <tr><td><strong>m</strong></td><td>複数行モード（<code>^</code> <code>$</code> が行単位）</td><td><code>/^test$/m</code></td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// i 修飾子：大文字小文字を無視
+/^[a-z]+$/i.test('Hello');  // true
+
+// u 修飾子：絵文字なども1文字として扱う
+/^.{1,10}$/u.test('こんにちは🎉');  // 文字数を正しくカウント</code></pre>
+
+    <h3 id="sec-8-2">8.2 文字と文字クラス</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>記法</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><code>.</code></td><td>任意の1文字</td><td><code>a.c</code> → <code>abc</code>, <code>a1c</code></td></tr>
+        <tr><td><code>\d</code></td><td>数字 <code>[0-9]</code></td><td><code>\d\d\d</code> → <code>123</code></td></tr>
+        <tr><td><code>\w</code></td><td>英数字とアンダースコア</td><td><code>\w+</code> → <code>user_name</code></td></tr>
+        <tr><td><code>\s</code></td><td>空白文字</td><td><code>\s</code> → スペース、タブ</td></tr>
+        <tr><td><code>[abc]</code></td><td>a, b, c のいずれか1文字</td><td><code>[aeiou]</code> → 母音</td></tr>
+        <tr><td><code>[a-z]</code></td><td>a〜z の範囲</td><td><code>[0-9]</code> → 数字</td></tr>
+        <tr><td><code>[^abc]</code></td><td>a, b, c <strong>以外</strong></td><td><code>[^0-9]</code> → 数字以外</td></tr>
+        <tr><td><code>|</code></td><td>OR</td><td><code>cat|dog</code> → cat または dog</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// 郵便番号（123-4567 形式）
+/^\d{3}-\d{4}$/.test('123-4567');  // true
+
+// 英小文字と数字のみ（ユーザー名）
+/^[a-z0-9]{3,16}$/.test('yamada123');  // true</code></pre>
+
+    <h3 id="sec-8-3">8.3 量詞指定</h3>
+    <p>直前のパターンが <strong>何回繰り返されるか</strong> を指定します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>量詞</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><code>*</code></td><td>0回以上</td><td><code>\d*</code> → 数字が0個以上</td></tr>
+        <tr><td><code>+</code></td><td>1回以上</td><td><code>\d+</code> → 数字が1個以上</td></tr>
+        <tr><td><code>?</code></td><td>0回または1回</td><td><code>\d?</code> → 数字が0個か1個</td></tr>
+        <tr><td><code>{n}</code></td><td>ちょうど n 回</td><td><code>\d{3}</code> → 数字3桁</td></tr>
+        <tr><td><code>{n,}</code></td><td>n 回以上</td><td><code>\d{3,}</code> → 数字3桁以上</td></tr>
+        <tr><td><code>{n,m}</code></td><td>n 回以上 m 回以下</td><td><code>\d{3,5}</code> → 数字3〜5桁</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// パスワード：8文字以上
+/^.{8,}$/.test('password123');  // true
+
+// 電話番号：10〜11桁の数字
+/^\d{10,11}$/.test('09012345678');  // true</code></pre>
+
+    <h3 id="sec-8-4">8.4 アンカー（位置指定）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>記法</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>^</code></td><td>文字列の先頭</td></tr>
+        <tr><td><code>$</code></td><td>文字列の末尾</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// ^ と $ で「文字列全体」がパターンに一致することを保証
+/^[a-z]+$/.test('abc123');  // false（末尾まで英小文字だけではない）
+/^[a-z]+$/.test('abc');     // true</code></pre>
+    <p><strong>重要：</strong> 検証には <code>^</code> と <code>$</code> を付けて <strong>部分一致ではなく全体一致</strong> にすることが多いです。</p>
+
+    <h3 id="sec-8-5">8.5 実践例：メールアドレスの簡易検証</h3>
+<pre><code>// 簡易的な形式チェック（厳密なRFC準拠ではない）
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+emailPattern.test('yamada@example.com');  // true
+emailPattern.test('invalid-email');       // false</code></pre>
+
+    <h3 id="sec-8-6">8.6 正規表現を使うときの注意</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>注意点</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>複雑すぎる正規表現は避ける</strong></td><td>保守が難しく、バグの温床になる</td></tr>
+        <tr><td><strong>ReDoS（正規表現DoS）に注意</strong></td><td>悪意ある入力で処理が極端に遅くなる</td></tr>
+        <tr><td><strong>正規表現だけに頼らない</strong></td><td>型・長さ・範囲チェックと組み合わせる</td></tr>
+        <tr><td><strong>ライブラリの活用</strong></td><td>メール等は <code>validator.js</code> 等の実績あるライブラリを検討</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-7">8.7 入力値検証の流れ（まとめ）</h3>
+<pre><code>外部からの入力
+    │
+    ├─ 1. エンコーディング検証・変換
+    ├─ 2. 制御文字・文字数・数値範囲のチェック
+    ├─ 3. 正規表現による形式チェック（ホワイトリスト）
+    │
+    ▼
+安全な処理へ</code></pre>
+
+    <h2 id="sec-9"><span class="num">9.</span>代表的な攻撃：SQLインジェクション・XSS・CSRF</h2>
+    <p>ここからは基礎講座（第3回）の内容です。Webアプリ開発者が必ず知っておくべき3つの攻撃のあらましを示します。仕組みと対策の詳細はそれぞれのページで解説します。</p>
+
+    <h3 id="sec-9-1">9.1 SQLインジェクション</h3>
+    <p><strong>悪意のあるSQL文を入力として送り込み、データベースを不正操作する攻撃</strong> です。わかりやすく言えば「入力欄を使って、アプリに『別の命令』を紛れ込ませる攻撃」で、Webアプリの脆弱性の中でも最も危険なもののひとつです。たとえばユーザー名に <code>alice' OR '1'='1' --</code> と入れると、<code>'</code>（文字列の区切り）で文字列を閉じ、<code>OR '1'='1'</code>（常に成り立つ条件）を足し、<code>--</code>（以降をコメント扱い）でパスワード条件を消せてしまいます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手口</th><th>入力例</th><th>被害</th></tr></thead>
+      <tbody>
+        <tr><td>認証回避</td><td><code>alice' OR '1'='1' --</code></td><td>全ユーザーが返り、最初の1件（多くの場合は管理者）でログイン成功</td></tr>
+        <tr><td>データの全件取得</td><td><code>' OR 1=1 --</code></td><td>全ユーザーのID・パスワードハッシュ・メールアドレスなどが漏洩</td></tr>
+        <tr><td>データの削除</td><td><code>'; DROP TABLE users; --</code></td><td>ユーザーテーブルが完全に消え、バックアップがなければ復旧不可</td></tr>
+        <tr><td>他テーブルのデータ取得（UNION攻撃）</td><td><code>' UNION SELECT username, password FROM admin_users --</code></td><td>管理者のID・パスワードハッシュが取得され、システム全体を乗っ取られる</td></tr>
+      </tbody>
+    </table></div>
+    <p>対策の本命は <strong>プリペアドステートメント</strong>（SQLの骨格を先に確定させ、データは後から別に渡す仕組み）です。データが何であってもSQL命令として解釈されません。</p>
+    <span class="code-label bad">脆弱なコード（文字列結合でSQL生成）</span>
+<pre><code>username = request.form['username']
+password = request.form['password']
+sql = f"SELECT * FROM users WHERE username = '{username}' AND password = '{password}'"
+cursor.execute(sql)</code></pre>
+    <span class="code-label good">安全なコード（プリペアドステートメント）</span>
+<pre><code>sql = "SELECT * FROM users WHERE username = ? AND password = ?"
+cursor.execute(sql, (username, password))
+# → ユーザーの入力は「データ」として扱われる
+# → SQLの「命令」として解釈されない！</code></pre>
+    <p><strong>ORM（Object-Relational Mapper）</strong> は、SQLを直接書かずにプログラムのオブジェクト操作でDBを扱える仕組みです（例：<code>User.query.filter_by(id=user_id).first()</code>）。Django・Rails（ActiveRecord）・Laravel（Eloquent）・Spring（JPA/Hibernate）・Prisma など、ほとんどのモダンなフレームワークのORMは内部でプリペアドステートメントを使っているため、正しく使っている限りリスクは大幅に軽減されます。ただし生のSQLを書く機能（rawQuery など）を使うときや、ORMの機能を意図せず回避してしまうときは、必ずプリペアドステートメントを使います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>プリペアドステートメント</td><td>最も重要・SQLとデータを分離する</td></tr>
+        <tr><td>ORM の使用</td><td>SQLを直接書かずに済む</td></tr>
+        <tr><td>入力値のバリデーション</td><td>想定外の文字列を弾く</td></tr>
+        <tr><td>最小権限のDBユーザー</td><td>万が一の被害を最小化</td></tr>
+        <tr><td>エラーメッセージを隠す</td><td>DB構造を攻撃者に教えない</td></tr>
+      </tbody>
+    </table></div>
+    <p>手口の段階的な分解と、動的な検索条件・ソートの扱いは <a href="20-3_SQLインジェクション.html">20-3 SQLインジェクション</a> で解説します。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：DROP TABLE の例について</p>
+      <p><code>;</code> で区切って2つ目のSQLを実行させる手口（複文実行）は、DBやドライバの設定によっては既定で無効になっています。ただし、だから安全というわけではなく、認証回避やUNION攻撃は複文なしでも成立します。</p>
+    </div>
+
+    <h3 id="sec-9-2">9.2 XSS（クロスサイトスクリプティング）</h3>
+    <p><strong>悪意のあるJavaScriptを被害者のブラウザ上で実行させる攻撃</strong> です。攻撃者の目的は、セッションIDを盗む（Cookieに保存されたセッション情報を窃取してなりすましログイン）、フィッシングサイトへの誘導、マルウェアのダウンロード、キーロガー（キー入力の記録）でのパスワード窃取などです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>反射型XSS（Reflected XSS）</h4>
+        <p>攻撃者が <code>https://example.com/search?q=&lt;script&gt;…&lt;/script&gt;</code> のような悪意あるURLを作り、メールやSNSで送ります。被害者がクリックすると、サイトがパラメータをそのままページに表示し、スクリプトが実行されてCookieが攻撃者に送られます。</p>
+      </div>
+      <div class="card">
+        <h4>蓄積型XSS（Stored XSS）</h4>
+        <p>攻撃者がコメント欄などにスクリプトを投稿し、DBに保存されます。そのページを開いた <strong>全訪問者</strong> のブラウザでスクリプトが実行されるため、被害が広がります。</p>
+      </div>
+    </div>
+    <span class="code-label bad">脆弱なコード（ユーザー入力をそのまま出力）</span>
+<pre><code>name = request.args.get('name')
+return f"&lt;p&gt;こんにちは、{name}さん！&lt;/p&gt;"</code></pre>
+    <span class="code-label good">安全なコード（HTMLエスケープ）</span>
+<pre><code>from html import escape
+name = escape(request.args.get('name'))
+return f"&lt;p&gt;こんにちは、{name}さん！&lt;/p&gt;"
+
+# エスケープの例：
+# &lt;script&gt; → &amp;lt;script&amp;gt;
+# ブラウザは &amp;lt; を「&lt;」と表示するが
+# HTMLタグとして解釈しない！</code></pre>
+    <p>保険として <strong>CSP（コンテンツセキュリティポリシー）</strong> も使えます。「このページでは〇〇からのスクリプトしか実行しない」という宣言をHTTPヘッダで送る仕組みで、たとえば <code>Content-Security-Policy: default-src 'self'; script-src 'self' https://trusted.cdn.com</code> とすると、外部から注入されたスクリプトはブロックされ、XSSの影響を大幅に軽減できます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>出力時のHTMLエスケープ</td><td><code>&lt;</code> <code>&gt;</code> <code>"</code> などを無害化</td></tr>
+        <tr><td>CSPの設定</td><td>信頼できるスクリプトだけ実行を許可</td></tr>
+        <tr><td>HttpOnly属性</td><td>JSからCookieを読み取り不可にする</td></tr>
+        <tr><td>テンプレートエンジンの活用</td><td>自動エスケープ機能を使う</td></tr>
+      </tbody>
+    </table></div>
+    <p>詳しくは <a href="20-1_XSSの基本.html">20-1 XSSの基本</a>・<a href="20-2_XSS発展編.html">20-2 XSS発展編</a>・<a href="10-4_CSP.html">10-4 CSP</a> を参照してください。</p>
+
+    <h3 id="sec-9-3">9.3 CSRF（クロスサイトリクエストフォージェリ）</h3>
+    <p><strong>ログイン済みのユーザーに意図しないリクエストを送らせる攻撃</strong> です。XSSが「悪意あるスクリプトをブラウザで実行させる」のに対し、CSRFは「ログイン済みの状態を悪用して意図しない操作を実行させる」点が違います。たとえば bank.com にログイン中の被害者が罠サイト evil.com を開くと、そこに仕込まれた <code>&lt;img src="https://bank.com/transfer?to=attacker&amp;amount=100000"&gt;</code> によってブラウザが bank.com へリクエストを送り、セッションCookieも一緒に送られるため、正規の送金として処理されてしまいます。</p>
+    <p>最も重要な対策は <strong>CSRFトークン</strong> です。サーバーがランダムなトークンを生成してフォームの隠しフィールド（<code>&lt;input type="hidden" name="csrf_token" value="ランダムな文字列"&gt;</code>）に埋め込み、送信時に検証します。悪意あるサイトはトークンの値を知る方法がないため、正しいリクエストを作れません。</p>
+    <span class="code-label">Flask での CSRF トークン実装例</span>
+<pre><code>from flask_wtf.csrf import CSRFProtect
+
+app = Flask(__name__)
+csrf = CSRFProtect(app)
+
+# フォームに自動でCSRFトークンが追加される</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>CSRFトークン</td><td>フォームにランダムトークンを埋め込む</td></tr>
+        <tr><td>SameSite Cookie</td><td>他サイトからのリクエストにCookieを送らない</td></tr>
+        <tr><td>Refererヘッダーの検証</td><td>リクエスト元を確認する</td></tr>
+        <tr><td>重要操作に再認証</td><td>送金などはパスワードを再入力させる</td></tr>
+      </tbody>
+    </table></div>
+    <p>詳しくは <a href="30-1_CSRF.html">30-1 CSRF</a> を参照してください。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>セッション管理の脆弱性</h2>
+    <p>セッションとCookieの詳しい解説は 74_セッション管理 のフォルダで扱います。ここでは基礎講座の要点をまとめます。</p>
+
+    <h3 id="sec-10-1">10.1 セッションとクッキーは別の概念</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>セッション（Session）</h4>
+        <p>サーバー側でユーザーの状態を管理する仕組みです。「誰がログイン中か」「カートに何が入っているか」をサーバーのメモリやDBに保存し、セッションID（例：abc123xyz）で管理します。</p>
+      </div>
+      <div class="card">
+        <h4>クッキー（Cookie）</h4>
+        <p>ブラウザ側に情報を保存する仕組みです。サーバーが <code>Set-Cookie</code> ヘッダでブラウザに保存させる小さなデータで、次のリクエストから自動で送信されます。</p>
+      </div>
+    </div>
+<pre><code>【2つの関係】
+  サーバー：セッションID「abc123xyz」をセッションに紐づけて保存
+      ↓ Set-Cookie: session_id=abc123xyz
+  ブラウザ：クッキーにセッションIDを保存
+      ↓ Cookie: session_id=abc123xyz（次のリクエストに自動添付）
+  サーバー：クッキーのセッションIDで「この人はAliceさん」と識別
+
+→ セッション = サーバー側の状態管理
+→ クッキー   = セッションIDをブラウザに保存・送信するための入れ物</code></pre>
+
+    <h3 id="sec-10-2">10.2 セッションの仕組み</h3>
+    <p>HTTPは <strong>ステートレス</strong>（状態を持たない）プロトコルなので、リクエストのたびに「誰？」がわかりません。そこでセッションを使います。</p>
+    <ol class="steps">
+      <li>ログイン成功</li>
+      <li>サーバーがセッションIDを発行・セッション情報をサーバーに保存</li>
+      <li>ブラウザのクッキーにセッションIDを保存</li>
+      <li>以後のリクエストにクッキー経由でセッションIDを添付</li>
+      <li>サーバーがセッションIDで「この人はAliceさん」と識別</li>
+    </ol>
+    <p>セッションIDは「ログイン状態の鍵」です。</p>
+
+    <h3 id="sec-10-3">10.3 セッションハイジャック</h3>
+    <p>攻撃者がセッションIDを入手してリクエストすると、サーバーは本人として処理してしまいます。これが <strong>セッションハイジャック</strong>（セッションの乗っ取り）です。セッションIDの盗み方には次のものがあります。</p>
+    <ul>
+      <li>XSSでCookieを盗む</li>
+      <li>通信の盗聴（HTTPSを使っていない場合）</li>
+      <li>推測しやすいセッションIDの総当たり</li>
+    </ul>
+
+    <h3 id="sec-10-4">10.4 セッション管理の対策</h3>
+    <ul>
+      <li>十分にランダムなセッションIDを生成（128bit以上）</li>
+      <li>HTTPS必須（通信経路での盗聴を防ぐ）</li>
+      <li><code>Secure</code> 属性：HTTPSのみでCookieを送信</li>
+      <li><code>HttpOnly</code> 属性：JavaScriptからCookieを読み取り不可</li>
+      <li><code>SameSite</code> 属性：CSRF対策</li>
+      <li>ログイン後にセッションIDを再生成（セッション固定攻撃を防ぐ）</li>
+      <li>一定時間後にセッションを期限切れにする</li>
+      <li>ログアウト時にサーバー側のセッションを削除</li>
+    </ul>
+<pre><code>Set-Cookie: session_id=abc123; Secure; HttpOnly; SameSite=Strict</code></pre>
+
+    <h2 id="sec-11"><span class="num">11.</span>ディレクトリトラバーサルと安全でないデシリアライゼーション</h2>
+
+    <h3 id="sec-11-1">11.1 ディレクトリトラバーサル</h3>
+    <p>Webアプリがファイルパスを外部から受け取る場合に、<code>../</code>（1つ上のフォルダ）を使って本来アクセスできないディレクトリのファイルを読み取る攻撃です。たとえば <code>https://example.com/file?name=report.pdf</code> が正常なリクエストなら、<code>?name=../../../../etc/passwd</code> とすると Linux のユーザー情報が返されてしまいます。AWS の認証情報ファイルを読まれる危険もあります。</p>
+    <p>対策は、ユーザー入力をファイルパスに直接使わない、パスを正規化して想定ディレクトリ外をブロックする、ホワイトリストで許可するファイルを限定する、Webサーバーのプロセスに最小権限を付与する、の4つです。詳しくは <a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">40-1 ファイルアクセスとディレクトリトラバーサル</a> を参照してください。</p>
+
+    <h3 id="sec-11-2">11.2 安全でないデシリアライゼーション</h3>
+    <p><strong>デシリアライゼーション</strong> とは、保存や送信のためにバイト列にしたオブジェクト（データ構造）を、元のオブジェクトに戻す処理です。攻撃者が悪意あるデータをシリアライズして送り、アプリがそれをデシリアライズすると、悪意あるコードが実行されてしまいます。</p>
+    <p>対策として、ノートでは「信頼できないデータのデシリアライズを避ける」「JWTなど安全な形式を使う」「デシリアライズ前にデータを検証する」が挙げられています。詳しくは <a href="40-3_Evalインジェクション・デシリアライズ・XXE.html">40-3 Evalインジェクション・デシリアライズ・XXE</a> を参照してください。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：「JWTなど安全な形式」について</p>
+      <p>JWT は署名付きのトークン形式で、オブジェクトを丸ごと復元する仕組みの代わりではありません。一般的な対策は、外部から受け取るデータには <strong>JSON のような「データだけを表す形式」</strong> を使い、言語固有のシリアライズ形式（PHP の <code>unserialize</code>、Python の <code>pickle</code> など）を使わないことです。JWT を使う場合も、署名の検証が前提になります。</p>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>OWASP Top 10</h2>
+    <p><strong>OWASP（Open Web Application Security Project）</strong> は、Webアプリケーションセキュリティの向上を目的とした非営利組織です。数年ごとに「最も危険なWebアプリの脆弱性 Top 10」を発表しています。各項目の詳しい解説は 71_セキュリティ基礎の <a href="../../71_セキュリティ基礎/00_全体像/40-1_OWASP_Top10とは.html">OWASP Top 10とは</a> 以降のページにあります。</p>
+
+    <h3 id="sec-12-1">12.1 OWASP Top 10（2021年版）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>順位</th><th>カテゴリ</th><th>概要</th></tr></thead>
+      <tbody>
+        <tr><td>A01</td><td>アクセス制御の不備</td><td>権限のないリソースへのアクセスが可能</td></tr>
+        <tr><td>A02</td><td>暗号化の失敗</td><td>機密データが暗号化されていない・弱い暗号</td></tr>
+        <tr><td>A03</td><td>インジェクション</td><td>SQLi・コマンドインジェクションなど</td></tr>
+        <tr><td>A04</td><td>安全でない設計</td><td>セキュリティを考慮しない設計そのものの問題</td></tr>
+        <tr><td>A05</td><td>セキュリティの設定ミス</td><td>デフォルト設定・不要な機能の有効化など</td></tr>
+        <tr><td>A06</td><td>脆弱なコンポーネント</td><td>古いライブラリ・フレームワークの使用</td></tr>
+        <tr><td>A07</td><td>認証・識別の失敗</td><td>弱いパスワード・MFAなし・セッション管理の不備</td></tr>
+        <tr><td>A08</td><td>ソフトウェアの完全性の失敗</td><td>安全でないCI/CDパイプライン・デシリアライゼーション</td></tr>
+        <tr><td>A09</td><td>ログ・監視の失敗</td><td>攻撃を検知・記録できない</td></tr>
+        <tr><td>A10</td><td>SSRF</td><td>サーバー側からの偽リクエスト</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">注意：2025年版が出ています</p>
+      <p>ノートの表は2021年版です。2025年版では項目の統合や順位の入れ替えがあります（たとえば SSRF はアクセス制御の不備に統合されました）。2021年版と2025年版の対応は <a href="../../71_セキュリティ基礎/00_全体像/40-1_OWASP_Top10とは.html">OWASP Top 10とは</a> で確認してください。</p>
+    </div>
+
+    <h3 id="sec-12-2">12.2 主な項目のポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>A01：アクセス制御の不備（最も多い脆弱性）</h4>
+        <p>URLを変えるだけで他人のデータが見える（<code>/user/1001/profile</code> → <code>/user/1002/profile</code>。<strong>IDOR</strong>：Insecure Direct Object Reference と呼ばれる）、管理者ページにログインなしでアクセスできる、など。対策は、すべてのAPIエンドポイントで認可チェック、デフォルトで「拒否」して必要なものだけ許可、ユーザーが自分のデータだけ操作できるかの確認です。→ <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a></p>
+      </div>
+      <div class="card">
+        <h4>A05：セキュリティの設定ミス</h4>
+        <p>デフォルトのパスワードを変更していない、本番環境でデバッグモードが有効、エラーメッセージにスタックトレース（エラー発生箇所の詳細な記録）を表示、不要なポートが開放されている、S3バケットが誰でも読み取り可能、など。対策は、セキュリティのベースライン設定を決める、本番・開発環境の設定を分ける、定期的にセキュリティスキャンを実施する、です。→ <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html">71 安全でない設計・設定ミス・古い部品</a></p>
+      </div>
+      <div class="card">
+        <h4>A06：脆弱なコンポーネント</h4>
+        <p>実例は Log4Shell（2021年）。Java のログライブラリ「Log4j」の脆弱性で世界中のサーバーが影響を受け、修正パッチが出るまでの数日間で大量のシステムが攻撃されました。依存ライブラリの脆弱性は自分のコードを書き換えても直らず、どこで使っているかわからないこともあります。対策は、依存パッケージを定期的に更新する、<code>npm audit</code>・<code>pip-audit</code> 等でスキャンする、SBOM（ソフトウェア部品表）を管理する、GitHub Dependabot などの自動更新ツールを活用する、です。→ <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html">71 安全でない設計・設定ミス・古い部品</a></p>
+      </div>
+      <div class="card">
+        <h4>A10：SSRF（サーバーサイドリクエストフォージェリ）</h4>
+        <p>サーバーに内部ネットワークへのリクエストを代理で送らせる攻撃です。例：URLプレビュー機能に <code>http://169.254.169.254/latest/meta-data/</code>（AWS のメタデータエンドポイント）を指定させ、サーバーが AWS 認証情報を取得して返してしまう。対策は、URLのホワイトリスト、内部IP・プライベートIPへのアクセス拒否、クラウドでは IMDSv2 の使用（AWS の場合）です。→ <a href="30-3_SSRF.html">30-3 SSRF</a></p>
+      </div>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>安全なWebアプリを作るための5つの原則</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原則</th><th>具体的には</th></tr></thead>
+      <tbody>
+        <tr><td>① 入力値は信頼しない</td><td>すべてのユーザー入力を検証・サニタイズ（無害化）する。「悪意ある入力が来る前提」で設計する</td></tr>
+        <tr><td>② 出力時にエスケープする</td><td>HTMLに出力するときはHTMLエスケープ、SQLに渡すときはプリペアドステートメント、シェルコマンドに渡すときはエスケープ</td></tr>
+        <tr><td>③ 最小権限を徹底する</td><td>DBユーザーは必要な操作だけ許可。APIはアクセスできるデータを必要最小限に（→ <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">71 最小権限とデータ最小化</a>）</td></tr>
+        <tr><td>④ エラーメッセージに情報を入れない</td><td>「ユーザーが見つかりません」ではなく「IDまたはパスワードが違います」。スタックトレースを本番で表示しない</td></tr>
+        <tr><td>⑤ ライブラリ・フレームワークを最新に保つ</td><td>依存関係の脆弱性は自分のコードと同じくらい危険</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">補足：シェルコマンドは「エスケープ」より「シェルを使わない」</p>
+      <p>②のシェルコマンドについては、エスケープよりも、<strong>そもそもシェルを経由しない呼び出し方</strong>（引数を配列で渡す関数を使う）や、コマンドを呼ばずにライブラリで済ませる方法が優先です。<a href="20-4_OSコマンドインジェクション.html">20-4 OSコマンドインジェクション</a> で解説します。</p>
+    </div>
+
+    <h2 id="sec-14"><span class="num">14.</span>何をいつ対策するか：全アプリ必須と機能実装時</h2>
+    <p>脆弱性対策は「毎回全部やる」のではなく、<strong>どのアプリでも必ず押さえるもの</strong>と、<strong>その機能を入れるときに考えるもの</strong>に分けると漏れにくくなります。</p>
+
+    <h3 id="sec-14-1">14.1 A. ほぼすべてのWebアプリで対応が必要</h3>
+    <p>HTMLを返し、状態を持ち、DBやセッションを使う一般的なWebアプリでは、次は前提として対策します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>領域</th><th>対応章</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>出力のエスケープ（XSS）</td><td>5, 6（<a href="20-1_XSSの基本.html">20-1</a>・<a href="20-2_XSS発展編.html">20-2</a>）</td><td>HTML/属性/JS/URLなど文脈ごとのエスケープ</td></tr>
+        <tr><td>SQL呼び出しの安全化</td><td>7（<a href="20-3_SQLインジェクション.html">20-3</a>）</td><td>プリペアドステートメント、命令とデータの分離</td></tr>
+        <tr><td>CSRF対策</td><td>8（<a href="30-1_CSRF.html">30-1</a>）</td><td>状態変更リクエストの正当性確認</td></tr>
+        <tr><td>セッション管理</td><td>1, 9（74_セッション管理）</td><td>安全な発行・固定化対策・タイムアウト・無効化</td></tr>
+        <tr><td>Cookieの扱い</td><td>11（74_セッション管理）</td><td><code>HttpOnly</code> / <code>Secure</code> / <code>SameSite</code> など</td></tr>
+        <tr><td>HTTPS（通信の保護）</td><td>（基礎・インフラ）</td><td>盗聴・改ざん防止。TLSは必須前提</td></tr>
+        <tr><td>入力検証の基本</td><td>4（このページ <a href="#sec-6">6章</a>〜<a href="#sec-8">8章</a>）</td><td>型・長さ・形式の検証（ただしこれだけでは不十分）</td></tr>
+        <tr><td>エラー・情報漏洩の抑制</td><td>4, 18, 24（<a href="50-1_競合状態とキャッシュ.html">50-1</a>）</td><td>詳細エラーを外部に出さない、キャッシュ制御</td></tr>
+        <tr><td>ログ出力</td><td>24（<a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html">71 ログ出力</a>）</td><td>認証失敗・重要操作の記録、秘密情報をログに書かない</td></tr>
+      </tbody>
+    </table></div>
+    <p>ユーザーアカウントがある場合は、次も <strong>全アプリ必須</strong> に近くなります（いずれも 73_認証認可 で扱います）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>領域</th><th>対応章</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>認証</td><td>21</td><td>パスワード方針、MFA（多要素認証）、ブルートフォース（総当たり）対策</td></tr>
+        <tr><td>認可</td><td>23</td><td>サーバー側での権限チェック（UI制御だけでは不可）</td></tr>
+        <tr><td>アカウント管理</td><td>22</td><td>登録・変更・リセットの安全なフロー</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-14-2">14.2 B. 機能を実装するときに考えるセキュリティ</h3>
+    <p>その機能を入れるときだけ、対応する脅威と対策を設計に含めます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>機能・処理</th><th>対応章</th><th>考えること</th></tr></thead>
+      <tbody>
+        <tr><td>外部URLへのリダイレクト</td><td>10（<a href="30-2_リダイレクトとHTTPヘッダインジェクション.html">30-2</a>）</td><td>オープンリダイレクト、許可リスト</td></tr>
+        <tr><td>メール送信</td><td>12（<a href="20-5_メールヘッダインジェクション.html">20-5</a>）</td><td>ヘッダインジェクション、送信先の制御</td></tr>
+        <tr><td>ファイルの読み書き・パス指定</td><td>13（<a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">40-1</a>）</td><td>パストラバーサル、権限外ファイルへのアクセス</td></tr>
+        <tr><td>OSコマンド・外部プロセス呼び出し</td><td>14（<a href="20-4_OSコマンドインジェクション.html">20-4</a>）</td><td>コマンドインジェクション、呼び出し自体の回避</td></tr>
+        <tr><td>ファイルアップロード</td><td>15（<a href="40-2_ファイルアップロード.html">40-2</a>）</td><td>拡張子・内容検査、保存場所、実行権限</td></tr>
+        <tr><td>動的インクルード</td><td>16（<a href="20-6_ファイルインクルード.html">20-6</a>）</td><td>任意ファイル読み込み・実行</td></tr>
+        <tr><td>XML / YAML / シリアライズ等の読み込み</td><td>17（<a href="40-3_Evalインジェクション・デシリアライズ・XXE.html">40-3</a>）</td><td>XXE、デシリアライズ攻撃</td></tr>
+        <tr><td>キャッシュ・CDN・共有ストレージ</td><td>18（<a href="50-1_競合状態とキャッシュ.html">50-1</a>）</td><td>キャッシュ汚染、他ユーザーへの情報混入</td></tr>
+        <tr><td>Web API（JSON等）</td><td>19（<a href="50-2_WebAPIの脆弱性.html">50-2</a>）</td><td>認証・認可、過剰なデータ公開、レート制限</td></tr>
+        <tr><td>クライアント側JavaScript</td><td>20（<a href="50-3_JavaScriptの脆弱性.html">50-3</a>）</td><td>秘密情報の埋め込み禁止、DOM XSS、依存ライブラリ</td></tr>
+        <tr><td>CORS設定</td><td>3（<a href="10-2_CORSの仕組み.html">10-2</a>・<a href="10-3_CORSエラーの対処法とCookie.html">10-3</a>）</td><td>許可オリジンの最小化、資格情報付きリクエスト</td></tr>
+      </tbody>
+    </table></div>
+    <p>このほか、外部URLの内容を取り込む機能なら <a href="30-3_SSRF.html">SSRF</a>、LLM（大規模言語モデル）を組み込むなら <a href="20-7_プロンプトインジェクション.html">プロンプトインジェクション</a> も「機能実装時」に考える項目です。</p>
+
+    <h3 id="sec-14-3">14.3 判断の流れ（実装チェック）</h3>
+<pre><code>機能を追加する
+  │
+  ├─ 全アプリ必須（A）は満たしているか？
+  │     XSS / SQLi / CSRF / セッション / Cookie / HTTPS / ログ …
+  │
+  └─ この機能固有のリスク（B）は何か？
+        メール？ ファイル？ リダイレクト？ API？ コマンド実行？
+        → 該当章の対策を設計・実装・テストに含める</code></pre>
+    <div class="callout key">
+      <p class="callout-title">本命の対策＋保険を重ねる</p>
+      <p>1つの対策が破られても次で止まるように重ねます。たとえば XSS なら「エスケープ（本命）」＋「CSP」＋「Cookie の HttpOnly」。SQL なら「プリペアドステートメント（本命）」＋「DB ユーザーの権限を最小に」＋「詳細エラーを出さない」。本命を省いて保険だけに頼るのは NG です。</p>
+    </div>
+
+    <h2 id="sec-15"><span class="num">15.</span>多層防御とOSI参照モデル</h2>
+    <p>アプリ層だけ守っても、下位層や運用が弱いと突破されます。<strong>1つの対策が破られても次の層で止める</strong> のが多層防御（Defense in Depth、深層防御とも）です。考え方の詳細は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">71 深層防御</a>、ファイアウォール・IDS/IPS・WAF などの仕組みは <a href="../../71_セキュリティ基礎/00_全体像/50-1_ネットワークと端末の防御.html">71 ネットワークと端末の防御</a> で解説しています。</p>
+    <p><strong>OSI参照モデル</strong> は、通信の仕組みを物理層（L1）からアプリケーション層（L7）までの7つの層に分けて考えるモデルです。これに沿って、各層の脅威・対策と、Webサービスでの典型的な配置をまとめます（実務では層がまたがる対策も多くあります。上からインターネット側です）。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 380" role="img" aria-label="インターネットからデータまでの守りの層。DDoS対策と境界ファイアウォール、TLS、WAF、Webアプリ、データベースの順に並び、その全体を運用が支える">
+      <defs>
+        <marker id="arw001b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="40" y="14" width="330" height="40" rx="8" class="d-box-bad"/>
+      <text x="205" y="39" text-anchor="middle" class="d-text-bold">インターネット（利用者・攻撃者）</text>
+      <line x1="205" y1="56" x2="205" y2="64" class="d-line" marker-end="url(#arw001b)"/>
+      <rect x="40" y="66" width="330" height="40" rx="8" class="d-box"/>
+      <text x="205" y="91" text-anchor="middle" class="d-text">DDoS対策・境界FW・IDS/IPS（L3/L4）</text>
+      <text x="400" y="91" class="d-text-sub">止める例：DDoS・ポートスキャン・不正な通信</text>
+      <line x1="205" y1="108" x2="205" y2="116" class="d-line" marker-end="url(#arw001b)"/>
+      <rect x="40" y="118" width="330" height="40" rx="8" class="d-box"/>
+      <text x="205" y="143" text-anchor="middle" class="d-text">TLS（HTTPS）の暗号化（L6）</text>
+      <text x="400" y="143" class="d-text-sub">止める例：盗聴・改ざん</text>
+      <line x1="205" y1="160" x2="205" y2="168" class="d-line" marker-end="url(#arw001b)"/>
+      <rect x="40" y="170" width="330" height="40" rx="8" class="d-box"/>
+      <text x="205" y="195" text-anchor="middle" class="d-text">WAF（L7）</text>
+      <text x="400" y="195" class="d-text-sub">止める例：既知の攻撃パターン（保険）</text>
+      <line x1="205" y1="212" x2="205" y2="220" class="d-line" marker-end="url(#arw001b)"/>
+      <rect x="40" y="222" width="330" height="40" rx="8" class="d-box-accent"/>
+      <text x="205" y="247" text-anchor="middle" class="d-text-bold">Webアプリ（L5〜L7）</text>
+      <text x="400" y="240" class="d-text-sub">止める例：SQLi・XSS・CSRF・認可不備</text>
+      <text x="400" y="257" class="d-text-sub">（開発者が主に担う層）</text>
+      <line x1="205" y1="264" x2="205" y2="272" class="d-line" marker-end="url(#arw001b)"/>
+      <rect x="40" y="274" width="330" height="40" rx="8" class="d-box-accent"/>
+      <text x="205" y="299" text-anchor="middle" class="d-text-bold">DB・ストレージ（データ）</text>
+      <text x="400" y="299" class="d-text-sub">止める例：不正参照・情報漏洩</text>
+      <rect x="20" y="328" width="680" height="40" rx="8" class="d-box-good"/>
+      <text x="360" y="353" text-anchor="middle" class="d-text">運用：パッチ適用・監視・インシデント対応（全層を支える）</text>
+    </svg>
+    <figcaption>外側から順に層を重ね、1つが破られても次の層で止める</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>名称</th><th>主な脅威の例</th><th>セキュリティ対策の例</th><th>Webサービスでの配置例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>L7</strong></td><td>アプリケーション</td><td>SQLi, XSS, CSRF, 認可不備, 不正API利用</td><td>セキュアコーディング、入力検証・出力エスケープ、認証・認可、レート制限、セキュアな設定</td><td>WAF → Webアプリ（認証・認可・入出力対策）→ API認可</td></tr>
+        <tr><td><strong>L6</strong></td><td>プレゼンテーション</td><td>平文データの盗聴・改ざん、不正な符号化</td><td>TLSによる暗号化、証明書管理、適切な文字コード・エンコーディング</td><td>TLS（HTTPS）の暗号化・証明書</td></tr>
+        <tr><td><strong>L5</strong></td><td>セッション</td><td>セッションハイジャック、固定化、なりすまし</td><td>安全なセッションID、再発行、タイムアウト、Cookie属性、再認証</td><td>セッション・Cookie管理</td></tr>
+        <tr><td><strong>L4</strong></td><td>トランスポート</td><td>ポートスキャン、不正なTCP/UDP通信</td><td>不要ポート閉鎖、ファイアウォール（ポート制御）、TLS終端の適切な配置</td><td>境界FW（ポート制御）、TLS終端</td></tr>
+        <tr><td><strong>L3</strong></td><td>ネットワーク</td><td>不正ルーティング、IPスプーフィング、DDoS</td><td>ファイアウォール（IP/ACL）、VPN、IDS/IPS、DDoS対策、セグメンテーション</td><td>DDoS対策・境界FW・IDS/IPS</td></tr>
+        <tr><td><strong>L2</strong></td><td>データリンク</td><td>不正端末の接続、ARPスプーフィング</td><td>VLAN分割、ポートセキュリティ、MAC制限（環境による）</td><td>VPC/サブネット分割、内部NWの分離</td></tr>
+        <tr><td><strong>L1</strong></td><td>物理</td><td>機器への不正アクセス、ケーブル盗聴</td><td>入退室管理、ラック施錠、媒体管理、冗長化・バックアップ拠点</td><td>データセンター／クラウド事業者の物理管理</td></tr>
+        <tr><td><strong>（データ）</strong></td><td>L7の先</td><td>情報漏洩、不正参照・改ざん</td><td>DBアクセス制御、保存時暗号化、バックアップ</td><td>DB・ストレージの権限と暗号化</td></tr>
+        <tr><td><strong>（運用）</strong></td><td>人・プロセス</td><td>設定ミス、未パッチ、検知遅れ</td><td>パッチ適用、監視、インシデント対応</td><td>ログ監視・脆弱性管理・初動手順</td></tr>
+      </tbody>
+    </table></div>
+    <p>アプリ開発者が主に担うのは <strong>L5〜L7（セッション・アプリ・データ）</strong> です。L1〜L4 はインフラ・クラウド設定と分担しつつ、前提として把握しておきます。</p>
+    <div class="callout warn">
+      <p class="callout-title">注意：層への割り当ては目安です</p>
+      <p>Webのセッション管理（Cookie とセッションID）や TLS は、厳密な OSI の定義では L5・L6 にきれいに収まるものではなく、実際の通信（TCP/IP）では HTTP のセッション管理はアプリケーション層の一部として扱われます。この表は「どの層を守る対策か」を整理するための目安として読んでください。</p>
+    </div>
+
+    <h2 id="sec-16"><span class="num">16.</span>ノートに加えて押さえておきたいこと</h2>
+    <p>徳丸本の章立てに直接はありませんが、実務ではセットで必要になる領域です。多くは 71_セキュリティ基礎で解説しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>領域</th><th>なぜ必要か</th><th>関連ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>セキュリティバイデザイン</strong></td><td>後付け対策は漏れやすくコストが高い。要件・設計段階から脅威を洗い出す</td><td><a href="../../71_セキュリティ基礎/00_全体像/20-4_セキュアバイデザイン.html">71 セキュアバイデザイン</a>・<a href="../../71_セキュリティ基礎/00_全体像/30-1_脅威モデリングとデータフロー図.html">71 脅威モデリング</a></td></tr>
+        <tr><td><strong>依存ライブラリ・サプライチェーン</strong></td><td>自前コード以外の脆弱性（CVE：公開された脆弱性の識別番号）が侵入経路になる。更新・SBOM・スキャン</td><td><a href="../../71_セキュリティ基礎/00_全体像/40-5_サプライチェーンと整合性の不備.html">71 サプライチェーンと整合性の不備</a></td></tr>
+        <tr><td><strong>設定・デプロイのセキュリティ</strong></td><td>デバッグモード公開、秘密情報の平文管理、過剰な権限のIAM（クラウドの権限管理）</td><td><a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html">71 安全でない設計・設定ミス・古い部品</a></td></tr>
+        <tr><td><strong>秘密情報管理</strong></td><td>APIキー・DBパスワードをコードやリポジトリに置かない（環境変数・シークレット管理）</td><td>—</td></tr>
+        <tr><td><strong>脆弱性診断・テスト</strong></td><td>単体・結合に加え、SAST/DAST（ソースコード／動作中アプリの自動検査）、ペネトレーションテスト</td><td><a href="../../71_セキュリティ基礎/00_全体像/50-4_脆弱性管理とランサムウェア対策.html">71 脆弱性管理とランサムウェア対策</a></td></tr>
+        <tr><td><strong>監視とインシデント対応</strong></td><td>ログ（24章）を活かす検知、初動・隔離・復旧の手順</td><td><a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html">71 セキュアな運用とログ出力</a></td></tr>
+        <tr><td><strong>プライバシー・法令</strong></td><td>個人情報の取り扱い、同意、保存期間（アプリ設計に直結）</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-17"><span class="num">17.</span>学習の進め方</h2>
+    <ol class="steps">
+      <li><strong>第I部（1〜3章）</strong> でHTTP・オリジン・CORSの前提を固める（74_セッション管理の HTTP セッション管理、<a href="10-1_受動的攻撃と同一オリジンポリシー.html">10-1</a>〜<a href="10-3_CORSエラーの対処法とCookie.html">10-3</a>）</li>
+      <li><strong>第II部の必須系（4〜9, 11章）</strong> で全アプリ共通のバグを押さえる（このページ、<a href="20-1_XSSの基本.html">20-1</a>〜<a href="20-3_SQLインジェクション.html">20-3</a>、<a href="30-1_CSRF.html">30-1</a>、74_セッション管理）</li>
+      <li><strong>第III部（21〜24章）</strong> で認証・認可・アカウント・ログを学ぶ（73_認証認可、<a href="../../71_セキュリティ基礎/00_全体像/50-3_セキュアな運用とログ出力.html">71 ログ出力</a>）</li>
+      <li><strong>第II部の機能別（10, 12〜20章）</strong> を、自分が実装する機能に合わせて読む（20・30・40・50 の各ページ）</li>
+      <li><strong>多層防御・補足</strong> でインフラ・運用まで視野を広げる（<a href="#sec-15">15章</a>・<a href="#sec-16">16章</a>、<a href="10-4_CSP.html">10-4</a>・<a href="10-5_セキュリティヘッダ.html">10-5</a>）</li>
+    </ol>
+
+    <h2 id="sec-18"><span class="num">18.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>入力‐処理‐出力モデル</td><td>各段階で検証・安全な処理・エスケープが必要。入力値検証だけでは不十分</td></tr>
+        <tr><td>エンコーディングの妥当性検証・変換</td><td>UTF-8 として正しいか確認し、内部形式（UTF-8）に統一</td></tr>
+        <tr><td>入力値の妥当性検証</td><td>ホワイトリスト方式で型・形式・範囲・長さをサーバー側でチェック</td></tr>
+        <tr><td>制御文字・文字数・数値</td><td>改行・NULL 等の混入を防ぎ、最小・最大長や最小値・最大値で制限</td></tr>
+        <tr><td>正規表現</td><td>修飾子（i, u）、文字クラス、量詞、<code>^</code> <code>$</code> で全体一致の形式検証</td></tr>
+        <tr><td>代表的な攻撃</td><td>SQLi → プリペアドステートメント・ORM、XSS → HTMLエスケープ・CSP、CSRF → CSRFトークン・SameSite Cookie、セッションハイジャック → Secure/HttpOnly・HTTPS、ディレクトリトラバーサル → パスの検証・最小権限、SSRF → URLホワイトリスト・内部IPブロック</td></tr>
+        <tr><td>判断軸</td><td>「全アプリ必須（A）」を満たしたうえで、「機能固有（B）」のリスクを設計に含める</td></tr>
+        <tr><td>多層防御</td><td>OSI の各層と運用で対策を重ねる。開発者が主に担うのは L5〜L7 とデータ</td></tr>
+      </tbody>
+    </table></div>
+    <p>Webアプリのセキュリティは「攻撃パターンを知ること」が第一歩です。SQLi・XSS・CSRF の3つを理解するだけで、開発時の意識が大きく変わります。</p>
+
+    <h2 id="sec-19"><span class="num">19.</span>理解度チェック</h2>
+    <details><summary>Q1. 「入力値をしっかり検証すれば、出力時のエスケープは不要」という考えはなぜ誤りですか？</summary><div class="body"><p>インジェクションは入力・処理・出力のそれぞれの段階で起きうるからです。入力値検証は明らかにおかしい値を弾く補助で、処理では命令とデータを分ける（プリペアドステートメント）、出力では出力先の文法に合わせてエスケープする、という本命の対策がそれぞれ必要です。</p></div></details>
+    <details><summary>Q2. 入力値に対して行う3つのステップを順に答えてください。</summary><div class="body"><p>① 文字エンコーディングの妥当性検証 → ② 文字エンコーディングの変換（内部形式の UTF-8 に統一）→ ③ 入力値の妥当性検証、の順です。変換後に想定外の文字が生じることがあるので、変換後にも検証します。</p></div></details>
+    <details><summary>Q3. 入力値検証でホワイトリスト方式が推奨されるのはなぜですか？</summary><div class="body"><p>ブラックリスト（禁止する文字・パターンを並べる方式）は、危険な文字や表記ゆれを見落としやすいからです。ホワイトリストは「英小文字と数字、3〜16文字」のように許可する形式だけを定義するので、想定外の入力は自然に弾かれます。</p></div></details>
+    <details><summary>Q4. 次のうち「全アプリ必須」なのはどれですか？　(a) CSRF対策　(b) メールヘッダインジェクション対策　(c) 出力のエスケープ　(d) ファイルアップロードの内容検査</summary><div class="body"><p>(a) と (c) です。(b) はメール送信機能、(d) はアップロード機能を作るときに考える「機能実装時」の項目です。</p></div></details>
+    <details><summary>Q5. XSS対策として CSP と Cookie の HttpOnly だけを設定し、エスケープを省くのはなぜよくないのですか？</summary><div class="body"><p>CSP や HttpOnly は被害を小さくする「保険」で、XSS そのものを防ぐ本命の対策は出力時のエスケープだからです。多層防御は本命の対策に保険を重ねる考え方で、本命を省いて保険だけに頼るのは NG です。</p></div></details>
+    <details><summary>Q6. 「受動的攻撃」とはどのような攻撃ですか？　例も挙げてください。</summary><div class="body"><p>攻撃者がサーバーを直接攻撃するのではなく、罠サイトやメールで正規の利用者に罠を踏ませ、その人のブラウザ経由で攻撃する方式です（徳丸本での意味）。XSS や CSRF が代表例で、サーバーからは本物の利用者のリクエストに見えます。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/00_全体像/01_安全なWebアプリケーションの作り方_目次</li>
+      <li>ノート：72_Web脆弱性対策/00_全体像/02_Webアプリの機能と脆弱性（徳丸本4章）</li>
+      <li>ノート：72_Web脆弱性対策/00_全体像/03_Webアプリの攻撃と防御（基礎講座第3回）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>toamoku-20220418「セキュリティ基礎講座【第三回】Webアプリの攻撃と防御をしっかり理解しよう！」Qiita https://qiita.com/toamoku-20220418/items/e810b2d9cbe4e84fc471</li>
+      <li>OWASP Top 10 https://owasp.org/Top10/</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-1_受動的攻撃と同一オリジンポリシー.html"><span class="lbl">次のページ →</span>受動的攻撃と同一オリジンポリシー</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

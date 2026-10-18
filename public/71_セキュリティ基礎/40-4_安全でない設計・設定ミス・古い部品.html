@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>安全でない設計・設定ミス・古い部品｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 OWASP Top 10 › 安全でない設計・設定ミス・古い部品</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 OWASP Top 10</span>
+      <h1>安全でない設計・設定ミス・古い部品</h1>
+      <p class="lead">コードの書き方そのものではなく、「そもそもの作り方（設計）」「動かし方（設定）」「使っている部品（ライブラリ）」が原因で起きる3つのリスクをまとめて解説します。それぞれ何が起きるのか、実際のコードや設定でどこが危ないのか、どう防ぐのかを、悪い例と良い例の対比で見ていきます。</p>
+      <p class="meta">もとにしたノート：40_OWASP_Top10/A04_安全でない設計、A05_セキュリティの設定ミス、A06_脆弱で古いコンポーネント、01_OWASP_Top10_2025の変更点</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>家にたとえると、<strong>安全でない設計</strong> は「設計図の段階で裏口に鍵を付け忘れた家」、<strong>設定ミス</strong> は「立派な鍵があるのに掛け忘れた家」、<strong>古いコンポーネント</strong> は「合鍵の作り方が世間に知られている古い錠前を使い続けている家」です。どれも、コードを1行ずつ丁寧に書くだけでは防げません。<strong>設計レビュー・設定の点検・部品の棚卸しと更新</strong> という、コードの外側の仕組みで守ります。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>3つの項目と、2021年版・2025年版の番号</h2>
+    <p>OWASP Top 10 は、Webアプリでよく起きる危険を10個に整理したリストです（詳しくは <a href="40-1_OWASP_Top10とは.html">OWASP Top 10 とは</a>）。もとのノートは 2021年版の番号で書かれていますが、2025年版では順位や名前が変わっています。このページの3項目は次のように対応します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>このページの項目</th><th>2021年版</th><th>2025年版</th><th>変化</th></tr></thead>
+      <tbody>
+        <tr><td><strong>安全でない設計</strong>（Insecure Design）</td><td>A04</td><td>A06</td><td>4位 → 6位（内容はそのまま有効）</td></tr>
+        <tr><td><strong>セキュリティの設定ミス</strong>（Security Misconfiguration）</td><td>A05</td><td>A02</td><td>5位 → <strong>2位に上昇</strong>。クラウド・コンテナ・IaC の普及で、設定で振る舞いが決まる部分が増えた</td></tr>
+        <tr><td><strong>脆弱で古いコンポーネント</strong>（Vulnerable and Outdated Components）</td><td>A06</td><td>A03 に拡張</td><td>「ソフトウェアサプライチェーンの不備」として範囲が広がり<strong>新設カテゴリ</strong>に（→ <a href="40-5_サプライチェーンと整合性の不備.html">次のページ</a>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="家にたとえた3つのリスク">
+      <rect x="20" y="20" width="210" height="230" rx="10" class="d-box"/>
+      <text x="125" y="52" text-anchor="middle" class="d-text-bold">安全でない設計</text>
+      <text x="125" y="74" text-anchor="middle" class="d-text-sub">2021 A04 ／ 2025 A06</text>
+      <rect x="45" y="92" width="160" height="70" rx="6" class="d-box"/>
+      <text x="125" y="122" text-anchor="middle" class="d-text">設計図に</text>
+      <text x="125" y="144" text-anchor="middle" class="d-text">裏口の鍵がない</text>
+      <text x="125" y="192" text-anchor="middle" class="d-text-sub">直し方：仕様・流れから</text>
+      <text x="125" y="212" text-anchor="middle" class="d-text-sub">見直す（作り直しに近い）</text>
+
+      <rect x="255" y="20" width="210" height="230" rx="10" class="d-box-warn"/>
+      <text x="360" y="52" text-anchor="middle" class="d-text-bold">設定ミス</text>
+      <text x="360" y="74" text-anchor="middle" class="d-text-sub">2021 A05 ／ 2025 A02</text>
+      <rect x="280" y="92" width="160" height="70" rx="6" class="d-box"/>
+      <text x="360" y="122" text-anchor="middle" class="d-text">鍵はあるのに</text>
+      <text x="360" y="144" text-anchor="middle" class="d-text">掛け忘れた</text>
+      <text x="360" y="192" text-anchor="middle" class="d-text-sub">直し方：安全な初期設定</text>
+      <text x="360" y="212" text-anchor="middle" class="d-text-sub">＋自動チェック</text>
+
+      <rect x="490" y="20" width="210" height="230" rx="10" class="d-box-bad"/>
+      <text x="595" y="52" text-anchor="middle" class="d-text-bold">古いコンポーネント</text>
+      <text x="595" y="74" text-anchor="middle" class="d-text-sub">2021 A06 ／ 2025 A03へ</text>
+      <rect x="515" y="92" width="160" height="70" rx="6" class="d-box"/>
+      <text x="595" y="122" text-anchor="middle" class="d-text">破り方が知られた</text>
+      <text x="595" y="144" text-anchor="middle" class="d-text">古い錠前のまま</text>
+      <text x="595" y="192" text-anchor="middle" class="d-text-sub">直し方：棚卸し → 監視</text>
+      <text x="595" y="212" text-anchor="middle" class="d-text-sub">→ 自動更新</text>
+    </svg>
+    <figcaption>図：3つのリスクを家の防犯にたとえると。どれも「コードの1行」より外側の問題</figcaption>
+    </figure>
+
+    <!-- ============ A04 ============ -->
+    <h2 id="sec-2"><span class="num">2.</span>安全でない設計（A04:2021 ／ A06:2025）</h2>
+    <h3 id="sec-2-1">2.1 どんな問題か</h3>
+    <p><strong>安全でない設計</strong> は 2021年版で新しく作られたカテゴリです。それまでの Top 10 は「コードのバグ」が中心でしたが、この項目は <strong>設計段階の欠陥</strong>、つまり「仕様そのものに穴がある」状態を扱います。</p>
+    <ul>
+      <li>パスワード再設定の本人確認が、生年月日だけ</li>
+      <li>登録フォームに CAPTCHA（人間かどうかを確かめる画像認証など）がなく、bot（自動プログラム）で大量登録できる</li>
+      <li>ECサイトで、在庫数以上の注文を受け付けてしまう</li>
+      <li>1人が同じクイズに何度でも挑戦できる</li>
+    </ul>
+    <p>これらは、プログラムが「仕様どおり」に正しく動いていても起きます。<strong>どれだけコードを完璧に書いても、設計が甘いと安全ではない</strong> というのがこの項目の教えです。</p>
+
+    <h3 id="sec-2-2">2.2 「実装の欠陥」と「設計の欠陥」の違い</h3>
+    <p>同じ「脆弱性」でも、原因がどこにあるかで見つけ方も直し方も変わります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>実装の欠陥（Bug：バグ）</th><th>設計の欠陥（Flaw：設計上の穴）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>例</strong></td><td>SQLインジェクション、バッファオーバーフロー</td><td>CAPTCHA 未実装、本人確認の甘さ</td></tr>
+        <tr><td><strong>見つけ方</strong></td><td>コードレビュー、SAST（ソースコードを自動で検査するツール）</td><td>脅威モデリング、設計レビュー</td></tr>
+        <tr><td><strong>直し方</strong></td><td>コードを直す</td><td>仕様・処理の流れから見直す</td></tr>
+        <tr><td><strong>直すコスト</strong></td><td>比較的低い</td><td>高い（作り直しに近い）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">注意</p>
+      <p><strong>設計の欠陥は、コードをいくら直しても消えません。</strong> 「生年月日で本人確認する」という仕様のままでは、そのコードにバグが1つもなくても他人がパスワードを変えられます。仕様のレベルで直す必要があり、後になるほど直すコストが上がります。だからこそ設計段階で考えます（<a href="20-4_セキュアバイデザイン.html">セキュアバイデザイン</a>）。</p>
+    </div>
+
+    <h3 id="sec-2-3">2.3 よくある「安全でない設計」</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>① 認証・本人確認が弱い</h4>
+        <ul>
+          <li>パスワードリセットの質問が「母親の旧姓」だけ（SNSで調べられる）</li>
+          <li>多要素認証がない</li>
+          <li>ログイン試行回数の制限がない → 総当たり攻撃し放題</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>② 業務ロジックの悪用（Business Logic Flaw）</h4>
+        <p>コード上はバグではないが、<strong>仕様の穴を突く</strong> 攻撃。</p>
+        <ul>
+          <li>クーポンを複数回適用できる</li>
+          <li>注文確定後に価格を書き換えて送信できる</li>
+          <li>ポイント付与の条件を何度も満たせる</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>③ レート制限の欠如</h4>
+        <p>レート制限＝「一定時間に受け付ける回数の上限」。</p>
+        <ul>
+          <li>1秒間に1万回 SMS 認証コードを送れる → 通信料金が爆発、サービス停止</li>
+          <li>1つの IP アドレスから無制限にアカウントを作れる</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>④ 安全な初期設定になっていない</h4>
+        <ul>
+          <li>新規登録時、プロフィールが最初から「公開」</li>
+          <li>権限設定の初期値が「全員書き込み可」</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <h4>⑤ 脅威モデリングをしていない</h4>
+      <p>そもそも「どんな攻撃があり得るか」を考えていなければ、対策のしようがありません。上の①〜④の多くは、ここが抜けていることから生まれます。</p>
+    </div>
+
+    <h3 id="sec-2-4">2.4 例：パスワードリセットの流れ</h3>
+    <p>同じ「パスワードを忘れた人のための機能」でも、設計しだいで安全性がまったく変わります。</p>
+    <span class="code-label bad">✕ 危険な設計</span>
+    <pre><code>1. ユーザーがメールアドレスを入力
+2. 生年月日を聞く
+3. 正解ならパスワードを変更できる</code></pre>
+    <ul>
+      <li>生年月日は SNS などで調べられる</li>
+      <li>試行回数に制限がない（365日×数十年分を試せば当たる）</li>
+      <li>他人のメールアドレスを入れれば、そのアカウントを乗っ取れる</li>
+    </ul>
+    <span class="code-label good">○ 安全な設計</span>
+    <pre><code>1. ユーザーがメールアドレスを入力
+2. 「もしそのアドレスが登録されていれば、メールを送信しました」と常に同じ応答（列挙攻撃の防止）
+3. メールに、15分で失効する使い切りのトークン付きURLを送信
+4. URLをクリックしたら新パスワードを設定
+5. トークンは1回使ったら失効、同時に全セッションを無効化
+6. 変更完了を本人のメールに通知</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>改善ポイント</th><th>何を防ぐか</th></tr></thead>
+      <tbody>
+        <tr><td>応答を常に同じにする</td><td><strong>列挙攻撃</strong>（応答の違いから「このアドレスは登録済み」と1件ずつ調べ上げる攻撃）</td></tr>
+        <tr><td>トークンに有効期限・使い切り</td><td>メールが後から盗み見られたり、URLが漏れたりしても使えない</td></tr>
+        <tr><td>全セッションを無効化</td><td>すでに乗っ取られていた場合でも、攻撃者を追い出せる</td></tr>
+        <tr><td>変更を本人に通知</td><td>本人が気づいて、すぐに対処できる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-5">2.5 設計段階で考えるべき4つのこと</h3>
+    <ol class="steps">
+      <li><strong>脅威モデリング</strong>：実装の前に「誰が」「どうやって」「何を狙うか」を洗い出す。代表的な手法は <a href="30-2_STRIDE.html">STRIDE</a>（脅威を6種類に分類）、<a href="30-3_DREADとアタックツリー.html">アタックツリー</a>（攻撃経路を木の形で描く）、<a href="30-1_脅威モデリングとデータフロー図.html">データフロー図＋信頼境界</a>。</li>
+      <li><strong>セキュアバイデザイン ／ セキュア・バイ・デフォルト</strong>：最初から安全な状態で動く。危険な機能はデフォルトOFF。権限は必要最小限で付与する（<a href="20-1_最小権限とデータ最小化.html">最小権限</a>）。</li>
+      <li><strong>多層防御（Defense in Depth）</strong>：1つの防御が破られても、次の層で止まるようにする（<a href="20-2_深層防御.html">深層防御</a>）。たとえばログイン画面なら、レート制限（1層目）→ CAPTCHA（2層目）→ 多要素認証（3層目）→ 異常検知アラート（4層目）。</li>
+      <li><strong>悪用ケース（Misuse Case）の検討</strong>：正常な使い方（ユースケース）だけでなく、「悪意のある人がどう悪用するか」のシナリオも書き出す。<br>ユースケース：「ユーザーはポイントで買い物ができる」<br>悪用ケース：「攻撃者は API を並列で叩き、ポイントを二重に使う」</li>
+    </ol>
+
+    <h3 id="sec-2-6">2.6 業務ロジックの穴を防ぐ</h3>
+    <h4>① 同時アクセスに耐える（トランザクションと排他制御）</h4>
+    <p>上の悪用ケース「ポイントの二重使用」は、<strong>レースコンディション</strong>（複数の処理が同時に走ったとき、順番しだいで結果がおかしくなる不具合）で起きます。「残高を読む」と「残高を書き換える」の間に、別のリクエストが割り込めてしまうのが原因です。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="ポイント二重使用のレースコンディション">
+      <defs><marker id="arw44a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="150" y="28" text-anchor="middle" class="d-text-bold">リクエストA（100pt使う）</text>
+      <text x="570" y="28" text-anchor="middle" class="d-text-bold">リクエストB（100pt使う）</text>
+      <rect x="290" y="44" width="140" height="236" rx="8" class="d-box"/>
+      <text x="360" y="68" text-anchor="middle" class="d-text-bold">DB</text>
+      <text x="360" y="88" text-anchor="middle" class="d-text-sub">残高 100pt</text>
+      <rect x="40" y="70" width="220" height="40" rx="6" class="d-box-accent"/>
+      <text x="150" y="95" text-anchor="middle" class="d-text">① 残高を読む → 100</text>
+      <rect x="460" y="70" width="220" height="40" rx="6" class="d-box-accent"/>
+      <text x="570" y="95" text-anchor="middle" class="d-text">① 残高を読む → 100</text>
+      <rect x="40" y="130" width="220" height="40" rx="6" class="d-box-warn"/>
+      <text x="150" y="155" text-anchor="middle" class="d-text">② 100 ≧ 100 で OK</text>
+      <rect x="460" y="130" width="220" height="40" rx="6" class="d-box-warn"/>
+      <text x="570" y="155" text-anchor="middle" class="d-text">② 100 ≧ 100 で OK</text>
+      <rect x="40" y="190" width="220" height="40" rx="6" class="d-box-bad"/>
+      <text x="150" y="215" text-anchor="middle" class="d-text">③ 残高を 0 に更新</text>
+      <rect x="460" y="190" width="220" height="40" rx="6" class="d-box-bad"/>
+      <text x="570" y="215" text-anchor="middle" class="d-text">③ 残高を 0 に更新</text>
+      <line x1="260" y1="210" x2="288" y2="210" class="d-line" marker-end="url(#arw44a)"/>
+      <line x1="460" y1="210" x2="432" y2="210" class="d-line" marker-end="url(#arw44a)"/>
+      <text x="360" y="250" text-anchor="middle" class="d-text-bold">200pt 分を</text>
+      <text x="360" y="270" text-anchor="middle" class="d-text-bold">使えてしまう</text>
+    </svg>
+    <figcaption>図：「読む → 判定 → 書く」を別々に行うと、2つのリクエストがどちらも判定を通過してしまう</figcaption>
+    </figure>
+    <span class="code-label bad">✕ 危険：読んでから書く（間に割り込める）</span>
+    <pre><code>async function usePoints(userId, amount) {
+  const user = await db.getUser(userId);
+  if (user.points &gt;= amount) {
+    await db.updatePoints(userId, user.points - amount);
+  }
+}
+// 並列で叩かれると、両方とも if を通過して残高以上に使えてしまう</code></pre>
+    <span class="code-label good">○ 安全：判定と更新を1つの命令でアトミックに行う</span>
+    <pre><code>async function usePoints(userId, amount) {
+  const result = await db.query(
+    'UPDATE users SET points = points - ? WHERE id = ? AND points &gt;= ?',
+    [amount, userId, amount]
+  );
+  if (result.affectedRows === 0) throw new Error('Insufficient points');
+}</code></pre>
+    <p><strong>アトミック</strong> とは「途中で割り込まれない、ひとかたまりの操作」という意味です。「残高が足りていれば減らす」を DB の1命令にまとめると、同時に来ても片方しか成功しません。更新件数（<code>affectedRows</code>）が 0 なら残高不足と判断します。</p>
+
+    <h4>② サーバー側で必ず再検証する</h4>
+    <p>画面（フロントエンド）で「このクーポンは1回のみ」と制御していても、攻撃者はブラウザを使わずに API を直接叩けます。<strong>価格計算・在庫チェック・権限チェックは、必ずサーバーで最終確認</strong> します。画面のチェックは「使いやすさのため」、サーバーのチェックは「安全のため」と考えます。</p>
+
+    <h4>③ レート制限をかける</h4>
+    <span class="code-label bad">✕ 制限なし：何回でもログインを試せる</span>
+    <pre><code>app.post('/api/login', loginHandler);</code></pre>
+    <span class="code-label good">○ 1分間に5回まで（express-rate-limit の例）</span>
+    <pre><code>import rateLimit from 'express-rate-limit';
+app.post('/api/login', rateLimit({ windowMs: 60_000, max: 5 }), loginHandler);</code></pre>
+
+    <details>
+      <summary>設計フェーズのチェックリスト</summary>
+      <div class="body">
+        <ul>
+          <li>脅威モデリングを実施したか？</li>
+          <li>悪用ケースを洗い出したか？</li>
+          <li>認証・本人確認は十分に強いか？（多要素、レート制限、試行制限）</li>
+          <li>業務ロジックが、悪意ある並列リクエストや順序の改ざんに耐えるか？</li>
+          <li>デフォルト設定は最も安全な状態か？</li>
+          <li>セキュリティを破られた場合に、検知・対応できる仕組みはあるか？</li>
+          <li>ユーザー入力は、サーバー側で再検証しているか？</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- ============ A05 ============ -->
+    <h2 id="sec-3"><span class="num">3.</span>セキュリティの設定ミス（A05:2021 ／ A02:2025）</h2>
+    <h3 id="sec-3-1">3.1 どんな問題か</h3>
+    <p><strong>設定ミス</strong> とは、ソフトウェア・クラウド・サーバーの <strong>設定が不適切なまま</strong> 運用されている状態です。コードは完璧でも、設定1つですべてが台無しになります。銀行にたとえれば、金庫は頑丈なのに「扉を開けっ放しにしていた」ようなものです。</p>
+    <ul>
+      <li>S3 バケット（AWS のファイル置き場）が「全公開」になっていて、顧客情報が漏洩</li>
+      <li>管理画面のパスワードが初期値の <code>admin/admin</code> のまま</li>
+      <li>エラー画面にスタックトレース（エラーが起きたプログラムの場所の一覧）と DB 接続情報が表示される</li>
+      <li>開発用のデバッグ用 URL が本番に残っている</li>
+      <li>テスト用ユーザーなどのサンプルデータが本番 DB に残っている</li>
+    </ul>
+    <p>どれも <strong>コードではなく運用の問題</strong> で、しかも頻度が非常に高いのが特徴です。2025年版では 5位から <strong>2位</strong> に上がり、テストされたアプリの 3.00% で該当する弱点が見つかっています。</p>
+
+    <h3 id="sec-3-2">3.2 よくある設定ミスのパターン</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パターン</th><th>具体例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>① 初期パスワードの放置</strong></td><td>DB の <code>root / (空)</code>・<code>admin / admin</code>、管理画面の <code>admin / password</code>、IoT 機器の <code>admin / 1234</code>。bot が世界中をスキャンして、初期パスワードで侵入を試みている</td></tr>
+        <tr><td><strong>② 情報を出しすぎるエラー画面</strong></td><td>DB サーバーの IP やパスワードがエラー画面に丸見えになる（下の例）</td></tr>
+        <tr><td><strong>③ 不要な機能・ポート・アカウント</strong></td><td>サンプルアプリがそのまま配置、使っていないポート（21番/FTP、23番/Telnet）が開いている、退職者のアカウントが残っている</td></tr>
+        <tr><td><strong>④ セキュリティヘッダーがない</strong></td><td>ブラウザに「このページをこう扱って」と指示するヘッダー（<code>Content-Security-Policy</code> など）が未設定</td></tr>
+        <tr><td><strong>⑤ クラウドの公開設定ミス</strong></td><td>S3・GCS・Azure Blob が認証なしで読める、DB がインターネットに直接公開（<code>0.0.0.0/0</code> を許可＝全世界から接続可）、Elasticsearch / MongoDB が認証なしで公開</td></tr>
+        <tr><td><strong>⑥ CORS の設定ミス</strong></td><td>他サイトからのアクセスを何でも許可してしまう（下の例）</td></tr>
+        <tr><td><strong>⑦ チュートリアル設定の残存</strong></td><td>Jenkins のセットアップウィザードを飛ばしたまま公開、Kubernetes ダッシュボードが認証なしで公開</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ 本番で出してはいけないエラー画面の例</span>
+    <pre><code>[ERROR] 500 Internal Server Error
+  at users.controller.js:42
+  DB connection failed: postgres://admin:mySecretPass@10.0.0.5:5432/prod
+  Stack trace: ...</code></pre>
+    <p>開発中は便利ですが、本番では DB のユーザー名・パスワード・内部 IP が攻撃者にそのまま渡ります。</p>
+
+    <h3 id="sec-3-3">3.3 悪い例と良い例</h3>
+    <h4>例1：本番でデバッグモードが有効</h4>
+    <span class="code-label bad">✕ 危険（Django の settings.py）</span>
+    <pre><code>DEBUG = True  # ← 本番ではTrueにしない！
+ALLOWED_HOSTS = ['*']</code></pre>
+    <p><code>DEBUG=True</code> だと、エラー時にソースコード・設定・環境変数がブラウザに表示されます。</p>
+    <span class="code-label good">○ 安全：環境変数で制御し、既定は False</span>
+    <pre><code>import os
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = ['example.com', 'www.example.com']</code></pre>
+    <p>環境変数が設定されていなければ <code>False</code> になる、つまり <strong>設定を忘れたら安全側</strong> になる書き方です。</p>
+
+    <h4>例2：S3 バケットが全公開</h4>
+    <span class="code-label bad">✕ 危険：誰でも（"*"）読める</span>
+    <pre><code>{
+  "Effect": "Allow",
+  "Principal": "*",
+  "Action": "s3:GetObject",
+  "Resource": "arn:aws:s3:::my-bucket/*"
+}</code></pre>
+    <span class="code-label good">○ 安全：認証必須にする</span>
+    <ul>
+      <li>バケットポリシーで、特定の IAM ロール（AWS 上の権限の単位）やオリジンだけを許可</li>
+      <li><strong>Block Public Access</strong>（公開を一括で禁止する設定）をアカウント単位で有効化</li>
+      <li>CloudFront + OAI（Origin Access Identity）経由で配信し、バケットを直接公開しない</li>
+    </ul>
+
+    <h4>例3：生のエラーをクライアントに返す</h4>
+    <span class="code-label bad">✕ 危険：スタックトレースが丸見え</span>
+    <pre><code>app.use((err, req, res, next) =&gt; {
+  res.status(500).json({ error: err.stack });
+});</code></pre>
+    <span class="code-label good">○ 安全：詳細はサーバーのログだけに、利用者には汎用メッセージ</span>
+    <pre><code>app.use((err, req, res, next) =&gt; {
+  logger.error(err); // サーバーログにだけ詳細
+  res.status(500).json({ error: 'Internal Server Error' }); // クライアントには汎用
+});</code></pre>
+    <p>この考え方は 2025年版の新項目「例外的状況の不適切な処理」でさらに詳しく扱います（→ <a href="40-6_ログ不足・SSRF・例外処理.html">ログ不足・SSRF・例外処理</a>）。</p>
+
+    <h4>例4：セキュリティヘッダーがない</h4>
+    <span class="code-label bad">✕ 危険：デフォルトのまま</span>
+    <pre><code>const app = express();
+// ヘッダー設定なし → XSS・クリックジャッキングなどに弱い</code></pre>
+    <span class="code-label good">○ 安全：helmet で基本的なヘッダーを自動設定</span>
+    <pre><code>import helmet from 'helmet';
+app.use(helmet());</code></pre>
+
+    <h4>例5：CORS の設定ミス</h4>
+    <p><strong>CORS</strong>（オリジン間リソース共有）は、「別のサイトから、このサーバーの API を呼んでよいか」をブラウザに伝える仕組みです。</p>
+    <span class="code-label bad">✕ 危険：すべてのサイトから、ログイン情報付きで呼べる</span>
+    <pre><code>app.use(cors({ origin: '*', credentials: true }));</code></pre>
+    <span class="code-label good">○ 安全：許可するサイトを明示する</span>
+    <pre><code>app.use(cors({ origin: ['https://app.example.com'], credentials: true }));</code></pre>
+    <p><code>credentials: true</code>（Cookie などの認証情報を送ってよい）と <code>origin: '*'</code>（どのサイトからでも）の組み合わせは最悪です。許可するオリジンは名前で列挙します。</p>
+
+    <h3 id="sec-3-4">3.4 最低限設定すべきセキュリティヘッダー</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ヘッダー</th><th>役割</th><th>推奨値の例</th></tr></thead>
+      <tbody>
+        <tr><td><code>Strict-Transport-Security</code></td><td>HTTPS を強制する</td><td><code>max-age=31536000; includeSubDomains</code></td></tr>
+        <tr><td><code>Content-Security-Policy</code></td><td>読み込めるスクリプトの出どころを制限し、XSS の被害を抑える</td><td><code>default-src 'self'</code></td></tr>
+        <tr><td><code>X-Content-Type-Options</code></td><td>ブラウザがファイルの種類を勝手に推測する（MIME sniffing）のを防ぐ</td><td><code>nosniff</code></td></tr>
+        <tr><td><code>X-Frame-Options</code></td><td>他サイトに埋め込まれて騙しクリックさせられる（クリックジャッキング）のを防ぐ。<code>frame-ancestors</code> でも可</td><td><code>DENY</code></td></tr>
+        <tr><td><code>Referrer-Policy</code></td><td>リンク先に送る「どこから来たか」の情報を制限する</td><td><code>strict-origin-when-cross-origin</code></td></tr>
+        <tr><td><code>Permissions-Policy</code></td><td>カメラ・位置情報などブラウザ機能の利用を制限する</td><td>用途に応じて設定</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-5">3.5 防御の原則</h3>
+    <ol class="steps">
+      <li><strong>安全な基準（ベースライン）を作る</strong>：ハードニング（不要な機能を外し、設定を固めること）済みの構成テンプレートを用意する。Terraform・CloudFormation などの IaC（インフラをコードで定義する仕組み）で構成をそろえ、新しい環境はいつも同じ基準から作る。</li>
+      <li><strong>本番と開発を分ける</strong>：デバッグON・認証の簡略化など開発用の設定を本番に持ち込まない。<code>.env.production</code> と <code>.env.development</code> を分け、開発用エンドポイントを本番に含めない。</li>
+      <li><strong>不要なものを削除する（攻撃面の最小化）</strong>：使わない機能は無効化・削除、使わないポートは閉じる、退職者・不要アカウントはすぐ削除、サンプルコードやテストデータを本番に残さない。</li>
+      <li><strong>自動でスキャンする</strong>：構成チェック（CIS Benchmark、AWS Security Hub、GCP Security Command Center）、クラウドの公開チェック（AWS Config、Prowler、Scout Suite）、ヘッダーチェック（securityheaders.com）。</li>
+      <li><strong>定期的に見直す</strong>：設定は一度決めて終わりではない。退職者、使われなくなった機能、新しく見つかった脆弱性への対応を定期的にレビューする。</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント</p>
+      <p>基本姿勢は <strong>「デフォルト設定を信じない」</strong> こと。製品の初期設定は「すぐ動くこと」を優先していて、安全とは限りません。2025年版で設定ミスが2位に上がったことを受け、<strong>クラウド設定・IaC のレビューを優先</strong> するのがおすすめです。手作業の設定は忘れや抜けが起きるので、IaC と自動スキャンで人為ミスを減らします。</p>
+    </div>
+
+    <details>
+      <summary>設定ミスのチェックリスト</summary>
+      <div class="body">
+        <p><strong>アプリケーション</strong></p>
+        <ul>
+          <li><code>DEBUG</code> / 詳細表示モードが本番で無効か？</li>
+          <li>エラー画面から内部情報が漏れていないか？</li>
+          <li>セキュリティヘッダー（helmet 相当）を設定しているか？</li>
+          <li>初期パスワードを変更したか？</li>
+          <li>不要な管理エンドポイントを削除したか？</li>
+        </ul>
+        <p><strong>インフラ・クラウド</strong></p>
+        <ul>
+          <li>S3 / GCS / Azure の公開設定を確認したか？</li>
+          <li>DB がインターネットに直接公開されていないか？</li>
+          <li>不要なポートが開いていないか？</li>
+          <li>退職者・テストアカウントを削除したか？</li>
+          <li>CORS 設定は適切か？（<code>origin: '*'</code> + <code>credentials: true</code> は NG）</li>
+        </ul>
+        <p><strong>プロセス</strong></p>
+        <ul>
+          <li>構成はコード化（IaC）されているか？</li>
+          <li>本番デプロイ前にセキュリティスキャンを実施しているか？</li>
+          <li>セキュリティの基準は文書化されているか？</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- ============ A06 ============ -->
+    <h2 id="sec-4"><span class="num">4.</span>脆弱で古いコンポーネント（A06:2021 ／ A03:2025 に拡張）</h2>
+    <h3 id="sec-4-1">4.1 どんな問題か</h3>
+    <p>今のアプリは、<strong>自分で書いたコードよりも外部ライブラリ（依存関係）のほうが圧倒的に多い</strong> のが普通です。npm・pip・Maven などで取り込むオープンソースの部品（コンポーネント）が、アプリの大部分を占めます。</p>
+    <p>その部品に <strong>既知の脆弱性</strong>（すでに世間に公表されている弱点）があるのに放置していると、攻撃者はそこを狙ってきます。自分のコードが無傷でも、<strong>使っていただけで被害に遭う</strong> のがこの項目の怖さです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>事件</th><th>何が起きたか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Apache Struts</strong>（2017年）</td><td>Struts の脆弱性を突かれ、Equifax から1.4億人の個人情報が流出</td></tr>
+        <tr><td><strong>Log4Shell</strong>（2021年）</td><td>Java のログ部品 Log4j の脆弱性で、世界中の Java アプリが攻撃対象に</td></tr>
+        <tr><td><strong>Heartbleed</strong>（2014年）</td><td>OpenSSL の脆弱性で、暗号化した通信の内容を盗まれる</td></tr>
+        <tr><td>npm パッケージの乗っ取り</td><td>ライブラリが攻撃者に乗っ取られ、悪意あるコードが正規の経路で配られる（サプライチェーン攻撃 → <a href="40-5_サプライチェーンと整合性の不備.html">次のページ</a>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-2">4.2 なぜ起きるのか</h3>
+    <h4>① 依存関係が何層にもなり、全体を把握しきれない</h4>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="依存関係のツリー">
+      <rect x="20" y="105" width="120" height="40" rx="6" class="d-box-accent"/>
+      <text x="80" y="130" text-anchor="middle" class="d-text-bold">my-app</text>
+      <rect x="200" y="45" width="120" height="40" rx="6" class="d-box"/>
+      <text x="260" y="70" text-anchor="middle" class="d-text">express</text>
+      <rect x="200" y="165" width="120" height="40" rx="6" class="d-box"/>
+      <text x="260" y="190" text-anchor="middle" class="d-text">react</text>
+      <rect x="380" y="20" width="130" height="40" rx="6" class="d-box"/>
+      <text x="445" y="45" text-anchor="middle" class="d-text">body-parser</text>
+      <rect x="380" y="80" width="130" height="40" rx="6" class="d-box"/>
+      <text x="445" y="105" text-anchor="middle" class="d-text">…</text>
+      <rect x="380" y="165" width="130" height="40" rx="6" class="d-box"/>
+      <text x="445" y="190" text-anchor="middle" class="d-text">…</text>
+      <rect x="570" y="20" width="130" height="40" rx="6" class="d-box-bad"/>
+      <text x="635" y="45" text-anchor="middle" class="d-text">qs（脆弱）</text>
+      <line x1="140" y1="118" x2="200" y2="70" class="d-line"/>
+      <line x1="140" y1="132" x2="200" y2="180" class="d-line"/>
+      <line x1="320" y1="60" x2="380" y2="40" class="d-line"/>
+      <line x1="320" y1="70" x2="380" y2="100" class="d-line"/>
+      <line x1="320" y1="185" x2="380" y2="185" class="d-line"/>
+      <line x1="510" y1="40" x2="570" y2="40" class="d-line"/>
+      <text x="260" y="235" text-anchor="middle" class="d-text-sub">直接依存（package.json に書く）</text>
+      <text x="540" y="150" text-anchor="middle" class="d-text-sub">間接依存（依存の依存）</text>
+      <text x="540" y="168" text-anchor="middle" class="d-text-sub">自分では書いていない</text>
+    </svg>
+    <figcaption>図：自分が選んだのは express と react だけでも、その奥の部品の脆弱性がアプリに入り込む</figcaption>
+    </figure>
+    <p>Node.js の平均的なプロジェクトでは、依存関係のツリーは数百〜数千パッケージになります。そのどこか1つに脆弱性があれば影響を受けます。</p>
+    <h4>② アップデートが怖い</h4>
+    <p>「動いているものに触りたくない」「互換性が壊れるのが怖い」という心理で、古いバージョンが使われ続けます。</p>
+    <h4>③ 公開された脆弱性情報は攻撃者にも見える</h4>
+    <p>公表された脆弱性は世界中の攻撃者も知ります。公開から数日で <strong>PoC</strong>（脆弱性を実際に突けることを示す攻撃コードの例）が出回ることも多く、「パッチが出たのに当てていない期間」が狙われます。</p>
+
+    <h3 id="sec-4-3">4.3 押さえておきたい用語</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>CVE（Common Vulnerabilities and Exposures）</h4>
+        <p>個々の脆弱性に付けられる <strong>世界共通の ID</strong>。例：<code>CVE-2021-44228</code>（Log4Shell）。</p>
+      </div>
+      <div class="card">
+        <h4>SBOM（Software Bill of Materials）</h4>
+        <p>アプリに含まれる <strong>全部品の一覧</strong>。食品の「原材料表示」のようなもの。米国では大統領令で政府調達に必須化され、業界標準になりつつあります。</p>
+      </div>
+      <div class="card">
+        <h4>SCA（Software Composition Analysis）</h4>
+        <p>依存関係をスキャンして、脆弱性のある部品を見つけるツールの種類。</p>
+      </div>
+      <div class="card">
+        <h4>サプライチェーン攻撃</h4>
+        <p>ライブラリや配布の仕組みを汚染し、<strong>正規の配布経路を通じて</strong> マルウェアを広める攻撃。</p>
+      </div>
+    </div>
+    <p><strong>CVSS</strong>（Common Vulnerability Scoring System）は、脆弱性の <strong>深刻度を 0.0〜10.0 で表すスコア</strong> です（<a href="10-3_セキュリティの専門用語.html">セキュリティの専門用語</a> も参照）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>スコア</th><th>深刻度</th></tr></thead>
+      <tbody>
+        <tr><td>0.0</td><td>なし</td></tr>
+        <tr><td>0.1〜3.9</td><td>低（Low）</td></tr>
+        <tr><td>4.0〜6.9</td><td>中（Medium）</td></tr>
+        <tr><td>7.0〜8.9</td><td>高（High）</td></tr>
+        <tr><td>9.0〜10.0</td><td><strong>緊急（Critical）</strong></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-4">4.4 よくあるリスクパターン</h3>
+    <ul>
+      <li><strong>古いメジャーバージョンを使い続けている</strong>：Node.js 10 / Python 2 / PHP 5 など <strong>サポートが終了</strong> したランタイム（実行環境）。新しい脆弱性が見つかっても修正が出ない。</li>
+      <li><strong>直接依存は更新しても、間接依存が古い</strong>：<code>package.json</code> に書いていない依存の依存にも脆弱性はある。</li>
+      <li><strong>フォーク版や保守されていないパッケージ</strong>：メンテナーがいなくなったもの、小規模で使われていないもの、最終更新が何年も前のもの。</li>
+      <li><strong>使っていないのに入れっぱなし</strong>：「試したが使わなかった」パッケージが残っていて、攻撃面（攻撃者が狙える場所）を無駄に広げている。</li>
+    </ul>
+
+    <h3 id="sec-4-5">4.5 悪い例と良い例</h3>
+    <h4>依存を放置するか、定期的に監査するか</h4>
+    <span class="code-label bad">✕ 危険：古いバージョンを放置</span>
+    <pre><code>{
+  "dependencies": {
+    "express": "^4.16.0",
+    "lodash": "^4.17.10"  // ← Prototype Pollution の脆弱性がある古いバージョン
+  }
+}</code></pre>
+    <span class="code-label good">○ 安全：定期的に監査コマンドを実行（CI にも組み込む）</span>
+    <pre><code># npm
+npm audit
+npm audit fix
+
+# yarn
+yarn audit
+
+# pip
+pip-audit
+
+# Go
+govulncheck ./...</code></pre>
+
+    <h4>手作業の更新か、自動化か</h4>
+    <span class="code-label good">○ Dependabot で更新の PR を自動作成（Renovate でも可）</span>
+    <pre><code># .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"</code></pre>
+    <p>新しいバージョンが出るたびに自動でプルリクエストが作られるので、「気づいたら何年も古い」を防げます。</p>
+
+    <h4>部品表（SBOM）を作る</h4>
+    <span class="code-label good">○ Syft で SBOM を作り、Grype で脆弱性をスキャン</span>
+    <pre><code># Syft でSBOMを生成
+syft packages dir:. -o spdx-json &gt; sbom.json
+
+# Grype で脆弱性スキャン
+grype sbom:sbom.json</code></pre>
+
+    <h4>コンテナのベースイメージ</h4>
+    <span class="code-label bad">✕ あいまいなタグ（中身が分からず、古くなりがち）</span>
+    <pre><code>FROM node:latest</code></pre>
+    <span class="code-label good">○ バージョンを明示し、定期的に更新</span>
+    <pre><code>FROM node:20.11-alpine3.19</code></pre>
+
+    <h3 id="sec-4-6">4.6 防御の進め方</h3>
+    <ol class="steps">
+      <li><strong>インベントリ（在庫表）を作る</strong>：直接依存＋間接依存をすべてリスト化し、バージョン・ライセンス・出どころ（npm か、フォーク版か）を記録。SBOM ツールで自動化する。</li>
+      <li><strong>脆弱性の監視を自動化する</strong>：GitHub Dependabot（無料）、Snyk・Mend・Black Duck（商用）、OWASP Dependency-Check・Trivy（OSS）。CI/CD に組み込み、<strong>脆弱性のある PR はマージ不可</strong> にする運用が理想。</li>
+      <li><strong>使わないものは削除する</strong>：<code>npx depcheck</code> で使われていないパッケージを見つけ、<code>npm uninstall &lt;package&gt;</code> で外す。</li>
+      <li><strong>信頼できる場所からだけ取得する</strong>：公式レジストリ（npm、PyPI、Maven Central）を使い、社内プロキシ（Nexus、Artifactory）経由で監査を一元化。<code>npm install --ignore-scripts</code> でインストール時のスクリプト実行を止める。</li>
+      <li><strong>バージョンを固定する</strong>：ロックファイル（<code>package-lock.json</code>・<code>Pipfile.lock</code>・<code>go.sum</code>）をコミットし、本番ビルドは <code>npm ci</code>（ロックファイルに厳密に従う）で行う。</li>
+      <li><strong>ランタイムも更新する</strong>：OS・Node や Python などのランタイム・コンテナのベースイメージも定期的に更新する。</li>
+    </ol>
+
+    <h3 id="sec-4-7">4.7 Log4Shell から学ぶ教訓</h3>
+    <p>2021年12月、Java の非常に有名なログ部品 <strong>Log4j</strong> に致命的な脆弱性（<code>CVE-2021-44228</code>）が見つかりました。</p>
+    <ul>
+      <li>CVSS <strong>10.0</strong>（最高）</li>
+      <li>認証なしで <strong>リモートコード実行</strong>（外部から好きなプログラムを動かされる）</li>
+      <li>Java 製のほぼすべての業務アプリが影響を受けた</li>
+      <li>間接依存のさらに奥に潜んでいるケースが多数</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">教訓</p>
+      <ul>
+        <li>SBOM がないと、<strong>自分が影響を受けているかすら分からない</strong></li>
+        <li>影響の把握と緊急パッチの体制を、日頃から準備しておく必要がある</li>
+        <li><strong>「有名で枯れている」≠「安全」</strong></li>
+      </ul>
+    </div>
+
+    <h3 id="sec-4-8">4.8 2026年の事例から</h3>
+    <p>2026年は <strong>脆弱性の悪用が情報漏洩の最大の入口</strong> になりました。Verizon DBIR 2026 では、侵入の入口の 31% が脆弱性の悪用で、盗まれた認証情報を初めて上回っています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>事例</th><th>コンポーネントの問題</th></tr></thead>
+      <tbody>
+        <tr><td>KDDI ISP 向けメール基盤</td><td>システムの一部に組み込んだ <strong>第三者製ソフトのゼロデイ脆弱性</strong>（修正がまだ存在しない脆弱性）。5/16 から被害、6/17 に把握。メールアドレス 1,223万件・パスワード 762万件が漏えい</td></tr>
+        <tr><td>タイムズカー</td><td>サポートが終わった Java フレームワーク <strong>Seasar2</strong> を使っていたという指摘がある（因果関係は未確認）</td></tr>
+        <tr><td>VPN・ファイル転送製品</td><td>国内ランサムウェアの入口の約5割が VPN 機器（警察庁、2026年上半期）</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>ライブラリだけでなく、組み込んだ製品・ミドルウェア・境界機器（VPN など社内外の境目にある機器）も</strong> インベントリの対象にする</li>
+      <li><strong>EOL（サポート終了）の技術を洗い出す</strong>。Seasar2 のように国内で広く使われ、今は保守されていないものは要注意</li>
+      <li>優先度は CVSS だけでなく、<strong>CISA KEV</strong>（実際に悪用されたことが確認された脆弱性のリスト）を重視する</li>
+      <li>ゼロデイはパッチでは防げないので、検知（<a href="40-6_ログ不足・SSRF・例外処理.html">ログとモニタリング</a>）と被害の限定（<a href="20-1_最小権限とデータ最小化.html">データ最小化</a>）も組み合わせる</li>
+    </ul>
+    <p>境界機器のパッチ運用は <a href="50-4_脆弱性管理とランサムウェア対策.html">脆弱性管理とランサムウェア対策</a>、2026年の事例全体は <a href="50-5_サプライチェーン攻撃と2026年の事例.html">サプライチェーン攻撃と2026年の事例</a> で扱います。</p>
+
+    <details>
+      <summary>古いコンポーネント対策のチェックリスト</summary>
+      <div class="body">
+        <ul>
+          <li>全依存関係（直接・間接）を一覧化しているか？</li>
+          <li><code>npm audit</code> / <code>pip-audit</code> などを CI で実行しているか？</li>
+          <li>Dependabot / Renovate で自動更新を回しているか？</li>
+          <li>ロックファイルをコミットしているか？</li>
+          <li>OS・ランタイム・ベースイメージも更新しているか？</li>
+          <li>使っていない依存を削除しているか？</li>
+          <li>サポート終了したランタイム（Node 10、Python 2 など）を使っていないか？</li>
+          <li>SBOM を生成・保管しているか？</li>
+          <li>脆弱性発見時の対応フロー（誰が検知し、誰がパッチを当てるか）が決まっているか？</li>
+        </ul>
+      </div>
+    </details>
+
+    <h2 id="sec-5"><span class="num">5.</span>よくある誤解</h2>
+    <details>
+      <summary>「テストもコードレビューも通ったから、安全な設計だ」</summary>
+      <div class="body">
+        <p><strong>不十分です。</strong> テストやコードレビューは「仕様どおりに作れているか」を確かめるもので、「仕様そのものに穴がないか」は確かめません。設計の欠陥は、脅威モデリングや悪用ケースの検討、設計レビューで見つけます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「画面でボタンを押せなくしているから、二重送信は起きない」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> 攻撃者はブラウザを使わず API を直接、しかも並列で叩けます。回数制限・価格・在庫・権限は必ずサーバー側で、同時アクセスにも耐える形（アトミックな更新）で確認します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「クラウドの初期設定なら安全なはず」</summary>
+      <div class="body">
+        <p><strong>限りません。</strong> 初期設定は「すぐ使えること」を優先している場合があり、利用者が公開設定を変えてしまうこともあります。Block Public Access のような一括の安全装置を有効にし、AWS Config・Prowler などで公開状態を自動チェックします。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「<code>npm audit</code> で何も出なければ、依存関係は安全」</summary>
+      <div class="body">
+        <p><strong>言い切れません。</strong> 監査ツールが見つけられるのは <strong>すでに公表された</strong> 脆弱性だけです。ゼロデイや、保守が止まった部品、乗っ取られたパッケージは検出できないことがあります。インベントリ（SBOM）・不要な依存の削除・検知の仕組みを組み合わせます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「常に最新版に上げておけば安全」</summary>
+      <div class="body">
+        <p><strong>半分正解です。</strong> 古いまま放置するのは危険ですが、公開直後の新バージョンが乗っ取られたものだった、という攻撃もあります。ロックファイルで固定し、更新は Dependabot などの PR として <strong>意図して</strong> 取り込みます。詳しくは <a href="40-5_サプライチェーンと整合性の不備.html">サプライチェーンと整合性の不備</a> で扱います。</p>
+      </div>
+    </details>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>安全でない設計</strong>（2021 A04 ／ 2025 A06）は「コードではなく設計の欠陥」。コードを直しても消えないので、<strong>脅威モデリング・悪用ケース・多層防御</strong> を設計段階で組み込む</li>
+        <li>業務ロジックは <strong>並列・順序の改ざん・二重実行</strong> に耐えるようにし、価格・在庫・権限は <strong>サーバー側で最終確認</strong></li>
+        <li><strong>設定ミス</strong>（2021 A05 ／ 2025 A02）は運用の問題で頻度が高い。<strong>デフォルトを信じず</strong>、本番と開発を分け、不要なものを削除する</li>
+        <li>IaC と自動スキャンで設定の人為ミスを減らし、セキュリティヘッダーやエラー表示も点検する</li>
+        <li><strong>古いコンポーネント</strong>（2021 A06 ／ 2025 A03 に拡張）は、<strong>インベントリ（SBOM）→ 監視 → 自動更新</strong> のサイクルで守る</li>
+        <li>Log4Shell のような事件は再発する前提で、<strong>すぐに影響を調べてパッチを当てられる体制</strong> を用意しておく</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 「パスワードリセットの本人確認が生年月日だけ」。これはバグ（実装の欠陥）と設計の欠陥のどちらで、どう直すべき？</summary>
+      <div class="body">
+        <p><strong>設計の欠陥</strong> です。コードが仕様どおり正しく動いていても、生年月日は調べられるため他人が通過できます。直すにはコードの修正ではなく <strong>流れそのものを作り直す</strong> 必要があります。たとえば「常に同じ応答を返す」「15分で失効する使い切りトークンをメールで送る」「変更後に全セッションを無効化し、本人に通知する」という設計にします。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. Express で <code>cors({ origin: '*', credentials: true })</code> と書かれていた。何が問題で、どう直す？</summary>
+      <div class="body">
+        <p><strong>どのサイトからでも、ログイン情報（Cookie など）付きで API を呼べる</strong> 組み合わせになっており、最悪の設定です。<code>origin</code> に許可するサイト（例：<code>['https://app.example.com']</code>）を明示して直します。これは「設定ミス」（2021 A05 ／ 2025 A02）の典型例です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. Log4Shell のとき、「自社が影響を受けているか分からない」組織が多かった。日頃から何を用意しておけば良かった？</summary>
+      <div class="body">
+        <p><strong>SBOM（ソフトウェア部品表）</strong> です。直接依存だけでなく間接依存まで含めた部品の一覧があれば、「Log4j のどのバージョンを、どのシステムが使っているか」をすぐに検索できます。あわせて、<code>npm audit</code> などの自動監視と、誰が検知し誰がパッチを当てるかの対応フローも決めておきます。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>OWASP Top 10:2025: <a href="https://top10.owasp.org/2025/">https://top10.owasp.org/2025/</a></li>
+      <li>OWASP Top 10:2025 Introduction（変更点）: <a href="https://top10.owasp.org/2025/0x00_2025-Introduction/">https://top10.owasp.org/2025/0x00_2025-Introduction/</a></li>
+      <li>OWASP Top 10:2025 日本語版: <a href="https://owasp.org/Top10/2025/ja/">https://owasp.org/Top10/2025/ja/</a></li>
+      <li>セキュリティヘッダーのチェック: securityheaders.com</li>
+      <li>Verizon Data Breach Investigations Report（DBIR）2026</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-3_インジェクションと暗号化の不備.html"><span class="lbl">← 前のページ</span>インジェクションと暗号化の不備</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-5_サプライチェーンと整合性の不備.html"><span class="lbl">次のページ →</span>サプライチェーンと整合性の不備</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ファイルアップロード｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 ファイル・データ処理 › ファイルアップロード</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 ファイル・データ処理</span>
+      <h1>ファイルアップロード</h1>
+      <p class="lead">プロフィール画像・添付資料・帳票など、Webアプリは <strong>ファイルのアップロードとダウンロード</strong> をよく使います。このページでは、徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）第15章に沿って、アップロード機能への DoS 攻撃、アップロードしたファイルによるサーバー側スクリプト実行、ダウンロード時の XSS、PDF にまつわる問題と、その対策を解説します。</p>
+      <p class="meta">もとにしたノート：40_ファイル・データ処理/02_ファイルアップロードにまつわる問題（徳丸本15章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>アップロード機能は「外部の人がサーバーにファイルを置ける」機能です。対策の基本は、<strong>アップロード時</strong> には「許可リストで拡張子を制限し、公開ディレクトリの外に保存する」こと、<strong>ダウンロード時</strong> には「正しい Content-Type・<code>nosniff</code>・<code>Content-Disposition: attachment</code> を付けて返す」ことです。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>ファイルアップロードの問題の概要</h2>
+    <p><strong>アップロード</strong> とは利用者のパソコンからサーバーへファイルを送ること、<strong>ダウンロード</strong> とはサーバーから利用者へファイルを渡すことです。ファイルアップロード機能には、主に次の問題があります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>問題</th><th>概要</th></tr></thead>
+        <tbody>
+          <tr><td><strong>アップロード機能に対する DoS 攻撃</strong></td><td>巨大ファイルや大量アップロードでサーバー資源を枯渇させる</td></tr>
+          <tr><td><strong>アップロードファイルのサーバー側スクリプト実行</strong></td><td>攻撃用スクリプトをアップロードし、サーバー上で実行させる</td></tr>
+          <tr><td><strong>仕掛けを含むファイルを利用者にダウンロードさせる攻撃</strong></td><td>悪意あるファイルを他ユーザーに開かせ、XSS などを起こす</td></tr>
+          <tr><td><strong>閲覧権限のないファイルのダウンロード</strong></td><td>他人のファイルや秘密ファイルを不正に取得する</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常なアップロード</h4><p>自分のプロフィール写真だけが保存され、自分だけが見られる。</p></div>
+      <div class="card"><h4>攻撃された場合</h4><p>写真のふりをした「悪いプログラム」がサーバーに置かれ、サーバーごと乗っ取られる。あるいは、他の利用者のブラウザで勝手にスクリプトが動く。</p></div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 なぜ危険か</h3>
+    <p>アップロード機能は、アプリが <strong>「サーバーにファイルを書き込む権限」</strong> を持っているということです。その権限が悪用されると、次のような被害が出ます。</p>
+<pre><code>・サーバー上で攻撃用プログラムが動く
+・Webサーバー内のファイルの閲覧・改ざん・削除
+・他ユーザーへの XSS やマルウェア配布
+・他人の非公開ファイルの漏洩
+・ディスクや CPU を使い果たす DoS</code></pre>
+    <p><strong>マルウェア</strong> とは、ウイルスなど悪意を持って作られたソフトウェアの総称です。</p>
+    <p>第13章の「ファイルアクセス」（<a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">ファイルアクセスとディレクトリトラバーサル</a>）は <strong>既存ファイルの読み書き</strong> が中心でした。本章は <strong>外部からファイルを持ち込む</strong> 点がポイントです。持ち込まれたファイルが「ただの画像」ではなく「実行可能なプログラム」や「ブラウザを騙す文書」になると、被害が大きくなります。</p>
+    <div class="callout tip">
+      <p class="callout-title">補足：閲覧権限のないファイルのダウンロード</p>
+      <p>概要表の4つ目（閲覧権限のないファイルのダウンロード）は、ノートでは個別の節がありません。考え方は単純で、ダウンロード用のスクリプトで <strong>「このファイルを、今ログインしている利用者が見てよいか」を毎回サーバー側で確認する</strong> ことが対策です。ファイル名や ID を変えるだけで他人のファイルが取れる状態は、アクセス制御の不備です。詳しくは <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 セキュリティ基礎「アクセス制御と認証の失敗」</a> を参照してください。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>アップロード機能に対する DoS 攻撃</h2>
+    <p><strong>DoS（Denial of Service）</strong> は、サービス妨害攻撃です。サーバーに負荷をかけて、正規の利用者がサービスを使えない状態にします（DoS・DDoS の一般的な説明は <a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#ddos">71 セキュリティ基礎「さまざまな脅威と対策の基本」</a> を参照）。アップロード機能では、次のような方法でサーバーを重くしたり止めたりできます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>手口</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>巨大ファイルのアップロード</strong></td><td>数 GB のファイルを送り、ディスクやメモリを圧迫する</td></tr>
+          <tr><td><strong>大量の同時アップロード</strong></td><td>多くのリクエストで帯域・CPU・接続数を使い果たす</td></tr>
+          <tr><td><strong>小さなファイルの大量保存</strong></td><td>ディスクの inode（ファイル数の上限）を使い果たす</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>inode</strong> とは、Linux などのファイルシステムが「ファイル1個ごと」に使う管理情報のことです。数に上限があるため、ディスクの空き容量が残っていても、ファイルの数が上限に達すると新しいファイルを作れなくなります。</p>
+
+    <h3 id="sec-2-1">2.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>写真を1枚アップロードする。</p></div>
+      <div class="card"><h4>攻撃</h4><p>倉庫いっぱいに巨大な荷物を送りつけ、他の荷物が置けなくなる。</p></div>
+    </div>
+
+    <h3 id="sec-2-2">2.2 対策の要点</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ファイルサイズの上限</strong></td><td>アプリ・Webサーバー・PHP 等の設定で上限を設ける</td></tr>
+          <tr><td><strong>アップロード回数・頻度の制限</strong></td><td>同一ユーザー・同一 IP の連続投稿を制限する</td></tr>
+          <tr><td><strong>保存先ディスクの監視</strong></td><td>容量逼迫を検知できるようにする</td></tr>
+          <tr><td><strong>ウイルススキャン等の負荷制御</strong></td><td>重い処理はキュー（後で順番に処理するための待ち行列）に回し、Web 応答を止めない</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>サイズ制限は「アプリだけ」では不十分なことがあります。Webサーバー（Nginx / Apache）や言語ランタイム（プログラムを動かす実行環境。PHP など）側の上限もあわせて設定します。</p>
+    <div class="callout tip">
+      <p class="callout-title">補足：設定項目の例</p>
+      <p>たとえば Nginx では <code>client_max_body_size</code>、Apache では <code>LimitRequestBody</code>、PHP では <code>upload_max_filesize</code> と <code>post_max_size</code> が、受け取れるサイズの上限を決める設定です。アプリでチェックする前に、手前の層で巨大なリクエストを止められます。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>アップロードファイルによるサーバー側スクリプト実行</h2>
+    <p><strong>アップロードファイルによるサーバー側スクリプト実行</strong> とは、攻撃者が <strong>サーバーで動くプログラム</strong>（PHP・JSP・ASP など）をアップロードし、それを Web 経由で実行させてしまう脆弱性です。</p>
+    <p>画像や PDF を受け取るつもりが、実際には <code>shell.php</code> のような攻撃用スクリプトを置かれてしまうイメージです。このような、ブラウザからサーバーを遠隔操作できるようにする不正プログラムを <strong>Web シェル</strong> と呼びます。</p>
+
+    <h3 id="sec-3-1">3.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>受付に「写真」を預ける。</p></div>
+      <div class="card"><h4>攻撃</h4><p>「写真」と書いてある封筒の中身が、実は「倉庫の鍵を開ける道具」で、受付が倉庫の中に置いてしまう。</p></div>
+    </div>
+
+    <h3 id="sec-3-2">3.2 何ができるか（被害）</h3>
+    <p>スクリプトがサーバー上で動くと、Webアプリが持つ権限の範囲で、ほぼ何でもできます。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>被害</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Webサーバー内のファイルの閲覧・改ざん・削除</strong></td><td>設定ファイル、ソースコード、データベース接続情報などを読まれる・書き換えられる</td></tr>
+          <tr><td><strong>外部へのメールの送信</strong></td><td>迷惑メールやフィッシングメールの踏み台にされる</td></tr>
+          <tr><td><strong>別のサーバーへの攻撃</strong></td><td>自サーバーを踏み台に、他サイトへ攻撃する</td></tr>
+          <tr><td><strong>サーバー上での暗号通貨の採掘</strong></td><td>CPU を勝手に使い、電気代や性能を奪う</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>踏み台</strong> とは、攻撃者が自分の正体を隠すために、乗っ取ったサーバーを中継点として使い、そこから別の相手を攻撃することです。</p>
+    <p>一度スクリプト実行が成功すると、<strong>サーバーの乗っ取り</strong> に近い状態になります。第14章の <a href="20-4_OSコマンドインジェクション.html">OSコマンドインジェクション</a> と同様、影響範囲が非常に広いです。読み込んだファイルがプログラムとして動くという点では、<a href="20-6_ファイルインクルード.html">ファイルインクルード</a> とも似ています。</p>
+
+    <h3 id="sec-3-3">3.3 攻撃のイメージ</h3>
+    <p>プロフィール画像のアップロード機能があり、保存先が <strong>公開ディレクトリ</strong>（ドキュメントルート配下にあり、URL を指定すればブラウザから直接アクセスできるフォルダ）だとします。<strong>ドキュメントルート</strong> とは、Webサーバーが URL で公開している一番上のフォルダ（例：<code>/var/www/html/</code>）のことです。</p>
+<pre><code>【正常な利用】
+photo.jpg をアップロード
+→ https://example.com/uploads/photo.jpg で画像が表示される
+
+【攻撃者の操作】
+shell.php をアップロード（中身は攻撃用 PHP）
+→ https://example.com/uploads/shell.php にブラウザでアクセス
+→ サーバーが PHP として実行してしまう
+→ 攻撃者がサーバー上で任意の処理を実行できる</code></pre>
+    <p>攻撃用スクリプトの例（概念）です。</p>
+    <p class="code-label bad">✕ 攻撃者がアップロードする悪用スクリプトのイメージ</p>
+<pre><code>&lt;?php
+// 攻撃者がアップロードした悪用スクリプトのイメージ
+// 実際にはもっと巧妙に隠蔽されることが多い
+system($_GET['cmd']);  // URL の cmd パラメータを OS コマンドとして実行</code></pre>
+    <p><code>system()</code> は、渡された文字列を OS のコマンドとして実行する PHP の関数です。攻撃者は次のようにアクセスします。</p>
+<pre><code>https://example.com/uploads/shell.php?cmd=ls
+→ サーバー上で ls が実行され、ファイル一覧が返る</code></pre>
+
+    <h3 id="sec-3-4">3.4 脆弱性が生まれる原因</h3>
+    <p>この問題が起きる典型的な条件は、次の <strong>2つが同時に成り立つ</strong> ことです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>原因</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>① アップロードしたファイルが公開ディレクトリに保存される</strong></td><td>URL で直接アクセスでき、Webサーバーがそのファイルを処理する</td></tr>
+          <tr><td><strong>② アップロード後のファイル名として、サーバースクリプトを示す拡張子が指定できる</strong></td><td><code>.php</code> <code>.jsp</code> <code>.aspx</code> など、実行対象の拡張子で保存できてしまう</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>拡張子</strong> とは、ファイル名の末尾の <code>.php</code> や <code>.jpg</code> など、ファイルの種類を表す部分です。Webサーバーは拡張子を見て「このファイルはプログラムとして実行するか、そのまま返すか」を決めることが多いです。</p>
+<pre><code>【危険な組み合わせ】
+
+公開ディレクトリ（例: /var/www/html/uploads/）
+        ＋
+実行可能な拡張子（例: .php）
+        ↓
+URL アクセスだけでスクリプトが動く</code></pre>
+    <p>どちらか一方でも防げれば、この攻撃は成立しにくくなります。</p>
+<pre><code>✅ 公開ディレクトリに置かない
+   → URL で直接アクセスできない
+
+✅ .php などの危険な拡張子を拒否する
+   → 置かれてもスクリプトとして実行されない（※サーバー設定にも依存）</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="危険な構成と安全な構成の比較。危険な構成では、shell.phpが公開ディレクトリuploadsに保存され、攻撃者がURLで直接アクセスするとPHPとして実行される。安全な構成では、ファイルはドキュメントルートの外に推測しにくい名前で保存され、利用者はダウンロード用スクリプトを経由してのみ取得でき、スクリプトは権限確認と安全なヘッダを付けてファイルの中身を返すだけなので実行されない">
+      <defs>
+        <marker id="arw402a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw402b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">危険：公開ディレクトリに保存</text>
+      <rect x="20" y="40" width="140" height="56" rx="8" class="d-box-bad"/>
+      <text x="90" y="64" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="90" y="84" text-anchor="middle" class="d-text-sub">/uploads/shell.php</text>
+      <rect x="230" y="34" width="290" height="110" rx="8" class="d-box"/>
+      <text x="250" y="56" class="d-text-bold">ドキュメントルート /var/www/html/</text>
+      <rect x="250" y="70" width="250" height="56" rx="8" class="d-box-bad"/>
+      <text x="375" y="94" text-anchor="middle" class="d-text">uploads/shell.php</text>
+      <text x="375" y="114" text-anchor="middle" class="d-text-sub">URL で直接アクセスできる</text>
+      <rect x="570" y="70" width="130" height="56" rx="8" class="d-box-bad"/>
+      <text x="635" y="94" text-anchor="middle" class="d-text-bold">PHP として</text>
+      <text x="635" y="114" text-anchor="middle" class="d-text-bold">実行される</text>
+      <line x1="160" y1="80" x2="248" y2="96" class="d-line-bad" marker-end="url(#arw402b)"/>
+      <line x1="500" y1="98" x2="568" y2="98" class="d-line-bad" marker-end="url(#arw402b)"/>
+
+      <text x="20" y="188" class="d-text-bold">安全：公開ディレクトリの外に保存し、スクリプト経由で配信</text>
+      <rect x="20" y="210" width="140" height="56" rx="8" class="d-box"/>
+      <text x="90" y="234" text-anchor="middle" class="d-text-bold">利用者</text>
+      <text x="90" y="254" text-anchor="middle" class="d-text-sub">/download.php?id=…</text>
+      <rect x="230" y="204" width="200" height="110" rx="8" class="d-box-accent"/>
+      <text x="330" y="228" text-anchor="middle" class="d-text-bold">download.php</text>
+      <text x="330" y="252" text-anchor="middle" class="d-text-sub">① 見てよいか権限を確認</text>
+      <text x="330" y="274" text-anchor="middle" class="d-text-sub">② Content-Type / nosniff</text>
+      <text x="330" y="296" text-anchor="middle" class="d-text-sub">③ 中身を読んで返すだけ</text>
+      <rect x="490" y="204" width="210" height="110" rx="8" class="d-box-good"/>
+      <text x="595" y="228" text-anchor="middle" class="d-text-bold">/var/www/data/uploads/</text>
+      <text x="595" y="252" text-anchor="middle" class="d-text-sub">ドキュメントルートの外</text>
+      <text x="595" y="274" text-anchor="middle" class="d-text-sub">名前はサーバーが決める</text>
+      <text x="595" y="296" text-anchor="middle" class="d-text-sub">（例: 3f9a…c1.jpg）</text>
+      <line x1="160" y1="238" x2="228" y2="244" class="d-line" marker-end="url(#arw402a)"/>
+      <line x1="430" y1="259" x2="488" y2="259" class="d-line-dash" marker-end="url(#arw402a)"/>
+    </svg>
+    <figcaption>図：公開ディレクトリに置くと URL だけで実行される。外に置いてダウンロード用スクリプト経由で返せば、ファイルは「データ」として渡されるだけになる</figcaption>
+    </figure>
+
+    <h3 id="sec-3-5">3.5 拡張子の偽装にも注意</h3>
+    <p>単純なチェックだけでは、次のような抜け道があります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>手口</th><th>例</th></tr></thead>
+        <tbody>
+          <tr><td><strong>二重拡張子</strong></td><td><code>shell.php.jpg</code>（サーバー設定によっては <code>.php</code> として実行される）</td></tr>
+          <tr><td><strong>大文字小文字</strong></td><td><code>shell.PHP</code> / <code>shell.pHp</code></td></tr>
+          <tr><td><strong>末尾のドットや空白</strong></td><td><code>shell.php.</code>（環境によって解釈が変わる）</td></tr>
+          <tr><td><strong>ヌルバイト（古い環境）</strong></td><td><code>shell.php%00.jpg</code>（昔の言語処理で <code>.php</code> と解釈された例）</td></tr>
+          <tr><td><strong>Content-Type だけ信じる</strong></td><td>ブラウザが送る <code>image/jpeg</code> は攻撃者が自由に書き換えられる</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>ヌルバイト</strong> とは、文字コード 0 の特殊な文字（URL では <code>%00</code>）です。古い処理系では「文字列の終わり」と扱われ、<code>%00</code> 以降が無視されることがありました。<strong>Content-Type</strong> は「このデータは何の種類か」を表す情報（MIME タイプ。例：<code>image/jpeg</code>）で、アップロード時にはブラウザが申告しますが、攻撃者はリクエストを自由に作れるため信用できません。</p>
+    <p>「ブラウザが申告した種類」や「ファイル名の見た目」だけを信じないことが重要です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>ファイルダウンロードによるクロスサイト・スクリプティング（XSS）</h2>
+    <p>アップロードされたファイルを <strong>他の利用者がダウンロード・表示する</strong> 機能でも、XSS が起きることがあります。<strong>XSS（クロスサイト・スクリプティング）</strong> は、攻撃者の用意したスクリプトを被害者のブラウザで実行させる攻撃です（基本は <a href="20-1_XSSの基本.html">XSSの基本</a> を参照）。</p>
+    <p>攻撃者は、HTML や JavaScript を含むファイルをアップロードし、被害者がそれをブラウザで開くと、<strong>被害者のブラウザ上でスクリプトが実行</strong> されます。</p>
+
+    <h3 id="sec-4-1">4.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>正常</h4><p>共有フォルダから「資料.pdf」を開く。</p></div>
+      <div class="card"><h4>攻撃</h4><p>「資料」のふりをしたファイルを開いた瞬間、画面の裏で勝手に操作される（Cookie の盗難、偽画面の表示など）。</p></div>
+    </div>
+
+    <h3 id="sec-4-2">4.2 なぜ起きるか</h3>
+    <p>ブラウザは、レスポンスの <strong>Content-Type（中身の種類）</strong> を見て、「画像として表示するか」「HTML として実行するか」を決めます。</p>
+    <p>ここが間違っていると、次のようなことが起きます。</p>
+<pre><code>【危険な例】
+サーバーが text/html で返す
+または Content-Type が曖昧で、ブラウザが HTML だと推測する
+        ↓
+中身に &lt;script&gt; があると、スクリプトとして実行される</code></pre>
+    <p>特に、アップロードファイルを <strong>同一オリジン（同じサイト）上の URL</strong> で配信している場合、実行されたスクリプトはそのサイトの Cookie や DOM（ブラウザが画面の中身をプログラムから操作できるように表したもの）にアクセスできます。通常の XSS と同じ被害になります。オリジンの考え方は <a href="10-1_受動的攻撃と同一オリジンポリシー.html">受動的攻撃と同一オリジンポリシー</a> を参照してください。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="同じアップロードファイルでも、返すレスポンスヘッダによってブラウザの扱いが変わる。text/htmlやContent-Type未設定ではHTMLとしてスクリプトが実行される。正しいContent-Typeとnosniffなら宣言どおり画像やPDFとして扱われる。Content-Disposition attachmentなら画面に表示せず保存される">
+      <defs>
+        <marker id="arw402c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw402d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="90" width="160" height="70" rx="8" class="d-box-warn"/>
+      <text x="100" y="118" text-anchor="middle" class="d-text-bold">アップロード</text>
+      <text x="100" y="140" text-anchor="middle" class="d-text-sub">中身に &lt;script&gt;</text>
+      <rect x="250" y="20" width="220" height="56" rx="8" class="d-box-bad"/>
+      <text x="360" y="44" text-anchor="middle" class="d-text">text/html ／ 未設定</text>
+      <text x="360" y="64" text-anchor="middle" class="d-text-sub">ブラウザが HTML と推測</text>
+      <rect x="250" y="97" width="220" height="56" rx="8" class="d-box"/>
+      <text x="360" y="121" text-anchor="middle" class="d-text">正しい型 ＋ nosniff</text>
+      <text x="360" y="141" text-anchor="middle" class="d-text-sub">image/jpeg など</text>
+      <rect x="250" y="174" width="220" height="56" rx="8" class="d-box"/>
+      <text x="360" y="198" text-anchor="middle" class="d-text">＋ Content-Disposition</text>
+      <text x="360" y="218" text-anchor="middle" class="d-text-sub">attachment</text>
+      <rect x="540" y="20" width="160" height="56" rx="8" class="d-box-bad"/>
+      <text x="620" y="53" text-anchor="middle" class="d-text-bold">スクリプト実行</text>
+      <rect x="540" y="97" width="160" height="56" rx="8" class="d-box-good"/>
+      <text x="620" y="130" text-anchor="middle" class="d-text-bold">宣言どおり表示</text>
+      <rect x="540" y="174" width="160" height="56" rx="8" class="d-box-good"/>
+      <text x="620" y="207" text-anchor="middle" class="d-text-bold">保存させる</text>
+      <line x1="180" y1="110" x2="248" y2="52" class="d-line-bad" marker-end="url(#arw402d)"/>
+      <line x1="180" y1="125" x2="248" y2="125" class="d-line" marker-end="url(#arw402c)"/>
+      <line x1="180" y1="140" x2="248" y2="198" class="d-line" marker-end="url(#arw402c)"/>
+      <line x1="470" y1="48" x2="538" y2="48" class="d-line-bad" marker-end="url(#arw402d)"/>
+      <line x1="470" y1="125" x2="538" y2="125" class="d-line" marker-end="url(#arw402c)"/>
+      <line x1="470" y1="202" x2="538" y2="202" class="d-line" marker-end="url(#arw402c)"/>
+    </svg>
+    <figcaption>図：同じファイルでも、サーバーが返すヘッダしだいでブラウザの扱い（実行・表示・保存）が変わる</figcaption>
+    </figure>
+
+    <h3 id="sec-4-3">4.3 対策（ダウンロード時）</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ファイルの Content-Type を正しく設定する</strong></td><td>画像なら <code>image/jpeg</code>、PDF なら <code>application/pdf</code> など、中身に合った型を返す</td></tr>
+          <tr><td><strong><code>X-Content-Type-Options: nosniff</code> を指定する</strong></td><td>ブラウザに「Content-Type を推測せず、宣言どおり扱え」と指示する</td></tr>
+          <tr><td><strong>ダウンロード想定のファイルには <code>Content-Disposition: attachment</code> を指定する</strong></td><td>ブラウザ内で開かず、ダウンロードダイアログを出す（実行・表示を抑える）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>ブラウザが中身を見て種類を推測する動作を <strong>コンテンツスニッフィング</strong>（MIME スニッフィング）と呼びます。<code>X-Content-Type-Options</code> の詳しい説明は <a href="10-5_セキュリティヘッダ.html#sec-4">セキュリティヘッダ「X-Content-Type-Options」</a> を参照してください。</p>
+    <p>レスポンスヘッダのイメージです。</p>
+<pre><code>HTTP/1.1 200 OK
+Content-Type: image/jpeg
+X-Content-Type-Options: nosniff
+Content-Disposition: attachment; filename="photo.jpg"</code></pre>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ヘッダ</th><th>役割</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Content-Type</strong></td><td>「これは JPEG 画像です」と正しく宣言する</td></tr>
+          <tr><td><strong>X-Content-Type-Options: nosniff</strong></td><td>中身を見て HTML だと勝手に判断しない</td></tr>
+          <tr><td><strong>Content-Disposition: attachment</strong></td><td>画面に表示せず、ファイルとして保存させる</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout tip">
+      <p class="callout-title">メモ</p>
+      <p>ヘッダ名は <code>Content-Disposition</code> です（<code>Cotent-Disposition</code> は誤記）。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>PDF ダウンロード機能による XSS</h2>
+    <p>PDF をダウンロード・表示する機能でも、XSS に近い問題が起きます。代表的なのが <strong>PDF に偽装した HTML ファイルによる XSS</strong> です。</p>
+
+    <h3 id="sec-5-1">5.1 PDF に偽装した HTML ファイルによる XSS</h3>
+    <p>攻撃の流れは次のとおりです。</p>
+    <ol class="steps">
+      <li>攻撃者が、中身は HTML（+ JavaScript）なのに、ファイル名だけ <code>report.pdf</code> にしたファイルをアップロードする</li>
+      <li>被害者が「PDF を開く」リンクをクリックする</li>
+      <li>サーバーが Content-Type を誤って <code>text/html</code> などで返す（またはブラウザが中身を HTML だと推測する）</li>
+      <li>ブラウザが HTML として解釈し、<code>&lt;script&gt;</code> が実行される</li>
+    </ol>
+    <p>見た目は「PDF のダウンロード」でも、実際には <strong>HTML ページとして動いてしまう</strong> のがポイントです。</p>
+
+    <h3 id="sec-5-2">5.2 Content-Type の間違いが根本原因</h3>
+    <p>この攻撃が成立する根本原因は、<strong>サーバーが返す Content-Type が正しくない（または曖昧）</strong> ことです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>状況</th><th>結果</th></tr></thead>
+        <tbody>
+          <tr><td><strong>正しい</strong> <code>Content-Type: application/pdf</code> + <code>nosniff</code></td><td>ブラウザは PDF として扱う（HTML としては実行しない）</td></tr>
+          <tr><td><strong>誤り</strong> <code>Content-Type: text/html</code></td><td>HTML として実行される</td></tr>
+          <tr><td><strong>曖昧</strong>（未設定・<code>application/octet-stream</code> のみ等）</td><td>ブラウザの推測（コンテンツスニッフィング）に依存し、危険</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><code>application/octet-stream</code> は「中身の種類が分からない、ただのバイナリデータ」を表す汎用の型です。</p>
+    <p>ファイル名が <code>.pdf</code> でも、<strong>中身の扱いを決めるのは主に Content-Type</strong> です。拡張子だけ見て安心してはいけません。</p>
+
+    <h3 id="sec-5-3">5.3 Content-Type と IE の挙動の関係</h3>
+    <p>かつての Internet Explorer（IE）は、Content-Type より <strong>中身の先頭バイトを見て種類を推測する</strong>（コンテンツスニッフィング）傾向が強いことで知られていました。</p>
+<pre><code>【IE で起きやすかったこと】
+
+サーバー: Content-Type: application/pdf と返したつもり
+実際の中身: &lt;html&gt;&lt;script&gt;...&lt;/script&gt;&lt;/html&gt;
+        ↓
+IE が「これは HTML だ」と推測して実行してしまう</code></pre>
+    <p>そのため、次の対策が特に重要でした（現代のブラウザでも防御として有効です）。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>効果</th></tr></thead>
+        <tbody>
+          <tr><td><strong>正しい Content-Type</strong></td><td>種類の宣言を明確にする</td></tr>
+          <tr><td><strong><code>X-Content-Type-Options: nosniff</code></strong></td><td>推測をやめさせ、宣言どおりに扱わせる</td></tr>
+          <tr><td><strong><code>Content-Disposition: attachment</code></strong></td><td>ブラウザ内表示を避け、ダウンロードさせる</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>現代ブラウザでは挙動が改善されていますが、<strong>古いブラウザや組み込みブラウザ</strong>、設定の違いもあるため、ヘッダ対策は引き続き必須です。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：2026年時点の状況</p>
+      <p>IE は 2022年6月にサポートが終了し、現在の Windows では Microsoft Edge に置き換わっています。Chrome・Edge・Firefox・Safari など現代のブラウザは、<code>application/pdf</code> や <code>application/octet-stream</code> と宣言されたものを HTML に「格上げ」して実行することは基本的にありません（<code>application/octet-stream</code> は通常ダウンロード扱いになります）。そのため「IE 特有の危険な推測」は過去の話ですが、<strong>Content-Type 未設定や <code>text/html</code> での配信</strong> は今でも XSS の原因になります。ノートのとおり、正しい Content-Type・<code>nosniff</code>・<code>attachment</code> の3点セットは今も基本対策です。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>対策（アップロードとダウンロード）</h2>
+    <p>対策は <strong>アップロード時</strong> と <strong>ダウンロード時</strong> の両方で行います。どちらか一方だけでは不十分です。</p>
+
+    <h3 id="sec-6-1">6.1 アップロード時の対策：拡張子が許可されたものかをチェックする</h3>
+    <p><strong>許可リスト（ホワイトリスト）</strong> 方式で、<strong>必要な拡張子だけ</strong> を通します。<strong>拒否リスト</strong>（ブラックリスト。「<code>.php</code> 以外は OK」のように、だめなものだけを列挙する方式）は抜け道が多く、非推奨です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>✕ 悪い例（拒否リスト）</h4>
+        <p><code>.php</code> だけ禁止</p>
+        <p>→ <code>.php5</code> <code>.phtml</code> <code>.cgi</code> <code>.aspx</code> などで回避されることがある</p>
+      </div>
+      <div class="card">
+        <h4>○ 良い例（許可リスト）</h4>
+        <p>画像なら <code>.jpg</code> <code>.jpeg</code> <code>.png</code> <code>.gif</code> <code>.webp</code> のみ許可</p>
+        <p>それ以外はすべて拒否</p>
+      </div>
+    </div>
+    <p>実装のポイントです。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ポイント</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>許可リストを使う</strong></td><td>業務上必要な拡張子だけ列挙する</td></tr>
+          <tr><td><strong>大文字小文字を統一して判定</strong></td><td><code>.PHP</code> も <code>.php</code> と同じ扱いにする</td></tr>
+          <tr><td><strong>拡張子はサーバー側で付け直す</strong></td><td>ユーザー指定のファイル名をそのまま使わない</td></tr>
+          <tr><td><strong>保存名はアプリが決める</strong></td><td>UUID（ほぼ重複しないランダムな識別子）など推測しにくい名前にする</td></tr>
+          <tr><td><strong>公開ディレクトリに置かない</strong></td><td>ドキュメントルートの外に保存し、アプリ経由で配信する</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="code-label bad">✕ 危険：利用者のファイル名のまま公開ディレクトリに保存する（比較用の例）</p>
+<pre><code>// ❌ 危険: ファイル名も拡張子も利用者まかせで、公開ディレクトリに保存
+$name = $_FILES['photo']['name'];          // 例: shell.php
+move_uploaded_file($_FILES['photo']['tmp_name'],
+                   '/var/www/html/uploads/' . $name);
+// → https://example.com/uploads/shell.php で実行できてしまう</code></pre>
+    <p class="code-label good">○ 安全：許可リストで拡張子をチェックし、保存名はサーバーが決める</p>
+<pre><code>// ✅ 許可リストで拡張子をチェックし、保存名はサーバーが決める例（概念）
+$allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+$original = $_FILES['photo']['name'];
+$ext = strtolower(pathinfo($original, PATHINFO_EXTENSION));
+
+if (!in_array($ext, $allowed, true)) {
+    exit('許可されていないファイル形式です');
+}
+
+// ユーザーのファイル名は使わず、安全な名前で保存
+$newName = bin2hex(random_bytes(16)) . '.' . $ext;
+$savePath = '/var/www/data/uploads/' . $newName;  // 非公開ディレクトリ
+// move_uploaded_file(..., $savePath);</code></pre>
+    <p>使っている関数の意味は次のとおりです。<code>pathinfo(…, PATHINFO_EXTENSION)</code> はファイル名から拡張子だけを取り出し、<code>strtolower()</code> は小文字にそろえます。<code>in_array(…, true)</code> は配列に含まれるかを型まで厳密に調べ、<code>random_bytes(16)</code> と <code>bin2hex()</code> で推測しにくいランダムな名前を作ります。<code>move_uploaded_file()</code> は、一時フォルダに届いたアップロードファイルを保存先へ移動する PHP の関数です。</p>
+
+    <h3 id="sec-6-2">6.2 あわせてやっておくとよいこと</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ファイルサイズ上限</strong></td><td>DoS 対策にもなる</td></tr>
+          <tr><td><strong>画像なら画像として再エンコード</strong></td><td>余計なデータを取り除き、スクリプト混入を減らす</td></tr>
+          <tr><td><strong>実行権限を付けない</strong></td><td>保存先ディレクトリでスクリプト実行を無効化する</td></tr>
+          <tr><td><strong>ウイルススキャン</strong></td><td>マルウェア配布対策（万能ではないが有効）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>再エンコード</strong> とは、受け取った画像をいったん画像として読み込み、改めて画像ファイルとして保存し直すことです。画像のふりをしたファイルや、画像の中に紛れ込ませたデータを取り除けます。</p>
+    <p>Webサーバー側で、アップロードディレクトリでのスクリプト実行を無効化するのも有効です。</p>
+    <p class="code-label good">○ アップロードディレクトリで PHP を動かさない例（Apache）</p>
+<pre><code># アップロードディレクトリで PHP を動かさない例（Apache）
+&lt;Directory "/var/www/html/uploads"&gt;
+    php_admin_flag engine off
+&lt;/Directory&gt;</code></pre>
+    <p>可能なら、そもそも公開配下に置かない方が安全です。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：この設定が効く環境</p>
+      <p><code>php_admin_flag engine off</code> は、PHP を Apache のモジュール（mod_php）として動かしている場合の設定です。現在よく使われる PHP-FPM（PHP を Apache とは別のプロセスで動かす方式）の構成では効かないため、そのディレクトリでは PHP へ処理を渡す設定（ハンドラ）を外すなど、構成に合わせた方法が必要です。この点からも「公開配下に置かない」方が確実です。こうした多層の守りの考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-2_深層防御.html">71 セキュリティ基礎「深層防御」</a> を参照してください。</p>
+    </div>
+
+    <h3 id="sec-6-3">6.3 ファイルダウンロード時の対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Content-Type を正しく設定する</strong></td><td>拡張子や用途に応じた正しい MIME タイプを返す</td></tr>
+          <tr><td><strong><code>X-Content-Type-Options: nosniff</code> を指定する</strong></td><td>コンテンツスニッフィングを防ぐ</td></tr>
+          <tr><td><strong>必要に応じて <code>Content-Disposition</code> を設定する</strong></td><td>表示が不要なら <code>attachment</code> でダウンロード強制</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="code-label good">○ ダウンロード配信のヘッダ例（概念）</p>
+<pre><code>// ✅ ダウンロード配信のヘッダ例（概念）
+$file = '/var/www/data/uploads/' . $safeName;
+$mime = 'image/jpeg';  // 実際はファイル種別に応じて設定
+
+header('Content-Type: ' . $mime);
+header('X-Content-Type-Options: nosniff');
+header('Content-Disposition: attachment; filename="download.jpg"');
+readfile($file);</code></pre>
+    <p><code>header()</code> はレスポンスヘッダを出力する関数、<code>readfile()</code> はファイルの中身をそのままレスポンスとして送る関数です。<code>readfile()</code> は中身を「送るだけ」なので、ファイルが PHP スクリプトであっても実行されません。なお、<code>$safeName</code> は利用者の入力をそのまま使わず、データベースなどで管理している保存名を使います（そうしないとディレクトリ・トラバーサルの原因になります。<a href="40-1_ファイルアクセスとディレクトリトラバーサル.html">ファイルアクセスとディレクトリトラバーサル</a> を参照）。</p>
+<pre><code>【防御の層】
+
+アップロード時: 危険な拡張子を入れない / 非公開に保存する
+        ＋
+ダウンロード時: 正しい Content-Type / nosniff / attachment
+        ↓
+スクリプト実行も XSS も起きにくくなる</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">関連：アップロードフォームと CSRF</p>
+      <p>アップロードフォームそのものも CSRF（ログイン中の利用者に意図しないリクエストを送らせる攻撃）の対象になります。フォームには CSRF トークンが必要です。詳しくは <a href="30-1_CSRF.html#sec-6">CSRF「ファイルアップロードフォームでの CSRF 攻撃」</a> を参照してください。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>PDF の FormCalc によるコンテンツハイジャック</h2>
+    <p>PDF には、フォーム計算などに使う <strong>FormCalc</strong> という仕組み（Adobe の PDF フォームで使える簡易スクリプト言語）があります。これを悪用すると、<strong>コンテンツハイジャック</strong>（表示内容の乗っ取り）が起きる場合があります。</p>
+
+    <h3 id="sec-7-1">7.1 何が起きるか</h3>
+    <p>悪意のある PDF を、ページ内の <code>object</code> や <code>embed</code>（HTML の中に別のファイルを埋め込んで表示するためのタグ）で埋め込み表示すると、PDF 内のスクリプト的な機能が動き、<strong>親ページの表示や操作に影響する</strong> ことがあります。</p>
+<pre><code>【攻撃のイメージ】
+
+1. 攻撃者が悪意ある PDF をアップロードする
+2. サイトが object / embed でその PDF をページ内表示する
+3. PDF 内の FormCalc 等が動き、画面上の情報を書き換えたり奪ったりする</code></pre>
+    <p>通常の XSS とは経路が違いますが、「ユーザーが信頼しているページ上で、意図しない表示・操作が起きる」点では近い被害です。</p>
+
+    <h3 id="sec-7-2">7.2 対策</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>対策</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>PDF はブラウザ内で開かずダウンロードを強制する</strong></td><td><code>Content-Disposition: attachment</code> で保存させる</td></tr>
+          <tr><td><strong>PDF を <code>object</code> / <code>embed</code> では開けない仕組みにする</strong></td><td>ページ内埋め込み表示をやめる、または禁止する</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="code-label bad">✕ 危険な表示方法</p>
+<pre><code>&lt;embed src="/files/report.pdf"&gt;
+&lt;object data="/files/report.pdf"&gt;&lt;/object&gt;
+→ ページ内で PDF が動き、FormCalc 等が実行されうる</code></pre>
+    <p class="code-label good">○ 安全寄りの方法</p>
+<pre><code>Content-Disposition: attachment でダウンロードさせる
+または、信頼できる専用ビューアを経由して、スクリプト無効化して表示する</code></pre>
+    <p>レスポンス例です。</p>
+<pre><code>Content-Type: application/pdf
+X-Content-Type-Options: nosniff
+Content-Disposition: attachment; filename="report.pdf"</code></pre>
+    <p>「便利だからページ内で PDF を見せたい」という要件があっても、<strong>ユーザーがアップロードした PDF をそのまま埋め込む</strong> のは避けます。どうしても表示が必要なら、サーバー側で無害化・変換する、スクリプトを無効にしたビューアを使う、別オリジン（ドメインを分けた配信専用のサイト）で隔離する、などの追加対策が必要です。</p>
+    <div class="callout warn">
+      <p class="callout-title">補足：2026年時点の状況</p>
+      <p>FormCalc によるコンテンツハイジャックは、ブラウザの中で <strong>Adobe Reader のプラグイン</strong> が PDF を表示していた時代に問題になったものです。現在の主要ブラウザは、プラグイン（NPAPI）の仕組み自体を廃止し、ブラウザ内蔵の PDF ビューア（Chrome・Edge の PDFium、Firefox の PDF.js など）で表示します。これらの内蔵ビューアは FormCalc を実行しないため、この攻撃が主要ブラウザでそのまま成立する可能性は低くなっています。ただし、PDF には JavaScript などの機能もあり、利用者がダウンロードして PDF 専用アプリで開く場合のリスクは残ります。<strong>「利用者がアップロードした PDF を、自サイトと同じオリジンで埋め込み表示しない」</strong> という原則は今も有効です。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>問題</th><th>本質</th><th>対策の要点</th></tr></thead>
+        <tbody>
+          <tr><td><strong>アップロードへの DoS</strong></td><td>資源を使い果たされる</td><td>サイズ・回数制限、監視</td></tr>
+          <tr><td><strong>サーバー側スクリプト実行</strong></td><td>実行可能ファイルが公開場所に置かれる</td><td>許可リストで拡張子制限、非公開保存、実行無効化</td></tr>
+          <tr><td><strong>ダウンロードによる XSS</strong></td><td>誤った Content-Type で HTML として実行される</td><td>正しい Content-Type、<code>nosniff</code>、<code>attachment</code></td></tr>
+          <tr><td><strong>PDF 偽装 HTML</strong></td><td>PDF のつもりが HTML として動く</td><td>同上。拡張子だけで判断しない</td></tr>
+          <tr><td><strong>PDF FormCalc</strong></td><td>埋め込み PDF がページを乗っ取る</td><td>ダウンロード強制、<code>object</code>/<code>embed</code> で開かない</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">ファイルアップロード安全の基本</p>
+      <ol>
+        <li>許可リストで拡張子を厳しく制限し、保存名はサーバーが決める</li>
+        <li>アップロード先は公開ディレクトリにしない（アプリ経由で配信する）</li>
+        <li>ダウンロード時は正しい Content-Type と nosniff を付ける</li>
+        <li>表示が不要なファイルは Content-Disposition: attachment でダウンロードさせる</li>
+        <li>ユーザー投稿の PDF を object / embed で埋め込まない</li>
+      </ol>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. アップロードファイルによるサーバー側スクリプト実行が起きる、典型的な2つの条件は何ですか？</summary>
+      <div class="body">
+        <p>① アップロードしたファイルが <strong>公開ディレクトリに保存される</strong>（URL で直接アクセスできる）こと、② 保存後のファイル名に <strong><code>.php</code> などのサーバースクリプトの拡張子を指定できる</strong> ことです。どちらか一方でも防げば、攻撃は成立しにくくなります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 「<code>.php</code> だけ禁止する」チェックが不十分なのはなぜですか？</summary>
+      <div class="body">
+        <p>拒否リスト方式は抜け道が多いからです。<code>.php5</code> <code>.phtml</code> などの別の拡張子、<code>.PHP</code> のような大文字、<code>shell.php.jpg</code> のような二重拡張子などで回避されることがあります。必要な拡張子だけを通す <strong>許可リスト</strong> 方式にし、大文字小文字をそろえて判定します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. アップロード時にブラウザが送ってくる <code>Content-Type: image/jpeg</code> を信じて「画像だ」と判断してよいですか？</summary>
+      <div class="body">
+        <p><strong>よくありません。</strong> アップロード時の Content-Type はブラウザ（利用者側）が申告する値で、攻撃者は自由に書き換えられます。ファイル名の見た目や申告された種類だけを信じず、サーバー側で拡張子を許可リストで確認し、保存名もサーバーが決めます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. ダウンロード時に付けるべき3つのレスポンスヘッダと、それぞれの役割を答えてください。</summary>
+      <div class="body">
+        <p><code>Content-Type</code>（中身の種類を正しく宣言する）、<code>X-Content-Type-Options: nosniff</code>（ブラウザに中身を推測させず、宣言どおり扱わせる）、<code>Content-Disposition: attachment</code>（画面に表示せず、ファイルとして保存させる）です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. ファイル名が <code>report.pdf</code> なのに XSS が起きるのはどんな場合ですか？</summary>
+      <div class="body">
+        <p>中身が HTML（+ JavaScript）で、サーバーが <code>text/html</code> などの誤った Content-Type で返す場合や、Content-Type が曖昧でブラウザが HTML と推測する場合です。中身の扱いを決めるのは主に Content-Type であり、拡張子だけでは安全になりません。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. 小さなファイルを大量にアップロードされると、ディスク容量に余裕があっても困るのはなぜですか？</summary>
+      <div class="body">
+        <p>ファイル1個ごとに使う管理情報 <strong>inode</strong> の数に上限があり、それを使い果たすと新しいファイルを作れなくなるからです。サイズ上限だけでなく、回数・頻度の制限や監視も必要です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. 利用者がアップロードした PDF を <code>embed</code> や <code>object</code> でページ内に表示するのを避けるべきなのはなぜですか？</summary>
+      <div class="body">
+        <p>PDF 内の FormCalc などの機能が動き、親ページの表示や操作に影響する（コンテンツハイジャック）おそれがあるからです。<code>Content-Disposition: attachment</code> でダウンロードさせるか、どうしても表示するなら無害化・スクリプト無効のビューア・別オリジンでの隔離などを行います。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/40_ファイル・データ処理/02_ファイルアップロードにまつわる問題（徳丸本15章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>OWASP「File Upload Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html</li>
+      <li>MDN「X-Content-Type-Options」 https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/X-Content-Type-Options</li>
+      <li>MDN「Content-Disposition」 https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Content-Disposition</li>
+      <li>PHP マニュアル「POST メソッドによるアップロード」 https://www.php.net/manual/ja/features.file-upload.post-method.php</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-1_ファイルアクセスとディレクトリトラバーサル.html"><span class="lbl">← 前のページ</span>ファイルアクセスとディレクトリトラバーサル</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-3_Evalインジェクション・デシリアライズ・XXE.html"><span class="lbl">次のページ →</span>Evalインジェクション・デシリアライズ・XXE</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

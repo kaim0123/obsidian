@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OWASP Top 10 とは｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 OWASP Top 10 › OWASP Top 10 とは</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 OWASP Top 10</span>
+      <h1>OWASP Top 10 とは</h1>
+      <p class="lead">Webアプリを作るとき「まず何に気をつければいいか」を教えてくれる世界共通のリストが OWASP Top 10 です。このページでは、OWASP Top 10 の意味と学ぶ理由、2021年版の10項目、そして最新の2025年版で何が変わったか（2021→2025 の対応表）を整理し、このあと続く個別ページの「番号の読み方」を説明します。</p>
+      <p class="meta">もとにしたノート：40_OWASP_Top10/00_OWASP概要、01_OWASP_Top10_2025の変更点</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>OWASP Top 10 は、世界中の実際の被害データから選んだ <strong>「Webアプリで特に深刻で、特によく起きる10種類のリスク」</strong> のランキングです。攻撃の名前の一覧ではなく <strong>「守るべきカテゴリ」</strong> の一覧で、セキュリティを学ぶときの入口、そして開発者同士の共通言語になっています。最新は <strong>2025年版</strong> です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>OWASP と Top 10 とは</h2>
+    <p>Webアプリを開発していると、「どんな攻撃が多いの？」「何から気をつければいいの？」と迷います。脆弱性（ぜいじゃくせい：システムの弱点・すき）は何百種類もあり、全部を一度に覚えるのは無理です。そんなとき最初に読むべきリストが <strong>OWASP Top 10</strong> です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>OWASP（オワスプ）</h4>
+        <p><strong>Open Worldwide Application Security Project</strong> の略。Webセキュリティの啓発や標準づくりを行う <strong>非営利団体</strong> です。資料やツールを誰でも無料で使えるように公開しています。</p>
+      </div>
+      <div class="card">
+        <h4>Top 10（トップテン）</h4>
+        <p>世界中の実被害データを集計し、<strong>最も深刻で頻発する10種類のリスク</strong> をランキングにしたもの。<strong>3〜4年に1度</strong> 更新されます。</p>
+      </div>
+    </div>
+    <p>たとえるなら、病院でいう「よくある病気トップ10と予防法」のようなものです。すべての病気を知らなくても、よくある病気の予防（手洗い・予防接種）を押さえておけば、多くの被害を防げます。</p>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「Top 10 = 攻撃手法の名前の一覧」</p>
+      <p>Top 10 の各項目は「SQLインジェクション攻撃」のような <strong>攻撃の名前ではなく</strong>、「アクセス制御の不備」「暗号化の不備」のような <strong>防御すべきカテゴリ（弱点の種類）</strong> です。1つのカテゴリの中に、いくつもの攻撃手法や弱点がまとめられています。また Top 10 に載っていない脆弱性が「安全」という意味でもありません。あくまで <strong>最初に押さえるべき優先リスト</strong> です。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ OWASP Top 10 を学ぶのか</h2>
+    <div class="grid c3">
+      <div class="card">
+        <h4>① 入口として最適</h4>
+        <p>何百種類もある脆弱性の中から、「実際に頻発していて、深刻な被害を出している10個」に絞ってくれています。<strong>初心者が最初に知るべきこと</strong> が凝縮されています。</p>
+      </div>
+      <div class="card">
+        <h4>② 業界の共通言語</h4>
+        <p>クラウド各社の教材、企業のセキュリティ要件書、公的機関のガイドライン、脆弱性診断のチェック項目など、多くの場面で参照されます。</p>
+      </div>
+      <div class="card">
+        <h4>③ 防御側の思考が身につく</h4>
+        <p>「どこで入力を検証するか」「どこで権限をチェックするか」という <strong>防御の視点</strong> が、コーディングの習慣として身につきます。</p>
+      </div>
+    </div>
+    <p>OWASP Top 10 を参照している代表的なものは次のとおりです。</p>
+    <ul>
+      <li>クラウド各社（AWS / GCP / Azure）のセキュリティ教材</li>
+      <li>多くの企業のセキュリティ要件書・調達仕様書（システムを発注するときの条件書）</li>
+      <li>IPA（情報処理推進機構）や金融庁のガイドライン</li>
+      <li>脆弱性診断（ペネトレーションテスト：専門家が攻撃者の立場で実際に侵入を試す検査）のチェック項目</li>
+    </ul>
+    <p>つまり <strong>Top 10 を押さえておけば、セキュリティ担当者や診断会社と「共通言語」で会話できる</strong> ようになります。「この画面は A01 の観点で大丈夫？」と言えば話が通じる、ということです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>2021年版の10項目</h2>
+    <p>このシリーズの個別ページ（もとにしたノート A01〜A10）は、<strong>2021年版</strong> の番号で書かれています。まずはその一覧です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>番号</th><th>名前</th><th>ざっくり言うと</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>A01</strong></td><td>アクセス制御の不備</td><td>本来見てはいけないデータを見られてしまう</td><td><a href="40-2_アクセス制御と認証の失敗.html">40-2</a></td></tr>
+        <tr><td><strong>A02</strong></td><td>暗号化の不備</td><td>データがむき出しで漏れる／弱い暗号で破られる</td><td><a href="40-3_インジェクションと暗号化の不備.html">40-3</a></td></tr>
+        <tr><td><strong>A03</strong></td><td>インジェクション</td><td>入力欄から悪意のコードを送り込まれる（SQL / XSS 等）</td><td><a href="40-3_インジェクションと暗号化の不備.html">40-3</a></td></tr>
+        <tr><td><strong>A04</strong></td><td>安全でない設計</td><td>そもそも設計段階でセキュリティを考えていない</td><td><a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4</a></td></tr>
+        <tr><td><strong>A05</strong></td><td>セキュリティの設定ミス</td><td>デフォルトパスワード、不要な機能が有効、など</td><td><a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4</a></td></tr>
+        <tr><td><strong>A06</strong></td><td>脆弱で古いコンポーネント</td><td>ライブラリが古く、既知の脆弱性が残っている</td><td><a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4</a></td></tr>
+        <tr><td><strong>A07</strong></td><td>認証と識別の失敗</td><td>ログインの仕組みが甘く、なりすましを許してしまう</td><td><a href="40-2_アクセス制御と認証の失敗.html">40-2</a></td></tr>
+        <tr><td><strong>A08</strong></td><td>ソフトウェアとデータの整合性の不備</td><td>改ざんされたコードやデータを信じてしまう</td><td><a href="40-5_サプライチェーンと整合性の不備.html">40-5</a></td></tr>
+        <tr><td><strong>A09</strong></td><td>ログとモニタリングの不備</td><td>攻撃を受けても気づけない／追跡できない</td><td><a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a></td></tr>
+        <tr><td><strong>A10</strong></td><td>サーバーサイドリクエストフォージェリ（SSRF）</td><td>サーバーを踏み台にして内部ネットワークを攻撃される</td><td><a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-1">3.1 2017年版から2021年版で何が変わったか</h3>
+    <p>Top 10 は版ごとに順位や項目が入れ替わります。変化を追うと、業界の関心がどこに移っているかが見えてきます。</p>
+    <ul>
+      <li><strong>A01 アクセス制御の不備</strong>：5位 → <strong>1位</strong> に急上昇。最も多く発見される問題になった</li>
+      <li><strong>A04 安全でない設計</strong>：<strong>新設</strong>。コードではなく「設計段階の欠陥」に焦点</li>
+      <li><strong>A08 ソフトウェアとデータの整合性の不備</strong>：<strong>新設</strong>。サプライチェーン攻撃（使っている部品や配布経路を狙う攻撃）の多発を反映</li>
+      <li><strong>A10 SSRF</strong>：<strong>新設</strong>。クラウド時代の新たな脅威として独立</li>
+      <li>XSS（クロスサイトスクリプティング）は <strong>A03 インジェクション</strong> に統合</li>
+    </ul>
+    <p>大きな流れとして、<strong>「コードの書き方」から「設計・運用・サプライチェーン」へ</strong> 重心が移っています。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>2025年版：2021→2025 の対応表</h2>
+    <p>2021年版から4年ぶりに <strong>2025年版</strong> が公開されました。2025年11月6日に OWASP Global AppSec（ワシントンD.C.）でリリース候補（RC：正式版の一歩手前の公開版）が出され、意見募集を経て正式版になっています。</p>
+    <p>2021年版の項目が2025年版のどこに移ったかを、図と表で確認しましょう。</p>
+    <figure>
+    <svg viewBox="0 0 720 580" role="img" aria-label="OWASP Top 10 の2021年版から2025年版への対応図">
+      <defs>
+        <marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="135" y="30" text-anchor="middle" class="d-text-bold">2021年版</text>
+      <text x="585" y="30" text-anchor="middle" class="d-text-bold">2025年版</text>
+      <!-- left column -->
+      <rect x="20" y="50" width="230" height="36" rx="7" class="d-box"/><text x="135" y="73" text-anchor="middle" class="d-text">A01 アクセス制御</text>
+      <rect x="20" y="98" width="230" height="36" rx="7" class="d-box"/><text x="135" y="121" text-anchor="middle" class="d-text">A02 暗号化</text>
+      <rect x="20" y="146" width="230" height="36" rx="7" class="d-box"/><text x="135" y="169" text-anchor="middle" class="d-text">A03 インジェクション</text>
+      <rect x="20" y="194" width="230" height="36" rx="7" class="d-box"/><text x="135" y="217" text-anchor="middle" class="d-text">A04 安全でない設計</text>
+      <rect x="20" y="242" width="230" height="36" rx="7" class="d-box"/><text x="135" y="265" text-anchor="middle" class="d-text">A05 設定ミス</text>
+      <rect x="20" y="290" width="230" height="36" rx="7" class="d-box"/><text x="135" y="313" text-anchor="middle" class="d-text">A06 古いコンポーネント</text>
+      <rect x="20" y="338" width="230" height="36" rx="7" class="d-box"/><text x="135" y="361" text-anchor="middle" class="d-text">A07 識別と認証</text>
+      <rect x="20" y="386" width="230" height="36" rx="7" class="d-box"/><text x="135" y="409" text-anchor="middle" class="d-text">A08 整合性</text>
+      <rect x="20" y="434" width="230" height="36" rx="7" class="d-box"/><text x="135" y="457" text-anchor="middle" class="d-text">A09 ログとモニタリング</text>
+      <rect x="20" y="482" width="230" height="36" rx="7" class="d-box-warn"/><text x="135" y="505" text-anchor="middle" class="d-text">A10 SSRF</text>
+      <!-- right column -->
+      <rect x="470" y="50" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="73" text-anchor="middle" class="d-text">A01 アクセス制御</text>
+      <rect x="470" y="98" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="121" text-anchor="middle" class="d-text">A02 設定ミス</text>
+      <rect x="470" y="146" width="230" height="36" rx="7" class="d-box-good"/><text x="585" y="169" text-anchor="middle" class="d-text-bold">A03 サプライチェーン</text>
+      <rect x="470" y="194" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="217" text-anchor="middle" class="d-text">A04 暗号化</text>
+      <rect x="470" y="242" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="265" text-anchor="middle" class="d-text">A05 インジェクション</text>
+      <rect x="470" y="290" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="313" text-anchor="middle" class="d-text">A06 安全でない設計</text>
+      <rect x="470" y="338" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="361" text-anchor="middle" class="d-text">A07 認証</text>
+      <rect x="470" y="386" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="409" text-anchor="middle" class="d-text">A08 整合性</text>
+      <rect x="470" y="434" width="230" height="36" rx="7" class="d-box-accent"/><text x="585" y="457" text-anchor="middle" class="d-text">A09 ログとアラート</text>
+      <rect x="470" y="482" width="230" height="36" rx="7" class="d-box-good"/><text x="585" y="505" text-anchor="middle" class="d-text-bold">A10 例外的状況</text>
+      <!-- solid mappings -->
+      <line x1="250" y1="68" x2="466" y2="68" class="d-line" marker-end="url(#m1)"/>
+      <line x1="250" y1="116" x2="466" y2="212" class="d-line" marker-end="url(#m1)"/>
+      <line x1="250" y1="164" x2="466" y2="260" class="d-line" marker-end="url(#m1)"/>
+      <line x1="250" y1="212" x2="466" y2="308" class="d-line" marker-end="url(#m1)"/>
+      <line x1="250" y1="260" x2="466" y2="116" class="d-line" marker-end="url(#m2)"/>
+      <line x1="250" y1="356" x2="466" y2="356" class="d-line" marker-end="url(#m1)"/>
+      <line x1="250" y1="404" x2="466" y2="404" class="d-line" marker-end="url(#m1)"/>
+      <line x1="250" y1="452" x2="466" y2="452" class="d-line" marker-end="url(#m1)"/>
+      <!-- dashed: extend / merge -->
+      <line x1="250" y1="308" x2="466" y2="164" class="d-line-dash" marker-end="url(#m1)"/>
+      <line x1="250" y1="500" x2="466" y2="72" class="d-line-dash" marker-end="url(#m1)"/>
+      <!-- new -->
+      <rect x="320" y="484" width="80" height="32" rx="16" class="d-box-good"/>
+      <text x="360" y="505" text-anchor="middle" class="d-text-bold">新設</text>
+      <line x1="400" y1="500" x2="466" y2="500" class="d-line" marker-end="url(#m1)"/>
+      <text x="360" y="548" text-anchor="middle" class="d-text-sub">実線＝順位の移動　点線＝SSRFはA01へ統合／古い部品はサプライチェーンへ拡張</text>
+      <text x="360" y="566" text-anchor="middle" class="d-text-sub">青い太線＝設定ミスが5位→2位に上昇　緑＝2025年版の新設項目</text>
+    </svg>
+    <figcaption>図：2021年版（左）から2025年版（右）への対応。暗号化・インジェクション・安全でない設計は2つずつ順位を下げた</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>2025</th><th>名称（英語）</th><th>名称（日本語）</th><th>2021年版から</th><th>2021年版の番号</th><th>解説ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>A01</strong></td><td>Broken Access Control</td><td>アクセス制御の不備</td><td>1位のまま。<strong>SSRF（旧A10）を統合</strong></td><td>A01＋A10</td><td><a href="40-2_アクセス制御と認証の失敗.html">40-2</a>／<a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a></td></tr>
+        <tr><td><strong>A02</strong></td><td>Security Misconfiguration</td><td>セキュリティの設定ミス</td><td>5位 → <strong>2位</strong></td><td>A05</td><td><a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4</a></td></tr>
+        <tr><td><strong>A03</strong></td><td>Software Supply Chain Failures</td><td>ソフトウェアサプライチェーンの不備</td><td><strong>新設</strong> 旧A06「脆弱で古いコンポーネント」を拡張</td><td>（A06）</td><td><a href="40-5_サプライチェーンと整合性の不備.html">40-5</a>／<a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4</a></td></tr>
+        <tr><td><strong>A04</strong></td><td>Cryptographic Failures</td><td>暗号化の不備</td><td>2位 → 4位</td><td>A02</td><td><a href="40-3_インジェクションと暗号化の不備.html">40-3</a></td></tr>
+        <tr><td><strong>A05</strong></td><td>Injection</td><td>インジェクション</td><td>3位 → 5位</td><td>A03</td><td><a href="40-3_インジェクションと暗号化の不備.html">40-3</a></td></tr>
+        <tr><td><strong>A06</strong></td><td>Insecure Design</td><td>安全でない設計</td><td>4位 → 6位</td><td>A04</td><td><a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4</a></td></tr>
+        <tr><td><strong>A07</strong></td><td>Authentication Failures</td><td>認証の失敗</td><td>7位のまま。「Identification and」が取れて改名</td><td>A07</td><td><a href="40-2_アクセス制御と認証の失敗.html">40-2</a></td></tr>
+        <tr><td><strong>A08</strong></td><td>Software or Data Integrity Failures</td><td>ソフトウェアまたはデータの整合性の不備</td><td>8位のまま</td><td>A08</td><td><a href="40-5_サプライチェーンと整合性の不備.html">40-5</a></td></tr>
+        <tr><td><strong>A09</strong></td><td>Security Logging &amp; Alerting Failures</td><td>セキュリティログとアラートの不備</td><td>9位のまま。「Monitoring」→「<strong>Alerting</strong>」に改名</td><td>A09</td><td><a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a></td></tr>
+        <tr><td><strong>A10</strong></td><td>Mishandling of Exceptional Conditions</td><td>例外的状況の不適切な処理</td><td><strong>新設</strong></td><td>—</td><td><a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>2025年版の主な変更点</h2>
+    <h3 id="sec-5-1">5.1 SSRF がアクセス制御の不備（A01）に統合</h3>
+    <p>SSRF は「サーバーに、本来アクセスしてはいけない宛先へリクエストを送らせる」問題です。見方を変えると <strong>「サーバーという主体」に対するアクセス制御の失敗</strong> なので、A01 に整理されました。攻撃の手口と対策そのものは変わらないため、SSRF の解説（<a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a>）はそのまま使えます。</p>
+    <h3 id="sec-5-2">5.2 設定ミスが2位に上昇</h3>
+    <p>クラウド・コンテナ・IaC（Infrastructure as Code：サーバー構成をコードで書いて管理する手法）が広まり、<strong>コードより「設定」で振る舞いが決まる部分</strong> が増えたことを反映しています。テストされたアプリの 3.00% に、このカテゴリに該当する弱点が見つかりました。</p>
+    <h3 id="sec-5-3">5.3 サプライチェーンが独立カテゴリに（A03）</h3>
+    <p>ソフトウェアのサプライチェーンとは、自分のアプリに入り込む <strong>部品（ライブラリ）や、それをビルド・配布・更新する仕組み全体</strong> のことです。食品でいえば「原材料の産地から工場、配送まで」にあたります。コミュニティ調査で <strong>回答者のちょうど50%が1位に選んだ</strong> 項目で、2021年版の「既知の脆弱性を持つコンポーネント」から、CI/CD（自動ビルド・自動デプロイの仕組み）、開発者の端末、IDE拡張、パッケージレジストリ（ライブラリの配布所）の侵害まで範囲が広がりました。2025年の npm ワーム「Shai-Hulud」などが背景にあります（詳しくは <a href="40-5_サプライチェーンと整合性の不備.html">40-5</a>）。</p>
+    <h3 id="sec-5-4">5.4 例外的状況の扱いが新設（A10）</h3>
+    <p>エラー処理の不備、ロジックエラー、<strong>フェイルオープン</strong>（失敗したときに「とりあえず通す」側に倒れてしまうこと）など、<strong>異常系の扱い</strong> に関する 24 の弱点の種類をまとめた新カテゴリです。これまで「コード品質が悪い」と一括りにされていたものに、具体的な指針を与える目的があります（<a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a>）。</p>
+    <h3 id="sec-5-5">5.5 「根本原因」寄りの分類へ</h3>
+    <p>OWASP は2021年版から、「症状（攻撃名）」ではなく <strong>「根本原因」</strong> でカテゴリを作る方針をとっています。2025年版もその流れで、たとえば A07 は「識別」を外し、認証そのものの失敗に焦点を絞りました。</p>
+    <h3 id="sec-5-6">5.6 名称の変更</h3>
+    <ul>
+      <li>A07：Identification and Authentication Failures → <strong>Authentication Failures</strong></li>
+      <li>A09：Security Logging and Monitoring Failures → Security Logging and <strong>Alerting</strong> Failures<br><span>「記録して眺める」だけでなく、<strong>アラートを出して人が動けること</strong> が重要、というメッセージです。</span></li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">流れをつかむ</p>
+      <p>2017→2021 で始まった「コードの書き方より、設計・運用・サプライチェーン」という流れが、2025年版でさらに進みました。<strong>ビルド・配布の仕組み（サプライチェーン）</strong> と <strong>異常系の扱い</strong> が独立した項目になったのはその表れです。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>2025年版はどうやって選ばれたか</h2>
+    <p>ランキングの根拠を知っておくと、Top 10 を「なんとなくの人気投票」と誤解せずに済みます。先に2つの用語を押さえましょう。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>CWE（共通脆弱性タイプ一覧）</h4>
+        <p>弱点の <strong>「種類」</strong> に付けた番号の辞書。たとえば「SQLインジェクション」という種類に1つの番号が付いています。MITRE という団体が管理しています。</p>
+      </div>
+      <div class="card">
+        <h4>CVE（共通脆弱性識別子）</h4>
+        <p>実際の製品で見つかった <strong>個々の脆弱性</strong> に付けた番号。NVD（米国の脆弱性データベース）などで公開されています。</p>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>提供データ</td><td>13の組織・個人から、<strong>280万件以上のアプリケーション</strong> のテスト結果</td></tr>
+        <tr><td>分析した CWE</td><td>589種類（MITRE の CWE 辞書は全968種類）</td></tr>
+        <tr><td>Top 10 に含まれる CWE</td><td>合計 248。1カテゴリあたり 5〜40、平均約25</td></tr>
+        <tr><td>CVE との対応</td><td>NVD の約22万件の CVE のうち、約17.5万件を CWE にマッピング</td></tr>
+        <tr><td>選定方法</td><td>データから8カテゴリ、<strong>コミュニティ調査から2カテゴリ</strong>（A03・A09）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">なぜコミュニティ調査の枠があるのか</p>
+      <p>テストデータは「ツールで見つけやすい弱点」に偏ります。<strong>現場の実務者が本当に困っているリスク</strong> を拾うために、2枠はアンケートで選ばれます。サプライチェーンやログの不備は、自動テストで見つけにくい代表例です。</p>
+    </div>
+    <h3 id="sec-6-1">6.1 カテゴリごとの CWE 数（主なもの）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>カテゴリ（2025）</th><th>CWE 数</th></tr></thead>
+      <tbody>
+        <tr><td>A01 アクセス制御の不備</td><td>40</td></tr>
+        <tr><td>A05 インジェクション</td><td>38</td></tr>
+        <tr><td>A07 認証の失敗</td><td>36</td></tr>
+        <tr><td>A04 暗号化の不備</td><td>32</td></tr>
+        <tr><td>A10 例外的状況の不適切な処理</td><td>24</td></tr>
+        <tr><td>A02 設定ミス</td><td>16</td></tr>
+        <tr><td>A03 サプライチェーン ／ A09 ログとアラート</td><td>各5<span>（A03 の詳細ページでは6）</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>このシリーズでの番号の読み方</h2>
+    <p>このあとの個別ページ（40-2〜40-6）のもとになったノートは <strong>2021年版の番号</strong> で書かれています。内容（攻撃の仕組みと対策）は2025年版でもほぼそのまま通用するので、ノートの構成は活かしつつ、<strong>見出しに2025年版の番号も併記</strong> します。</p>
+    <div class="callout key">
+      <p class="callout-title">見出しの表記ルール</p>
+      <p>「<strong>A03 インジェクション〔2025: A05〕</strong>」のように、先頭に2021年版の番号、角かっこ内に2025年版の番号を書きます。2025年版で新設された項目は「<strong>〔2025: A03 新設〕</strong>」のように示します。</p>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>扱う項目（見出しの表記）</th></tr></thead>
+      <tbody>
+        <tr><td><a href="40-2_アクセス制御と認証の失敗.html">40-2 アクセス制御と認証の失敗</a></td><td>A01 アクセス制御の不備〔2025: A01〕／A07 認証と識別の失敗〔2025: A07〕</td></tr>
+        <tr><td><a href="40-3_インジェクションと暗号化の不備.html">40-3 インジェクションと暗号化の不備</a></td><td>A03 インジェクション〔2025: A05〕／A02 暗号化の不備〔2025: A04〕</td></tr>
+        <tr><td><a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4 安全でない設計・設定ミス・古い部品</a></td><td>A04 安全でない設計〔2025: A06〕／A05 設定ミス〔2025: A02〕／A06 古いコンポーネント〔2025: A03 に拡張〕</td></tr>
+        <tr><td><a href="40-5_サプライチェーンと整合性の不備.html">40-5 サプライチェーンと整合性の不備</a></td><td>2025 A03 サプライチェーン〔新設〕／A08 整合性の不備〔2025: A08〕</td></tr>
+        <tr><td><a href="40-6_ログ不足・SSRF・例外処理.html">40-6 ログ不足・SSRF・例外処理</a></td><td>A09 ログ〔2025: A09〕／A10 SSRF〔2025: A01 に統合〕／2025 A10 例外的状況〔新設〕</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-7-1">7.1 2021年版の内容を読むときの注意</h3>
+    <ul>
+      <li>番号は2021年版のまま。<strong>2025年版の番号で話すときは、4章の対応表で読み替える</strong></li>
+      <li>内容（攻撃の仕組み・対策）はほぼそのまま有効</li>
+      <li>2025年版で強調が増えたポイント
+        <ul>
+          <li>古いコンポーネント → CI/CD・開発者端末・ビルド成果物の保護まで含めて考える（サプライチェーン）</li>
+          <li>ログとモニタリング → 「アラートを出して対応につなげる」まで</li>
+          <li>設定ミス → 2位に上がった。クラウド設定・IaC のレビューを優先</li>
+        </ul>
+      </li>
+      <li>新しい観点として、エラー処理・フェイルクローズ（失敗したら「止める」側に倒す）を「例外的状況」で補う</li>
+    </ul>
+
+    <h2 id="sec-8"><span class="num">8.</span>学び方のコツ</h2>
+    <ol class="steps">
+      <li><strong>全体像をつかんでから、1つずつ深掘りする</strong><br>まずこのページで10項目の顔ぶれを把握し、次に個別ページで1項目ずつ学ぶのが効率的です。</li>
+      <li><strong>手を動かして理解する</strong><br>Top 10 は読むだけでは身につきません。<strong>OWASP Juice Shop</strong>（わざと脆弱に作られた学習用Webアプリ）のような演習環境で、実際に攻撃と防御を体験するのがおすすめです。<span>※演習は必ず自分の環境や許可された環境で行いましょう。</span></li>
+      <li><strong>「攻撃者の視点」と「防御者の視点」の両方で読む</strong><br>攻撃者：どうやって突破する？ どこが入口？ ／ 防御者：どこで止める？ 多重防御にできる？ 両方の視点を持つと、設計段階で弱点を見抜けるようになります。</li>
+      <li><strong>実装時のチェックリストとして使う</strong><br>機能を作るたびに「この画面、アクセス制御は大丈夫？」「この入力、インジェクションは？」と自問する習慣をつけると、自然と安全なコードが書けるようになります。</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">さらに先へ進むための資料</p>
+      <ul>
+        <li><strong>OWASP Cheat Sheet Series</strong>：各項目の具体的な対策をチートシート（早見表）形式でまとめたもの</li>
+        <li><strong>OWASP ASVS</strong>（Application Security Verification Standard）：Top 10 より詳細な検証基準。「どこまで確認すれば安全と言えるか」のチェック項目集</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>OWASP Top 10 は、実被害データから選んだ <strong>Webアプリの10大リスク</strong>。セキュリティ学習の入口であり、業界の共通言語</li>
+        <li>各項目は攻撃の名前ではなく <strong>「防御すべきカテゴリ」</strong></li>
+        <li>3〜4年ごとに更新される。最新は <strong>2025年版</strong>：サプライチェーン（A03）と例外的状況（A10）が新設、SSRF は A01 に統合、設定ミスが2位に上昇</li>
+        <li>2025年版はデータ（280万件超のアプリ）＋コミュニティ調査（2枠）で選ばれた</li>
+        <li>このシリーズの個別ページは2021年版の番号ベース。<strong>見出しに〔2025: 〜〕を併記</strong> しているので、対応表で読み替える</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. OWASP Top 10 の各項目は「攻撃手法の名前」ですか？</summary>
+      <div class="body"><p>いいえ。各項目は <strong>防御すべきカテゴリ（弱点の種類）</strong> です。たとえば「インジェクション」には SQLインジェクション・XSS・コマンドインジェクションなど複数の攻撃がまとめられています。2021年版以降は「根本原因」でカテゴリを作る方針がとられています。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 2021年版の「A10 SSRF」は、2025年版ではどこに入りましたか？</summary>
+      <div class="body"><p><strong>A01 アクセス制御の不備</strong> に統合されました。SSRF は「サーバーという主体に、本来アクセスしてはいけない宛先へアクセスさせてしまう」問題、つまりアクセス制御の失敗だと整理されたためです。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 2025年版で新設された2つの項目は何ですか？</summary>
+      <div class="body"><p><strong>A03 ソフトウェアサプライチェーンの不備</strong>（旧A06「脆弱で古いコンポーネント」を拡張）と、<strong>A10 例外的状況の不適切な処理</strong>（エラー処理・フェイルオープンなど異常系の扱い）です。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 「A03 インジェクション〔2025: A05〕」という見出しは何を意味しますか？</summary>
+      <div class="body"><p>2021年版では A03、2025年版では A05 に当たる項目、という意味です。内容（攻撃の仕組みと対策）は同じで、2025年版では順位が2つ下がっただけです。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>OWASP Top 10（公式）：<a href="https://owasp.org/Top10/">https://owasp.org/Top10/</a></li>
+      <li>OWASP Top 10:2025：<a href="https://top10.owasp.org/2025/">https://top10.owasp.org/2025/</a></li>
+      <li>OWASP Top 10:2025 Introduction（変更点）：<a href="https://top10.owasp.org/2025/0x00_2025-Introduction/">https://top10.owasp.org/2025/0x00_2025-Introduction/</a></li>
+      <li>OWASP Top 10:2025 日本語版：<a href="https://owasp.org/Top10/2025/ja/">https://owasp.org/Top10/2025/ja/</a></li>
+      <li>OWASP Cheat Sheet Series ／ OWASP ASVS ／ OWASP Juice Shop</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-3_DREADとアタックツリー.html"><span class="lbl">← 前のページ</span>DREADとアタックツリー</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-2_アクセス制御と認証の失敗.html"><span class="lbl">次のページ →</span>アクセス制御と認証の失敗</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

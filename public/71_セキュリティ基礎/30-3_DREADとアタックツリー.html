@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DREADとアタックツリー｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 脅威モデリング › DREADとアタックツリー</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 脅威モデリング</span>
+      <h1>DREADとアタックツリー ― 優先順位をつけ、攻撃経路を深掘りする</h1>
+      <p class="lead">STRIDE で脅威を洗い出すと、たくさんの候補が並びます。このページでは、それに点数をつけて「どれから守るか」を決める DREAD と、1つの攻撃目標を「どうやって達成されうるか」まで木の形で掘り下げるアタックツリーを、写真投稿アプリ「フォトボックス」を例に解説します。</p>
+      <p class="meta">もとにしたノート：71_セキュリティ基礎/30_脅威モデリング/03_DREAD、04_アタックツリー</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>DREAD</strong> は「どの脅威がどのくらい深刻か」を5つの観点で点数化する <strong>優先順位づけ</strong> の道具。<strong>アタックツリー</strong> は「攻撃者の目標」を頂点に置き、達成手段を枝分かれさせて書き出す <strong>攻撃経路の深掘り</strong> の道具です。STRIDE（広く洗い出す）と組み合わせて使います。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>3つの道具の役割分担</h2>
+    <p><a href="30-1_脅威モデリングとデータフロー図.html">30-1</a> で見た脅威モデリングの流れの中で、3つの手法はそれぞれ別の役割を持っています。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>STRIDE（<a href="30-2_STRIDE.html">30-2</a>）</h4>
+        <p>「<strong>どんな</strong>脅威があるか」を、6つの分類で <strong>広く漏れなく</strong> 洗い出す。</p>
+      </div>
+      <div class="card">
+        <h4>DREAD</h4>
+        <p>洗い出した脅威が「<strong>どのくらい</strong>深刻か」を点数化し、<strong>対策の順番</strong> を決める。</p>
+      </div>
+      <div class="card">
+        <h4>アタックツリー</h4>
+        <p>特に重要な攻撃目標について、「<strong>どうやって</strong>達成されうるか」を <strong>深く</strong> 掘り下げる。</p>
+      </div>
+    </div>
+    <div class="callout tip">
+      <p class="callout-title">たとえ：病院の受診の流れ</p>
+      <p>問診票で症状を一通り確認し（STRIDE）、緊急度で「すぐ処置／今日中／後日」と順番をつけ（DREAD＝トリアージ）、重い症状については精密検査で原因を細かく調べる（アタックツリー）。この順番で使うと、限られた人手を一番大事なところに集中できます。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>DREADの5つの観点</h2>
+    <p><strong>DREAD</strong>（ドレッド）は、Microsoft が提唱した、脅威を <strong>5つの観点で点数化する</strong> 評価手法です。それぞれを <strong>1〜10点</strong> で評価します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>頭文字</th><th>観点</th><th>問いかけ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>D</strong></td><td><strong>D</strong>amage（被害の大きさ）</td><td>攻撃が成功したら、どれくらい被害が出るか</td></tr>
+        <tr><td><strong>R</strong></td><td><strong>R</strong>eproducibility（再現性）</td><td>攻撃をどれくらい安定して繰り返せるか</td></tr>
+        <tr><td><strong>E</strong></td><td><strong>E</strong>xploitability（悪用のしやすさ）</td><td>攻撃にどれくらいのスキル・道具が必要か</td></tr>
+        <tr><td><strong>A</strong></td><td><strong>A</strong>ffected users（影響ユーザー数）</td><td>何人・何%のユーザーに影響するか</td></tr>
+        <tr><td><strong>D</strong></td><td><strong>D</strong>iscoverability（発見のしやすさ）</td><td>攻撃者がその弱点をどれくらい簡単に見つけられるか</td></tr>
+      </tbody>
+    </table></div>
+    <p>点数のつけ方の目安は次のとおりです（開くと表示されます）。</p>
+    <details>
+      <summary>D — Damage（被害の大きさ）の目安</summary>
+      <div class="body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>点数</th><th>例</th></tr></thead>
+          <tbody>
+            <tr><td>1〜3</td><td>画面が少し崩れる程度で、機能的な影響なし</td></tr>
+            <tr><td>4〜6</td><td>限定的な情報漏洩、一部の機能停止</td></tr>
+            <tr><td>7〜9</td><td>ユーザーデータの漏洩、サービス全体の停止</td></tr>
+            <tr><td>10</td><td>全ユーザーの機密情報漏洩、金銭的損失、法的責任</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </details>
+    <details>
+      <summary>R — Reproducibility（再現性）の目安</summary>
+      <div class="body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>点数</th><th>例</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>極めて特殊な状況でしか起きない</td></tr>
+            <tr><td>4</td><td>特定の条件下で再現できる</td></tr>
+            <tr><td>7</td><td>時間や認証が必要だが再現できる</td></tr>
+            <tr><td>10</td><td>いつでも、誰でも、常に成功する</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </details>
+    <details>
+      <summary>E — Exploitability（悪用のしやすさ）の目安</summary>
+      <div class="body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>点数</th><th>例</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>高度な専門知識、長期間の準備、内部へのアクセスが必要</td></tr>
+            <tr><td>4</td><td>セキュリティの専門家なら可能</td></tr>
+            <tr><td>7</td><td>公開されているツール（Burp Suite など）で可能</td></tr>
+            <tr><td>10</td><td>Webブラウザだけで、誰にでもできる</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </details>
+    <details>
+      <summary>A — Affected users（影響ユーザー数）の目安</summary>
+      <div class="body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>点数</th><th>例</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>1人、または特定の1アカウントのみ</td></tr>
+            <tr><td>4</td><td>一部のユーザー（10%未満）</td></tr>
+            <tr><td>7</td><td>多数のユーザー（数十%）</td></tr>
+            <tr><td>10</td><td>全ユーザー</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </details>
+    <details>
+      <summary>D — Discoverability（発見のしやすさ）の目安</summary>
+      <div class="body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>点数</th><th>例</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>ソースコードを読まないと見つからない</td></tr>
+            <tr><td>4</td><td>深く調査すれば見つかる</td></tr>
+            <tr><td>7</td><td>公開情報（GitHub、ドキュメントなど）から推測できる</td></tr>
+            <tr><td>10</td><td>URLを見るだけで明らか</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </details>
+
+    <h2 id="sec-3"><span class="num">3.</span>スコアの計算と実例</h2>
+    <h3 id="sec-3-1">計算方法</h3>
+    <p>5つの点数を <strong>合計</strong> するか <strong>平均</strong> して、リスクスコアにします。</p>
+    <pre><code>合計方式：リスクスコア = D + R + E + A + D        （5〜50点）
+平均方式：リスクスコア = (D + R + E + A + D) / 5  （1〜10点）</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>平均スコア</th><th>優先度</th><th>対応の目安</th></tr></thead>
+      <tbody>
+        <tr><td>8〜10</td><td><strong>Critical</strong></td><td>即時対応</td></tr>
+        <tr><td>6〜7.9</td><td><strong>High</strong></td><td>近日中に対応</td></tr>
+        <tr><td>4〜5.9</td><td><strong>Medium</strong></td><td>計画的に対応</td></tr>
+        <tr><td>1〜3.9</td><td><strong>Low</strong></td><td>余力があれば対応</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-2">実例1：ログイン画面のSQLインジェクション</h3>
+    <p>フォトボックスのログイン画面に、SQLインジェクション（入力欄にSQLの命令を紛れ込ませてDBを操る攻撃）の脆弱性があったとします。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>点数</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>D</strong>amage</td><td>9</td><td>DBの全データ漏洩＋管理権限の奪取が可能</td></tr>
+        <tr><td><strong>R</strong>eproducibility</td><td>10</td><td>毎回成功する</td></tr>
+        <tr><td><strong>E</strong>xploitability</td><td>8</td><td>sqlmap などのツールで自動化できる</td></tr>
+        <tr><td><strong>A</strong>ffected users</td><td>10</td><td>全ユーザー</td></tr>
+        <tr><td><strong>D</strong>iscoverability</td><td>8</td><td>基本的なペネトレーションテスト（侵入テスト）で見つかる</td></tr>
+      </tbody>
+    </table></div>
+    <p>合計 <strong>45点／50</strong>、平均 <strong>9.0／10</strong> → <strong>Critical</strong>。即時対応が必要と判定できます。</p>
+
+    <h3 id="sec-3-3">実例2：エラー画面にスタックトレースが出る</h3>
+    <p>エラー時に、プログラム内部の状態（スタックトレース）が画面に表示される。ただし機密情報は含まれていない場合です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>点数</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>D</strong>amage</td><td>3</td><td>内部構造の一部が見える程度</td></tr>
+        <tr><td><strong>R</strong>eproducibility</td><td>9</td><td>特定の操作で毎回再現する</td></tr>
+        <tr><td><strong>E</strong>xploitability</td><td>9</td><td>エラーを起こすだけ</td></tr>
+        <tr><td><strong>A</strong>ffected users</td><td>4</td><td>情報を見た攻撃者のみ</td></tr>
+        <tr><td><strong>D</strong>iscoverability</td><td>7</td><td>エラー画面に出るので見つけやすい</td></tr>
+      </tbody>
+    </table></div>
+    <p>合計 <strong>32点</strong>、平均 <strong>6.4／10</strong> → <strong>High</strong>。被害（D）は小さいのに、「誰でも・毎回・簡単に」起こせるため、平均すると High になります。</p>
+    <div class="callout warn">
+      <p class="callout-title">ここに注目：平均すると「被害の小ささ」が薄まる</p>
+      <p>実例2は被害が3点なのに High になりました。単純平均では、<strong>被害が小さくても「簡単さ」の点数が高いと上位に来る</strong> ことがあります。点数はあくまで目安で、最後は人が「本当にこの順番でいいか」を確認しましょう。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>DREADの問題点と、CVSS・他の評価手法</h2>
+    <div class="grid c3">
+      <div class="card">
+        <h4>① 主観的すぎる</h4>
+        <p>「被害7と8の違い」は人によって大きく違います。同じ脅威でも、評価する人によって点数がばらつきます。</p>
+      </div>
+      <div class="card">
+        <h4>② Discoverability は要るか</h4>
+        <p>「見つかりにくいから安全」は <strong>隠蔽によるセキュリティ</strong>（security through obscurity）に近く、現代では推奨されない考え方です。最後の D を外した <strong>DREAD-D</strong> という変種も使われます。</p>
+      </div>
+      <div class="card">
+        <h4>③ 業界標準は CVSS</h4>
+        <p>一般公開される脆弱性には <strong>CVSS</strong>（Common Vulnerability Scoring System）が業界標準です。社外とのやりとりでは CVSS のほうが通じます。</p>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>DREAD</th><th>CVSS</th></tr></thead>
+      <tbody>
+        <tr><td><strong>用途</strong></td><td>社内の脅威評価</td><td>CVE などの標準化されたスコアづけ</td></tr>
+        <tr><td><strong>軸</strong></td><td>5軸（簡素）</td><td>多軸（詳細。Base / Temporal / Environmental）</td></tr>
+        <tr><td><strong>主観性</strong></td><td>高い</td><td>比較的客観的（基準が細かい）</td></tr>
+        <tr><td><strong>学習コスト</strong></td><td>低い</td><td>中〜高</td></tr>
+        <tr><td><strong>業界標準としての強さ</strong></td><td>弱い</td><td>強い（NIST、CVE などが採用）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>使い分け</strong>：社内の設計レビューや開発中の脅威評価には軽い <strong>DREAD</strong>、セキュリティ監査・公開脆弱性・業界との会話には <strong>CVSS</strong>。CVSS は <a href="50-4_脆弱性管理とランサムウェア対策.html">脆弱性管理</a> でも登場します。</p>
+
+    <h3 id="sec-4-1">他のリスク評価手法</h3>
+    <ul>
+      <li><strong>OWASP Risk Rating Methodology</strong>：「攻撃される可能性 × 影響度」の2軸。可能性は「脅威となる攻撃者の要因＋脆弱性の要因」、影響度は「技術的影響＋ビジネスへの影響」から考えます。</li>
+      <li><strong>リスクマトリクス</strong>（簡易版）：「発生頻度 × 影響度」を 2×2 や 3×3 の表で格付けします。会議で素早く共通認識を作るのに便利です（→ <a href="10-4_リスク管理とリスクアセスメント.html">10-4 リスク管理</a>）。</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>低影響</th><th>中影響</th><th>高影響</th></tr></thead>
+      <tbody>
+        <tr><th>高頻度</th><td><strong>Med</strong></td><td><strong>High</strong></td><td><strong>Critical</strong></td></tr>
+        <tr><th>中頻度</th><td><strong>Low</strong></td><td><strong>Med</strong></td><td><strong>High</strong></td></tr>
+        <tr><th>低頻度</th><td><strong>Low</strong></td><td><strong>Low</strong></td><td><strong>Med</strong></td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-4-2">DREADを使うときのコツ</h3>
+    <ol class="steps">
+      <li><strong>精度より一貫性</strong><br>「正しい点数」は存在しません。<strong>同じ基準で全脅威を評価</strong> し、相対的な順番を得るのが目的です。</li>
+      <li><strong>複数人で評価する</strong><br>1人だと主観に偏ります。<strong>2〜3人で評価してすり合わせる</strong> と偏りが減ります。</li>
+      <li><strong>時間をかけすぎない</strong><br>評価そのものが目的ではありません。<strong>対策の順番を決めるため</strong> の道具です。</li>
+      <li><strong>ビジネスの視点を入れる</strong><br>技術的には Critical でも、めったに起きないレアケースなら優先度が下がることもあります。事業側と話し合いましょう。</li>
+    </ol>
+
+    <h2 id="sec-5"><span class="num">5.</span>アタックツリーの基本：目標・OR・AND</h2>
+    <p><strong>アタックツリー</strong>（Attack Tree）は、<strong>攻撃者が最終目的を達成するための経路</strong> を木の形で描く手法です。暗号学者の Bruce Schneier が1999年に提唱しました。一言でいうと「<strong>攻撃者の『こうすれば、ああできる』を木に書き出す</strong>」ものです。</p>
+    <ul>
+      <li><strong>根（一番上）＝攻撃者の最終目標</strong>：「攻撃者は何を達成したいか？」</li>
+      <li><strong>その下の枝＝達成する方法</strong>：「どうやって？」を繰り返して下へ広げる</li>
+      <li><strong>葉（一番下）＝具体的な攻撃アクション</strong></li>
+    </ul>
+    <p>ノートの例として有名な「金庫を開ける」で見てみましょう。各方法の下に、攻撃にかかる費用（コスト）を書き込んでいます。</p>
+    <figure>
+    <svg viewBox="0 0 760 270" role="img" aria-label="金庫を開けるアタックツリー。ORノードでは最も安い金庫を壊す200ドルが親のコストになる">
+      <rect x="250" y="14" width="260" height="48" rx="8" class="d-box-accent"/>
+      <text x="380" y="36" text-anchor="middle" class="d-text-bold">金庫を開ける（OR）</text>
+      <text x="380" y="54" text-anchor="middle" class="d-text-sub">親のコスト＝子の最小値＝$200</text>
+      <path d="M380,62 V82 M130,82 H630 M130,82 V100 M380,82 V100 M630,82 V100" class="d-line"/>
+      <rect x="40" y="100" width="180" height="52" rx="8" class="d-box"/>
+      <text x="130" y="122" text-anchor="middle" class="d-text-bold">鍵を入手</text>
+      <text x="130" y="141" text-anchor="middle" class="d-text-sub">コスト $500</text>
+      <rect x="290" y="100" width="180" height="52" rx="8" class="d-box"/>
+      <text x="380" y="122" text-anchor="middle" class="d-text-bold">暗証番号を知る</text>
+      <text x="380" y="141" text-anchor="middle" class="d-text-sub">コスト $1,000</text>
+      <rect x="540" y="100" width="180" height="52" rx="8" class="d-box-bad"/>
+      <text x="630" y="122" text-anchor="middle" class="d-text-bold">金庫を壊す</text>
+      <text x="630" y="141" text-anchor="middle" class="d-text-sub">コスト $200 ← 最安</text>
+      <path d="M130,152 V170 M85,170 H175 M85,170 V188 M175,170 V188" class="d-line"/>
+      <path d="M380,152 V170 M300,170 H460 M300,170 V188 M380,170 V188 M460,170 V188" class="d-line"/>
+      <path d="M630,152 V188" class="d-line"/>
+      <rect x="50" y="188" width="70" height="36" rx="6" class="d-box"/><text x="85" y="211" text-anchor="middle" class="d-text">盗む</text>
+      <rect x="140" y="188" width="70" height="36" rx="6" class="d-box"/><text x="175" y="211" text-anchor="middle" class="d-text">複製</text>
+      <rect x="265" y="188" width="70" height="36" rx="6" class="d-box"/><text x="300" y="211" text-anchor="middle" class="d-text">盗聴</text>
+      <rect x="345" y="188" width="70" height="36" rx="6" class="d-box"/><text x="380" y="211" text-anchor="middle" class="d-text">推測</text>
+      <rect x="425" y="188" width="70" height="36" rx="6" class="d-box"/><text x="460" y="211" text-anchor="middle" class="d-text">買収</text>
+      <rect x="595" y="188" width="70" height="36" rx="6" class="d-box-bad"/><text x="630" y="211" text-anchor="middle" class="d-text">爆破</text>
+      <text x="380" y="256" text-anchor="middle" class="d-text-sub">攻撃者は一番安い経路を選ぶ、と考える。守る側はまずそこを潰す</text>
+    </svg>
+    <figcaption>図1：「金庫を開ける」のアタックツリー。ORノードでは、子のうちどれか1つが成功すれば親も成功する</figcaption>
+    </figure>
+
+    <h3 id="sec-5-1">ORノードとANDノード</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>OR ノード（何も書かなければこちら）</h4>
+        <p>子のうち <strong>どれか1つ</strong> が成功すれば、親も成功。</p>
+        <p>例：金庫を開ける ＝ 鍵を入手 <strong>または</strong> 暗証番号を知る <strong>または</strong> 壊す</p>
+        <p>→ 攻撃者は <strong>一番簡単な方法</strong> を選べる。守る側は全部を塞がないといけない。</p>
+      </div>
+      <div class="card">
+        <h4>AND ノード</h4>
+        <p>子の <strong>すべて</strong> が成功して初めて、親も成功。</p>
+        <p>例：2要素認証を突破 ＝ パスワードを入手 <strong>かつ</strong> スマホを入手</p>
+        <p>→ <strong>どれか1つでも防げれば</strong>、親の攻撃は成立しない。守る側に有利。</p>
+      </div>
+    </div>
+    <p>図では「AND」と文字で書いたり、枝の根元に円弧を描いたりして区別することが多いです。</p>
+
+    <h3 id="sec-5-2">ノードに属性をつける</h3>
+    <p>各ノードに <strong>属性</strong>（コスト、成功確率、所要時間など）を書き込むと、より数字で議論できます。たとえば「鍵を複製」なら、コスト $500・成功確率 40%・所要時間 1日・必要スキルは錠前師レベル、のように書きます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>属性</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>可能／不可能</strong></td><td>技術的・物理的に実行できるか</td></tr>
+        <tr><td><strong>コスト</strong></td><td>攻撃に必要な費用</td></tr>
+        <tr><td><strong>スキル</strong></td><td>求められる専門知識のレベル</td></tr>
+        <tr><td><strong>時間</strong></td><td>準備から実行までの所要時間</td></tr>
+        <tr><td><strong>検知確率</strong></td><td>防御側に気づかれる可能性</td></tr>
+        <tr><td><strong>法的リスク</strong></td><td>攻撃者が逮捕される可能性</td></tr>
+      </tbody>
+    </table></div>
+    <p>子の値から、親の値を計算できます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>OR ノード（どれか1つ）</th><th>AND ノード（全部必要）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コスト</strong></td><td>子の中の <strong>最小値</strong>（一番安い方法）</td><td>子の <strong>合計</strong></td></tr>
+        <tr><td><strong>成功確率</strong></td><td>子の中の <strong>最大値</strong>（一番成功しやすい方法）</td><td>子の確率の <strong>積</strong>（掛け算なので小さくなる）</td></tr>
+        <tr><td><strong>可能／不可能</strong></td><td>どれか1つでも可能なら可能</td><td>すべて可能なときだけ可能</td></tr>
+      </tbody>
+    </table></div>
+    <p>たとえば成功確率 50% の攻撃と 40% の攻撃が AND でつながると、両方成功する確率は 0.5 × 0.4 ＝ 20% に下がります。<strong>AND を増やすほど、攻撃者にとって割に合わなくなる</strong> わけです。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>実例：フォトボックスの管理者アカウント奪取</h2>
+    <p>フォトボックスで最悪の事態の1つは、<strong>管理者アカウントを乗っ取られる</strong> ことです（全ユーザーの写真を消したり、個人情報を見たりできてしまう）。これを根に置いてツリーを描きます。各葉の下の小さな文字は、その攻撃に効く既存の対策です。</p>
+    <figure>
+    <svg viewBox="0 0 760 450" role="img" aria-label="管理者アカウントに侵入するアタックツリー。パスワード入手、セッション窃取、2FA回避（AND）、脆弱性悪用の4つの枝">
+      <rect x="250" y="12" width="260" height="46" rx="8" class="d-box-bad"/>
+      <text x="380" y="40" text-anchor="middle" class="d-text-bold">管理者アカウントに侵入（OR）</text>
+      <path d="M380,58 V78 M100,78 H661 M100,78 V96 M287,78 V96 M474,78 V96 M661,78 V96" class="d-line"/>
+
+      <!-- level 1 -->
+      <rect x="10" y="96" width="180" height="56" rx="8" class="d-box-accent"/>
+      <text x="100" y="120" text-anchor="middle" class="d-text-bold">パスワードを入手</text>
+      <text x="100" y="140" text-anchor="middle" class="d-text-sub">OR：どれか1つ</text>
+      <rect x="197" y="96" width="180" height="56" rx="8" class="d-box-accent"/>
+      <text x="287" y="120" text-anchor="middle" class="d-text-bold">セッションを盗む</text>
+      <text x="287" y="140" text-anchor="middle" class="d-text-sub">OR：どれか1つ</text>
+      <rect x="384" y="96" width="180" height="56" rx="8" class="d-box-good"/>
+      <text x="474" y="120" text-anchor="middle" class="d-text-bold">2FAを回避</text>
+      <text x="474" y="140" text-anchor="middle" class="d-text-sub">AND：両方必要</text>
+      <rect x="571" y="96" width="180" height="56" rx="8" class="d-box-accent"/>
+      <text x="661" y="120" text-anchor="middle" class="d-text-bold">脆弱性を悪用</text>
+      <text x="661" y="140" text-anchor="middle" class="d-text-sub">OR：どれか1つ</text>
+
+      <!-- spines -->
+      <path d="M19,152 V376 M19,196 H28 M19,256 H28 M19,316 H28 M19,376 H28" class="d-line"/>
+      <path d="M206,152 V316 M206,196 H215 M206,256 H215 M206,316 H215" class="d-line"/>
+      <path d="M393,152 V256 M393,196 H402 M393,256 H402" class="d-line"/>
+      <path d="M580,152 V316 M580,196 H589 M580,256 H589 M580,316 H589" class="d-line"/>
+
+      <!-- col1 leaves -->
+      <rect x="28" y="172" width="162" height="48" rx="6" class="d-box"/>
+      <text x="36" y="192" class="d-text">総当たり攻撃</text>
+      <text x="36" y="210" class="d-text-sub">レート制限で低確率</text>
+      <rect x="28" y="232" width="162" height="48" rx="6" class="d-box-bad"/>
+      <text x="36" y="252" class="d-text-bold">フィッシング</text>
+      <text x="36" y="270" class="d-text-sub">中確率 ← 最弱候補</text>
+      <rect x="28" y="292" width="162" height="48" rx="6" class="d-box"/>
+      <text x="36" y="312" class="d-text">パスワードリスト攻撃</text>
+      <text x="36" y="330" class="d-text-sub">MFAで無効化</text>
+      <rect x="28" y="352" width="162" height="48" rx="6" class="d-box"/>
+      <text x="36" y="372" class="d-text">メモを盗む</text>
+      <text x="36" y="390" class="d-text-sub">物理アクセスが必要</text>
+
+      <!-- col2 leaves -->
+      <rect x="215" y="172" width="162" height="48" rx="6" class="d-box"/>
+      <text x="223" y="192" class="d-text">XSS</text>
+      <text x="223" y="210" class="d-text-sub">CSPで緩和</text>
+      <rect x="215" y="232" width="162" height="48" rx="6" class="d-box"/>
+      <text x="223" y="252" class="d-text">MITM（中間者）</text>
+      <text x="223" y="270" class="d-text-sub">HTTPSで緩和</text>
+      <rect x="215" y="292" width="162" height="48" rx="6" class="d-box"/>
+      <text x="223" y="312" class="d-text">Cookie盗難</text>
+      <text x="223" y="330" class="d-text-sub">HttpOnlyで緩和</text>
+
+      <!-- col3 leaves -->
+      <rect x="402" y="172" width="162" height="48" rx="6" class="d-box"/>
+      <text x="410" y="192" class="d-text">パスワードを入手</text>
+      <text x="410" y="210" class="d-text-sub">（左の枝と同じ）</text>
+      <rect x="402" y="232" width="162" height="48" rx="6" class="d-box"/>
+      <text x="410" y="252" class="d-text">TOTPを入手</text>
+      <text x="410" y="270" class="d-text-sub">SIMスワップ等</text>
+      <text x="474" y="306" text-anchor="middle" class="d-text-bold">両方そろわないと</text>
+      <text x="474" y="324" text-anchor="middle" class="d-text-bold">成立しない</text>
+
+      <!-- col4 leaves -->
+      <rect x="589" y="172" width="162" height="48" rx="6" class="d-box"/>
+      <text x="597" y="192" class="d-text">SQLiで認証回避</text>
+      <text x="597" y="210" class="d-text-sub">パラメータ化クエリ</text>
+      <rect x="589" y="232" width="162" height="48" rx="6" class="d-box"/>
+      <text x="597" y="252" class="d-text">権限昇格バグ</text>
+      <text x="597" y="270" class="d-text-sub">認可テストで緩和</text>
+      <rect x="589" y="292" width="162" height="48" rx="6" class="d-box"/>
+      <text x="597" y="312" class="d-text">依存ライブラリのCVE</text>
+      <text x="597" y="330" class="d-text-sub">Dependabotで緩和</text>
+
+      <text x="380" y="432" text-anchor="middle" class="d-text-sub">青＝ORの枝　緑＝ANDの枝（守る側に有利）　赤＝対策が薄く最も狙われやすい葉</text>
+    </svg>
+    <figcaption>図2：管理者アカウント奪取のアタックツリー。葉の下の文字は、その経路に効いている対策</figcaption>
+    </figure>
+    <p>この木から、次のことが読み取れます。</p>
+    <ul>
+      <li><strong>どの経路が「最弱」か</strong> が見える：ほとんどの葉には対策が効いているが、<strong>フィッシング</strong> は技術的な対策だけでは防ぎきれず、最も安く速い経路として攻撃者に選ばれやすい</li>
+      <li><strong>ANDノードを作ると攻撃コストが跳ね上がる</strong>：MFA（2FA）を有効にすると、「パスワードを入手」だけでは足りず、TOTP（ワンタイムパスワード）も必要になる。<strong>MFA の効果が図で分かる</strong></li>
+      <li><strong>既存の対策がどこに効いているか</strong> を一覧できる：CSP・HTTPS・HttpOnly・パラメータ化クエリ・Dependabot（依存ライブラリの更新を知らせるツール）など</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント：最弱経路を「AND化」する</p>
+      <p>管理者アカウントで MFA を必須にすると、「パスワードを入手」の枝全体（フィッシングを含む）が、それ単独では目標に届かなくなります。つまり <strong>OR でつながっていた弱い経路を、AND の中に閉じ込める</strong> ことができます。対策を考えるときは「この経路を AND にできないか？」と問うのが効果的です。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>アタックツリーの使い方とSTRIDEとの使い分け</h2>
+    <h3 id="sec-7-1">作り方の5ステップ</h3>
+    <ol class="steps">
+      <li><strong>守りたいもの・攻撃者の目標を決める</strong><br>「何が最悪か」を1文で書く。目標が複数あるなら <strong>目標ごとに別の木</strong> を作る。例：顧客データが漏洩する／全サービスが停止する／不正送金される。</li>
+      <li><strong>最上位の攻撃方法を挙げる（第1階層）</strong><br>「この目標を達成する方法は、大きく分けて何がある？」をブレインストーミングで5〜10個。</li>
+      <li><strong>各方法を細かくする</strong><br>各ノードに「どうやって？」を繰り返し、具体的な攻撃アクションまで掘り下げる。</li>
+      <li><strong>属性をつけて評価する</strong><br>コスト、成功確率、対策の有無などを書き込む。</li>
+      <li><strong>弱い経路を特定して対策を強化する</strong><br>最小コストの経路はどれか（最優先で潰す）／AND化できないか（複数要素を要求する）／既存の対策で防げる経路・防げない経路はどれか。</li>
+    </ol>
+
+    <h3 id="sec-7-2">強みと弱み</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>強み</h4>
+        <ul>
+          <li><strong>攻撃者の視点</strong> で考えられる</li>
+          <li>防御策がどの経路に効くかの <strong>対応が明確</strong></li>
+          <li><strong>非技術者にも説明しやすい</strong> 図になる</li>
+          <li>「最小コスト経路を潰せば攻撃者を脱落させられる」という <strong>合理的な判断</strong> ができる</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>弱み</h4>
+        <ul>
+          <li><strong>網羅性の保証がない</strong>（思いつかない攻撃は書けない）</li>
+          <li>属性の見積もりが <strong>主観的</strong></li>
+          <li>大規模なシステムだと木が巨大になる</li>
+          <li>新しい攻撃手法は日々増えるので、<strong>定期的なメンテナンス</strong> が必要</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-7-3">STRIDEとの使い分け</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>STRIDE</th><th>アタックツリー</th></tr></thead>
+      <tbody>
+        <tr><td><strong>考える向き</strong></td><td>ボトムアップ（部品 → 脅威）</td><td>トップダウン（目標 → 経路）</td></tr>
+        <tr><td><strong>強み</strong></td><td>網羅性（広さ）</td><td>深さ、攻撃者視点</td></tr>
+        <tr><td><strong>用途</strong></td><td>一般的な脅威チェック</td><td>特定の目標の徹底分析</td></tr>
+        <tr><td><strong>単位</strong></td><td>部品（コンポーネント）ごと</td><td>重要な攻撃目標ごと</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>併用が効果的</strong> です。まず STRIDE で広く脅威を洗い出し、DREAD で順位をつけ、その中で特に重要な脅威を <strong>アタックツリーで深掘り</strong> する、という流れです。</p>
+
+    <h3 id="sec-7-4">実践のコツ</h3>
+    <ul>
+      <li><strong>小さく始める</strong>：最初から完璧な木を描こうとしない。<strong>主要な経路3〜5本</strong> で十分。</li>
+      <li><strong>攻撃者のペルソナ（人物像）を決める</strong>：外部の攻撃者（匿名、既成ツールを使う）／組織犯罪グループ（資金・人員が豊富）／国家レベル（ほぼ無制限の資源）／内部犯（認証情報や権限を持っている）。ペルソナによって現実的な経路が変わります。</li>
+      <li><strong>既知の攻撃パターンを参考にする</strong>：MITRE ATT&amp;CK（攻撃手法を体系化したデータベース）、サイバーキルチェーン（偵察 → 武器化 → 配送 → 攻撃実行 → インストール → 遠隔操作（C2） → 目的達成）、過去のインシデント事例。</li>
+      <li><strong>対策をマッピングする</strong>：各ノードに「この対策が効く」とタグづけすると、対策の投資対効果を議論しやすくなります。</li>
+    </ul>
+    <p><strong>ツール</strong>：AttackTree（Isograph社の商用ツール）、SeaMonster・ADTool など研究用のツールもありますが、<strong>Miro / FigJam / draw.io / PlantUML などの汎用作図ツールで十分</strong> です。</p>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「木に書いた経路を全部塞げば安全」</p>
+      <p>アタックツリーには網羅性の保証がありません。<strong>思いつかなかった攻撃は木に載らない</strong> ので、STRIDE による広いチェックや、新しい攻撃事例による定期的な更新と組み合わせる必要があります。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li><strong>DREAD</strong> は被害・再現性・悪用しやすさ・影響ユーザー数・発見しやすさの5軸を1〜10点で評価し、<strong>脅威の優先順位</strong> を決める</li>
+      <li>DREAD は主観的になりがち。<strong>チームで、同じ基準で</strong> 評価し、精密さより「対策の順番を決める目安」として使う。社外との会話には <strong>CVSS</strong></li>
+      <li><strong>アタックツリー</strong> は攻撃者の目標を根に置き、達成経路をトップダウンに木で描く</li>
+      <li><strong>OR</strong> は「どれか1つ」、<strong>AND</strong> は「全部必要」。最弱（最小コスト）経路を潰し、<strong>AND化</strong> で攻撃コストを上げる</li>
+      <li><strong>STRIDE（広さ）→ DREAD（順位）→ アタックツリー（深さ）</strong> の併用が効果的</li>
+    </ul>
+
+    <h2 id="sec-9"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ある脅威の DREAD 評価が D=6, R=8, E=7, A=5, D=4 でした。平均スコアと優先度は？</summary>
+      <div class="body">
+        <p>合計は 6+8+7+5+4＝<strong>30点</strong>、平均は 30÷5＝<strong>6.0</strong> なので <strong>High</strong>（6〜7.9）です。近日中に対応すべき脅威と判断できます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. ORノードの子のコストが $300・$80・$1,200 のとき、親のコストは？ ANDノードならどうなる？</summary>
+      <div class="body">
+        <p><strong>OR なら $80</strong>（子の最小値。攻撃者は一番安い方法を選ぶ）。<strong>AND なら $1,580</strong>（子の合計。すべてを実行する必要がある）。AND にすると攻撃コストが大きく跳ね上がることが分かります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 「見つかりにくい脆弱性だから、Discoverability を1点にして後回しでいい」。この考え方の問題は？</summary>
+      <div class="body">
+        <p>「見つかりにくいから安全」は <strong>隠蔽によるセキュリティ</strong> に近い考え方で、攻撃者がいずれ見つける可能性を軽視しています。そのため Discoverability を外した DREAD-D という変種も使われます。被害が大きい脆弱性なら、見つかりにくくても優先して直すべきです。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Bruce Schneier "Attack Trees"（1999年）</li>
+      <li>CVSS（Common Vulnerability Scoring System）／ OWASP Risk Rating Methodology</li>
+      <li>MITRE ATT&amp;CK</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-2_STRIDE.html"><span class="lbl">← 前のページ</span>STRIDE</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-1_OWASP_Top10とは.html"><span class="lbl">次のページ →</span>OWASP Top 10 とは</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

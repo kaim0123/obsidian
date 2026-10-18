@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JavaScriptの脆弱性｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 API・JavaScript › JavaScriptの脆弱性</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 API・JavaScript</span>
+      <h1>JavaScriptの脆弱性</h1>
+      <p class="lead">SPA やリッチな画面では、HTML を組み立てる処理の多くが <strong>ブラウザ上の JavaScript</strong> に移っています。このページでは徳丸本第20章をもとに、クライアント側の JavaScript で起きやすい4つの問題 ── <strong>DOM Based XSS</strong>・<strong>Webストレージの不適切な使用</strong>・<strong>postMessage 呼び出しの不備</strong>・<strong>オープンリダイレクト（JavaScript 版）</strong> ── とその対策を解説します。</p>
+      <p class="meta">もとにしたノート：50_API・JavaScript/03_JavaScriptの問題（徳丸本20章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>「ブラウザの中にも外部入力の入り口がある」</strong> のが、この章の要点です。URL の <code>#</code> 以降、Webストレージ、他のウィンドウからのメッセージは、どれも <strong>サーバーを通らない外部入力</strong> です。</p>
+    </div>
+
+    <p><strong>SPA</strong>（Single Page Application）は、最初に1枚のページを読み込んだあと、画面の切り替えを JavaScript で行う作りのアプリです。React や Vue で作る画面の多くがこれにあたります。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>JavaScript で起きる問題の全体像</h2>
+    <p>第20章では、クライアント側（ブラウザ側）の JavaScript で起きやすい次の問題を解説します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>概要</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DOM Based XSS</strong></td><td>JavaScript が外部の値をそのまま DOM に書き込み、スクリプトが実行される</td></tr>
+        <tr><td><strong>Webストレージの不適切な使用</strong></td><td>localStorage などに秘密情報を置き、XSS で盗まれる・改ざんされる</td></tr>
+        <tr><td><strong>postMessage呼び出しの不備</strong></td><td>ウィンドウ間のメッセージで、送信先・送信元を確認しない</td></tr>
+        <tr><td><strong>オープンリダイレクト</strong></td><td>JavaScript で、外部から指定された URL へ遷移させる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>DOM</strong>（Document Object Model）とは、ブラウザが読み込んだ HTML を、JavaScript から読み書きできる「部品の木」の形にしたものです。JavaScript は DOM を書き換えることで、画面の文字や要素を変えています。</p>
+    <p>第5・6章の XSS（<a href="20-1_XSSの基本.html">XSSの基本</a>・<a href="20-2_XSS発展編.html">XSS発展編</a>）は、主に <strong>サーバーが返す HTML</strong> にスクリプトが混ざる問題でした。本章は、<strong>サーバーを通らずにブラウザの中だけで完結する</strong> 点がポイントです。サーバー側のログやエスケープでは気づけません。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>DOM Based XSS</h2>
+    <p>XSS そのものの仕組み（データが命令に化ける・Cookie を盗まれる など）は <a href="20-1_XSSの基本.html#sec-2">XSSの基本「データと命令」</a> で解説しました。ここでは、<strong>JavaScript が DOM に書き込む場面</strong> で起きる XSS を見ていきます。</p>
+
+    <h3 id="sec-2-1">2.1 仕組み</h3>
+    <p>外部から来た値（<strong>ソース</strong>）が、HTML やスクリプトとして解釈される場所（<strong>シンク</strong>）に、そのまま渡されると起きます。ソース（source）は「水の出どころ」、シンク（sink）は「流し込む先」というイメージです。</p>
+<pre><code>ソース（外部から来る値）              シンク（解釈される場所）
+location.hash / location.search  ─┐
+document.referrer                 ├──▶  innerHTML / document.write / eval / location.href
+postMessage の data               │
+Web ストレージの値                ─┘</code></pre>
+    <p><code>location.hash</code> は URL の <code>#</code> 以降、<code>location.search</code> は <code>?</code> 以降、<code>document.referrer</code> は「どのページから来たか」を表す値です。どれも攻撃者が URL やリンク元を用意すれば自由に決められます。</p>
+
+    <span class="code-label bad">危険な例：URL の # 以降を innerHTML に入れる</span>
+<pre><code>// ❌ https://example.com/#&lt;img src=x onerror=alert(document.cookie)&gt;
+const name = decodeURIComponent(location.hash.slice(1));
+document.getElementById('greet').innerHTML = `こんにちは、${name}さん`;</code></pre>
+    <ul>
+      <li><code>#</code> 以降（<strong>フラグメント</strong>）は <strong>サーバーに送られない</strong> ので、サーバー側では検知も対策もできません。</li>
+      <li>反射型 XSS（<a href="20-1_XSSの基本.html#sec-5-1">XSSの基本「反射型XSS」</a>）と同じく、攻撃者は罠の URL を踏ませるだけです。</li>
+    </ul>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="攻撃者が送った#付きのURLを被害者が開くと、サーバーには#以降が届かず通常のHTMLが返る。ブラウザ内でJavaScriptがlocation.hashを読み、innerHTMLに入れてスクリプトが実行される流れ">
+      <defs>
+        <marker id="arw503a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw503b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="10" y="16" width="250" height="88" rx="8" class="d-box-bad"/>
+      <text x="135" y="44" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="135" y="68" text-anchor="middle" class="d-text-sub">罠の URL を踏ませる</text>
+      <text x="135" y="90" text-anchor="middle" class="d-text-sub">example.com/#&lt;img onerror=…&gt;</text>
+      <line x1="135" y1="104" x2="135" y2="140" class="d-line-bad" marker-end="url(#arw503b)"/>
+      <rect x="520" y="16" width="190" height="88" rx="8" class="d-box"/>
+      <text x="615" y="44" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="615" y="68" text-anchor="middle" class="d-text-sub">受け取るのは GET / だけ</text>
+      <text x="615" y="90" text-anchor="middle" class="d-text-sub">（# 以降は届かない）</text>
+      <line x1="615" y1="140" x2="615" y2="106" class="d-line-dash" marker-start="url(#arw503a)" marker-end="url(#arw503a)"/>
+      <text x="600" y="128" text-anchor="end" class="d-text-sub">いつもどおりの HTML を返す</text>
+      <rect x="10" y="142" width="700" height="176" rx="8" class="d-box"/>
+      <text x="30" y="168" class="d-text-bold">被害者のブラウザの中だけで起きること</text>
+      <rect x="30" y="186" width="145" height="84" rx="8" class="d-box-warn"/>
+      <text x="102" y="212" text-anchor="middle" class="d-text-bold">ソース</text>
+      <text x="102" y="236" text-anchor="middle" class="d-text-sub">location.hash</text>
+      <text x="102" y="256" text-anchor="middle" class="d-text-sub"># 以降を読む</text>
+      <line x1="175" y1="228" x2="203" y2="228" class="d-line" marker-end="url(#arw503a)"/>
+      <rect x="205" y="186" width="145" height="84" rx="8" class="d-box-accent"/>
+      <text x="277" y="212" text-anchor="middle" class="d-text-bold">JavaScript</text>
+      <text x="277" y="236" text-anchor="middle" class="d-text-sub">decodeURIComponent</text>
+      <text x="277" y="256" text-anchor="middle" class="d-text-sub">で文字列にする</text>
+      <line x1="350" y1="228" x2="378" y2="228" class="d-line-bad" marker-end="url(#arw503b)"/>
+      <rect x="380" y="186" width="145" height="84" rx="8" class="d-box-bad"/>
+      <text x="452" y="212" text-anchor="middle" class="d-text-bold">シンク</text>
+      <text x="452" y="236" text-anchor="middle" class="d-text-sub">innerHTML</text>
+      <text x="452" y="256" text-anchor="middle" class="d-text-sub">HTML として解釈</text>
+      <line x1="525" y1="228" x2="553" y2="228" class="d-line-bad" marker-end="url(#arw503b)"/>
+      <rect x="555" y="186" width="145" height="84" rx="8" class="d-box-bad"/>
+      <text x="627" y="212" text-anchor="middle" class="d-text-bold">スクリプト実行</text>
+      <text x="627" y="236" text-anchor="middle" class="d-text-sub">onerror が動く</text>
+      <text x="627" y="256" text-anchor="middle" class="d-text-sub">Cookie などを盗む</text>
+      <text x="360" y="300" text-anchor="middle" class="d-text-sub">サーバーを通らないので、サーバー側のログやエスケープでは気づけない</text>
+    </svg>
+    <figcaption>図：DOM Based XSS は、ソース（location.hash）からシンク（innerHTML）までがブラウザの中だけで完結する</figcaption>
+    </figure>
+
+    <h3 id="sec-2-2">2.2 原因になる機能</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原因</th><th>危険なシンク</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HTML タグが有効になる DOM 操作</strong></td><td><code>innerHTML</code>・<code>outerHTML</code>・<code>insertAdjacentHTML</code>・<code>document.write()</code>・<code>document.writeln()</code>・jQuery の <code>$(html)</code> や <code>.html()</code></td></tr>
+        <tr><td><strong>文字列をスクリプトとして実行する機能</strong></td><td><code>eval()</code>・<code>setTimeout(文字列)</code>・<code>setInterval(文字列)</code>・<code>new Function(文字列)</code></td></tr>
+        <tr><td><strong>URL が未検証</strong></td><td><code>location.href</code>・<code>a</code> 要素の <code>href</code>・<code>iframe</code> の <code>src</code>（<code>javascript:</code> スキームが動く）</td></tr>
+        <tr><td><strong>XMLHttpRequest / fetch の URL が未検証</strong></td><td>取ってきた HTML を画面に入れる処理で、取得先を攻撃者のサーバーに変えられる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>XMLHttpRequest</strong> と <strong>fetch</strong> は、JavaScript からサーバーへ通信してデータを取ってくるための機能です（fetch は新しい書き方）。</p>
+
+    <h3 id="sec-2-3">2.3 innerHTML・document.write による XSS</h3>
+    <span class="code-label bad">危険な例：HTML として解釈される</span>
+<pre><code>// ❌ HTML として解釈される
+el.innerHTML = name;
+document.write('&lt;p&gt;' + name + '&lt;/p&gt;');</code></pre>
+    <span class="code-label good">安全な例：テキストとして入れる／要素を作ってから値を入れる</span>
+<pre><code>// ✅ テキストとして入れる（タグは文字のまま表示される）
+el.textContent = name;
+
+// ✅ 要素を作ってから値を入れる
+const p = document.createElement('p');
+p.textContent = name;
+el.appendChild(p);</code></pre>
+    <p><code>textContent</code> は中身を HTML として解釈せず、ただの文字として表示します（<a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html#sec-5">インジェクションと暗号化の不備「XSS：脆弱なコードと安全なコード」</a> でも同じ比較をしています）。</p>
+    <p>どうしても HTML を入れる必要がある（リッチテキストなど）場合は、<strong>DOMPurify などのサニタイザ</strong> を通します。<strong>サニタイザ</strong> とは、HTML から <code>script</code> 要素や <code>onerror</code> などの危険な部分を取り除き、安全な部分だけを残す道具です。</p>
+    <span class="code-label good">安全な例：サニタイザを通してから入れる</span>
+<pre><code>import DOMPurify from 'dompurify';
+el.innerHTML = DOMPurify.sanitize(html);</code></pre>
+
+    <h3 id="sec-2-4">2.4 eval・setTimeout・Function による XSS</h3>
+    <span class="code-label bad">危険な例：外部の値がスクリプトとして実行される</span>
+<pre><code>// ❌ 外部の値がスクリプトとして実行される
+setTimeout('showMessage("' + msg + '")', 1000);
+eval('var config = ' + location.hash.slice(1));</code></pre>
+    <span class="code-label good">安全な例：関数を渡す／JSON.parse を使う</span>
+<pre><code>// ✅ 関数を渡す / JSON.parse を使う
+setTimeout(() =&gt; showMessage(msg), 1000);
+const config = JSON.parse(decodeURIComponent(location.hash.slice(1)));</code></pre>
+    <ul>
+      <li><strong>文字列形式で外部からの値を渡さない</strong> のが原則です。<code>eval</code> は使わずに済む設計にします（<a href="40-3_Evalインジェクション・デシリアライズ・XXE.html#sec-5">Evalインジェクションの対策</a> と同じ考え方）。</li>
+      <li><code>JSON.parse</code> はデータとして読むだけで、中のコードを実行しません。</li>
+    </ul>
+
+    <h3 id="sec-2-5">2.5 javascript スキームによる XSS</h3>
+    <p><strong>スキーム</strong> とは、URL の先頭の <code>https:</code> や <code>mailto:</code> の部分です。<code>javascript:</code> スキームの URL は、開くと後ろに書いたスクリプトが実行されます。属性値の XSS としての説明は <a href="20-2_XSS発展編.html#sec-2">XSS発展編「href属性やsrc属性のXSS」</a> を参照してください。</p>
+    <span class="code-label bad">危険な例：URL パラメータをそのままリンク先・遷移先にする</span>
+<pre><code>// ❌ ?url=javascript:alert(document.cookie) で実行される
+const url = new URLSearchParams(location.search).get('url');
+link.href = url;
+location.href = url;</code></pre>
+    <span class="code-label good">安全な例：スキームを http / https に限る</span>
+<pre><code>// ✅ スキームを http / https に限る
+function isSafeUrl(value) {
+  try {
+    const url = new URL(value, location.origin);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+if (isSafeUrl(url)) link.href = url;</code></pre>
+    <ul>
+      <li><code>JavaScript:</code>（大文字）や前後の空白・改行で、単純な文字列比較は回避されます。<strong><code>new URL()</code> でパースしてから <code>protocol</code> を見る</strong> のが確実です。</li>
+      <li>React などのフレームワークは <code>{name}</code> の埋め込みを自動でエスケープしますが、<code>href={url}</code> の <strong>スキームは確認しません</strong>。<code>dangerouslySetInnerHTML</code> も同様に危険です。</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">補足：React 19 以降の動き</p>
+      <p>React 19 では、<code>href</code> などに <code>javascript:</code> で始まる URL を渡すと、React がそれを実行しない値に置き換えてブロックするようになりました。ただし、古い版の React やほかのフレームワーク、<code>data:</code> など別の危険な値、<code>location.href</code> への代入などには効きません。<strong>上の <code>isSafeUrl</code> のように自分で検証する方針は変わりません</strong>。</p>
+    </div>
+
+    <h3 id="sec-2-6">2.6 XMLHttpRequest の URL 未検証</h3>
+    <span class="code-label bad">危険な例：# 以降をそのまま取得先にする</span>
+<pre><code>// ❌ #/page/news のようなパスを想定しているが、#//attacker.example/evil.html でも取得してしまう
+const path = location.hash.slice(1);
+fetch(path)
+  .then((r) =&gt; r.text())
+  .then((html) =&gt; { main.innerHTML = html; });</code></pre>
+    <ul>
+      <li>攻撃者のサーバーが <a href="10-2_CORSの仕組み.html">CORS</a>（別オリジンからの読み取りを許可するしくみ）を許可して悪意ある HTML を返すと、そのまま実行されます。</li>
+      <li>認証ヘッダやトークンを付けて送る処理なら、<strong>トークンを攻撃者に送ってしまう</strong> 問題にもなります。</li>
+    </ul>
+    <p><code>//attacker.example/…</code> のように <code>//</code> で始まる書き方は、「今のページと同じスキームで、別のホストへ」という意味になります。そのため、パスのつもりで渡した値が外部サーバーへの通信に化けてしまいます。</p>
+    <span class="code-label good">安全な例：許可したページ名だけを受け付ける</span>
+<pre><code>// ✅ 許可したページ名だけを受け付け、URL は自分で組み立てる
+const PAGES = ['news', 'about', 'faq'];
+const page = location.hash.slice(1);
+if (PAGES.includes(page)) {
+  fetch(`/pages/${page}.json`).then(/* textContent で描画 */);
+}</code></pre>
+
+    <h3 id="sec-2-7">2.7 Trusted Types（追加の防御）</h3>
+    <p><a href="10-4_CSP.html">CSP</a>（読み込んでよいスクリプトなどをブラウザに伝えるレスポンスヘッダ）に次の指定を加えると、<code>innerHTML</code> などに <strong>ただの文字列を渡すとエラー</strong> になります。危険なシンクの使い忘れをブラウザが止めてくれます（対応ブラウザのみ）。</p>
+<pre><code>Content-Security-Policy: require-trusted-types-for 'script'</code></pre>
+    <p><strong>Trusted Types</strong> は、「安全確認を通った値」だけをシンクに渡せるようにするしくみです。サニタイザなどを通した値だけが「信頼できる型」になり、そのまま書いた文字列ははじかれます。</p>
+    <p>CSP 全体は <a href="10-4_CSP.html">CSP</a>、他のヘッダは <a href="10-5_セキュリティヘッダ.html">セキュリティヘッダ</a> を参照してください。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>Webストレージの不適切な使用</h2>
+
+    <h3 id="sec-3-1">3.1 Webストレージとは</h3>
+    <p>ブラウザにデータを保存する仕組みで、<strong>localStorage</strong>（ずっと残る）と <strong>sessionStorage</strong>（タブを閉じると消える）があります。JavaScript から <code>localStorage.setItem('key', 'value')</code> のように読み書きします。</p>
+
+    <h3 id="sec-3-2">3.2 クッキーと Webストレージの特徴</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>クッキー</th><th>localStorage</th><th>sessionStorage</th></tr></thead>
+      <tbody>
+        <tr><td><strong>データの区分け</strong></td><td>ドメイン・パス単位</td><td>オリジン単位</td><td>オリジン + タブ単位</td></tr>
+        <tr><td><strong>有効期間</strong></td><td><code>Expires</code>/<code>Max-Age</code> まで（無ければブラウザ終了まで）</td><td>消すまでずっと</td><td>タブを閉じるまで</td></tr>
+        <tr><td><strong>サーバーへの送信</strong></td><td>リクエストごとに自動で送られる</td><td>送られない</td><td>送られない</td></tr>
+        <tr><td><strong>JavaScript からのアクセス</strong></td><td>できる（<strong>HttpOnly</strong> なら不可）</td><td>できる</td><td>できる</td></tr>
+        <tr><td><strong>アクセス制御</strong></td><td><code>HttpOnly</code>・<code>Secure</code>・<code>SameSite</code> で制限できる</td><td>制限する仕組みがない</td><td>制限する仕組みがない</td></tr>
+        <tr><td><strong>利用者から見えるか</strong></td><td>見える</td><td>見える</td><td>見える</td></tr>
+        <tr><td><strong>利用者が変更できるか</strong></td><td>できる</td><td>できる</td><td>できる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>オリジン</strong> は「スキーム＋ホスト＋ポート」の組み合わせです（<a href="10-1_受動的攻撃と同一オリジンポリシー.html#sec-3-1">受動的攻撃と同一オリジンポリシー「オリジンとは」</a>）。</p>
+    <div class="callout key">
+      <p class="callout-title">ポイント</p>
+      <p>Webストレージには <code>HttpOnly</code> にあたる仕組みがありません。<strong>同じオリジンで XSS が 1 つでもあれば、全部読まれます</strong>。Cookie の属性（クッキー出力にまつわる脆弱性・徳丸本第11章）は 74_セッション管理 フォルダで扱います。<code>HttpOnly</code> の効果は <a href="20-1_XSSの基本.html#sec-14">XSSの基本「クッキーに HttpOnly 属性を付与」</a>、属性ごとの動きは <a href="10-3_CORSエラーの対処法とCookie.html#sec-6">CORSエラーの対処法とCookie</a> でも触れています。</p>
+    </div>
+
+    <h3 id="sec-3-3">3.3 Webストレージには何を保存してよいか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>保存してよい</th><th>保存しない</th></tr></thead>
+      <tbody>
+        <tr><td>表示設定（テーマ・言語）、入力途中の下書き、画面の状態</td><td>セッション ID、アクセストークン・リフレッシュトークン、個人情報、パスワード</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>判断基準は <strong>「XSS で盗まれても、利用者が改ざんしても困らないか」</strong> です。</li>
+      <li>利用者が自由に書き換えられるので、<strong>権限や価格などの判断に使わない</strong>。サーバー側で必ず確かめます。</li>
+      <li>ログイン状態は、<code>HttpOnly</code>・<code>Secure</code>・<code>SameSite</code> を付けた Cookie で持つのが基本です（トークンを localStorage と Cookie のどちらに置くかは 74_セッション管理 で扱います）。</li>
+    </ul>
+    <p><strong>アクセストークン</strong> は API を呼ぶときに「ログイン済みの本人です」と示す通行証、<strong>リフレッシュトークン</strong> はアクセストークンを取り直すための、より長く使える通行証です。</p>
+
+    <h3 id="sec-3-4">3.4 不適切な利用例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>例</th><th>何が起きるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>秘密情報を保存していた</strong></td><td>XSS で <code>localStorage.getItem('token')</code> を読まれ、攻撃者のサーバーに送られる</td></tr>
+        <tr><td><strong>XSS や postMessage で漏えい</strong></td><td>他のウィンドウから受けたメッセージに応じて、保存値を返してしまう</td></tr>
+        <tr><td><strong>XSS や postMessage で改ざん</strong></td><td>保存値を書き換えられ、次回の表示から攻撃が続く（ずっと残る XSS）</td></tr>
+        <tr><td><strong>Webストレージを経由した DOM Based XSS</strong></td><td>保存値を <code>innerHTML</code> で描画している。一度書き込まれると、URL を踏まなくても毎回発火する</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">危険な例：保存値を HTML として描画する</span>
+<pre><code>// ❌ 保存値も「外部から来る値」として扱う
+el.innerHTML = localStorage.getItem('nickname');</code></pre>
+    <span class="code-label good">安全な例：テキストとして描画する</span>
+<pre><code>// ✅
+el.textContent = localStorage.getItem('nickname');</code></pre>
+    <p>サーバーのデータベースに保存されて毎回発火する <a href="20-1_XSSの基本.html#sec-5-2">持続型XSS</a> と似た状態が、ブラウザの中だけで起きると考えると分かりやすいです。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>postMessage 呼び出しの不備</h2>
+
+    <h3 id="sec-4-1">4.1 postMessage とは</h3>
+    <p><strong>別のオリジンのウィンドウや iframe と、安全にメッセージをやり取りする</strong> ための仕組みです。同一オリジンポリシー（<a href="10-1_受動的攻撃と同一オリジンポリシー.html#sec-3">受動的攻撃と同一オリジンポリシー</a>）で直接触れない相手と、決まった窓口だけで会話できます。<strong>iframe</strong> は、ページの中に別のページをはめ込んで表示する要素です（<a href="10-1_受動的攻撃と同一オリジンポリシー.html#sec-4">同ページ「iframe」</a>）。</p>
+<pre><code>// 送信側
+otherWindow.postMessage(message, targetOrigin);
+
+// 受信側
+window.addEventListener('message', (event) =&gt; {
+  // event.origin … 送信元のオリジン
+  // event.data   … 受け取ったデータ
+});</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>引数・プロパティ</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>message</code></td><td>送るデータ（オブジェクトも送れる）</td></tr>
+        <tr><td><code>targetOrigin</code></td><td><strong>このオリジンのウィンドウにだけ届ける</strong>。<code>'*'</code> は誰でも可</td></tr>
+        <tr><td><code>event.origin</code></td><td>受け取ったメッセージの送信元</td></tr>
+      </tbody>
+    </table></div>
+    <p>確認すべきことは、送信側の「<strong>誰に届けるか</strong>」と受信側の「<strong>誰から来たか</strong>」の2つです。</p>
+
+    <h3 id="sec-4-2">4.2 メッセージ送信先の未確認</h3>
+    <span class="code-label bad">危険な例：送信先を '*' にする</span>
+<pre><code>// ❌ iframe の中身が攻撃者のページに差し替えられていても、トークンが届く
+iframe.contentWindow.postMessage({ token }, '*');</code></pre>
+    <span class="code-label good">安全な例：届けたい相手のオリジンを指定する</span>
+<pre><code>// ✅ 届けたい相手のオリジンを指定する
+iframe.contentWindow.postMessage({ token }, 'https://widget.example.com');</code></pre>
+    <ul>
+      <li><code>window.open</code> で開いたウィンドウや iframe は、途中で別のサイトに遷移していることがあります。</li>
+      <li>秘密の情報を送るときは、<strong>必ず <code>targetOrigin</code> を指定</strong> します。</li>
+    </ul>
+
+    <h3 id="sec-4-3">4.3 メッセージ送信元の未確認</h3>
+    <span class="code-label bad">危険な例：どこから来たメッセージでも処理する</span>
+<pre><code>// ❌ どのサイトから来たメッセージでも処理してしまう
+window.addEventListener('message', (event) =&gt; {
+  document.getElementById('msg').innerHTML = event.data.html;
+  localStorage.setItem('theme', event.data.theme);
+});</code></pre>
+    <span class="code-label good">安全な例：送信元を完全一致で確かめ、データも検証する</span>
+<pre><code>// ✅ 送信元を完全一致で確かめ、データも検証する
+const ALLOWED = 'https://parent.example.com';
+window.addEventListener('message', (event) =&gt; {
+  if (event.origin !== ALLOWED) return;
+  if (typeof event.data?.text !== 'string') return;
+  document.getElementById('msg').textContent = event.data.text;
+});</code></pre>
+    <ul>
+      <li>攻撃者のページは、あなたのページを iframe や <code>window.open</code> で開き、<strong>好きな内容のメッセージを送れます</strong>。</li>
+      <li><code>event.origin.includes('example.com')</code> や <code>startsWith</code> は、<code>https://example.com.attacker.example</code> で回避されます。<strong>完全一致</strong> で比べます。</li>
+      <li>送信元が正しくても、<code>data</code> は外部からの値です。シンクに渡すときの注意は DOM Based XSS と同じです。</li>
+    </ul>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="正規の親ページからのメッセージはoriginが一致するので処理し、攻撃者のページからのメッセージはoriginが一致しないので無視する。送信側もtargetOriginを指定する">
+      <defs>
+        <marker id="arw503c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw503d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="10" y="20" width="230" height="80" rx="8" class="d-box-good"/>
+      <text x="125" y="48" text-anchor="middle" class="d-text-bold">正規の親ページ</text>
+      <text x="125" y="72" text-anchor="middle" class="d-text-sub">https://parent.example.com</text>
+      <rect x="10" y="170" width="230" height="80" rx="8" class="d-box-bad"/>
+      <text x="125" y="198" text-anchor="middle" class="d-text-bold">攻撃者のページ</text>
+      <text x="125" y="222" text-anchor="middle" class="d-text-sub">https://attacker.example</text>
+      <line x1="240" y1="60" x2="428" y2="112" class="d-line" marker-end="url(#arw503c)"/>
+      <text x="330" y="66" text-anchor="middle" class="d-text-sub">postMessage(…)</text>
+      <line x1="240" y1="210" x2="428" y2="166" class="d-line-bad" marker-end="url(#arw503d)"/>
+      <text x="330" y="222" text-anchor="middle" class="d-text-sub">postMessage(…)</text>
+      <rect x="430" y="70" width="280" height="140" rx="8" class="d-box-accent"/>
+      <text x="570" y="98" text-anchor="middle" class="d-text-bold">受信側（あなたのページ）</text>
+      <text x="570" y="124" text-anchor="middle" class="d-text-sub">event.origin を完全一致で確認</text>
+      <text x="570" y="160" text-anchor="middle" class="d-text">parent.example.com → 処理</text>
+      <text x="570" y="188" text-anchor="middle" class="d-text">attacker.example → 無視</text>
+      <rect x="10" y="266" width="700" height="28" rx="6" class="d-box"/>
+      <text x="360" y="285" text-anchor="middle" class="d-text-sub">送信側も targetOrigin を指定すると、相手が別サイトに変わっていた場合は届かない</text>
+    </svg>
+    <figcaption>図：受信側は event.origin で「誰から来たか」、送信側は targetOrigin で「誰に届けるか」を確かめる</figcaption>
+    </figure>
+
+    <h2 id="sec-5"><span class="num">5.</span>オープンリダイレクト（JavaScript 版）</h2>
+    <p>サーバー側のリダイレクト（<a href="30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-1">リダイレクトとHTTPヘッダインジェクション「オープンリダイレクト」</a>）と同じ問題が、JavaScript の画面遷移でも起きます。被害（フィッシングへの誘導など）は同ページを参照してください。</p>
+    <span class="code-label bad">危険な例：URL パラメータの値へそのまま遷移する</span>
+<pre><code>// ❌ ログイン後に ?next=https://phishing.example/ へ飛ばされる
+const next = new URLSearchParams(location.search).get('next');
+location.href = next;</code></pre>
+    <p>さらに JavaScript 版では、<code>?next=javascript:...</code> で <strong>XSS にもなる</strong> 点に注意します（2.5 の javascript スキームと同じ仕組みです）。</p>
+
+    <h3 id="sec-5-1">5.1 対策</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>リダイレクト先の URL を固定にする</strong></td><td>ログイン後は必ず <code>/mypage</code></td></tr>
+        <tr><td><strong>URL を直接指定せず、番号などで指定する</strong></td><td><code>?next=2</code> → 対応表で <code>/settings</code> に変換</td></tr>
+        <tr><td><strong>同じオリジンかを確かめる</strong></td><td>下のコード</td></tr>
+      </tbody>
+    </table></div>
+    <p>考え方はサーバー側の <a href="30-2_リダイレクトとHTTPヘッダインジェクション.html#sec-5">オープンリダイレクトの対策</a> と同じです。</p>
+    <span class="code-label good">安全な例：自分のオリジン内のパスだけ許可する</span>
+<pre><code>// ✅ 自分のオリジン内のパスだけ許可する
+function safeRedirect(next) {
+  try {
+    const url = new URL(next, location.origin);
+    if (url.origin === location.origin) {
+      location.href = url.pathname + url.search + url.hash;
+      return;
+    }
+  } catch {}
+  location.href = '/mypage';
+}</code></pre>
+    <ul>
+      <li><code>//attacker.example</code>（スキームなし）や <code>/\attacker.example</code> は、文字列の先頭が <code>/</code> でも外部に飛びます。<strong><code>new URL()</code> で解決してから <code>origin</code> を比べる</strong> のが確実です。</li>
+      <li><code>javascript:...</code> を渡した場合も、<code>new URL()</code> の結果の <code>origin</code> が自分のオリジンと一致しないため、<code>/mypage</code> に落ちます。</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>共通の対策：ライブラリを最新に保つ</h2>
+    <p>jQuery・Angular・Vue などの古い版には、DOM Based XSS につながる脆弱性が見つかっているものがあります。</p>
+    <ul>
+      <li>使っているライブラリを把握し、<code>npm audit</code>（npm のパッケージに既知の脆弱性がないか調べるコマンド）や Dependabot（GitHub が依存ライブラリの更新を自動で提案する機能）で更新を追う。</li>
+      <li>CDN（スクリプトなどを配信する外部サーバー）から読むスクリプトには <strong>SRI</strong>（<code>integrity</code> 属性）を付け、改ざんされたファイルを実行しない。</li>
+    </ul>
+    <p>詳しくは <a href="../../71_セキュリティ基礎/00_全体像/40-4_安全でない設計・設定ミス・古い部品.html#sec-4">安全でない設計・設定ミス・古い部品「脆弱で古いコンポーネント」</a>、SRI の書き方は <a href="../../71_セキュリティ基礎/00_全体像/40-5_サプライチェーンと整合性の不備.html#sec-8-2">サプライチェーンと整合性の不備「CDN の JavaScript には SRI を付ける」</a> を参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>対策の優先順位</h2>
+    <ol class="steps">
+      <li>外部の値は <code>textContent</code> / <code>createElement</code> で入れる。<code>innerHTML</code>・<code>document.write</code>・<code>eval</code> に渡さない（<strong>本質的対策</strong>）</li>
+      <li>URL はパースしてスキームを http/https に限り、遷移先は同じオリジンか対応表で決める</li>
+      <li>postMessage は <code>targetOrigin</code> を指定し、受信側で <code>event.origin</code> を完全一致で確かめる</li>
+      <li>Webストレージに秘密情報を置かない。ログイン状態は HttpOnly Cookie で持つ</li>
+      <li>HTML が必要なら DOMPurify、追加の防御に CSP・Trusted Types（<strong>保険</strong>）</li>
+      <li>ライブラリを最新に保つ</li>
+    </ol>
+    <p>本章に共通する考え方は、<strong>「ブラウザの中にも外部入力の入り口がある」</strong> ことです。URL のフラグメント、Webストレージ、他のウィンドウからのメッセージは、どれもサーバーを通らない外部入力です。サーバー側の対策だけで安心せず、<strong>JavaScript で DOM に書き込む・画面を遷移させる・データを保存する</strong> 場所を、サーバー側の出力と同じ目で点検します。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>DOM Based XSS</td><td>ソース（<code>location.hash</code> など）→ シンク（<code>innerHTML</code> など）。サーバーを通らない</td></tr>
+        <tr><td>危険なシンク</td><td>HTML として解釈・文字列をスクリプト実行・未検証の URL・未検証の取得先</td></tr>
+        <tr><td>安全な書き方</td><td><code>textContent</code>・<code>createElement</code>・関数渡し・<code>JSON.parse</code>・<code>new URL()</code> でスキーム確認</td></tr>
+        <tr><td>Webストレージ</td><td>HttpOnly にあたる仕組みがない。秘密情報を置かず、保存値も外部入力として扱う</td></tr>
+        <tr><td>postMessage</td><td>送信側は <code>targetOrigin</code> を指定、受信側は <code>event.origin</code> を完全一致で確認</td></tr>
+        <tr><td>オープンリダイレクト</td><td>固定・番号指定・同一オリジン確認。JavaScript 版は XSS にもなる</td></tr>
+        <tr><td>ライブラリ</td><td><code>npm audit</code>・Dependabot で更新、CDN には SRI</td></tr>
+      </tbody>
+    </table></div>
+    <p>ノートは前のページ（<a href="50-2_WebAPIの脆弱性.html">WebAPIの脆弱性</a>）と目次へのリンクで結ばれており、これがこのシリーズの最後のページです。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. DOM Based XSS が、サーバー側のログやエスケープでは気づけないのはなぜですか？</summary>
+      <div class="body">
+        <p>ソースからシンクまでの処理が <strong>ブラウザの中だけで完結する</strong> からです。特に URL の <code>#</code> 以降（フラグメント）はサーバーに送られないので、サーバーは攻撃の文字列を一度も目にしません。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 「ソース」と「シンク」とは何ですか？それぞれ例を2つずつ挙げてください。</summary>
+      <div class="body">
+        <p><strong>ソース</strong> は外部から来る値で、<code>location.hash</code>・<code>location.search</code>・<code>document.referrer</code>・postMessage の <code>data</code>・Webストレージの値などです。<strong>シンク</strong> は HTML やスクリプトとして解釈される場所で、<code>innerHTML</code>・<code>document.write</code>・<code>eval</code>・<code>location.href</code> などです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. リンク先 URL のチェックで <code>url.startsWith('javascript:')</code> を拒否するだけでは不十分なのはなぜですか？</summary>
+      <div class="body">
+        <p><code>JavaScript:</code>（大文字）や前後の空白・改行などで、単純な文字列比較は回避されるからです。<code>new URL()</code> でパースしてから <code>protocol</code> が <code>http:</code> か <code>https:</code> かを確かめる、許可リスト方式にします。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. アクセストークンを localStorage に保存するのが危険なのはなぜですか？</summary>
+      <div class="body">
+        <p>Webストレージには <code>HttpOnly</code> にあたる仕組みがなく、<strong>同じオリジンで XSS が1つでもあれば JavaScript からすべて読まれる</strong> からです。ログイン状態は <code>HttpOnly</code>・<code>Secure</code>・<code>SameSite</code> を付けた Cookie で持つのが基本です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. postMessage の受信側で <code>event.origin.includes('example.com')</code> と確認するのは安全ですか？</summary>
+      <div class="body">
+        <p><strong>安全ではありません。</strong> <code>https://example.com.attacker.example</code> のような攻撃者のオリジンでも通ってしまいます。<code>event.origin !== 'https://parent.example.com'</code> のように <strong>完全一致</strong> で比べ、さらに <code>data</code> の中身も検証します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. <code>iframe.contentWindow.postMessage({ token }, '*')</code> の問題点は何ですか？</summary>
+      <div class="body">
+        <p>送信先を <code>'*'</code>（誰でも可）にしているため、iframe の中身が攻撃者のページに差し替えられていてもトークンが届いてしまいます。<code>'https://widget.example.com'</code> のように、届けたい相手のオリジンを <code>targetOrigin</code> に指定します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. 遷移先 <code>next</code> が <code>/</code> で始まっていれば自サイト内だと判断してよいですか？</summary>
+      <div class="body">
+        <p><strong>よくありません。</strong> <code>//attacker.example</code> や <code>/\attacker.example</code> は先頭が <code>/</code> でも外部へ飛びます。<code>new URL(next, location.origin)</code> で解決してから <code>origin</code> を自分のオリジンと比べます。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/50_API・JavaScript/03_JavaScriptの問題（徳丸本20章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』SBクリエイティブ</li>
+      <li>OWASP「DOM based XSS Prevention Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html</li>
+      <li>OWASP「HTML5 Security Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html</li>
+      <li>MDN「Window: postMessage() メソッド」 https://developer.mozilla.org/ja/docs/Web/API/Window/postMessage</li>
+      <li>MDN「Web Storage API」 https://developer.mozilla.org/ja/docs/Web/API/Web_Storage_API</li>
+      <li>MDN「Trusted Types API」 https://developer.mozilla.org/en-US/docs/Web/API/Trusted_Types_API</li>
+      <li>React「CHANGELOG（19.0.0：Block javascript: URLs）」 https://github.com/facebook/react/blob/main/CHANGELOG.md</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-2_WebAPIの脆弱性.html"><span class="lbl">← 前のページ</span>WebAPIの脆弱性</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="00-0_目次.html"><span class="lbl">シリーズの最後です →</span>目次へ戻る</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

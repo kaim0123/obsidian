@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ログ不足・SSRF・例外処理｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 OWASP Top 10 › ログ不足・SSRF・例外処理</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 OWASP Top 10</span>
+      <h1>ログ不足・SSRF・例外処理</h1>
+      <p class="lead">「攻撃に気づけるか（ログとアラート）」「サーバーが踏み台にされないか（SSRF）」「想定外のことが起きたときに安全側に倒れるか（例外的状況の処理）」という3つのリスクを解説します。いずれも正常に動いている間は目立たず、異常時や攻撃時に初めて弱さが表に出る問題です。悪い例と良い例のコードを対比させながら、何を記録し、何を許可し、失敗したらどう振る舞うべきかを見ていきます。</p>
+      <p class="meta">もとにしたノート：40_OWASP_Top10/A09_ログとモニタリングの不備、A10_サーバーサイドリクエストフォージェリ、2025_A10_例外的状況の不適切な処理、01_OWASP_Top10_2025の変更点</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>ログとアラートの不備</strong> は「防犯カメラがない、あっても誰も見ていない」、<strong>SSRF</strong> は「受付係に頼めば、外の人でも社内の金庫室から書類を取ってきてもらえる」、<strong>例外的状況の不適切な処理</strong> は「停電したら自動ドアが開きっぱなしになる」状態です。守り方は、<strong>記録して気づける仕組みを作る</strong>、<strong>サーバーが取りに行ける先を許可リストで絞る</strong>、<strong>判断できないときは拒否する（フェイルクローズ）</strong> の3つです。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>3つの項目と、2021年版・2025年版の番号</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>このページの項目</th><th>2021年版</th><th>2025年版</th><th>変化</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ログとモニタリングの不備</strong>（Security Logging and Monitoring Failures）</td><td>A09</td><td>A09</td><td>9位のまま。名前が「Monitoring」→「<strong>Alerting</strong>」に変わり「セキュリティログと <strong>アラート</strong> の不備」に。記録して眺めるだけでなく、アラートを出して人が動けることが大事、というメッセージ</td></tr>
+        <tr><td><strong>サーバーサイドリクエストフォージェリ（SSRF）</strong></td><td>A10</td><td>A01 に統合</td><td>「サーバーという主体に対するアクセス制御の失敗」と整理され、<strong>A01 アクセス制御の不備</strong> に入った（<a href="40-2_アクセス制御と認証の失敗.html">アクセス制御と認証の失敗</a>）。攻撃手法と対策は変わらない</td></tr>
+        <tr><td><strong>例外的状況の不適切な処理</strong>（Mishandling of Exceptional Conditions）</td><td>—</td><td>A10</td><td><strong>新設</strong>。エラー処理の不備、ロジックエラー、フェイルオープンなど、異常系の扱いに関する 24 の CWE をまとめた</td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- ============ A09 ============ -->
+    <h2 id="sec-2"><span class="num">2.</span>ログとモニタリング（アラート）の不備（A09:2021 ／ A09:2025）</h2>
+    <h3 id="sec-2-1">2.1 どんな問題か</h3>
+    <p>どれだけ堅牢に作っても、<strong>攻撃を完全に防ぐことは不可能</strong> です。だからこそ「攻撃されたときに気づけるか」「後から何が起きたか追跡できるか」が重要になります。この項目は、<strong>セキュリティに関わる出来事の記録（ログ）・監視・対応が不十分</strong> なために、攻撃の検知・初動対応・原因究明ができない問題です。</p>
+    <ul>
+      <li>不正ログインの試行が1時間に1万回あったのに、誰も気づかなかった</li>
+      <li>情報漏洩が起きてから半年後に、外部から指摘されて初めて発覚した</li>
+      <li>「何が起きたか」のログがなく、被害範囲も原因も特定できない</li>
+      <li>ログはあったが、調べようとしたときには保存期間を過ぎて消えていた</li>
+    </ul>
+    <p>業界調査では、<strong>侵害を検知するまでの平均日数は200日を超える</strong> とされます。</p>
+
+    <h3 id="sec-2-2">2.2 なぜ重要なのか</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>① 早く見つける</h4>
+        <p>攻撃は一瞬では終わらず、<strong>偵察 → 侵入の試行 → 権限の昇格 → データの持ち出し</strong> と段階を踏みます。途中で気づければ被害を小さくできます。</p>
+      </div>
+      <div class="card">
+        <h4>② 原因と範囲を特定する</h4>
+        <p>「何が・いつ・どこまで起きたか」を知るには <strong>ログが命</strong>。ログがなければ、何を直すべきかすら分かりません。</p>
+      </div>
+      <div class="card">
+        <h4>③ 法律や規則を守る</h4>
+        <p>GDPR は侵害発覚後 <strong>72時間以内</strong> に当局へ報告義務。日本の個人情報保護法にも漏洩時の報告義務、PCI-DSS は監査ログの保持・レビューを要求。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-2-3">2.3 何を記録し、何を記録してはいけないか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>記録すべき出来事</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証</strong></td><td>ログイン成功／失敗、ログアウト、パスワード変更、MFA 設定の変更</td></tr>
+        <tr><td><strong>認可</strong></td><td>権限の昇格、管理機能へのアクセス、拒否されたアクセス</td></tr>
+        <tr><td><strong>入力検証の失敗</strong></td><td>不正な入力の検出、SQL インジェクションや XSS の試行と思われるパターン</td></tr>
+        <tr><td><strong>重要データ</strong></td><td>個人情報・金融情報の参照／変更／削除</td></tr>
+        <tr><td><strong>設定変更</strong></td><td>セキュリティ関連設定の変更、ユーザーの追加／削除</td></tr>
+        <tr><td><strong>異常</strong></td><td>大量のリクエスト、異常なエラー率、存在しない API へのアクセス</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card">
+        <h4>○ ログに含めるべき情報</h4>
+        <ul>
+          <li><strong>タイムスタンプ</strong>（タイムゾーン込み。できれば UTC＋ISO 8601 形式）</li>
+          <li><strong>出来事の種類</strong>（ログイン、権限変更など）</li>
+          <li><strong>関わったユーザー</strong>（ユーザーID、セッションID）</li>
+          <li><strong>発信元の IP アドレス／User-Agent</strong></li>
+          <li><strong>対象</strong>（どのデータ、どのエンドポイント）</li>
+          <li><strong>結果</strong>（成功／失敗）と、失敗時の <strong>理由</strong></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>✕ 含めてはいけない情報</h4>
+        <ul>
+          <li><strong>パスワード・トークン・API キー</strong> そのもの</li>
+          <li><strong>クレジットカード番号</strong> の全桁</li>
+          <li><strong>個人情報</strong> を必要以上に（マスキングする）</li>
+          <li><strong>セッションID</strong> の全体（末尾数文字だけにするなど）</li>
+        </ul>
+        <p>機密情報をログに書くと、<strong>ログそのものが情報漏洩の対象</strong> になります。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-2-4">2.4 悪い例と良い例</h3>
+    <h4>例1：ログがまったく残らない</h4>
+    <span class="code-label bad">✕ 危険：成功も失敗も記録されない</span>
+    <pre><code>app.post('/login', async (req, res) =&gt; {
+  const user = await authenticate(req.body);
+  if (!user) return res.status(401).send('NG');
+  // 成功も失敗もログに残らない
+  res.json({ token: generateToken(user) });
+});</code></pre>
+    <span class="code-label good">○ 安全：構造化ログ（JSON 形式）で成功・失敗を残す</span>
+    <pre><code>app.post('/login', async (req, res) =&gt; {
+  const user = await authenticate(req.body);
+  if (!user) {
+    logger.warn({
+      event: 'login.failure',
+      email: req.body.email,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      reason: 'invalid_credentials',
+    });
+    return res.status(401).send('NG');
+  }
+  logger.info({
+    event: 'login.success',
+    userId: user.id,
+    ip: req.ip,
+  });
+  res.json({ token: generateToken(user) });
+});</code></pre>
+    <p><strong>構造化ログ</strong> とは、文章ではなく「項目名：値」の形（JSON など）で書くログのことです。後で「<code>event</code> が <code>login.failure</code> で、同じ <code>ip</code> のもの」のように検索・集計しやすくなります。</p>
+
+    <h4>例2：パスワードをログに出してしまう</h4>
+    <span class="code-label bad">✕ 危険：リクエスト全体を書き出す</span>
+    <pre><code>logger.info(`Login attempt: ${JSON.stringify(req.body)}`);
+// req.body.password もログに残ってしまう！</code></pre>
+    <span class="code-label good">○ 安全：機密項目を取り除いてから記録する</span>
+    <pre><code>const { password, ...safeBody } = req.body;
+logger.info({ event: 'login.attempt', ...safeBody });</code></pre>
+    <p>多くのログライブラリには機密項目を自動で伏せる機能があります（pino の <code>redact</code>、Winston のフィルタなど）。</p>
+
+    <h4>例3：アプリが自分からセキュリティの出来事を記録する</h4>
+    <span class="code-label bad">✕ 拒否しても何も残らない</span>
+    <pre><code>if (!isAuthorized(user, resource)) {
+  return res.status(403).send();
+}</code></pre>
+    <span class="code-label good">○ 拒否・異常な入力を記録してから返す</span>
+    <pre><code>// 認可チェック失敗 → ログを残す
+if (!isAuthorized(user, resource)) {
+  logger.warn({ event: 'access.denied', userId: user.id, resource });
+  return res.status(403).send();
+}
+
+// 異常なパラメータ → ログを残す
+if (input.length &gt; MAX_LENGTH) {
+  logger.warn({ event: 'validation.failed', field: 'input', length: input.length });
+  return res.status(400).send();
+}</code></pre>
+    <p>拒否された記録が積み重なっていれば、「誰かが他人のデータを1件ずつ試している」ことに気づけます。</p>
+
+    <h3 id="sec-2-5">2.5 ログ基盤の考え方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ポイント</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>集約</strong></td><td>各サーバー・コンテナのログを1か所に集める。ELK スタック（Elasticsearch + Logstash + Kibana）、Loki + Grafana、Datadog・Splunk・New Relic・Sumo Logic（商用）、CloudWatch Logs・Cloud Logging（クラウド）</td></tr>
+        <tr><td><strong>改ざん耐性</strong></td><td>攻撃者は侵入後、ログを消したり書き換えたりする。別サーバー・別アカウントへ転送する、WORM ストレージ（一度書いたら変更できない保存領域）に置く、ハッシュチェーンやタイムスタンプサービスで改ざんを検知する</td></tr>
+        <tr><td><strong>保持期間</strong></td><td>セキュリティログは <strong>最低6か月〜1年</strong>、業種によっては <strong>7年</strong>。調査では古いログが必要になることが多い。アーカイブと費用のバランスを考える</td></tr>
+        <tr><td><strong>時刻同期</strong></td><td>複数サーバーのログを突き合わせるには時刻がそろっていることが必須。NTP で同期し、UTC で記録する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-6">2.6 記録から対応までの流れ</h3>
+    <p>ログは取るだけでは意味がありません。2025年版の名前が「Alerting」に変わったように、<strong>異常に気づいてアラートを出し、人が動ける</strong> ところまでつなげます。</p>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="ログからインシデント対応までの流れ">
+      <defs><marker id="arw46a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="40" width="120" height="70" rx="8" class="d-box"/>
+      <text x="70" y="70" text-anchor="middle" class="d-text-bold">記録</text>
+      <text x="70" y="92" text-anchor="middle" class="d-text-sub">構造化ログ</text>
+      <rect x="157" y="40" width="120" height="70" rx="8" class="d-box"/>
+      <text x="217" y="70" text-anchor="middle" class="d-text-bold">集約</text>
+      <text x="217" y="92" text-anchor="middle" class="d-text-sub">1か所で検索</text>
+      <rect x="304" y="40" width="120" height="70" rx="8" class="d-box-accent"/>
+      <text x="364" y="70" text-anchor="middle" class="d-text-bold">検知</text>
+      <text x="364" y="92" text-anchor="middle" class="d-text-sub">SIEM・ルール</text>
+      <rect x="451" y="40" width="120" height="70" rx="8" class="d-box-warn"/>
+      <text x="511" y="70" text-anchor="middle" class="d-text-bold">アラート</text>
+      <text x="511" y="92" text-anchor="middle" class="d-text-sub">担当者へ通知</text>
+      <rect x="598" y="40" width="112" height="70" rx="8" class="d-box-good"/>
+      <text x="654" y="70" text-anchor="middle" class="d-text-bold">対応</text>
+      <text x="654" y="92" text-anchor="middle" class="d-text-sub">封じ込め等</text>
+      <line x1="130" y1="75" x2="155" y2="75" class="d-line" marker-end="url(#arw46a)"/>
+      <line x1="277" y1="75" x2="302" y2="75" class="d-line" marker-end="url(#arw46a)"/>
+      <line x1="424" y1="75" x2="449" y2="75" class="d-line" marker-end="url(#arw46a)"/>
+      <line x1="571" y1="75" x2="596" y2="75" class="d-line" marker-end="url(#arw46a)"/>
+      <text x="140" y="150" text-anchor="middle" class="d-text-sub">2021年版「Monitoring」はここまでを</text>
+      <text x="140" y="168" text-anchor="middle" class="d-text-sub">重視しがちだった</text>
+      <text x="530" y="150" text-anchor="middle" class="d-text-bold">2025年版「Alerting」は</text>
+      <text x="530" y="170" text-anchor="middle" class="d-text-bold">人が動くところまで</text>
+    </svg>
+    <figcaption>図：記録 → 集約 → 検知 → アラート → 対応。どこか1つが欠けると「ログはあるのに気づけない」</figcaption>
+    </figure>
+    <h4>アラートの例</h4>
+    <ul>
+      <li>1分間に同じ IP からログイン失敗が20回以上 → 総当たり攻撃の疑い</li>
+      <li>ふだん存在しない URL への大量アクセス → スキャン行為</li>
+      <li>管理者権限の操作が営業時間外に発生</li>
+      <li>短時間で大量のデータがエクスポートされた</li>
+    </ul>
+    <p>ログを集めて相関分析し、セキュリティ上の出来事を検知する専用システムを <strong>SIEM</strong>（Security Information and Event Management）といいます。例：Splunk Enterprise Security、Microsoft Sentinel、Elastic Security、Chronicle（Google）。詳しくは <a href="50-2_セキュリティ監視とツール.html">セキュリティ監視とツール</a>、<a href="50-3_セキュアな運用とログ出力.html">セキュアな運用とログ出力</a> へ。</p>
+    <h4>インシデント対応の流れ（事前に決めておく）</h4>
+    <ol class="steps">
+      <li><strong>検知</strong>（Detection）</li>
+      <li><strong>トリアージ</strong>：本当の攻撃か、誤検知かを判断する</li>
+      <li><strong>封じ込め</strong>（Containment）：被害の拡大を止める</li>
+      <li><strong>根絶</strong>（Eradication）：攻撃者を排除する</li>
+      <li><strong>復旧</strong>（Recovery）：正常な状態に戻す</li>
+      <li><strong>事後分析</strong>（Post-mortem）：次に向けて改善する</li>
+    </ol>
+
+    <h3 id="sec-2-7">2.7 2026年の事例から：「正規の操作」に見える大量取得</h3>
+    <p>アフラック生命の事例では、約440万人分（うち口座情報 約22万人）が漏えいしました。侵入は 6/10、発覚は 6/25（<strong>15日後</strong>）。発覚のきっかけはセキュリティの仕組みではなく <strong>CPU の高負荷</strong>、つまり性能の異常でした。調査結果では、攻撃は <strong>通常の利用と同じ形式のアクセス</strong> で、<strong>短時間の大量照会を監視・制御する機能が不足</strong> していたとされています。</p>
+    <p>WAF や IDS（不正侵入検知）は「怪しいリクエスト」を探しますが、正規の ID と正規の API で1件ずつ取得されると見分けられません。<strong>業務的にありえない量</strong> を見る必要があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>見るべき指標</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td>1ユーザー・1セッションあたりの取得レコード数</td><td>ふだんは1日50件なのに1時間で1万件</td></tr>
+        <tr><td>データのエクスポート量</td><td>CSV 出力・一括ダウンロードの回数とサイズ</td></tr>
+        <tr><td>認証まわりの連続した操作</td><td><strong>パスワードリセット直後の MFA デバイス登録</strong>、ふだんと違う接続元からの管理操作</td></tr>
+        <tr><td>サーバーからの外向き通信</td><td>見たことのない宛先への送信、DNS を使った持ち出し。ショップサーブでは外部送信が約72日続いた</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ 危険：取得件数に上限も監視もない</span>
+    <pre><code>export async function getCustomer(userId: string, id: string) {
+  return db.customers.findById(id); // 何万回呼ばれても止まらない
+}</code></pre>
+    <span class="code-label good">○ 安全：1ユーザーあたりの取得件数を数え、上限を超えたら止めてアラート</span>
+    <pre><code>// 1 ユーザーあたり、直近 1 時間に取得したレコード数を数えて、上限を超えたら止める
+// （例のため Map を使う。本番では Redis などの共有ストアを使う）
+const WINDOW_MS = 60 * 60 * 1000;
+const MAX_RECORDS_PER_WINDOW = 1000;
+const usage = new Map&lt;string, { start: number; count: number }&gt;();
+
+export function recordAccess(userId: string, recordCount: number): void {
+  const now = Date.now();
+  const u = usage.get(userId);
+  const current = !u || now - u.start &gt; WINDOW_MS ? { start: now, count: 0 } : u;
+  current.count += recordCount;
+  usage.set(userId, current);
+
+  if (current.count &gt; MAX_RECORDS_PER_WINDOW) {
+    securityLog.warn({ event: "bulk_access_blocked", userId, count: current.count });
+    throw new TooManyRecordsError(); // 403 を返し、セキュリティ担当にアラート
+  }
+}</code></pre>
+    <ul>
+      <li>しきい値はふだんの利用の分布（p99：利用者の99%が収まる値など）から決め、業務で一括処理が必要なアカウントは別に管理する</li>
+      <li>止めるだけでなく、<strong>アラートを出してアカウントを一時停止</strong> できるようにしておく</li>
+      <li><strong>MTTD（検知までの時間）</strong> を測る。2026年の事例では、発覚まで15日〜約9か月かかっていた</li>
+      <li>「性能の異常」も重要なセキュリティのシグナルとして、セキュリティ担当に共有する</li>
+    </ul>
+
+    <details>
+      <summary>ログとアラートのチェックリスト</summary>
+      <div class="body">
+        <ul>
+          <li>ログイン成功／失敗、管理操作、権限変更をログに記録しているか？</li>
+          <li>ログに機密情報（パスワード、カード番号）が含まれていないか？</li>
+          <li>ログはタイムスタンプ、ユーザーID、IP などの基本情報を含むか？</li>
+          <li>ログは集約され、1か所で検索できるか？</li>
+          <li>ログの保持期間は十分か？（最低6か月〜1年）</li>
+          <li>ログの改ざん・削除を防ぐ仕組みはあるか？</li>
+          <li>異常検知のアラートを設定しているか？</li>
+          <li>アラートが誰にどう届くか決まっているか？</li>
+          <li>インシデント対応の手順書があるか？</li>
+          <li>時刻同期（NTP）が設定されているか？</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- ============ SSRF ============ -->
+    <h2 id="sec-3"><span class="num">3.</span>サーバーサイドリクエストフォージェリ・SSRF（A10:2021 ／ A01:2025 に統合）</h2>
+    <h3 id="sec-3-1">3.1 どんな問題か</h3>
+    <p><strong>SSRF</strong>（Server-Side Request Forgery）は、<strong>攻撃者がサーバーに好きな宛先へリクエストを送らせ、本来は外から届かない内部ネットワークを攻撃する</strong> 脆弱性です。「forgery」は「偽造」の意味で、<strong>サーバーを踏み台にする</strong> イメージです。</p>
+    <p>会社にたとえると、社外の人は金庫室に入れませんが、受付係は社員なので入れます。受付係が「この書類を取ってきて」という依頼を、中身を確かめずに何でも引き受けてしまうと、社外の人でも金庫室の書類を手に入れられます。SSRF のサーバーは、この受付係にあたります。クラウド環境で特に深刻な被害を出すため、2021年版で新設されました。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="SSRF の仕組み">
+      <defs><marker id="arw46b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="10" y="110" width="130" height="70" rx="8" class="d-box-bad"/>
+      <text x="75" y="140" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="75" y="162" text-anchor="middle" class="d-text-sub">インターネット</text>
+      <rect x="250" y="20" width="460" height="260" rx="10" class="d-box"/>
+      <text x="480" y="44" text-anchor="middle" class="d-text-sub">内部ネットワーク（外からは直接届かない）</text>
+      <rect x="270" y="110" width="150" height="70" rx="8" class="d-box-warn"/>
+      <text x="345" y="140" text-anchor="middle" class="d-text-bold">Webサーバー</text>
+      <text x="345" y="162" text-anchor="middle" class="d-text-sub">画像URL取得機能</text>
+      <rect x="520" y="60" width="175" height="50" rx="8" class="d-box"/>
+      <text x="607" y="90" text-anchor="middle" class="d-text">メタデータ 169.254…</text>
+      <rect x="520" y="125" width="175" height="50" rx="8" class="d-box"/>
+      <text x="607" y="155" text-anchor="middle" class="d-text">社内DB 10.0.0.5</text>
+      <rect x="520" y="190" width="175" height="50" rx="8" class="d-box"/>
+      <text x="607" y="220" text-anchor="middle" class="d-text">localhost の Redis</text>
+      <line x1="140" y1="135" x2="266" y2="135" class="d-line" marker-end="url(#arw46b)"/>
+      <text x="200" y="104" text-anchor="middle" class="d-text-sub">① 内部URLを</text>
+      <text x="200" y="122" text-anchor="middle" class="d-text-sub">指定して依頼</text>
+      <line x1="420" y1="135" x2="516" y2="88" class="d-line" marker-end="url(#arw46b)"/>
+      <line x1="420" y1="145" x2="516" y2="150" class="d-line" marker-end="url(#arw46b)"/>
+      <line x1="420" y1="155" x2="516" y2="212" class="d-line" marker-end="url(#arw46b)"/>
+      <text x="470" y="270" text-anchor="middle" class="d-text-sub">② サーバーが代わりに内部へアクセス</text>
+      <line x1="266" y1="160" x2="140" y2="160" class="d-line-dash" marker-end="url(#arw46b)"/>
+      <text x="200" y="190" text-anchor="middle" class="d-text-sub">③ 結果が</text>
+      <text x="200" y="208" text-anchor="middle" class="d-text-sub">返ってくる</text>
+    </svg>
+    <figcaption>図：攻撃者はサーバーを「踏み台」にして、外から届かない内部の宛先にアクセスする</figcaption>
+    </figure>
+    <ul>
+      <li>画像 URL の入力欄に <code>http://169.254.169.254/...</code> と入れられ、AWS の認証情報を盗まれる（Capital One 事件）</li>
+      <li>社内ネットワークの非公開 DB（<code>http://10.0.0.5:5432</code>）をサーバー経由で攻撃される</li>
+      <li>外部に公開していない Kubernetes 管理 API を叩かれる</li>
+      <li>同じサーバー上の <code>http://localhost:6379/</code>（Redis）に不正なコマンドを送り込まれる</li>
+    </ul>
+
+    <h3 id="sec-3-2">3.2 現実に起きた事件：Capital One（2019年）</h3>
+    <p>米国の大手銀行 Capital One で <strong>1億人分</strong> の個人情報が漏洩しました。SSRF の脆弱性を突かれ、AWS EC2 の <strong>メタデータサービス</strong>（169.254.169.254。サーバー自身の情報や一時的な認証情報を取り出せる内部用の窓口）から IAM 認証情報を盗まれたのが原因です。攻撃者はその認証情報で S3 バケットから個人情報を持ち出しました。</p>
+
+    <h3 id="sec-3-3">3.3 なぜ起きるのか</h3>
+    <p>アプリが <strong>ユーザーが入力した URL に対してサーバーからリクエストを送る</strong> 機能を持つと、SSRF のリスクが生まれます。</p>
+    <div class="grid c3">
+      <div class="card"><p>画像 URL からのアップロード</p></div>
+      <div class="card"><p>PDF 出力（指定 URL のページを変換）</p></div>
+      <div class="card"><p>Webhook（指定 URL に通知を送る）</p></div>
+      <div class="card"><p>OGP 取得（リンクカードのプレビュー）</p></div>
+      <div class="card"><p>プロキシ機能</p></div>
+      <div class="card"><p>RSS / Atom フィードの取得</p></div>
+    </div>
+    <span class="code-label bad">✕ 危険：ユーザーが指定した URL にそのままリクエスト</span>
+    <pre><code>app.post('/fetch-image', async (req, res) =&gt; {
+  const response = await fetch(req.body.url); // ← SSRFポイント
+  const buffer = await response.buffer();
+  // 保存処理...
+});</code></pre>
+
+    <h3 id="sec-3-4">3.4 攻撃者が狙う宛先</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>宛先</th><th>例</th><th>何が起きるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>クラウドのメタデータ</strong></td><td>AWS：<code>http://169.254.169.254/latest/meta-data/</code><br>GCP：<code>http://metadata.google.internal/</code><br>Azure：<code>http://169.254.169.254/metadata/instance?api-version=...</code></td><td>IAM ロールの一時認証情報が盗まれ、クラウド環境全体が攻撃対象に</td></tr>
+        <tr><td><strong>内部ネットワーク</strong></td><td><code>10.0.0.0/8</code>、<code>172.16.0.0/12</code>、<code>192.168.0.0/16</code> などのプライベート IP</td><td>社内の DB・管理コンソール・API に到達される</td></tr>
+        <tr><td><strong>ローカルホスト</strong></td><td><code>127.0.0.1</code> / <code>localhost</code></td><td>同じホストの Redis・Memcached・Elasticsearch や、認証なしの内部管理エンドポイントを操作される</td></tr>
+        <tr><td><strong>内部 DNS 名</strong></td><td><code>http://internal-wiki</code>、<code>http://jenkins.corp</code></td><td>社内向けのサービスに到達される</td></tr>
+      </tbody>
+    </table></div>
+    <p>AWS では <strong>IMDSv2</strong>（メタデータへのアクセスに事前のトークン取得を必須にする新方式）を使うと、単純な SSRF ではメタデータを読めなくなります。</p>
+
+    <h3 id="sec-3-5">3.5 「内部 IP を禁止すればいい」が通用しない理由</h3>
+    <p>攻撃者はさまざまな方法で、単純な禁止リストをすり抜けます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>回避テクニック</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>別表記の IP</strong></td><td><code>http://127.0.0.1</code> を <code>http://0</code>、<code>http://127.1</code>、<code>http://2130706433</code>（10進数表記）、<code>http://0x7f.0.0.1</code>（16進数）と書き換える</td></tr>
+        <tr><td><strong>DNS リバインディング</strong></td><td>最初の名前解決では外部の IP を返して検査を通し、実際のリクエスト時には内部の IP を返す</td></tr>
+        <tr><td><strong>リダイレクトの悪用</strong></td><td>許可された外部 URL から <code>Location: http://169.254.169.254/</code> へ転送させる</td></tr>
+        <tr><td><strong>URL 解析の差</strong></td><td><code>http://evil.com#@169.254.169.254/</code> のような URL で、チェックする部品と実際に通信する部品の解釈の違いを突く</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-6">3.6 悪い例と良い例</h3>
+    <span class="code-label bad">✕ 危険：素朴な禁止リスト（ブラックリスト）</span>
+    <pre><code>const url = req.body.url;
+if (url.includes('localhost') || url.includes('127.0.0.1')) {
+  throw new Error('Forbidden');
+}
+await fetch(url); // ← 回避テクニックで突破される</code></pre>
+    <span class="code-label good">○ 安全1：許可リスト（ホワイトリスト）で宛先を絞る</span>
+    <pre><code>const ALLOWED_HOSTS = ['cdn.example.com', 'images.example.com'];
+
+function isAllowed(urlStr) {
+  try {
+    const url = new URL(urlStr);
+    if (url.protocol !== 'https:') return false;
+    return ALLOWED_HOSTS.includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+if (!isAllowed(req.body.url)) throw new Error('Forbidden');
+await fetch(req.body.url);</code></pre>
+    <p>「ダメなものを並べる」のではなく「<strong>良いものだけを並べる</strong>」ので、知らない書き方で来ても通りません。最も堅牢な方法です。</p>
+    <span class="code-label good">○ 安全2：任意の外部 URL を受けるなら、名前解決後の IP を確認する</span>
+    <pre><code>import dns from 'dns/promises';
+import ipaddr from 'ipaddr.js';
+
+async function assertPublicIp(hostname) {
+  const addrs = await dns.lookup(hostname, { all: true });
+  for (const { address } of addrs) {
+    const parsed = ipaddr.parse(address);
+    const range = parsed.range();
+    // private, loopback, linkLocal, multicast, reserved をブロック
+    if (['private', 'loopback', 'linkLocal', 'reserved', 'multicast'].includes(range)) {
+      throw new Error('Forbidden: non-public IP');
+    }
+  }
+}</code></pre>
+    <p>ただし DNS リバインディング対策として、<strong>確認した IP に直接接続する</strong>（Host ヘッダーだけ設定する）のが理想です。</p>
+    <p><strong>安全3：ネットワーク層で隔離する</strong></p>
+    <ul>
+      <li>外向きリクエストを送るサーバーを <strong>独立した VPC / サブネット</strong> に置く</li>
+      <li>メタデータの宛先（169.254.169.254）を iptables / NACL（通信を許可・拒否するルール）でブロック</li>
+      <li>外向き通信は <strong>egress プロキシ</strong>（外へ出る通信を必ず通す中継サーバー）経由にし、そこで許可リスト制御</li>
+    </ul>
+
+    <h4>取得した内容をそのまま返さない</h4>
+    <span class="code-label bad">✕ 取得内容をそのまま返すと、内部サーバーの応答が漏れる</span>
+    <pre><code>res.send(await response.text());</code></pre>
+    <span class="code-label good">○ 形式を決めて、必要な情報だけ返す</span>
+    <pre><code>const image = await response.buffer();
+if (!isValidImage(image)) return res.status(400).send();
+await storeImage(image);
+res.json({ ok: true });</code></pre>
+
+    <h4>タイムアウト・サイズ・リダイレクトを制限する</h4>
+    <span class="code-label good">○ 5秒で打ち切り、リダイレクトは禁止</span>
+    <pre><code>const controller = new AbortController();
+setTimeout(() =&gt; controller.abort(), 5000);
+
+await fetch(url, {
+  signal: controller.signal,
+  redirect: 'error', // リダイレクト禁止
+});</code></pre>
+    <p>タイムアウトは5〜10秒程度に設定し、応答サイズにも上限を設けます。</p>
+
+    <h3 id="sec-3-7">3.7 防御の原則</h3>
+    <ol class="steps">
+      <li><strong>必要性を疑う</strong>：「ユーザー指定の URL にサーバーからアクセスする」機能は本当に必要か？ ブラウザ側で取得するなどの代替案はないか？</li>
+      <li><strong>許可リストを優先する</strong>：禁止リストは漏れが出やすい。許可したドメインだけに絞る。</li>
+      <li><strong>ネットワーク層でも多重に防ぐ</strong>：アプリでの検査に加え、ファイアウォール・セキュリティグループでも内部へのアクセスを禁止する（<a href="20-2_深層防御.html">深層防御</a>）。</li>
+      <li><strong>クラウドのメタデータを守る</strong>：AWS は IMDSv2 を強制（IMDSv1 を無効化）、GKE は Workload Identity でメタデータサーバーへの直接アクセスを制限、ネットワーク層で 169.254.169.254 をブロック。</li>
+      <li><strong>応答をそのまま返さない</strong>：内部情報の漏れ道を減らす。</li>
+      <li><strong>タイムアウト・サイズ上限・リダイレクト制限</strong> を設定する。</li>
+    </ol>
+
+    <details>
+      <summary>SSRF 対策のチェックリスト</summary>
+      <div class="body">
+        <ul>
+          <li>ユーザー指定の URL へリクエストを送る機能があるか把握しているか？</li>
+          <li>許可リスト方式で対象ドメインを絞っているか？</li>
+          <li>プライベート IP（RFC 1918）やループバックへのアクセスを禁止しているか？</li>
+          <li>AWS なら IMDSv2 を強制しているか？</li>
+          <li>外向き通信をネットワーク層でも制限しているか？</li>
+          <li>タイムアウト、サイズ上限、リダイレクト制限を設定しているか？</li>
+          <li>取得したレスポンスをそのままユーザーに返していないか？</li>
+          <li>エラーメッセージから内部情報が漏れていないか？</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- ============ A10:2025 ============ -->
+    <h2 id="sec-4"><span class="num">4.</span>例外的状況の不適切な処理（A10:2025 新設）</h2>
+    <h3 id="sec-4-1">4.1 どんな問題か</h3>
+    <p><strong>例外的状況</strong> とは、「想定どおりに進まない状況」すべてのことです。</p>
+    <ul>
+      <li>入力が欠けている・多すぎる・形式が違う</li>
+      <li>DB や外部 API がタイムアウトする、エラーを返す</li>
+      <li>メモリ・ディスク・接続数が足りない</li>
+      <li>権限が足りない、トークンの期限が切れている</li>
+      <li>処理の途中でネットワークが切れる</li>
+    </ul>
+    <p>OWASP は、ソフトウェアがこうした状況を <strong>① 防げない</strong>（起こさない工夫がない）、<strong>② 検知できない</strong>（起きていることに気づかない）、<strong>③ 適切に対応できない</strong>（起きた後の振る舞いがまずい）のいずれかに当てはまるとき、「例外的状況を不適切に処理している」と定義しています。</p>
+    <div class="callout key"><p>アプリケーションが「次に何をすべきか分からない」状態になったら、それは例外的状況の処理に失敗している（OWASP）</p></div>
+
+    <h3 id="sec-4-2">4.2 具体例でイメージする</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>決済処理が途中で止まる</h4>
+        <p>① 残高を減らす → ② 相手の残高を増やす → ③ 取引ログを書く</p>
+        <p>②でネットワークエラー → ①だけ確定したまま。<strong>お金が消える</strong>、あるいはリトライで②が2回走って <strong>二重送金</strong>。</p>
+      </div>
+      <div class="card">
+        <h4>認可チェックがタイムアウト</h4>
+        <p>外部の権限サービスに問い合わせ → タイムアウト → catch して何もせず処理を続行。</p>
+        <p><strong>誰でも管理機能が使えてしまう</strong>（フェイルオープン）。</p>
+      </div>
+    </div>
+    <p><strong>フェイルオープン</strong> とは「失敗したときに通してしまう」こと、<strong>フェイルクローズ</strong> とは「失敗したときは拒否する（安全側に倒す）」ことです。停電時の自動ドアにたとえると、フェイルオープンは「開きっぱなしになる」、フェイルクローズは「閉じたままになる」です。</p>
+    <figure>
+    <svg viewBox="0 0 720 280" role="img" aria-label="フェイルオープンとフェイルクローズの比較">
+      <defs><marker id="arw46c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="260" y="20" width="200" height="50" rx="8" class="d-box-accent"/>
+      <text x="360" y="50" text-anchor="middle" class="d-text-bold">権限サービスに問い合わせ</text>
+      <line x1="360" y1="70" x2="360" y2="96" class="d-line" marker-end="url(#arw46c)"/>
+      <rect x="260" y="100" width="200" height="50" rx="8" class="d-box-warn"/>
+      <text x="360" y="130" text-anchor="middle" class="d-text-bold">タイムアウト・エラー</text>
+      <line x1="300" y1="150" x2="170" y2="186" class="d-line" marker-end="url(#arw46c)"/>
+      <line x1="420" y1="150" x2="550" y2="186" class="d-line" marker-end="url(#arw46c)"/>
+      <rect x="40" y="190" width="260" height="70" rx="8" class="d-box-bad"/>
+      <text x="170" y="218" text-anchor="middle" class="d-text-bold">フェイルオープン：許可</text>
+      <text x="170" y="242" text-anchor="middle" class="d-text-sub">障害時に誰でも管理者になれる</text>
+      <rect x="420" y="190" width="260" height="70" rx="8" class="d-box-good"/>
+      <text x="550" y="218" text-anchor="middle" class="d-text-bold">フェイルクローズ：拒否</text>
+      <text x="550" y="242" text-anchor="middle" class="d-text-sub">不便になるが、守りは崩れない</text>
+    </svg>
+    <figcaption>図：判断できないときにどちらへ倒すか。認証・認可・決済は原則フェイルクローズ</figcaption>
+    </figure>
+
+    <h3 id="sec-4-3">4.3 数字で見る A10:2025</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指標</th><th>値</th></tr></thead>
+      <tbody>
+        <tr><td>対応する CWE の数</td><td>24</td></tr>
+        <tr><td>最大発生率 ／ 平均発生率</td><td>20.67% ／ 2.95%</td></tr>
+        <tr><td>平均カバー率</td><td>37.95%</td></tr>
+        <tr><td>平均悪用容易性スコア ／ 平均影響スコア</td><td>7.11 ／ 3.81</td></tr>
+        <tr><td>検出件数 ／ 関連 CVE 数</td><td>769,581件 ／ 3,416件</td></tr>
+      </tbody>
+    </table></div>
+    <p>これまで「コード品質の問題」として広いカテゴリに埋もれていたものを独立させ、<strong>具体的な対策の指針を示す</strong> ために作られました。</p>
+
+    <h3 id="sec-4-4">4.4 なぜ起きるのか</h3>
+    <ol class="steps">
+      <li><strong>正常系しか考えていない</strong>：開発やテストは「うまくいく場合」中心になりがち。異常系は「とりあえず catch しておく」で済まされ、<strong>catch した後に何をするか</strong> が設計されていない。</li>
+      <li><strong>エラー処理が遠くで、まとめて行われる</strong>：起きた場所ではなく、ずっと上の層で「何かエラーが起きた」としか分からない形で処理されると、適切に回復できない。</li>
+      <li><strong>やり方がバラバラ</strong>：あるモジュールは例外を投げ、あるものは <code>null</code> を返し、あるものはエラーコードを返す。呼び出し側がチェックを忘れる余地が生まれる。</li>
+      <li><strong>環境の異常を想定していない</strong>：メモリ不足、ディスクフル、権限不足、DNS 障害、時刻のずれ。本番で初めて起きることが多い。</li>
+      <li><strong>攻撃者は異常系を「わざと」突く</strong>：パラメータを抜く・増やす・巨大にする・同時に大量に送る。<strong>エラーを起こさせること自体が攻撃の手段</strong>。</li>
+    </ol>
+
+    <h3 id="sec-4-5">4.5 起こりうる被害</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>被害</th><th>例</th><th>CIA</th></tr></thead>
+      <tbody>
+        <tr><td>情報漏洩</td><td>スタックトレースや SQL エラーが画面に出て、DB の構造やライブラリのバージョンが分かる</td><td>機密性</td></tr>
+        <tr><td>認証・認可の迂回</td><td>権限チェック中の例外を握りつぶし、処理を続行（フェイルオープン）</td><td>機密性・完全性</td></tr>
+        <tr><td>状態の不整合</td><td>複数ステップの処理が途中で止まり、二重送金・在庫のマイナス・不正な取引</td><td>完全性</td></tr>
+        <tr><td>レースコンディション</td><td>例外処理中のロック解放漏れ、チェックと実行の間の割り込み</td><td>完全性</td></tr>
+        <tr><td>サービス停止</td><td>失敗時にリソース（ファイル・接続・メモリ）を解放せず、枯渇する</td><td>可用性</td></tr>
+        <tr><td>クラッシュ</td><td>NULL 参照、ゼロ除算、捕捉されない例外でプロセスが落ちる</td><td>可用性</td></tr>
+      </tbody>
+    </table></div>
+    <p>CIA（機密性・完全性・可用性）のすべてに影響しうるのが、この項目の特徴です（<a href="10-1_CIA三原則と脅威・脆弱性・リスク.html">CIA三原則</a>）。</p>
+
+    <details>
+      <summary>主な CWE の一覧（全24個のうち代表的なもの）</summary>
+      <div class="body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>CWE</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td><strong>CWE-209</strong></td><td>機密情報を含むエラーメッセージ</td></tr>
+            <tr><td>CWE-215</td><td>デバッグ用コードへの機密情報の混入</td></tr>
+            <tr><td><strong>CWE-234</strong></td><td>パラメータの欠落を処理していない</td></tr>
+            <tr><td>CWE-235</td><td>余分なパラメータを適切に処理していない</td></tr>
+            <tr><td>CWE-248</td><td>捕捉されない例外</td></tr>
+            <tr><td>CWE-252</td><td>戻り値をチェックしていない</td></tr>
+            <tr><td><strong>CWE-274</strong></td><td>権限不足の状況を適切に処理していない</td></tr>
+            <tr><td>CWE-280</td><td>権限・許可不足の状況を適切に処理していない</td></tr>
+            <tr><td>CWE-369</td><td>ゼロ除算</td></tr>
+            <tr><td>CWE-390 / 391</td><td>エラーを検出したが何もしない／エラー状態をチェックしない</td></tr>
+            <tr><td>CWE-394</td><td>想定外のステータスコード・戻り値</td></tr>
+            <tr><td>CWE-396 / 397</td><td>汎用的な例外の catch ／ throw</td></tr>
+            <tr><td>CWE-460</td><td>例外発生後の後始末が不適切</td></tr>
+            <tr><td><strong>CWE-476</strong></td><td>NULL ポインタ参照</td></tr>
+            <tr><td>CWE-478 / 484</td><td>多分岐での default の欠落／switch の break 漏れ</td></tr>
+            <tr><td>CWE-550</td><td>サーバーが生成したエラーメッセージに機密情報</td></tr>
+            <tr><td><strong>CWE-636</strong></td><td>安全に失敗しない（<strong>フェイルオープン</strong>）</td></tr>
+            <tr><td>CWE-703 / 754 / 755</td><td>例外的状況のチェック・処理が不適切（総称）</td></tr>
+            <tr><td>CWE-756</td><td>カスタムエラーページがない</td></tr>
+          </tbody>
+        </table></div>
+        <p>太字は OWASP が「注目すべき CWE」として挙げているもの。</p>
+      </div>
+    </details>
+
+    <h3 id="sec-4-6">4.6 攻撃シナリオ（OWASP の例）</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>① リソース枯渇による DoS</h4>
+        <p>アップロード中の例外は catch しているが、<strong>リソースを解放していない</strong>。失敗するアップロードを繰り返されると、ファイルハンドルや一時領域が溜まり、やがてサービス全体が止まる。</p>
+      </div>
+      <div class="card">
+        <h4>② エラーメッセージからの情報収集</h4>
+        <p>DB エラーがそのまま表示される。攻撃者はわざとエラーを起こし、テーブル名・カラム名・DBMS の種類を集め、精度の高い SQL インジェクションを組み立てる（<a href="40-3_インジェクションと暗号化の不備.html">インジェクション</a>）。</p>
+      </div>
+      <div class="card">
+        <h4>③ 金融取引の状態破壊</h4>
+        <p>「引き落とし → 入金 → ログ記録」の送金を、通信妨害で途中で止める。全体をロールバックしないと、資金が抜かれたり、<strong>同じ送金が複数回実行</strong> されたりする。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-4-7">4.7 悪い例と良い例</h3>
+    <h4>例1：認可チェックのフェイルオープン</h4>
+    <span class="code-label bad">✕ 危険：障害時に「許可」を返す</span>
+    <pre><code>async function canAccessAdmin(userId: string): Promise&lt;boolean&gt; {
+  try {
+    const res = await authzService.check(userId, "admin");
+    return res.allowed;
+  } catch (e) {
+    // 権限サービスが落ちていても業務を止めたくない…
+    return true; // ← 障害時に誰でも管理者になれる
+  }
+}</code></pre>
+    <span class="code-label good">○ 安全：フェイルクローズ（判断できないときは拒否）</span>
+    <pre><code>async function canAccessAdmin(userId: string): Promise&lt;boolean&gt; {
+  try {
+    const res = await authzService.check(userId, "admin");
+    return res.allowed === true; // 想定外の値（undefined など）も拒否
+  } catch (e) {
+    logger.error({ event: "authz_check_failed", userId, err: String(e) });
+    return false; // 判断できないときは拒否する
+  }
+}</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">「通す」判断は明示的に</p>
+      <p>可用性を優先して通す判断が必要な機能もありますが、それは <strong>リスク評価のうえで明示的に決める</strong> ことです（<a href="10-4_リスク管理とリスクアセスメント.html">リスク管理とリスクアセスメント</a>）。<strong>認証・認可・決済は原則フェイルクローズ</strong>。</p>
+    </div>
+
+    <h4>例2：詳細なエラーをそのまま返す</h4>
+    <span class="code-label bad">✕ 危険：エラー内容とスタックトレースを利用者に返す</span>
+    <pre><code>app.get("/orders/:id", async (req, res) =&gt; {
+  try {
+    res.json(await db.query(`SELECT * FROM orders WHERE id = $1`, [req.params.id]));
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, stack: e.stack }); // ← 内部情報が漏れる
+  }
+});</code></pre>
+    <span class="code-label good">○ 安全：利用者には一般的なメッセージとエラーID、詳細はログへ</span>
+    <pre><code>app.get("/orders/:id", async (req, res, next) =&gt; {
+  try {
+    const order = await orderRepo.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "not_found" });
+    res.json(order);
+  } catch (e) {
+    next(e); // 処理はグローバルハンドラに集約
+  }
+});
+
+// グローバル例外ハンドラ（最後の安全網）
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) =&gt; {
+  const errorId = crypto.randomUUID();
+  logger.error({ errorId, path: req.path, err }); // 詳細はサーバー側だけに残す
+  res.status(500).json({ error: "internal_error", errorId }); // 問い合わせ用のIDだけ返す
+});</code></pre>
+    <p>エラーID を返しておけば、利用者から「このIDでエラーが出た」と問い合わせを受けたとき、ログから詳細をすぐに探せます。</p>
+
+    <h4>例3：途中で失敗すると中途半端な状態が残る</h4>
+    <span class="code-label bad">✕ 危険：3つの更新がバラバラに確定する</span>
+    <pre><code>await db.query("UPDATE accounts SET balance = balance - $1 WHERE id = $2", [amount, from]);
+await db.query("UPDATE accounts SET balance = balance + $1 WHERE id = $2", [amount, to]); // ← ここで失敗したら？
+await db.query("INSERT INTO transfers ...");</code></pre>
+    <span class="code-label good">○ 安全：トランザクションで全体を戻す＋冪等性キー</span>
+    <pre><code>async function transfer(idempotencyKey: string, from: string, to: string, amount: number) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // 同じキーの送金が既にあれば何もしない（リトライによる二重実行を防ぐ）
+    const dup = await client.query("SELECT 1 FROM transfers WHERE idempotency_key = $1", [idempotencyKey]);
+    if (dup.rowCount) { await client.query("ROLLBACK"); return; }
+
+    const r = await client.query(
+      "UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND balance &gt;= $1",
+      [amount, from],
+    );
+    if (r.rowCount !== 1) throw new Error("insufficient_funds"); // 戻り値を必ず確認
+    await client.query("UPDATE accounts SET balance = balance + $1 WHERE id = $2", [amount, to]);
+    await client.query("INSERT INTO transfers (idempotency_key, from_id, to_id, amount) VALUES ($1,$2,$3,$4)",
+      [idempotencyKey, from, to, amount]);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK"); // 部分的な成功を残さない
+    throw e;
+  } finally {
+    client.release(); // 成功しても失敗しても必ず解放
+  }
+}</code></pre>
+    <ul>
+      <li><strong>トランザクション</strong>：複数の更新を「全部成功」か「全部なかったこと」のどちらかにする仕組み。途中で失敗したら <code>ROLLBACK</code> で最初の状態に戻す</li>
+      <li><strong>冪等性（べきとうせい）キー</strong>：同じ操作を何回送っても結果が1回分になるようにする目印。通信エラーでリトライしても二重送金にならない</li>
+      <li><code>finally</code> で、成功しても失敗しても接続を必ず解放する（リソース枯渇の防止）</li>
+    </ul>
+
+    <h4>例4：例外の握りつぶし</h4>
+    <span class="code-label bad">✕ 危険：検証に失敗しても先に進む（CWE-390、CWE-396）</span>
+    <pre><code>try:
+    verify_signature(payload, sig)
+except Exception:
+    pass  # ← 検証に失敗しても先に進む
+process(payload)</code></pre>
+    <span class="code-label good">○ 安全：想定する例外だけを捕まえ、それ以外は上に投げる</span>
+    <pre><code>try:
+    verify_signature(payload, sig)
+except InvalidSignature:
+    log.warning("invalid_signature", extra={"source": src})
+    raise HTTPException(status_code=400)
+# 想定外の例外は catch しない → グローバルハンドラで 500 + ログ
+process(payload)</code></pre>
+
+    <h3 id="sec-4-8">4.8 防御のアプローチ（OWASP の推奨）</h3>
+    <ol class="steps">
+      <li><strong>失敗を前提に設計する</strong>：設計段階で「この処理が失敗したらどうなるか」を書き出す（<a href="20-4_セキュアバイデザイン.html">セキュアバイデザイン</a>）。脅威モデリングでも異常系を扱う。<a href="30-2_STRIDE.html">STRIDE</a> の「サービス拒否」「改ざん」は異常系から生まれることが多い。</li>
+      <li><strong>エラーは起きた場所で処理する</strong>：発生した場所で捕まえ、意味のある回復（リトライ、代替処理、ロールバック、拒否）を行う。回復できないなら、文脈を付けて上に投げる。</li>
+      <li><strong>グローバル例外ハンドラを最後の安全網に</strong>：取りこぼした例外を必ず捕まえ、プロセスを未知の状態で走らせ続けない。利用者には一般的なメッセージとエラーID、詳細はログへ。</li>
+      <li><strong>フェイルクローズ</strong>：判断できないときは拒否。複数ステップの処理は全体をロールバックしてやり直す。部分的な状態から回復しようとしない。</li>
+      <li><strong>リソースに上限を設ける</strong>：レート制限・クォータ・スロットリング・タイムアウト・サイズ上限で、例外的状況そのものを起こしにくくする。<code>finally</code> や <code>using</code> / <code>with</code> / <code>defer</code> で、成功・失敗にかかわらずリソースを解放する。</li>
+      <li><strong>入力を厳密に検証する</strong>：欠けた・余分な・型違い・範囲外のパラメータを入口で弾く（スキーマバリデーション）。受け入れる必要がある危険な文字は、適切にエスケープ・無害化する。</li>
+      <li><strong>エラー処理・ログ・監視・アラートを一元化する</strong>：やり方を1つに統一する。<strong>同じエラーが急増したら攻撃の兆候</strong>。大量に出る同じエラーは件数と期間を集計して記録し、ログが溢れて監視が機能しなくなるのを防ぐ（2章のログとアラートにつながる）。</li>
+      <li><strong>組織として標準化し、検証する</strong>：コードレビュー・静的解析（握りつぶし、戻り値の未チェック、汎用例外の catch を検出）、負荷テスト・カオスエンジニアリング・ペネトレーションテストで異常系を実際に起こしてみる。</li>
+    </ol>
+
+    <h3 id="sec-4-9">4.9 言語・フレームワークごとの注意</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>環境</th><th>注意点</th></tr></thead>
+      <tbody>
+        <tr><td>JavaScript / Node.js</td><td><code>await</code> 忘れや <code>.catch</code> なしの Promise で、処理されない reject が起きる。<code>unhandledRejection</code> を監視し、Express では非同期エラーを <code>next(err)</code> に渡す</td></tr>
+        <tr><td>Go</td><td><code>err</code> の無視（<code>_ =</code>）。<code>errcheck</code> などのリンターで検出</td></tr>
+        <tr><td>Java / C#</td><td><code>catch (Exception e) {}</code> の握りつぶし。try-with-resources / <code>using</code> でリソースを解放</td></tr>
+        <tr><td>Python</td><td>素の <code>except:</code> は <code>KeyboardInterrupt</code> まで捕まえる。具体的な例外クラスを指定する</td></tr>
+        <tr><td>C / C++</td><td>NULL 参照、戻り値の未チェック、メモリの解放漏れ。メモリ安全な言語の採用も検討</td></tr>
+        <tr><td>Web フレームワーク</td><td>本番でデバッグモード・詳細エラーページを無効化（<a href="40-4_安全でない設計・設定ミス・古い部品.html#sec-3">設定ミス</a>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <details>
+      <summary>例外処理のチェックリスト</summary>
+      <div class="body">
+        <ul>
+          <li>認証・認可・決済などの判断処理は、エラー時に <strong>拒否（フェイルクローズ）</strong> しているか？</li>
+          <li>利用者に返すエラーにスタックトレース・SQL・内部パスが含まれていないか？</li>
+          <li>グローバル例外ハンドラが設定されているか？</li>
+          <li>空の catch や、汎用例外の握りつぶしがないか？</li>
+          <li>関数の戻り値・更新件数をチェックしているか？</li>
+          <li>複数ステップの処理はトランザクションで全体をロールバックできるか？ リトライは冪等か？</li>
+          <li>失敗時もファイル・接続・ロックを確実に解放しているか？</li>
+          <li>タイムアウト・レート制限・サイズ上限が設定されているか？</li>
+          <li>欠けた／余分なパラメータを入口で検証しているか？</li>
+          <li>エラーの急増を検知してアラートを出せるか？</li>
+          <li>本番でデバッグモードが無効になっているか？</li>
+        </ul>
+      </div>
+    </details>
+
+    <h2 id="sec-5"><span class="num">5.</span>よくある誤解</h2>
+    <details>
+      <summary>「ログは全部出しておけば安心」</summary>
+      <div class="body">
+        <p><strong>逆効果になることがあります。</strong> リクエスト全体を書き出すとパスワードやトークンまで残り、ログ自体が漏洩の対象になります。また、量が多すぎると本当に大事な出来事が埋もれます。記録すべき出来事と項目を決め、機密項目は伏せ、同じエラーの大量発生は集計して記録します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「WAF や IDS を入れているから、不正アクセスには気づける」</summary>
+      <div class="body">
+        <p><strong>限りません。</strong> 2026年のアフラック生命の事例のように、正規の ID・正規の API で1件ずつ取得されると「怪しいリクエスト」には見えません。1ユーザーあたりの取得件数など <strong>業務的にありえない量</strong> を監視し、性能の異常もセキュリティのシグナルとして扱います。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「<code>localhost</code> と <code>127.0.0.1</code> を禁止すれば SSRF は防げる」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> <code>http://127.1</code> や10進数・16進数表記、DNS リバインディング、リダイレクトなどで簡単に回避されます。<strong>許可リスト</strong> で宛先を絞り、名前解決後の IP の確認・ネットワーク層の遮断・IMDSv2 を組み合わせます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「例外は全部 catch しておけば、落ちないから安全」</summary>
+      <div class="body">
+        <p><strong>危険です。</strong> 何でも捕まえて何もしない（握りつぶす）と、署名検証や権限チェックに失敗しても処理が先に進んでしまいます。<strong>想定した例外だけ</strong> を捕まえて適切に対応し、それ以外はグローバルハンドラで安全に止めます。「落ちない」ことより「安全な状態で止まる」ことが大事です。</p>
+      </div>
+    </details>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>ログとアラートの不備</strong>（2021 A09 ／ 2025 A09）：完璧な防御はないので、<strong>構造化・集約・保持・改ざん耐性</strong> のあるログを取り、<strong>検知 → アラート → 対応</strong> までつなげる。機密情報はログに出さない</li>
+        <li>正規の操作に見える攻撃には、<strong>業務的にありえない量</strong>（取得件数・エクスポート量）を監視して上限と自動遮断を設ける</li>
+        <li><strong>SSRF</strong>（2021 A10 ／ 2025 A01 に統合）：サーバーを踏み台に内部を狙う。狙い目は <strong>クラウドのメタデータ</strong>。<strong>許可リスト＋名前解決後の IP 確認＋ネットワーク層の遮断＋IMDSv2</strong> で多重に守る</li>
+        <li><strong>例外的状況の不適切な処理</strong>（2025 A10 新設）：失敗を <strong>防ぐ・検知する・適切に対応する</strong> の3段階で考える</li>
+        <li>最重要は <strong>フェイルクローズ</strong>：判断できないときは拒否、途中で失敗したら全体を戻す。詳細なエラーはログへ、利用者には一般的なメッセージとエラーIDだけ</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 2025年版で A09 の名前が「Monitoring」から「Alerting」に変わった。どんなメッセージが込められている？</summary>
+      <div class="body">
+        <p>ログを <strong>記録して眺めるだけでは不十分</strong> で、異常を検知したら <strong>アラートを出し、人が対応に動けること</strong> が重要だ、というメッセージです。アラートが誰にどう届くか、届いた後にどう封じ込めるか（インシデント対応の手順）まで決めておく必要があります。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 画像URLを取り込む機能で <code>fetch(req.body.url)</code> をそのまま実行していた。攻撃者は何を狙い、どう直す？</summary>
+      <div class="body">
+        <p>攻撃者は <code>http://169.254.169.254/...</code> のような <strong>クラウドのメタデータ</strong> や社内 DB、localhost のサービスを指定し、サーバーに代わりにアクセスさせます（SSRF）。Capital One 事件ではこれで IAM 認証情報が盗まれました。直し方は、<strong>許可したドメインだけを https で受け付ける許可リスト</strong> を基本に、名前解決後の IP 確認、リダイレクト禁止・タイムアウト、ネットワーク層での遮断、IMDSv2 の強制を組み合わせます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 権限サービスがタイムアウトしたとき <code>return true</code> するコードがあった。何が問題で、どう直す？</summary>
+      <div class="body">
+        <p><strong>フェイルオープン</strong>（CWE-636）です。権限サービスが落ちている間、誰でも管理機能が使えてしまいます。攻撃者が意図的に権限サービスを過負荷にすれば、管理者になれることにもなります。<code>catch</code> ではログを残して <code>return false</code>（<strong>フェイルクローズ</strong>）にし、成功時も <code>res.allowed === true</code> のように想定外の値を拒否します。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>OWASP Top 10:2025 A10 Mishandling of Exceptional Conditions: <a href="https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/">https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/</a></li>
+      <li>OWASP Top 10:2025: <a href="https://top10.owasp.org/2025/">https://top10.owasp.org/2025/</a></li>
+      <li>OWASP Top 10:2025 Introduction（変更点）: <a href="https://top10.owasp.org/2025/0x00_2025-Introduction/">https://top10.owasp.org/2025/0x00_2025-Introduction/</a></li>
+      <li>OWASP Cheat Sheet: Error Handling / Logging</li>
+      <li>OWASP ASVS 5.0 V16.5 Error Handling</li>
+      <li>OWASP Web Security Testing Guide 4.8.1 Testing for Error Handling</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-5_サプライチェーンと整合性の不備.html"><span class="lbl">← 前のページ</span>サプライチェーンと整合性の不備</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-1_ネットワークと端末の防御.html"><span class="lbl">次のページ →</span>ネットワークと端末の防御</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

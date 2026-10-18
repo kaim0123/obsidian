@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STRIDE｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 脅威モデリング › STRIDE</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 脅威モデリング</span>
+      <h1>STRIDE ― 脅威を6つに分けて漏れなく探す</h1>
+      <p class="lead">「何が問題になり得るか？」を考えるとき、思いつきに頼ると抜けが出ます。STRIDE は脅威を6つの種類に分けたチェックリストで、データフロー図の部品ひとつひとつに当てはめていくことで、脅威を漏れなく洗い出せます。各カテゴリの意味・具体例・対策と、写真投稿アプリ「フォトボックス」への当てはめ方を解説します。</p>
+      <p class="meta">もとにしたノート：71_セキュリティ基礎/30_脅威モデリング/02_STRIDE</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>STRIDE ＝ 脅威の6分類チェックリスト。</strong> なりすまし（S）・改ざん（T）・否認（R）・情報漏洩（I）・サービス妨害（D）・権限昇格（E）の頭文字です。それぞれが「守るべき性質」と1対1で対応しているので、「<strong>何が守れていないと、何が起きるか</strong>」がすっきり整理できます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>STRIDEとは</h2>
+    <p><strong>STRIDE</strong>（ストライド）は、Microsoft が提唱した <strong>脅威を6つのカテゴリに分類する手法</strong> です。脅威モデリングで最も広く使われているフレームワーク（考え方の枠組み）です。</p>
+    <p><a href="30-1_脅威モデリングとデータフロー図.html">前のページ</a> の「4つの問い」のうち、<strong>②何が問題になり得るか？</strong> に答えるための道具にあたります。</p>
+    <div class="callout tip">
+      <p class="callout-title">たとえ：病院の問診票</p>
+      <p>医師は「どこか悪いところは？」と漠然と聞くだけでなく、「熱は？ せきは？ 食欲は？」と決まった項目を順に確認します。そうすれば聞き漏らしがありません。STRIDE はセキュリティ版の問診票で、システムの各部品に「なりすましは？ 改ざんは？ …」と6項目を順に聞いていきます。</p>
+    </div>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>頭文字</th><th>脅威</th><th>守るべき性質</th><th>一言で</th></tr></thead>
+      <tbody>
+        <tr><td><strong>S</strong></td><td><strong>S</strong>poofing（なりすまし）</td><td>Authenticity（真正性）＝本物であること</td><td>他人のふりをする</td></tr>
+        <tr><td><strong>T</strong></td><td><strong>T</strong>ampering（改ざん）</td><td>Integrity（完全性）＝正しく書き換えられていないこと</td><td>データを書き換える</td></tr>
+        <tr><td><strong>R</strong></td><td><strong>R</strong>epudiation（否認）</td><td>Non-repudiation（否認防止）＝後から否定できないこと</td><td>「やってない」と言い逃れる</td></tr>
+        <tr><td><strong>I</strong></td><td><strong>I</strong>nformation Disclosure（情報漏洩）</td><td>Confidentiality（機密性）＝許された人だけが見られること</td><td>見られたくない情報を見る</td></tr>
+        <tr><td><strong>D</strong></td><td><strong>D</strong>enial of Service（サービス妨害）</td><td>Availability（可用性）＝使いたいときに使えること</td><td>サービスを止める</td></tr>
+        <tr><td><strong>E</strong></td><td><strong>E</strong>levation of Privilege（権限昇格）</td><td>Authorization（認可）＝許された操作だけできること</td><td>権限を奪う・引き上げる</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 760 330" role="img" aria-label="STRIDEの6つの脅威と、それぞれが壊す性質の対応">
+      <defs><marker id="b1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="170" y="18" text-anchor="middle" class="d-text-bold">脅威（攻撃者がやること）</text>
+      <text x="590" y="18" text-anchor="middle" class="d-text-bold">守るべき性質（壊されるもの）</text>
+      <rect x="20" y="30" width="300" height="40" rx="8" class="d-box-bad"/>
+      <text x="40" y="56" class="d-text-bold">S　なりすまし</text>
+      <rect x="440" y="30" width="300" height="40" rx="8" class="d-box-good"/>
+      <text x="460" y="56" class="d-text">真正性（認証）</text>
+      <rect x="20" y="80" width="300" height="40" rx="8" class="d-box-bad"/>
+      <text x="40" y="106" class="d-text-bold">T　改ざん</text>
+      <rect x="440" y="80" width="300" height="40" rx="8" class="d-box-good"/>
+      <text x="460" y="106" class="d-text">完全性</text>
+      <rect x="20" y="130" width="300" height="40" rx="8" class="d-box-bad"/>
+      <text x="40" y="156" class="d-text-bold">R　否認</text>
+      <rect x="440" y="130" width="300" height="40" rx="8" class="d-box-good"/>
+      <text x="460" y="156" class="d-text">否認防止（証拠を残す）</text>
+      <rect x="20" y="180" width="300" height="40" rx="8" class="d-box-bad"/>
+      <text x="40" y="206" class="d-text-bold">I　情報漏洩</text>
+      <rect x="440" y="180" width="300" height="40" rx="8" class="d-box-good"/>
+      <text x="460" y="206" class="d-text">機密性</text>
+      <rect x="20" y="230" width="300" height="40" rx="8" class="d-box-bad"/>
+      <text x="40" y="256" class="d-text-bold">D　サービス妨害</text>
+      <rect x="440" y="230" width="300" height="40" rx="8" class="d-box-good"/>
+      <text x="460" y="256" class="d-text">可用性</text>
+      <rect x="20" y="280" width="300" height="40" rx="8" class="d-box-bad"/>
+      <text x="40" y="306" class="d-text-bold">E　権限昇格</text>
+      <rect x="440" y="280" width="300" height="40" rx="8" class="d-box-good"/>
+      <text x="460" y="306" class="d-text">認可</text>
+      <line x1="322" y1="50" x2="438" y2="50" class="d-line" marker-end="url(#b1)"/>
+      <line x1="322" y1="100" x2="438" y2="100" class="d-line" marker-end="url(#b1)"/>
+      <line x1="322" y1="150" x2="438" y2="150" class="d-line" marker-end="url(#b1)"/>
+      <line x1="322" y1="200" x2="438" y2="200" class="d-line" marker-end="url(#b1)"/>
+      <line x1="322" y1="250" x2="438" y2="250" class="d-line" marker-end="url(#b1)"/>
+      <line x1="322" y1="300" x2="438" y2="300" class="d-line" marker-end="url(#b1)"/>
+      <text x="380" y="43" text-anchor="middle" class="d-text-sub">壊す</text>
+    </svg>
+    <figcaption>図1：STRIDEの各脅威は、守るべき性質とペアになっている。I・T・D の3つは <a href="10-1_CIA三原則と脅威・脆弱性・リスク.html">CIA三原則</a>（機密性・完全性・可用性）そのもの</figcaption>
+    </figure>
+    <div class="callout key">
+      <p class="callout-title">CIA三原則とのつながり</p>
+      <p>I（情報漏洩）は <strong>機密性</strong>、T（改ざん）は <strong>完全性</strong>、D（サービス妨害）は <strong>可用性</strong> を壊す脅威です。STRIDE は CIA の3つに、<strong>認証（S）・否認防止（R）・認可（E）</strong> を加えた6つの性質を守るためのチェックリストだと考えると覚えやすくなります。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>6つの脅威を1つずつ見る</h2>
+    <p>以下、各カテゴリを「どんな脅威？」「具体例」「緩和策（対策）」「フォトボックスでは？」の順に見ていきます。関連する OWASP Top 10 の番号は、ノートに合わせて2021年版の番号です。</p>
+
+    <h3 id="sec-2-s">S ― Spoofing（なりすまし）</h3>
+    <p><strong>攻撃者が他者のふりをする</strong> 攻撃です。本人確認（認証）を突破するタイプで、他人の家の合鍵を手に入れて、住人のふりをして入るようなものです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>具体例</h4>
+        <ul>
+          <li>パスワードを盗んで他ユーザーとしてログイン</li>
+          <li>セッションID（ログイン状態を示す番号）を盗んでなりすまし</li>
+          <li>偽の証明書でサーバーを偽装</li>
+          <li>フィッシング（偽サイト）で認証情報を盗む</li>
+          <li>IPアドレスやメール送信元の偽装</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>緩和策</h4>
+        <ul>
+          <li>強い認証（パスワードは bcrypt / Argon2 でハッシュ化して保存）</li>
+          <li><strong>多要素認証（MFA）</strong></li>
+          <li>セッションIDの保護（Cookie に HttpOnly・Secure・SameSite 属性）</li>
+          <li>TLS による証明書の正当性検証</li>
+          <li>SPF / DKIM / DMARC（メール送信元の認証）</li>
+          <li>署名付きトークン（JWT、署名付きCookie）</li>
+        </ul>
+      </div>
+    </div>
+    <p>関連：OWASP A07（認証と識別の失敗）→ <a href="40-2_アクセス制御と認証の失敗.html">40-2</a></p>
+    <p><strong>フォトボックスでは</strong>：他人のパスワードでログインして、その人として写真を投稿・削除される。→ MFA とログイン試行の回数制限で守ります。</p>
+
+    <h3 id="sec-2-t">T ― Tampering（改ざん）</h3>
+    <p><strong>データを書き換える</strong> 攻撃です。完全性（データが正しいまま保たれていること）を壊します。郵便の途中で封筒を開け、中の書類を書き換えるイメージです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>具体例</h4>
+        <ul>
+          <li>通信途中のデータを書き換える（MITM＝通信の間に割り込む中間者攻撃）</li>
+          <li>DBに直接アクセスしてレコードを書き換える</li>
+          <li>フロントから送る価格パラメータを書き換える（商品価格を0円に）</li>
+          <li>アプリ本体（バイナリ）の解析・改造</li>
+          <li>ログを書き換えて攻撃の痕跡を消す</li>
+          <li>JWT の中身（payload）の書き換え</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>緩和策</h4>
+        <ul>
+          <li><strong>HTTPS / TLS</strong> で通信を暗号化し、改ざんを検知</li>
+          <li>デジタル署名、HMAC（メッセージが改ざんされていないことを確かめる符号）</li>
+          <li>DBへの直接アクセスを制限</li>
+          <li><strong>サーバー側で最終検証</strong>（価格や数量はフロントの値を信じない）</li>
+          <li>ファイル・ログの改ざん検知（ハッシュチェーン、WORM＝一度書いたら消せないストレージ）</li>
+          <li>コード署名</li>
+        </ul>
+      </div>
+    </div>
+    <p>関連：OWASP A03（インジェクション）、A08（ソフトウェアとデータの整合性の不備）→ <a href="40-3_インジェクションと暗号化の不備.html">40-3</a>、<a href="40-5_サプライチェーンと整合性の不備.html">40-5</a></p>
+    <p><strong>フォトボックスでは</strong>：写真をアップロードするとき、「誰の写真か」をブラウザから送らせていると、他人の名前で投稿できてしまいます。</p>
+    <span class="code-label bad">✕ フロントの値を信じている</span>
+    <pre><code>// アップロードAPI
+const ownerId = req.body.ownerId;   // ブラウザが送ってきた値をそのまま使う
+await savePhoto({ ownerId, file });</code></pre>
+    <span class="code-label good">○ サーバー側で決める</span>
+    <pre><code>// アップロードAPI
+const ownerId = req.session.userId; // ログイン情報（サーバー側）から決める
+await savePhoto({ ownerId, file });</code></pre>
+
+    <h3 id="sec-2-r">R ― Repudiation（否認）</h3>
+    <p>ユーザーが <strong>「そんな操作はしていない」と言い逃れできてしまう</strong> 状況です。問題は攻撃そのものより、<strong>操作の証拠が残っていない</strong> ことにあります。防犯カメラも入館記録もない建物では、誰が何をしたか後から証明できないのと同じです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>具体例</h4>
+        <ul>
+          <li>ログを残しておらず、誰が何をしたか分からない</li>
+          <li>ログを消せる権限を使って証拠隠滅</li>
+          <li>電子契約で「本人が署名した証拠」がない</li>
+          <li>共有アカウントのせいで個人を特定できない</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>緩和策</h4>
+        <ul>
+          <li><strong>監査ログ</strong>（いつ・誰が・何をしたか）</li>
+          <li>ログの改ざん防止（署名、別の場所への転送、WORM）</li>
+          <li><strong>デジタル署名</strong>（本人以外には作れない印）</li>
+          <li>共有アカウントの禁止、個人アカウントの徹底</li>
+          <li>タイムスタンプサービス（法的に有効な日時証明）</li>
+        </ul>
+      </div>
+    </div>
+    <p>関連：OWASP A09（セキュリティログとモニタリングの不備）→ <a href="40-6_ログ不足・SSRF・例外処理.html">40-6</a></p>
+    <p><strong>フォトボックスでは</strong>：不適切な写真が投稿されたとき「自分は投稿していない」と言われても、投稿ログ（日時・ユーザーID・IPなど）がなければ判断できません。管理者が写真を削除した操作も、誰がやったか記録が必要です。</p>
+
+    <h3 id="sec-2-i">I ― Information Disclosure（情報漏洩）</h3>
+    <p><strong>見られてはいけない情報が見られる</strong> 状態です。機密性の侵害で、ニュースになる事故の多くがここに当たります。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>具体例</h4>
+        <ul>
+          <li>平文（暗号化なし）で保存したパスワードの流出</li>
+          <li>エラー画面にスタックトレース（プログラム内部の状態）やDB接続情報が表示される</li>
+          <li>HTTPS なしの通信でカード番号が漏れる</li>
+          <li>ストレージ（S3バケットなど）が全公開で、個人情報がダウンロードし放題</li>
+          <li>SSRF（サーバーに内部へのリクエストをさせる攻撃）で内部ネットワークの情報が漏れる</li>
+          <li>レスポンスヘッダーから内部IPやサーバーのバージョンが漏れる</li>
+          <li>アクセス制御の不備で他人の請求書が見える</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>緩和策</h4>
+        <ul>
+          <li>データの <strong>暗号化</strong>（通信中は TLS、保存時は AES-256 など）</li>
+          <li>適切な <strong>アクセス制御</strong></li>
+          <li>エラーメッセージは汎用的に（詳細はサーバーログだけに）</li>
+          <li><strong>最小権限の原則</strong></li>
+          <li>クラウドリソースの公開設定の見直し</li>
+          <li>機密情報のマスキング・最小化（<strong>そもそも保存しないのが最強</strong>）</li>
+        </ul>
+      </div>
+    </div>
+    <p>関連：OWASP A01（アクセス制御の不備）、A02（暗号化の失敗）、A05（セキュリティの設定ミス）→ <a href="40-2_アクセス制御と認証の失敗.html">40-2</a>、<a href="40-3_インジェクションと暗号化の不備.html">40-3</a>、<a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4</a></p>
+    <p><strong>フォトボックスでは</strong>：ログイン失敗時のメッセージの出し分けが、アカウントの存在を漏らしてしまう典型例です。</p>
+    <span class="code-label bad">✕ 登録の有無が分かってしまう</span>
+    <pre><code>このメールアドレスは登録されていません
+パスワードが違います</code></pre>
+    <span class="code-label good">○ どちらが違うか言わない</span>
+    <pre><code>メールアドレスまたはパスワードが違います</code></pre>
+
+    <h3 id="sec-2-d">D ― Denial of Service（サービス妨害）</h3>
+    <p>サービスを <strong>使えなくする</strong> 攻撃です。可用性の侵害で、お店の入口に大勢で押しかけて本物のお客さんが入れないようにするイメージです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>具体例</h4>
+        <ul>
+          <li>DDoS 攻撃（大量の端末から一斉にリクエスト）でサーバーダウン</li>
+          <li>特定の処理で CPU・メモリを使い切らせる（ReDoS＝正規表現を極端に遅くさせる攻撃、Zip爆弾＝展開すると巨大になる圧縮ファイル）</li>
+          <li>DBの接続（コネクション）を使い切らせる</li>
+          <li>巨大なファイルをアップロードしてディスクを枯渇させる</li>
+          <li>ログインを無制限に試せる → アカウントロックで正規ユーザーを締め出す</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>緩和策</h4>
+        <ul>
+          <li><strong>レート制限</strong>（IPごと・ユーザーごと・エンドポイントごとの回数制限）</li>
+          <li>タイムアウトと入力サイズの上限</li>
+          <li>リソース使用量の上限（スレッド、コネクション、ファイルサイズ）</li>
+          <li>CDN / WAF / DDoS 対策サービス（AWS Shield、Cloudflare など）</li>
+          <li>オートスケーリング（負荷に応じてサーバーを自動で増やす）</li>
+          <li>危険な正規表現の回避</li>
+          <li>非同期処理・キュー・バックプレッシャー（受けきれない分を待たせる仕組み）</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>フォトボックスでは</strong>：数GBのファイルを何度もアップロードされると、画像ストレージや変換処理が詰まります。→ ファイルサイズ上限とアップロード回数のレート制限を設けます。</p>
+
+    <h3 id="sec-2-e">E ― Elevation of Privilege（権限昇格）</h3>
+    <p>本来持っていない <strong>高い権限を不正に手に入れる</strong> 攻撃です。一般客用の入館証で、社員専用フロアや金庫室に入れてしまうような状態です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>具体例</h4>
+        <ul>
+          <li>一般ユーザーが管理者機能にアクセスできる</li>
+          <li>バッファオーバーフローなどのメモリ破壊から任意のコードを実行</li>
+          <li>sudo / setuid プログラム（一時的に高い権限で動くもの）の脆弱性で root 権限を奪取</li>
+          <li>SQLインジェクション → DB管理者権限を奪取 → OSに侵入</li>
+          <li>JWT の権限フィールド（role など）の書き換え</li>
+          <li>コンテナエスケープ（コンテナからホストへ抜け出す）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>緩和策</h4>
+        <ul>
+          <li><strong>最小権限の原則</strong>（→ <a href="20-1_最小権限とデータ最小化.html">20-1</a>）</li>
+          <li>サーバー側での認可チェック（「その写真の持ち主か」などの所有権チェックも）</li>
+          <li><strong>入力検証とサンドボックス化</strong>（隔離された環境で動かす）</li>
+          <li>メモリ安全な言語（Rust、Go など）</li>
+          <li>コンテナの実行環境の強化（seccomp、AppArmor、gVisor）</li>
+          <li>JWT の署名検証を厳密に（<code>alg=none</code> を禁止）</li>
+          <li>特権プロセスを減らし、分離する</li>
+        </ul>
+      </div>
+    </div>
+    <p>関連：OWASP A01（アクセス制御の不備）→ <a href="40-2_アクセス制御と認証の失敗.html">40-2</a></p>
+    <p><strong>フォトボックスでは</strong>：管理画面のURL（例：<code>/admin</code>）を知っていれば一般ユーザーでも開けてしまう、写真削除APIで「自分の写真か」を確認していない、などが典型です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>STRIDEの使い方（ミニマム実践）</h2>
+    <ol class="steps">
+      <li><strong>データフロー図を描く</strong><br>部品とデータの流れを図にする（→ <a href="30-1_脅威モデリングとデータフロー図.html">30-1</a>）。</li>
+      <li><strong>各要素に STRIDE を当てる</strong><br>DFD の <strong>各要素</strong> に6カテゴリをチェックリストのように当てはめる（下の表）。</li>
+      <li><strong>「ありうるか？」を議論する</strong><br>「このシステムで、この脅威は現実に起き得るか？」「起きたらどう影響するか？」を話し合う。</li>
+      <li><strong>対策を決める</strong><br>各脅威について、緩和・移転・受容・回避のどれにするかを選ぶ。</li>
+    </ol>
+    <h3 id="sec-3-1">どの要素に、どの脅威を当てるか</h3>
+    <p>DFD の要素の種類ごとに、検討すべきカテゴリの目安があります。ノートでは次のように整理しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>S</th><th>T</th><th>R</th><th>I</th><th>D</th><th>E</th></tr></thead>
+      <tbody>
+        <tr><td><strong>プロセス</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td><strong>データフロー</strong></td><td>✓</td><td>✓</td><td></td><td>✓</td><td>✓</td><td></td></tr>
+        <tr><td><strong>データストア</strong></td><td></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+        <tr><td><strong>外部エンティティ</strong></td><td>✓</td><td></td><td>✓</td><td></td><td></td><td></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>プロセスには6つ全部が当てはまる</strong> ので、重点的にチェックする対象です。なお、Microsoft の「STRIDE-per-element（要素ごとのSTRIDE）」として広く紹介される表では、データフローは T・I・D の3つとされることが多いです。表は「最低限ここは見る」という目安で、厳密さにこだわる必要はありません。</p>
+    <figure>
+    <svg viewBox="0 0 760 240" role="img" aria-label="フォトボックスのログインの流れの各要素に、検討すべきSTRIDEの文字を付けた図">
+      <defs><marker id="b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <line x1="240" y1="78" x2="240" y2="200" class="d-line-dash"/>
+      <line x1="525" y1="78" x2="525" y2="200" class="d-line-dash"/>
+      <text x="248" y="196" class="d-text-sub">信頼境界</text>
+      <text x="533" y="196" class="d-text-sub">信頼境界</text>
+      <rect x="30" y="90" width="140" height="56" class="d-box-warn"/>
+      <text x="100" y="123" text-anchor="middle" class="d-text-bold">ユーザー</text>
+      <rect x="310" y="90" width="150" height="56" rx="28" class="d-box-accent"/>
+      <text x="385" y="123" text-anchor="middle" class="d-text-bold">ログインAPI</text>
+      <rect x="590" y="90" width="150" height="56" class="d-box"/>
+      <line x1="590" y1="90" x2="740" y2="90" class="d-line"/>
+      <line x1="590" y1="146" x2="740" y2="146" class="d-line"/>
+      <text x="665" y="123" text-anchor="middle" class="d-text-bold">ユーザーDB</text>
+      <line x1="170" y1="118" x2="308" y2="118" class="d-line" marker-end="url(#b2)"/>
+      <line x1="460" y1="118" x2="588" y2="118" class="d-line" marker-end="url(#b2)"/>
+      <!-- flow1 chips: S T I D -->
+      <rect x="186" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="198" y="57" text-anchor="middle" class="d-text-bold">S</text>
+      <rect x="214" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="226" y="57" text-anchor="middle" class="d-text-bold">T</text>
+      <rect x="242" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="254" y="57" text-anchor="middle" class="d-text-bold">I</text>
+      <rect x="270" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="282" y="57" text-anchor="middle" class="d-text-bold">D</text>
+      <!-- flow2 chips -->
+      <rect x="471" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="483" y="57" text-anchor="middle" class="d-text-bold">S</text>
+      <rect x="499" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="511" y="57" text-anchor="middle" class="d-text-bold">T</text>
+      <rect x="527" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="539" y="57" text-anchor="middle" class="d-text-bold">I</text>
+      <rect x="555" y="40" width="24" height="24" rx="4" class="d-box-bad"/><text x="567" y="57" text-anchor="middle" class="d-text-bold">D</text>
+      <!-- user chips S R -->
+      <rect x="74" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="86" y="175" text-anchor="middle" class="d-text-bold">S</text>
+      <rect x="102" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="114" y="175" text-anchor="middle" class="d-text-bold">R</text>
+      <!-- process chips S T R I D E -->
+      <rect x="303" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="315" y="175" text-anchor="middle" class="d-text-bold">S</text>
+      <rect x="331" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="343" y="175" text-anchor="middle" class="d-text-bold">T</text>
+      <rect x="359" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="371" y="175" text-anchor="middle" class="d-text-bold">R</text>
+      <rect x="387" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="399" y="175" text-anchor="middle" class="d-text-bold">I</text>
+      <rect x="415" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="427" y="175" text-anchor="middle" class="d-text-bold">D</text>
+      <rect x="443" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="455" y="175" text-anchor="middle" class="d-text-bold">E</text>
+      <!-- store chips T R I D -->
+      <rect x="611" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="623" y="175" text-anchor="middle" class="d-text-bold">T</text>
+      <rect x="639" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="651" y="175" text-anchor="middle" class="d-text-bold">R</text>
+      <rect x="667" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="679" y="175" text-anchor="middle" class="d-text-bold">I</text>
+      <rect x="695" y="158" width="24" height="24" rx="4" class="d-box-bad"/><text x="707" y="175" text-anchor="middle" class="d-text-bold">D</text>
+      <text x="380" y="228" text-anchor="middle" class="d-text-sub">赤い四角＝その要素で検討するSTRIDEの脅威（上の表に対応）</text>
+    </svg>
+    <figcaption>図2：DFDの各要素に「問診票」の項目を貼り付けていくイメージ。プロセス（ログインAPI）は6項目すべて</figcaption>
+    </figure>
+
+    <h2 id="sec-4"><span class="num">4.</span>実例：フォトボックスのログインAPIにSTRIDEを当てる</h2>
+    <p>対象は <code>POST /api/login</code>（ユーザー → ログインAPI → ユーザーDB）です。6項目を順に当てると、次の表ができます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>STRIDE</th><th>脅威の例</th><th>緩和策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>S</strong></td><td>パスワードリスト攻撃（他所で漏れたID・パスワードを試す）、セッション固定（攻撃者が用意したセッションIDを使わせる）</td><td>MFA、レート制限、ログイン成功時にセッションIDを再発行</td></tr>
+        <tr><td><strong>T</strong></td><td>リクエストボディの改ざん</td><td>HTTPS、サーバー側でのパスワード検証</td></tr>
+        <tr><td><strong>R</strong></td><td>「ログインしていない」と主張される</td><td>ログイン成功・失敗のログを記録</td></tr>
+        <tr><td><strong>I</strong></td><td>エラーメッセージでアカウントの存在が漏れる</td><td>メッセージを統一（「メールアドレスまたはパスワードが違います」）</td></tr>
+        <tr><td><strong>D</strong></td><td>大量のログイン試行で DB が枯渇</td><td>レート制限、接続プールの上限</td></tr>
+        <tr><td><strong>E</strong></td><td>権限フィールドの改ざんで admin になる</td><td>サーバー側で権限を検証、署名付きトークン</td></tr>
+      </tbody>
+    </table></div>
+    <p>このように6項目を機械的に当てていくと、<strong>思いつきでは抜けがちな R（ログ）や I（エラーメッセージ）</strong> まで漏れなく拾えるのが STRIDE のメリットです。</p>
+    <div class="callout tip">
+      <p class="callout-title">実務でのポイント：表の形で残す</p>
+      <p>「要素 × STRIDE × 脅威 × 対策 × 対応方針（緩和／受容など）」の表にして残しておくと、次回の見直しで差分だけ確認できます。「受容」にしたものも、理由と一緒に記録しておきましょう。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>STRIDEの限界と、他の手法との組み合わせ</h2>
+    <div class="grid c3">
+      <div class="card">
+        <h4>優先順位はつけられない</h4>
+        <p>網羅性はあるが、どれが深刻かは分からない。→ <strong>DREAD や CVSS</strong> と組み合わせる（→ <a href="30-3_DREADとアタックツリー.html">30-3</a>）。</p>
+      </div>
+      <div class="card">
+        <h4>業務ロジックの穴は見つけにくい</h4>
+        <p>「クーポンを何度も使える」のような <strong>ビジネスロジックの欠陥</strong> は6分類に当てはめにくい。→ <strong>悪用ケース分析</strong> も併用する。</p>
+      </div>
+      <div class="card">
+        <h4>慣れないうちは冗長</h4>
+        <p>全要素×6項目は量が多く感じる。→ 最初は <strong>フローの数を絞って</strong> 練習する。</p>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「STRIDE で全部チェックしたから安全」</p>
+      <p>STRIDE は「脅威の種類」の抜けを防ぐ道具であって、「すべての攻撃」を見つけてくれるわけではありません。DFD に描かれていない部品（描き忘れた外部サービスなど）には当てようがありませんし、業務ロジックの穴も残ります。DFD の正確さと、他の手法との併用が前提です。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li>STRIDE は脅威を <strong>なりすまし・改ざん・否認・情報漏洩・サービス妨害・権限昇格</strong> の6カテゴリに分けるフレームワーク</li>
+      <li>各カテゴリは <strong>守るべき性質</strong>（真正性・完全性・否認防止・機密性・可用性・認可）と1対1で対応する</li>
+      <li>データフロー図の <strong>各要素に当てはめて</strong> 使う。プロセスは6つすべてが対象</li>
+      <li>チェックリストとして使うと、ログやエラーメッセージのような <strong>見落としやすい脅威</strong> も拾える</li>
+      <li>優先度付けは <strong>DREAD などの別手法</strong> と組み合わせる</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 「共有の管理者アカウントを3人で使っていて、誰が写真を消したか分からない」。STRIDEのどれ？</summary>
+      <div class="body">
+        <p><strong>R（否認）</strong> です。操作した個人を特定できず、「自分はやっていない」と言い逃れできてしまいます。対策は、共有アカウントをやめて個人アカウントにし、監査ログを残すことです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 写真のURLが <code>/photos/1001</code> のような連番で、番号を変えると他人の非公開写真が見られる。STRIDEのどれ？</summary>
+      <div class="body">
+        <p>主に <strong>I（情報漏洩）</strong> です。原因はアクセス制御の不備（その写真を見る権限があるかをサーバーで確認していない）なので、<strong>E（権限昇格）</strong> の観点の「所有権チェック」も関係します。このように1つの問題が複数のカテゴリにまたがることはよくあり、どちらに分類するかより「見つけられたか」が大事です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. DFDのどの種類の要素に、STRIDEの6項目すべてを当てるべき？ それはなぜ？</summary>
+      <div class="body">
+        <p><strong>プロセス</strong> です。プロセスは入力を受け取り、処理し、他の要素に命令を出すので、なりすまされる・改ざんされる・止められる・権限を奪われる…と、あらゆる脅威の舞台になり得るからです。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Microsoft による STRIDE 脅威モデル（Microsoft Threat Modeling Tool のドキュメント）</li>
+      <li>OWASP Top 10（2021年版）</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-1_脅威モデリングとデータフロー図.html"><span class="lbl">← 前のページ</span>脅威モデリングとデータフロー図</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-3_DREADとアタックツリー.html"><span class="lbl">次のページ →</span>DREADとアタックツリー</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

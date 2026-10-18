@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>受動的攻撃と同一オリジンポリシー｜Web脆弱性対策解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">Web脆弱性対策解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 ブラウザのセキュリティモデル › 受動的攻撃と同一オリジンポリシー</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 ブラウザのセキュリティモデル</span>
+      <h1>受動的攻撃と同一オリジンポリシー</h1>
+      <p class="lead">ブラウザは、怪しいサイトを開いてもパソコンや他のサイトのデータが簡単には盗まれないよう、いくつもの「しきり」を持っています。このページでは、攻撃の分け方（能動的攻撃と受動的攻撃）、プログラムを閉じ込める サンドボックス、ブラウザの最も基本的な防御である <strong>同一オリジンポリシー</strong>、そして iframe とクロスドメインアクセスまでを、徳丸本（『体系的に学ぶ 安全なWebアプリケーションの作り方』）第2章に沿って解説します。</p>
+      <p class="meta">もとにしたノート：10_ブラウザのセキュリティモデル/01_受動的攻撃と同一オリジンポリシー（徳丸本2章）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>ブラウザは <strong>「別のサイト（別のオリジン）のデータは、JavaScript から勝手に読ませない」</strong> というルールで利用者を守っています。これが同一オリジンポリシーです。ポイントは <strong>「送ること」はできても「レスポンスを読むこと」はできない</strong> という点です。</p>
+    </div>
+
+    <p>第1章では HTTP とセッション管理の基礎を学びました。第2章では、ブラウザが備える <strong>セキュリティの仕組み</strong> と、<strong>同一オリジンポリシー</strong> について解説します。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>能動的攻撃と受動的攻撃</h2>
+    <p>Webのセキュリティでは、攻撃の種類を <strong>能動的（アクティブ）</strong> と <strong>受動的（パッシブ）</strong> に分けて考えます。</p>
+
+    <div class="callout warn">
+      <p class="callout-title">注意：「受動的攻撃」には2つの意味があります</p>
+      <p>この言葉は分野によって指すものが違うので、混同しないようにしてください。</p>
+      <ul>
+        <li><strong>ネットワークセキュリティでの意味</strong>（このノートの 1.1〜1.3 の説明）：能動的攻撃＝通信を改ざん・なりすましする攻撃、受動的攻撃＝通信を <strong>盗聴するだけ</strong> の攻撃。</li>
+        <li><strong>徳丸本 第2章での意味</strong>：能動的攻撃＝攻撃者が <strong>サーバーを直接攻撃する</strong>（例：SQLインジェクション）、受動的攻撃＝攻撃者が罠を仕掛け、<strong>被害者のブラウザに攻撃を実行させる</strong>（例：XSS、CSRF、罠サイト）。</li>
+      </ul>
+      <p>徳丸本の意味では、XSS や CSRF は <strong>受動的攻撃</strong> に分類されます。また、同一オリジンポリシーは <strong>この意味での受動的攻撃</strong>（罠サイトの JavaScript が、被害者のブラウザ経由で別サイトの情報を盗む）を防ぐための仕組みです。1.4 で詳しく整理します。</p>
+    </div>
+
+    <h3 id="sec-1-1">1.1 能動的攻撃（Active Attack）</h3>
+    <p>攻撃者が <strong>通信やシステムに直接手を加える</strong> 攻撃です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>例</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SQLインジェクション</strong></td><td>悪意あるSQL（データベースへの命令文）を送り込んでDBを操作</td></tr>
+        <tr><td><strong>XSS</strong>（クロスサイトスクリプティング）</td><td>悪意あるスクリプトをページに埋め込む</td></tr>
+        <tr><td><strong>CSRF</strong>（クロスサイトリクエストフォージェリ）</td><td>ユーザーに意図しないリクエストを送らせる</td></tr>
+        <tr><td><strong>中間者攻撃（MITM）</strong></td><td>通信の途中に割り込み、改ざん・なりすましをする</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>ユーザー ──リクエスト──→ 攻撃者（改ざん） ──→ サーバー
+         ←──レスポンス── 攻撃者（改ざん） ←──</code></pre>
+    <p><strong>特徴：</strong> 攻撃者が能動的に介入する。改ざんやなりすましが起きる。</p>
+    <p>※ 上の表のうち XSS と CSRF は、徳丸本の分類では次の「受動的攻撃」側に入ります（1.4 参照）。</p>
+
+    <h3 id="sec-1-2">1.2 受動的攻撃（Passive Attack）</h3>
+    <p>攻撃者が <strong>通信を傍受・監視するだけ</strong> で、内容を改ざんしない攻撃です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>例</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>盗聴（スニッフィング）</strong></td><td>ネットワーク上の通信を盗み見る</td></tr>
+        <tr><td><strong>トラフィック分析</strong></td><td>通信の量・パターンから情報を推測</td></tr>
+        <tr><td><strong>公開Wi-Fiでの傍受</strong></td><td>暗号化されていない通信を読む</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>ユーザー ──リクエスト──→ サーバー
+         ↑
+      攻撃者（盗み見るだけ、改ざんしない）</code></pre>
+    <p><strong>特徴：</strong> 攻撃者は「見るだけ」。通信内容が漏洩する。</p>
+
+    <h3 id="sec-1-3">1.3 対策の違い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃の種類</th><th>主な対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>能動的攻撃</strong></td><td>入力値検証、CSRFトークン、WAF（Webアプリ向けのファイアウォール）、認可チェック</td></tr>
+        <tr><td><strong>受動的攻撃</strong></td><td><strong>HTTPS（TLS暗号化）</strong>、機密情報をURLに載せない</td></tr>
+      </tbody>
+    </table></div>
+    <p>HTTPS を強制する仕組み（HSTS など）は <a href="10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>、暗号化の不備そのものは <a href="../../71_セキュリティ基礎/00_全体像/40-3_インジェクションと暗号化の不備.html">インジェクションと暗号化の不備</a> で扱います。</p>
+
+    <h3 id="sec-1-4">1.4 徳丸本での「能動的／受動的」</h3>
+    <p>徳丸本 第2章でいう分け方は、「攻撃者が誰を経由して攻撃するか」に注目したものです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>能動的攻撃</h4>
+        <p>攻撃者が <strong>サーバーに直接</strong> 攻撃リクエストを送ります。</p>
+        <p>例：SQLインジェクション、OSコマンドインジェクション</p>
+      </div>
+      <div class="card">
+        <h4>受動的攻撃</h4>
+        <p>攻撃者は <strong>罠（罠サイト・罠メールなど）を仕掛けて待つ</strong> だけ。罠を踏んだ <strong>被害者のブラウザ</strong> が、攻撃者の代わりに攻撃を実行します。</p>
+        <p>例：XSS、CSRF、罠サイトからの情報窃取</p>
+      </div>
+    </div>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="徳丸本の受動的攻撃の流れ。攻撃者が罠サイトを用意し、被害者のブラウザが罠を踏んで正規サイトに攻撃リクエストを送る">
+      <defs><marker id="arw101a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker><marker id="arw101b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker></defs>
+      <rect x="20" y="30" width="170" height="56" rx="8" class="d-box-bad"/>
+      <text x="105" y="56" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="105" y="76" text-anchor="middle" class="d-text-sub">罠を仕掛けて待つ</text>
+      <rect x="275" y="30" width="170" height="56" rx="8" class="d-box-warn"/>
+      <text x="360" y="56" text-anchor="middle" class="d-text-bold">罠サイト</text>
+      <text x="360" y="76" text-anchor="middle" class="d-text-sub">evil.example</text>
+      <rect x="275" y="170" width="170" height="56" rx="8" class="d-box-accent"/>
+      <text x="360" y="196" text-anchor="middle" class="d-text-bold">被害者のブラウザ</text>
+      <text x="360" y="216" text-anchor="middle" class="d-text-sub">正規サイトにログイン済み</text>
+      <rect x="530" y="170" width="170" height="56" rx="8" class="d-box"/>
+      <text x="615" y="196" text-anchor="middle" class="d-text-bold">正規サイト</text>
+      <text x="615" y="216" text-anchor="middle" class="d-text-sub">bank.example</text>
+      <line x1="190" y1="58" x2="273" y2="58" class="d-line" marker-end="url(#arw101a)"/>
+      <text x="232" y="48" text-anchor="middle" class="d-text-sub">①設置</text>
+      <line x1="360" y1="168" x2="360" y2="88" class="d-line" marker-end="url(#arw101a)"/>
+      <text x="372" y="132" class="d-text-sub">②閲覧する（罠を踏む）</text>
+      <line x1="445" y1="198" x2="528" y2="198" class="d-line-bad" marker-end="url(#arw101b)"/>
+      <text x="487" y="160" text-anchor="middle" class="d-text-sub">③攻撃リクエスト</text>
+      <text x="487" y="176" text-anchor="middle" class="d-text-sub">（Cookie付き）</text>
+      <text x="105" y="196" text-anchor="middle" class="d-text-sub">攻撃者自身は</text>
+      <text x="105" y="216" text-anchor="middle" class="d-text-sub">正規サイトに触れない</text>
+    </svg>
+    <figcaption>図1：徳丸本でいう受動的攻撃。実際に攻撃を運ぶのは被害者のブラウザ</figcaption>
+    </figure>
+    <p>受動的攻撃では被害者のブラウザが「運び屋」にされるので、<strong>ブラウザ側にも防御の仕組みが必要</strong> になります。その代表がこのあと説明するサンドボックスと同一オリジンポリシーです。XSS は <a href="20-1_XSSの基本.html">XSSの基本</a>、CSRF は <a href="30-1_CSRF.html">CSRF</a> のページで詳しく扱います。</p>
+
+    <h3 id="sec-1-5">1.5 本章との関係</h3>
+    <ul>
+      <li><strong>同一オリジンポリシー</strong> → ノートの分類では「能動的攻撃（他サイトからの不正アクセス）を防ぐ」。徳丸本の分類では、罠サイトによる <strong>受動的攻撃</strong> を防ぐ仕組みにあたります</li>
+      <li><strong>HTTPS</strong> → 受動的攻撃（盗聴）を防ぐ</li>
+      <li><strong>CORS</strong> → 同一オリジンポリシーの制限を、安全な範囲で緩和する（→ <a href="10-2_CORSの仕組み.html">CORSの仕組み</a>）</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>サンドボックス</h2>
+    <p><strong>サンドボックス（Sandbox）</strong> とは、プログラムを <strong>隔離された安全な環境</strong> で実行する仕組みです。砂場（sandbox）の中で遊ぶと外に影響しないイメージです。</p>
+
+    <h3 id="sec-2-1">2.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card"><h4>サンドボックス</h4><p>子ども用の砂場。中で遊んでも、外の道路には影響しない。</p></div>
+      <div class="card"><h4>ブラウザのサンドボックス</h4><p>Webページの JavaScript。中で動いても、PCのファイルには触れない。</p></div>
+    </div>
+
+    <h3 id="sec-2-2">2.2 ブラウザのサンドボックスが制限すること</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>制限</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>ローカルファイルへのアクセス</td><td>ユーザーのPC上のファイルを読めない</td></tr>
+        <tr><td>他サイトのデータ</td><td>同一オリジンポリシーにより制限</td></tr>
+        <tr><td>システムコマンドの実行</td><td>OSの機能を直接操作できない</td></tr>
+        <tr><td>任意のネットワーク接続</td><td>一部の通信はブラウザが制御</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-3">2.3 iframe の sandbox 属性</h3>
+    <p><code>&lt;iframe&gt;</code>（ページの中に別のページを埋め込む要素。4. で説明）に <code>sandbox</code> 属性を付けると、埋め込んだページの権限をさらに制限できます。</p>
+    <span class="code-label">例：sandbox 属性の付け方</span>
+<pre><code>&lt;!-- スクリプト実行もフォーム送信も禁止 --&gt;
+&lt;iframe src="https://untrusted.example.com" sandbox&gt;&lt;/iframe&gt;
+
+&lt;!-- スクリプトは許可、フォーム送信は禁止 --&gt;
+&lt;iframe src="https://example.com/widget" sandbox="allow-scripts"&gt;&lt;/iframe&gt;</code></pre>
+    <p>値を何も書かずに <code>sandbox</code> だけを付けると、ほぼすべてが禁止されます。そこから必要なものだけを <code>allow-*</code> で許可していく「デフォルト拒否」の考え方です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>sandbox の値</th><th>許可する操作</th></tr></thead>
+      <tbody>
+        <tr><td>（属性のみ）</td><td>ほぼ全て禁止</td></tr>
+        <tr><td><code>allow-scripts</code></td><td>JavaScriptの実行</td></tr>
+        <tr><td><code>allow-forms</code></td><td>フォーム送信</td></tr>
+        <tr><td><code>allow-same-origin</code></td><td>同一オリジンとして扱う（本来のオリジンのまま扱う。付けないと「どのオリジンとも一致しない特殊なオリジン」扱いになる）</td></tr>
+        <tr><td><code>allow-popups</code></td><td>ポップアップの表示</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout bad">
+      <p class="callout-title">注意：allow-scripts と allow-same-origin の組み合わせ</p>
+      <p><code>allow-scripts</code> と <code>allow-same-origin</code> を <strong>同時に付けると</strong> サンドボックスを突破される可能性があるため、信頼できないコンテンツには慎重に使います。特に埋め込むページが親と同じオリジンの場合、中のスクリプトが親から自分の <code>sandbox</code> 属性を取り除けてしまいます。</p>
+    </div>
+    <span class="code-label bad">危険な例：信頼できないページに両方を許可</span>
+<pre><code>&lt;iframe src="https://untrusted.example.com" sandbox="allow-scripts allow-same-origin"&gt;&lt;/iframe&gt;</code></pre>
+    <span class="code-label good">安全な例：必要な権限だけを許可</span>
+<pre><code>&lt;iframe src="https://untrusted.example.com" sandbox="allow-scripts"&gt;&lt;/iframe&gt;</code></pre>
+
+    <h2 id="sec-3"><span class="num">3.</span>同一オリジンポリシー</h2>
+    <p><strong>同一オリジンポリシー（Same-Origin Policy, SOP）</strong> は、ブラウザの最も基本的なセキュリティ機能のひとつです。</p>
+
+    <h3 id="sec-3-1">3.1 オリジンとは</h3>
+    <p><strong>オリジン</strong> は、Webサイトの「出身地」を表す識別子です。次の3つの組み合わせで決まります。</p>
+<pre><code>オリジン = プロトコル + ドメイン + ポート番号</code></pre>
+<pre><code>https://example.com:443/page1
+  │       │          │
+  │       │          └─ ポート（HTTPSは443、省略可）
+  │       └─ ドメイン
+  └─ プロトコル（スキーム）</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">用語メモ</p>
+      <p><strong>プロトコル（スキーム）</strong> は通信の方式（<code>http</code> や <code>https</code>）、<strong>ドメイン</strong> はサーバーの名前（<code>example.com</code>）、<strong>ポート番号</strong> はサーバー内の「受付窓口の番号」です。ポートを省略すると、HTTP なら 80、HTTPS なら 443 とみなされます。</p>
+    </div>
+
+    <h3 id="sec-3-2">3.2 同じオリジン vs 異なるオリジン</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>URL A</th><th>URL B</th><th>同じ？</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><code>https://example.com/a</code></td><td><code>https://example.com/b</code></td><td>○ 同じ</td><td>パスはオリジンに含まれない</td></tr>
+        <tr><td><code>https://example.com</code></td><td><code>http://example.com</code></td><td>× 違う</td><td>プロトコルが違う</td></tr>
+        <tr><td><code>https://example.com</code></td><td><code>https://api.example.com</code></td><td>× 違う</td><td>ドメインが違う</td></tr>
+        <tr><td><code>https://example.com</code></td><td><code>https://example.com:8080</code></td><td>× 違う</td><td>ポートが違う</td></tr>
+      </tbody>
+    </table></div>
+    <p>3つのうち <strong>1つでも違えば別オリジン</strong> です。サブドメイン（<code>api.example.com</code>）でも、親ドメインとは別オリジンになる点に注意しましょう。</p>
+
+    <h3 id="sec-3-3">3.3 同一オリジンポリシーのルール</h3>
+    <div class="callout key">
+      <p><strong>あるオリジンのページから、別オリジンのリソースに JavaScript で自由にアクセスすることを禁止する</strong></p>
+    </div>
+<pre><code>https://myapp.com のページ
+  → https://myapp.com/api/users  ○ OK（同一オリジン）
+  → https://api.example.com/users × NG（異なるオリジン）</code></pre>
+
+    <h3 id="sec-3-4">3.4 なぜ必要か</h3>
+    <p>同一オリジンポリシーがなければ、悪意あるサイトが次のようなことをできます。</p>
+    <ol class="steps">
+      <li>ユーザーが evil.com を開く（銀行サイトにはログイン済み）</li>
+      <li>evil.com の JavaScript が bank.com にリクエストを送る</li>
+      <li>ブラウザが bank.com の Cookie（ログイン状態を覚えておくための小さなデータ）を自動送信</li>
+      <li>口座情報などが evil.com に漏洩</li>
+    </ol>
+    <p>同一オリジンポリシーにより、<strong>evil.com の JavaScript から bank.com のレスポンスを読むこと</strong> がブロックされます。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="evil.com の JavaScript は bank.com にリクエストを送れるが、レスポンスはブラウザが渡さない">
+      <defs><marker id="arw101c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker><marker id="arw101d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker></defs>
+      <rect x="20" y="20" width="400" height="260" rx="10" class="d-box"/>
+      <text x="40" y="46" class="d-text-bold">被害者のブラウザ</text>
+      <rect x="50" y="80" width="170" height="70" rx="8" class="d-box-bad"/>
+      <text x="135" y="110" text-anchor="middle" class="d-text-bold">evil.com のページ</text>
+      <text x="135" y="132" text-anchor="middle" class="d-text-sub">JavaScript</text>
+      <rect x="250" y="80" width="150" height="180" rx="8" class="d-box-good"/>
+      <text x="325" y="110" text-anchor="middle" class="d-text-bold">同一オリジン</text>
+      <text x="325" y="130" text-anchor="middle" class="d-text-bold">ポリシー</text>
+      <text x="325" y="160" text-anchor="middle" class="d-text-sub">オリジンが違う</text>
+      <text x="325" y="178" text-anchor="middle" class="d-text-sub">→ 中身を渡さない</text>
+      <rect x="540" y="110" width="160" height="110" rx="8" class="d-box-accent"/>
+      <text x="620" y="150" text-anchor="middle" class="d-text-bold">bank.com</text>
+      <text x="620" y="172" text-anchor="middle" class="d-text-sub">サーバー</text>
+      <line x1="220" y1="100" x2="538" y2="130" class="d-line" marker-end="url(#arw101c)"/>
+      <text x="470" y="100" text-anchor="middle" class="d-text-sub">①送信（Cookie付き）</text>
+      <text x="470" y="84" text-anchor="middle" class="d-text-sub">○ 送れてしまう</text>
+      <line x1="538" y1="200" x2="402" y2="200" class="d-line" marker-end="url(#arw101c)"/>
+      <text x="470" y="222" text-anchor="middle" class="d-text-sub">②レスポンス</text>
+      <line x1="248" y1="210" x2="140" y2="210" class="d-line-bad" marker-end="url(#arw101d)"/>
+      <line x1="140" y1="210" x2="140" y2="152" class="d-line-bad"/>
+      <text x="195" y="240" text-anchor="middle" class="d-text-sub">③ × 読めない</text>
+    </svg>
+    <figcaption>図2：「送ること」はできても、「レスポンスを読むこと」はブラウザが止める</figcaption>
+    </figure>
+
+    <h3 id="sec-3-5">3.5 同一オリジンポリシーが守るもの</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>クロスオリジン</th></tr></thead>
+      <tbody>
+        <tr><td><code>&lt;img src="..."&gt;</code> で画像を <strong>表示</strong></td><td>○ 可能</td></tr>
+        <tr><td><code>&lt;script src="..."&gt;</code> でJSを <strong>実行</strong></td><td>○ 可能（ただし中身は読めない）</td></tr>
+        <tr><td><code>&lt;form&gt;</code> で <strong>送信</strong></td><td>○ 可能（ただしレスポンスは読めない）</td></tr>
+        <tr><td><code>fetch()</code> / <code>XHR</code> で <strong>レスポンスを読む</strong></td><td>× 原則ブロック</td></tr>
+        <tr><td>別サイトの DOM に <strong>アクセス</strong></td><td>× 原則ブロック</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>XHR</code> は XMLHttpRequest の略で、<code>fetch()</code> より前からある JavaScript の通信機能です。<strong>DOM</strong> は、ページの中身（HTML）を JavaScript から操作するための木構造のことです。</p>
+    <div class="callout key">
+      <p class="callout-title">ここが重要</p>
+      <p>「送ること」と「レスポンスを読むこと」は別、という点が重要です。同一オリジンポリシーは <strong>読み取り</strong> を止めますが、<strong>送信そのもの</strong> は止めません。だからこそ、勝手に送信させる CSRF には、サーバー側で別の対策（CSRFトークンなど）が必要になります。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>iframe</h2>
+    <p><strong>iframe（Inline Frame）</strong> は、Webページの中に <strong>別のWebページを埋め込む</strong> HTML要素です。</p>
+<pre><code>&lt;iframe src="https://maps.example.com/embed" width="600" height="400"&gt;&lt;/iframe&gt;</code></pre>
+
+    <h3 id="sec-4-1">4.1 用途</h3>
+    <ul>
+      <li>Google Maps の地図埋め込み</li>
+      <li>YouTube 動画の埋め込み</li>
+      <li>決済フォーム（Stripe 等）の埋め込み</li>
+      <li>広告の表示</li>
+    </ul>
+
+    <h3 id="sec-4-2">4.2 同一オリジンポリシーとの関係</h3>
+    <p>iframe に読み込まれたページは <strong>独立したオリジン</strong> として扱われます。</p>
+<pre><code>親ページ: https://myapp.com
+iframe内: https://widget.example.com
+
+→ 親ページの JavaScript から iframe 内の DOM にはアクセスできない</code></pre>
+    <span class="code-label bad">できない例：クロスオリジンの iframe</span>
+<pre><code>// クロスオリジンの iframe にはアクセス不可
+const iframe = document.querySelector('iframe');
+iframe.contentDocument; // エラー（SecurityError）</code></pre>
+    <span class="code-label good">できる例：同一オリジンの iframe</span>
+<pre><code>// 同一オリジンの iframe なら OK
+const iframe = document.querySelector('iframe');
+iframe.contentDocument.body.innerHTML = '更新';</code></pre>
+    <p>親と iframe のオリジンが違っても安全にやり取りしたい場合は、5.2 の表にある <code>postMessage</code> を使います。</p>
+
+    <h3 id="sec-4-3">4.3 セキュリティ上の注意</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>リスク</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td>クリックジャッキング</td><td><code>X-Frame-Options: DENY</code> または <code>Content-Security-Policy: frame-ancestors</code></td></tr>
+        <tr><td>悪意あるコンテンツの埋め込み</td><td><code>sandbox</code> 属性で権限を制限</td></tr>
+        <tr><td>フィッシング</td><td>信頼できるソースのみ iframe で読み込む</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>クリックジャッキング</strong> とは、自分のサイトを透明な iframe で罠サイトに重ねられ、ユーザーが知らないうちにボタンを押させられる攻撃です。<strong>フィッシング</strong> は、本物そっくりの偽画面でパスワードなどをだまし取る手口です。<code>X-Frame-Options</code> や <code>frame-ancestors</code> の設定方法は <a href="10-5_セキュリティヘッダ.html">セキュリティヘッダ</a> と <a href="10-4_CSP.html">CSP</a> で解説します。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>クロスドメインアクセス</h2>
+    <p><strong>クロスドメインアクセス</strong> とは、<strong>異なるドメイン（オリジン）間</strong> でリソースやデータにアクセスすることです。</p>
+
+    <h3 id="sec-5-1">5.1 現代のWebで必要になる理由</h3>
+    <p>フロントエンド（ブラウザで動く画面側）と API（データを返すサーバー側）が分離された構成が一般的になりました。</p>
+<pre><code>フロントエンド: https://myapp.com
+バックエンドAPI: https://api.myapp.com   ← ドメインが違う = クロスドメイン</code></pre>
+<pre><code>https://myapp.com の JavaScript
+  → fetch('https://api.myapp.com/users')
+  → 同一オリジンポリシーにより、レスポンスの読み取りがブロックされる</code></pre>
+    <p>自分たちのサービス同士でも、オリジンが違えばブラウザは区別せずにブロックします。そこで「このオリジンからなら読んでよい」と安全に許可する手段が必要になります。</p>
+
+    <h3 id="sec-5-2">5.2 クロスドメインアクセスの方法</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方法</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CORS</strong></td><td>サーバーが許可を明示（最も一般的） → <a href="10-2_CORSの仕組み.html">CORSの仕組み</a></td></tr>
+        <tr><td><strong>JSONP</strong></td><td>旧来の手法（<code>&lt;script&gt;</code> タグを利用、非推奨）</td></tr>
+        <tr><td><strong>プロキシ</strong></td><td>同一オリジンのサーバー経由で中継</td></tr>
+        <tr><td><strong>postMessage</strong></td><td>iframe 間の安全なメッセージング</td></tr>
+      </tbody>
+    </table></div>
+    <p>JSONP は、クロスオリジンでも実行できる <code>&lt;script&gt;</code> タグ（3.5 の表を参照）の性質を利用して、データを JavaScript の関数呼び出しとして受け取る方法です。誰でもそのデータを読めてしまうなどの問題があるため、今は CORS を使います。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>能動的攻撃</td><td>改ざん・なりすまし。入力検証・CSRF対策等（徳丸本の意味では「サーバーを直接攻撃」）</td></tr>
+        <tr><td>受動的攻撃</td><td>盗聴・監視。<strong>HTTPS</strong> が主な対策（徳丸本の意味では「罠を仕掛けて被害者のブラウザに攻撃させる」）</td></tr>
+        <tr><td>サンドボックス</td><td>プログラムを隔離実行。iframe の <code>sandbox</code> 属性</td></tr>
+        <tr><td>同一オリジンポリシー</td><td>異なるオリジン間の JS アクセスを制限するブラウザの基本防御</td></tr>
+        <tr><td>iframe</td><td>ページ埋め込み。クロスオリジンでは DOM アクセス不可</td></tr>
+        <tr><td>クロスドメインアクセス</td><td>異なるオリジン間の通信。CORS 等で安全に許可</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li>オリジン＝<strong>プロトコル＋ドメイン＋ポート</strong>。1つでも違えば別オリジン</li>
+        <li>同一オリジンポリシーは <strong>「送信」ではなく「読み取り」</strong> を止める</li>
+        <li>「受動的攻撃」は分野によって意味が違う。徳丸本では XSS・CSRF のような <strong>罠型の攻撃</strong> を指す</li>
+        <li>iframe は <code>sandbox</code> 属性で権限を絞り、自サイトが埋め込まれる側ならヘッダでクリックジャッキングを防ぐ</li>
+      </ul>
+    </div>
+    <p>次の <a href="10-2_CORSの仕組み.html">CORSの仕組み</a>（徳丸本 第3章）では、クロスドメインアクセスの代表的な解決策である CORS について詳しく学びます。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. <code>https://example.com</code> と <code>https://example.com:8080</code> は同じオリジンですか？</summary>
+      <div class="body"><p><strong>違うオリジンです。</strong> プロトコルとドメインは同じですが、ポート番号（443 と 8080）が違います。オリジンはプロトコル・ドメイン・ポートの3つがすべて一致して初めて「同じ」になります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. evil.com のページから bank.com へフォームを送信することは、同一オリジンポリシーで止められますか？</summary>
+      <div class="body"><p><strong>止められません。</strong> 同一オリジンポリシーが止めるのは、別オリジンの <strong>レスポンスを読むこと</strong> です。送信そのものはできてしまうため、勝手に送信させる CSRF にはサーバー側の対策が別途必要です。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 徳丸本の分類で、XSS は能動的攻撃と受動的攻撃のどちらですか？理由も答えてください。</summary>
+      <div class="body"><p><strong>受動的攻撃です。</strong> 攻撃者は罠（罠サイトや罠リンク）を用意するだけで、実際に攻撃スクリプトを動かすのは罠を踏んだ <strong>被害者のブラウザ</strong> だからです。一方、ネットワークセキュリティでの「受動的攻撃」は盗聴を指すので、文脈に注意しましょう。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 信頼できない外部ページを iframe で埋め込むとき、<code>sandbox="allow-scripts allow-same-origin"</code> を避けるべきなのはなぜですか？</summary>
+      <div class="body"><p>この2つを同時に許可すると、埋め込まれたページのスクリプトがサンドボックスを <strong>突破できる可能性</strong> があるからです。必要な権限だけ（例：<code>allow-scripts</code> のみ）を許可するのが基本です。</p></div>
+    </details>
+    <details>
+      <summary>Q5. フロントエンド <code>https://myapp.com</code> から API <code>https://api.myapp.com</code> のレスポンスを読みたいとき、代表的な方法は何ですか？</summary>
+      <div class="body"><p><strong>CORS</strong> です。API サーバーが「<code>https://myapp.com</code> からの読み取りを許可する」とレスポンスヘッダで明示します。ほかにプロキシや、iframe 間なら postMessage がありますが、JSONP は非推奨です。詳しくは <a href="10-2_CORSの仕組み.html">CORSの仕組み</a> で学びます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：72_Web脆弱性対策/10_ブラウザのセキュリティモデル/01_受動的攻撃と同一オリジンポリシー（徳丸本2章）</li>
+      <li>徳丸浩『体系的に学ぶ 安全なWebアプリケーションの作り方 第2版』第2章（SBクリエイティブ）</li>
+      <li>MDN Web Docs「同一オリジンポリシー」https://developer.mozilla.org/ja/docs/Web/Security/Same-origin_policy</li>
+      <li>MDN Web Docs「&lt;iframe&gt;: インラインフレーム要素（sandbox 属性）」https://developer.mozilla.org/ja/docs/Web/HTML/Element/iframe</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_Web脆弱性の全体像.html"><span class="lbl">← 前のページ</span>Web脆弱性の全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-2_CORSの仕組み.html"><span class="lbl">次のページ →</span>CORSの仕組み</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

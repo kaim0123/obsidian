@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>認証と認可の違い｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 基礎概念 › 認証と認可の違い</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎概念</span>
+      <h1>認証と認可の違い</h1>
+      <p class="lead">認証は「あなたは誰か」を確かめること、認可は「それをしてよいか」を決めることです。名前が似ていて混ざりやすいのですが、混ぜると「URL の番号を 1 つ変えたら他人の注文が見えた」ような事故が起きます。このページでは、2 つの違いと 401／403 の使い分け、認可を「どこで」確かめるべきか、そして認証・認可それぞれの代表的な実装方法と API 認証の 4 方式を解説します。</p>
+      <p class="meta">もとにしたノート：10_基礎概念/01_認証と認可とは、10_基礎概念/02_認証と認可の違い（ねる前エンジニアリング）、10_基礎概念/05_API認証の仕組み（直也テック）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>認証が通っても、認可は済んでいません。</strong>「誰か分かった」と「それをしてよい」は別の質問です。認可は <strong>画面ではなくサーバーで</strong>、<strong>入口ごとではなくデータを取る手前の 1 か所で</strong>、<strong>決まっていなければ断る</strong> を基本に行います。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>認証と認可とは何か</h2>
+    <p>認証と認可は、Web アプリケーションのセキュリティにおいて重要な概念です。</p>
+    <ul>
+      <li><strong>認証（Authentication／オーセンティケーション）</strong>：「あなたは誰ですか？」を確認すること。ユーザーが本人であることを確認するプロセスです。ログインが認証にあたります。</li>
+      <li><strong>認可（Authorization／オーソリゼーション）</strong>：「あなたはその操作をしても良いですか？」を確認すること。認証されたユーザーが、特定の操作を実行する権限があるかを確認するプロセスです。例：管理者だけが編集できる。</li>
+    </ul>
+    <p>英語ではどちらも「Auth」で始まるため、短く <strong>AuthN</strong>（認証）／<strong>AuthZ</strong>（認可）と書き分けることもあります。</p>
+
+    <h3 id="sec-1-1">1.1 日常生活での例え</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>認証</h4>
+        <p>身分証明書を見せて「私は山田太郎です」と証明する。会社の受付で身分証を見せ、「この人は A さんだ」と分かる段階です。</p>
+      </div>
+      <div class="card">
+        <h4>認可</h4>
+        <p>「この部屋に入る権限がありますか？」を確認する。受付を通った社員でも、入れる部屋は入館証で決まっています（社員でも社長室には入れない）。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-1-2">1.2 比較表と 401／403</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>認証（Authentication）</th><th>認可（Authorization）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>問い</strong></td><td>あなたは誰か</td><td>それをしてよいか（何ができるか）</td></tr>
+        <tr><td><strong>たとえ</strong></td><td>受付で身分証を見せる</td><td>入館証で入れる部屋が決まる</td></tr>
+        <tr><td><strong>手段</strong></td><td>パスワード、ログイン時にもらう札（トークン）</td><td>持ち主かどうか、役割（ロール）は何か</td></tr>
+        <tr><td><strong>失敗時</strong></td><td><strong>401</strong>（名乗ってください＝誰か分からない）</td><td><strong>403</strong>（誰かは分かったがダメ）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>トークン</strong> は、ログインに成功したときにサーバーから受け取る「札」のような文字列です。以後のリクエストにこれを付けて送ることで、毎回パスワードを入力しなくても「誰か」を伝えられます。<strong>401・403</strong> は HTTP のステータスコード（サーバーが返す結果の番号）です。</p>
+    <div class="callout tip">
+      <p class="callout-title">「ログインしているのに 403」はなぜ？</p>
+      <p>401 は「誰か分からない」、403 は「誰かは分かったけれどダメ」です。ちゃんとログインしているのに 403 と言われたなら、<strong>認証は通っていて、認可で断られた</strong> ということです。</p>
+    </div>
+    <p>認証・認可の用語全体の整理は、71 の <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html">セキュリティの専門用語</a> と <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-1">アクセス制御と認証の失敗：認証と認可の違い</a> も参照してください。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>2 つの関門</h2>
+    <p>依頼（リクエスト）は、<strong>「誰ですか」の関門 → 「してよいか」の関門</strong> の順に通ります。受付と入館の確認が順番に並んでいるイメージです。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="依頼はまず認証の関門を通り、札がなければ401。次に認可の関門を通り、してよくなければ403。両方通ったときだけデータに届く">
+      <defs>
+        <marker id="arw101a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw101b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="10" y="60" width="130" height="80" rx="8" class="d-box"/>
+      <text x="75" y="94" text-anchor="middle" class="d-text-bold">頼む人</text>
+      <text x="75" y="116" text-anchor="middle" class="d-text-sub">札（トークン）付き</text>
+
+      <rect x="190" y="50" width="160" height="100" rx="8" class="d-box-accent"/>
+      <text x="270" y="80" text-anchor="middle" class="d-text-bold">関門1：認証</text>
+      <text x="270" y="104" text-anchor="middle" class="d-text-sub">あなたは誰ですか？</text>
+      <text x="270" y="124" text-anchor="middle" class="d-text-sub">札は本物か</text>
+
+      <rect x="400" y="50" width="160" height="100" rx="8" class="d-box-accent"/>
+      <text x="480" y="80" text-anchor="middle" class="d-text-bold">関門2：認可</text>
+      <text x="480" y="104" text-anchor="middle" class="d-text-sub">それをしてよいですか？</text>
+      <text x="480" y="124" text-anchor="middle" class="d-text-sub">持ち主か・役割は何か</text>
+
+      <rect x="600" y="60" width="110" height="80" rx="8" class="d-box-good"/>
+      <text x="655" y="94" text-anchor="middle" class="d-text-bold">データ</text>
+      <text x="655" y="116" text-anchor="middle" class="d-text-sub">注文の表など</text>
+
+      <path d="M140,100 L188,100" class="d-line" marker-end="url(#arw101a)"/>
+      <path d="M350,100 L398,100" class="d-line" marker-end="url(#arw101a)"/>
+      <path d="M560,100 L598,100" class="d-line" marker-end="url(#arw101a)"/>
+      <text x="374" y="90" text-anchor="middle" class="d-text-sub">通過</text>
+      <text x="579" y="90" text-anchor="middle" class="d-text-sub">通過</text>
+
+      <path d="M270,150 L270,208" class="d-line-bad" marker-end="url(#arw101b)"/>
+      <rect x="180" y="210" width="180" height="64" rx="8" class="d-box-bad"/>
+      <text x="270" y="236" text-anchor="middle" class="d-text-bold">401</text>
+      <text x="270" y="258" text-anchor="middle" class="d-text-sub">名乗ってください</text>
+
+      <path d="M480,150 L480,208" class="d-line-bad" marker-end="url(#arw101b)"/>
+      <rect x="390" y="210" width="180" height="64" rx="8" class="d-box-bad"/>
+      <text x="480" y="236" text-anchor="middle" class="d-text-bold">403（または 404）</text>
+      <text x="480" y="258" text-anchor="middle" class="d-text-sub">誰かは分かったがダメ</text>
+    </svg>
+    <figcaption>図：2 つの関門は別々の仕事。札がなければ 1 つ目で 401 となり、認可の関門までは行かない</figcaption>
+    </figure>
+
+    <p>例として、注文の表に「注文 101 は A さんのもの」「注文 102・103 は B さんのもの」と記録されているとします。</p>
+    <ul>
+      <li>A さんが「注文 101 を見せて」と頼む → 札は本物で A さんだと分かる（関門 1 通過）→ 101 の持ち主は A さんなので見てよい（関門 2 通過）→ 101 が届く。</li>
+      <li>札を持たずに頼む → 1 つ目の関門で止まり、返事は <strong>401</strong>。認証で止まったら、認可の関門までは行きません。</li>
+    </ul>
+    <p>「誰かを確かめる関門」と「してよいかを決める関門」の 2 つで 1 組です。この 2 つが別々の仕事をしている、という点を覚えておいてください。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>実務でよくある 3 つの場面</h2>
+    <p>名前が似ているせいで中身まで混ざりやすく、混ぜると他人のデータが見える事故が起きます。実務では次のような場面で出会います。</p>
+    <ol>
+      <li>URL の注文番号を 101 → 102 に変えたら、他人の注文が見えた。</li>
+      <li>ボタンを消したのに、操作できてしまった。</li>
+      <li>ちゃんとログインしているのに 403 と言われた（認証は通っていて、認可で断られた）。</li>
+    </ol>
+    <p>3 つとも、認証と認可を分けて考えるとすっきり分かります。3 つ目は 1.2 で説明しました。1 つ目・2 つ目を次の章から見ていきます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>番号を 1 つ変えると：2 つ目の関門がない作り</h2>
+    <p>「番号を 1 つ変えたら他人の注文が見えた」は本当によく起きる事故です。よくある作りでは、<strong>2 つ目の関門（認可）がそもそもありません</strong>。作った人が「ログインしていれば十分」と考えたためです。</p>
+    <ol class="steps">
+      <li>A さんが自分の注文 101 を頼む。1 つ目の関門を通り、2 つ目は素通りで 101 が届く。ここまでは普通に動いていて、テストも通ります。</li>
+      <li>A さんが URL の番号を 102 に書き換える。札は本物なので 1 つ目の関門は通る（A さんだと分かる）。</li>
+      <li>2 つ目の関門がないので素通りし、B さんの注文（住所・電話番号・購入品）が全部返ってくる。</li>
+    </ol>
+    <p>A さんは何も悪い道具を使っていません。番号を 1 つ変えただけなので、<strong>見つかりやすく起きやすい</strong> 事故です。このように、URL などに含まれる ID を書き換えるだけで他人のデータに届いてしまう脆弱性は <strong>IDOR</strong>（Insecure Direct Object Reference／安全でない直接オブジェクト参照）とも呼ばれます。OWASP Top 10 の「アクセス制御の不備」の代表例です（<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-3">A01 のよくある攻撃パターン</a> を参照）。</p>
+    <div class="callout bad">
+      <p class="callout-title">この事故の本質</p>
+      <p><strong>認証が通ったことで安心してしまう</strong> ことです。「A さんだと分かった」で止まっていて、「A さんが 102 を見てよいか」は誰も聞いていません。<strong>認証が通っても認可は済んでいない</strong>——ここがこのページで一番大事なところです。</p>
+    </div>
+
+    <h3 id="sec-4-1">4.1 2 つ目の関門を置く</h3>
+    <p>2 つ目の関門で、表を見て注文の持ち主を確かめるようにします。</p>
+    <ul>
+      <li>A さんが 102 を頼む → 1 つ目は通る → 2 つ目で持ち主（B さん）と違うので止まり、<strong>403</strong>（誰かは分かったけど見せられません）。</li>
+      <li>B さんが同じ 102 を頼む → 2 つとも通り、102 が届く。</li>
+    </ul>
+    <p>同じ 102 でも、頼む人によって答えが変わります。これが認可で、<strong>誰が・どれに・何をするか</strong> の組み合わせで答えが決まります。番号だけ見て答えると、誰が頼んでも同じ答えになってしまいます。</p>
+    <div class="callout tip">
+      <p class="callout-title">403 か 404 か</p>
+      <p>403 ではなく <strong>404（見つかりません）</strong> を返し、他人の注文が存在することすら教えない作りもあります。「あるけど見せない」より「ないことにする」ほうが用心深いやり方です。どちらにするかはチームで決めればよく、大事なのは <strong>中身を渡さないこと</strong> です。</p>
+    </div>
+
+    <h3 id="sec-4-2">4.2 コードで見る</h3>
+    <p>危ないのは、ログイン中の人を取り出す（1 つ目の関門）だけで、<strong>番号で注文を探してそのまま返す</strong> 形です。誰の注文かを見ていません。</p>
+    <span class="code-label bad">危険な例：番号だけで探して返す（2 つ目の関門がない）</span>
+<pre><code>app.get('/api/orders/:id', authenticateToken, async (req, res) =&gt; {
+  // 1つ目の関門（authenticateToken）は通っている：誰か分からなければ 401
+  const order = await db.orders.findOne({ id: req.params.id }); // 番号だけで探す
+  res.json(order); // 他人の注文でもそのまま返してしまう
+});</code></pre>
+    <p>直した形では、<strong>探すときに「番号＋持ち主は私」という条件</strong> を付けます。この持ち主の条件が 2 つ目の関門です。見つからなければ 404 を返すので、他人の注文はそもそも探せません。</p>
+    <span class="code-label good">安全な例：取り方そのものに持ち主を組み込む</span>
+<pre><code>app.get('/api/orders/:id', authenticateToken, async (req, res) =&gt; {
+  const order = await db.orders.findOne({
+    id: req.params.id,
+    userId: req.user.userId   // 持ち主は私、という条件（2つ目の関門）
+  });
+  if (!order) {
+    return res.status(404).json({ error: '見つかりません' });
+  }
+  res.json(order);
+});</code></pre>
+    <p>データを取ってくる <strong>その場所で条件を付ける</strong> のがコツです。取ってきた後で確かめる書き方だと、確かめを忘れる道ができます。<strong>取り方そのものに持ち主を組み込むほうが漏れにくい</strong> のです。1 行の差で他人の住所が守られます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>画面で隠しても守れない</h2>
+    <p>冒頭の 2 つ目の場面「ボタンを消したのに操作できた」です。</p>
+    <ul>
+      <li>「お知らせを消す」ボタンを管理者の画面にだけ出し、A さん（一般ユーザー）の画面には出さない。それで安心と考え、サーバー側に 2 つ目の関門を作らなかった。</li>
+      <li>しかし、<strong>ブラウザが送る依頼はただの文字</strong> です。画面にボタンがなくても、同じ文字を自分で作って送れます。ブラウザの開発者ツール（開発者向けの調査用機能）でも、プログラムからでも送れます。</li>
+      <li>A さんがボタンを通さずに「お知らせを消して」と送ると、1 つ目は通り、2 つ目は素通りで、お知らせが消えてしまう。</li>
+    </ul>
+    <p>サーバーに 2 つ目の関門を置けば、同じ依頼は「役割が一般だからダメ」と止まり、管理者が頼んだときだけ通ります。</p>
+    <div class="callout warn">
+      <p class="callout-title">画面で隠すのは鍵ではなく目隠し</p>
+      <p>ボタンを隠すのは <strong>使いやすさのため</strong>、守るのは <strong>サーバーの関門</strong> です。画面は親切のため、守りはサーバー、と分けて覚えてください。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>入口が増えると</h2>
+    <p>もう 1 つの具体例として、お店の売上を見る業務用画面を考えます。店長は <strong>自分の店の売上だけ</strong> を見られる決まりです。</p>
+    <ul>
+      <li>ブラウザ用の入口には 2 つ目の関門があり、1 号店の店長が 2 号店の売上を頼むと「違う店だからダメ」と止まる。ここまではよい。</li>
+      <li>ある日、スマホアプリ用の入口を新しく足した。ブラウザ用の入口に書いた確かめを <strong>写し忘れた</strong> ため、新しい入口から頼むと 2 号店の売上が届いてしまった。</li>
+    </ul>
+    <p>入口ごとに確かめを書くと、入口が増えるたびに抜け道が増えます。入口が 10 個になったら 10 回書かなければなりません。そこで確かめは <strong>入口ではなく、データを取る手前の 1 か所</strong> に集め、どの入口から来ても必ずそこを通る形にします。そうすれば、入口が増えても関門は 1 つで済みます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 280" role="img" aria-label="ブラウザ用、スマホアプリ用、夜間集計などの複数の入口から来た依頼が、すべてデータを取る手前の1か所の認可チェックを通ってからデータに届く">
+      <defs>
+        <marker id="arw101c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="30" width="190" height="56" rx="8" class="d-box"/>
+      <text x="115" y="54" text-anchor="middle" class="d-text-bold">ブラウザ用の入口</text>
+      <text x="115" y="74" text-anchor="middle" class="d-text-sub">Web 画面の API</text>
+      <rect x="20" y="112" width="190" height="56" rx="8" class="d-box"/>
+      <text x="115" y="136" text-anchor="middle" class="d-text-bold">スマホアプリ用の入口</text>
+      <text x="115" y="156" text-anchor="middle" class="d-text-sub">あとから足した</text>
+      <rect x="20" y="194" width="190" height="56" rx="8" class="d-box"/>
+      <text x="115" y="218" text-anchor="middle" class="d-text-bold">夜間集計・裏の処理</text>
+      <text x="115" y="238" text-anchor="middle" class="d-text-sub">これも入口</text>
+
+      <path d="M210,58 C270,58 280,130 318,136" class="d-line" marker-end="url(#arw101c)"/>
+      <path d="M210,140 L318,140" class="d-line" marker-end="url(#arw101c)"/>
+      <path d="M210,222 C270,222 280,150 318,144" class="d-line" marker-end="url(#arw101c)"/>
+
+      <rect x="320" y="90" width="200" height="100" rx="8" class="d-box-accent"/>
+      <text x="420" y="122" text-anchor="middle" class="d-text-bold">認可の関門（1 か所）</text>
+      <text x="420" y="146" text-anchor="middle" class="d-text-sub">誰が・どれに・何をするか</text>
+      <text x="420" y="168" text-anchor="middle" class="d-text-sub">決まっていなければ断る</text>
+
+      <path d="M520,140 L568,140" class="d-line" marker-end="url(#arw101c)"/>
+      <rect x="570" y="100" width="130" height="80" rx="8" class="d-box-good"/>
+      <text x="635" y="134" text-anchor="middle" class="d-text-bold">データ</text>
+      <text x="635" y="156" text-anchor="middle" class="d-text-sub">売上・注文など</text>
+    </svg>
+    <figcaption>図：確かめを入口ごとに書くのではなく、データを取る手前の 1 か所に集める。入口が増えても関門は 1 つ</figcaption>
+    </figure>
+    <p>夜間の集計や裏で動く処理も、同じように入口の 1 つです。入口は思ったより多いものです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>札に書いた役割</h2>
+    <p>もう 1 つ混ざりやすいところが、ログインの札（トークン）に何を書くかです。札に「この人は管理者」と書いておく作りがあります。毎回表を調べなくてよいので速い、という利点があります。</p>
+    <ul>
+      <li>しかし、C さんが今日管理者を外れたとします。C さんの手元には、朝もらった「管理者」と書かれた札が残っています。</li>
+      <li>その札で「お知らせを消して」と頼むと、通ってしまいます。札は本物なので、<strong>認証としては正しい</strong> のです。ただ、役割の中身が古くなっています。</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">札は「誰か」を伝えるのが得意</p>
+      <p>「してよいか」は <strong>今の表（現在の役割）</strong> で決めます。2 つ目の関門が今の役割を見れば、C さんの依頼は止まります。札に役割を書くなら、<strong>札の期限を短くする</strong> 工夫が要ります。ここも認証と認可を分けて考えると、何を確かめるべきかが見えてきます。</p>
+    </div>
+    <p>トークンを使った「ログイン状態の保ち方」の詳細は 74_セッション管理 で扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>どこで確かめるか：4 つの原則</h2>
+    <p>ここまでの内容を「どこで確かめるか」としてまとめます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原則</th><th>内容</th><th>対応する例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. 画面ではなくサーバーで</strong></td><td>画面は目隠し、守りはサーバー</td><td>ボタンを消したのに操作できた（5 章）</td></tr>
+        <tr><td><strong>2. 入口ごとではなくデータを取る手前の 1 か所で</strong></td><td>入口が増えても関門は 1 つ</td><td>スマホ用の入口で他店の売上が見えた（6 章）</td></tr>
+        <tr><td><strong>3. 決まっていなければ断るを基本に</strong></td><td>確かめをかけ忘れても漏れない</td><td>新しい画面を足したとき</td></tr>
+        <tr><td><strong>4. 誰が・どれに・何をするかの 3 つで決める</strong></td><td>番号だけでも、人だけでも決められない</td><td>A さんが注文 102 を見る（4 章）</td></tr>
+      </tbody>
+    </table></div>
+    <p>3 つ目の「決まっていなければ断る」について補足します。新しい画面を足したとき、確かめをかけ忘れることがあります。そのとき「何もしなければ通る」作りだとデータが漏れます。「何もしなければ断る」作りなら、困るのは作った人が試したときだけです。お客さんのデータが漏れるよりずっとよい、という考え方です（デフォルト拒否。71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-5">A01 の防御の原則</a> も参照）。必要な権限だけを与える考え方は <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> で解説しています。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>認証の方法</h2>
+    <p>ここからは、認証と認可を実際にコードでどう書くかを見ていきます（Node.js の Express というフレームワークの例です）。まず認証の代表的な方法を 3 つ紹介します。それぞれの詳細は、パスワードは 73 の 20 系（パスワード・MFA・パスキー）、OAuth は 30 系（フェデレーション）で扱う予定です。</p>
+
+    <h3 id="sec-9-1">9.1 ユーザー名とパスワード</h3>
+    <p>最も一般的な認証方法です。<code>bcrypt.compare</code> は、入力されたパスワードと保存されたハッシュ値（元に戻せない形に変換した値）が一致するかを確かめる関数です。</p>
+<pre><code>// ログイン処理
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+
+  // データベースからユーザーを検索
+  const user = await db.users.findOne({ username });
+
+  if (!user) {
+    return res.status(401).json({ error: 'ユーザー名またはパスワードが正しくありません' });
+  }
+
+  // パスワードを検証
+  const isValid = await bcrypt.compare(password, user.password);
+
+  if (!isValid) {
+    return res.status(401).json({ error: 'ユーザー名またはパスワードが正しくありません' });
+  }
+
+  // 認証成功：セッションまたはトークンを発行
+  req.session.userId = user.id;
+  res.json({ message: 'ログイン成功', user: { id: user.id, username: user.username } });
+});</code></pre>
+    <p>ユーザーが存在しない場合もパスワードが違う場合も、同じエラーメッセージを返している点に注目してください。どちらが間違っているかを教えると、攻撃者に「このユーザー名は存在する」というヒントを与えてしまうためです。</p>
+
+    <h3 id="sec-9-2">9.2 トークンベース認証（JWT）</h3>
+    <p><strong>JWT（JSON Web Token／ジョット）</strong> を使った認証方法です。ログイン時にサーバーが署名付きのトークンを発行し、以後のリクエストでは <code>Authorization: Bearer トークン</code> というヘッダーで送ってもらいます。</p>
+<pre><code>const jwt = require('jsonwebtoken');
+
+// ログイン処理
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+
+  // 認証処理
+  const user = await authenticateUser(username, password);
+
+  if (!user) {
+    return res.status(401).json({ error: '認証に失敗しました' });
+  }
+
+  // JWTトークンを発行
+  const token = jwt.sign(
+    { userId: user.id, username: user.username },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  res.json({ token, user: { id: user.id, username: user.username } });
+});
+
+// トークンを検証するミドルウェア
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader &amp;&amp; authHeader.split(' ')[1]; // "Bearer TOKEN"
+
+  if (!token) {
+    return res.status(401).json({ error: 'トークンが必要です' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) =&gt; {
+    if (err) {
+      return res.status(403).json({ error: '無効なトークンです' });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// 保護されたエンドポイント
+app.get('/api/profile', authenticateToken, (req, res) =&gt; {
+  res.json({ user: req.user });
+});</code></pre>
+    <p><strong>ミドルウェア</strong> は、リクエストが本来の処理に届く前に挟まる共通処理のことです。<code>authenticateToken</code> が「1 つ目の関門」の役割を果たします。</p>
+    <div class="callout tip">
+      <p class="callout-title">補足：無効なトークンは 401 が本来の意味に近い</p>
+      <p>このコードでは、トークンが無効なとき 403 を返しています。ただ 1.2 の整理に従うと、トークンが偽物・期限切れのときは「誰か分からない」状態なので、<strong>401</strong> を返すほうが意味としては正確です。403 は「誰かは分かったが権限がない」ときに使います。</p>
+    </div>
+
+    <h3 id="sec-9-3">9.3 OAuth（サードパーティ認証）</h3>
+    <p>Google、GitHub などの外部サービスを使った認証です。<strong>OAuth（オーオース）</strong> は本来「権限を委譲する」ための仕組みで、ログイン用途では OpenID Connect と組み合わせて使われます（30 系のフェデレーションで詳しく扱います）。</p>
+<pre><code>// Google OAuthの例（簡略化）
+app.get('/auth/google', (req, res) =&gt; {
+  // Googleの認証ページにリダイレクト
+  res.redirect('https://accounts.google.com/oauth/authorize?...');
+});
+
+app.get('/auth/google/callback', async (req, res) =&gt; {
+  const { code } = req.query;
+
+  // トークンを取得
+  const token = await getGoogleToken(code);
+
+  // ユーザー情報を取得
+  const userInfo = await getGoogleUserInfo(token);
+
+  // ユーザーを登録またはログイン
+  const user = await findOrCreateUser(userInfo);
+
+  // セッションに保存
+  req.session.userId = user.id;
+  res.redirect('/dashboard');
+});</code></pre>
+
+    <h2 id="sec-10"><span class="num">10.</span>API 認証の代表的な 4 方式</h2>
+    <p>API は URL を知っていれば誰でも呼べてしまいます。そのため、入口で「誰か」を確かめる認証が必要になります。代表的な方式は次の 4 つです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>仕組み</th><th>ポイント</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Basic 認証</strong></td><td>ユーザー名とパスワードを Base64 にしてヘッダーに入れて送る</td><td>Base64 は 64 文字でデータを表す <strong>置き換えのルールにすぎず、暗号化ではない</strong>。鍵がないので誰でも元に戻せる</td></tr>
+        <tr><td><strong>API キー</strong></td><td>発行された固有のキーをリクエストに付ける</td><td>誰がどれだけ使ったかを測れるので、<strong>レート制限や従量課金</strong> がしやすい。漏れたらパスワード同様に無効化が必要</td></tr>
+        <tr><td><strong>JWT</strong></td><td>ログイン時にサーバーが署名付きトークンを発行</td><td><strong>ヘッダー</strong>（アルゴリズム）・<strong>ペイロード</strong>（ID や権限）・<strong>署名</strong>（2 つと秘密鍵から作る改ざん検知値）の 3 部構成。改ざんはすぐ分かり、サーバーは <strong>ステートレス</strong> なのでスケールしやすい</td></tr>
+        <tr><td><strong>OAuth</strong></td><td>Google などに認証を任せ、アクセストークンを受け取る</td><td>今もっとも使われる方式。自分でパスワードを扱わない。トークンには <strong>有効期限</strong> があり、いつでも取り消せる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>レート制限</strong> は一定時間あたりの呼び出し回数を制限すること、<strong>ステートレス</strong> はサーバーがログイン状態を記憶しておかなくてよい（トークン自体に情報が入っている）ことです。記憶がいらないので、サーバーの台数を増やしやすくなります（スケールしやすい）。</p>
+    <div class="callout warn">
+      <p class="callout-title">Base64 は暗号ではない</p>
+      <p>Basic 認証は、中身が丸見えになる前提で考えます。必ず HTTPS（通信を暗号化する仕組み）の上で使います。</p>
+    </div>
+    <p>4 方式の特徴をひとことで言うと、API キーは <strong>利用量の計測</strong> に強く、JWT は <strong>署名による改ざん検知とステートレス性</strong>、OAuth は <strong>パスワードを預からない委譲</strong> が特徴です。ただし JWT は 7 章で見たとおり、札に書いた権限が古くなる問題があるので、有効期限は短めにします。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>認可の実装例</h2>
+    <p>認可（2 つ目の関門）の代表的な書き方は 2 つです。認可モデル（RBAC・ABAC など）の詳細は 73 の 40 系（認可モデル）で扱う予定です。</p>
+
+    <h3 id="sec-11-1">11.1 ロールベース認可</h3>
+    <p>ユーザーの役割（<strong>ロール</strong>）に基づいて権限を管理します。「管理者だけが削除できる」のように、役割単位で決めます。</p>
+<pre><code>// ユーザーのロールを定義
+const ROLES = {
+  ADMIN: 'admin',
+  USER: 'user',
+  GUEST: 'guest'
+};
+
+// ロールをチェックするミドルウェア
+function requireRole(...allowedRoles) {
+  return (req, res, next) =&gt; {
+    if (!req.user) {
+      return res.status(401).json({ error: '認証が必要です' });
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'この操作を実行する権限がありません' });
+    }
+
+    next();
+  };
+}
+
+// 管理者のみアクセス可能
+app.delete('/api/users/:id', authenticateToken, requireRole(ROLES.ADMIN), (req, res) =&gt; {
+  // ユーザーを削除
+  deleteUser(req.params.id);
+  res.status(204).send();
+});
+
+// ユーザーと管理者がアクセス可能
+app.get('/api/users/:id', authenticateToken, requireRole(ROLES.USER, ROLES.ADMIN), (req, res) =&gt; {
+  const user = getUser(req.params.id);
+  res.json(user);
+});</code></pre>
+    <p>401（誰か分からない）と 403（権限がない）がきちんと使い分けられています。ただし最後の例は「ユーザーなら誰でも、どのユーザーの情報でも見られる」状態で、4 章と同じ問題が残ります。役割だけでなく <strong>どれに（どのリソースに）</strong> まで見るのが次のリソースベース認可です。</p>
+
+    <h3 id="sec-11-2">11.2 リソースベース認可</h3>
+    <p>特定のリソース（データ）に対する権限を確認します。「自分のデータだけ」「自分の投稿だけ」のように、持ち主で決めます。</p>
+<pre><code>// 自分のデータのみアクセス可能
+app.get('/api/users/:id', authenticateToken, async (req, res) =&gt; {
+  const userId = parseInt(req.params.id);
+
+  // 自分のデータか、管理者か確認
+  if (req.user.userId !== userId &amp;&amp; req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'このリソースにアクセスする権限がありません' });
+  }
+
+  const user = await getUser(userId);
+  res.json(user);
+});
+
+// 自分の投稿のみ削除可能
+app.delete('/api/posts/:id', authenticateToken, async (req, res) =&gt; {
+  const postId = parseInt(req.params.id);
+  const post = await getPost(postId);
+
+  // 投稿の所有者か、管理者か確認
+  if (post.userId !== req.user.userId &amp;&amp; req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'この投稿を削除する権限がありません' });
+  }
+
+  await deletePost(postId);
+  res.status(204).send();
+});</code></pre>
+    <p>これらは「取ってきた後で確かめる」書き方です。4.2 で見たように、可能なら <strong>取り方そのものに持ち主の条件を組み込む</strong> ほうが確かめ忘れが起きにくくなります。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>認証と認可の流れと実践例</h2>
+    <h3 id="sec-12-1">12.1 処理の流れ</h3>
+    <ol class="steps">
+      <li>ユーザーがログイン</li>
+      <li>認証（ユーザー名とパスワードを確認）</li>
+      <li>認証成功 → トークンまたはセッションを発行</li>
+      <li>ユーザーがリクエストを送信（トークンを含む）</li>
+      <li>認証を確認（トークンが有効か）</li>
+      <li>認可を確認（権限があるか）</li>
+      <li>リクエストを処理</li>
+    </ol>
+    <p>5 が 1 つ目の関門、6 が 2 つ目の関門にあたります。</p>
+
+    <h3 id="sec-12-2">12.2 実践例：認証・認可システム一式</h3>
+    <p>登録・ログイン・プロフィール取得（認証が必要）・ユーザー削除（管理者のみ）をまとめた例です。</p>
+<pre><code>const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const app = express();
+
+app.use(express.json());
+
+// 認証ミドルウェア
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader &amp;&amp; authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: '認証が必要です' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) =&gt; {
+    if (err) {
+      return res.status(403).json({ error: '無効なトークンです' });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// 認可ミドルウェア
+function requireRole(...roles) {
+  return (req, res, next) =&gt; {
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ error: '権限がありません' });
+    }
+    next();
+  };
+}
+
+// 登録
+app.post('/api/register', async (req, res) =&gt; {
+  const { username, password, email } = req.body;
+
+  // パスワードをハッシュ化
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // ユーザーを作成
+  const user = await db.users.create({
+    username,
+    password: hashedPassword,
+    email,
+    role: 'user'
+  });
+
+  res.status(201).json({ message: 'ユーザーが作成されました' });
+});
+
+// ログイン
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+
+  const user = await db.users.findOne({ username });
+  if (!user) {
+    return res.status(401).json({ error: '認証に失敗しました' });
+  }
+
+  const isValid = await bcrypt.compare(password, user.password);
+  if (!isValid) {
+    return res.status(401).json({ error: '認証に失敗しました' });
+  }
+
+  const token = jwt.sign(
+    { userId: user.id, username: user.username, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  res.json({ token });
+});
+
+// プロフィール取得（認証必要）
+app.get('/api/profile', authenticateToken, async (req, res) =&gt; {
+  const user = await db.users.findById(req.user.userId);
+  res.json({ user: { id: user.id, username: user.username, email: user.email } });
+});
+
+// ユーザー削除（管理者のみ）
+app.delete('/api/users/:id', authenticateToken, requireRole('admin'), async (req, res) =&gt; {
+  await db.users.delete(req.params.id);
+  res.status(204).send();
+});</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">この例で気をつけたい点</p>
+      <p>ログイン時に <code>role</code> をトークン（札）に書き込み、<code>requireRole</code> はその札の役割を見ています。これは 7 章の「札に書いた役割」の作りです。管理者を外れても札の期限（ここでは 24 時間）までは管理者として操作できてしまうため、期限を短くするか、重要な操作では今の役割をデータベースで確かめるようにします。</p>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>セキュリティの注意点</h2>
+    <h3 id="sec-13-1">13.1 パスワードのハッシュ化</h3>
+    <span class="code-label bad">間違い：平文で保存</span>
+<pre><code>const user = { username: 'yamada', password: 'password123' };</code></pre>
+    <span class="code-label good">正しい：ハッシュ化して保存</span>
+<pre><code>const hashedPassword = await bcrypt.hash('password123', 10);
+const user = { username: 'yamada', password: hashedPassword };</code></pre>
+    <p>なぜ MD5 ではなく bcrypt なのかなどの詳細は、71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a> を参照してください。</p>
+
+    <h3 id="sec-13-2">13.2 トークンの有効期限</h3>
+    <p>適切な有効期限を設定します。</p>
+<pre><code>const token = jwt.sign(payload, secret, { expiresIn: '24h' });</code></pre>
+
+    <h3 id="sec-13-3">13.3 HTTPS の使用</h3>
+    <p>認証情報は必ず HTTPS で送信します。</p>
+
+    <h3 id="sec-13-4">13.4 レート制限</h3>
+    <p><strong>ブルートフォース攻撃</strong>（パスワードを総当たりで試す攻撃）を防ぎます。次の例は、15 分間にログインを 5 回までに制限します。</p>
+<pre><code>const rateLimit = require('express-rate-limit');
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分
+  max: 5 // 5回まで
+});
+
+app.post('/api/login', loginLimiter, loginHandler);</code></pre>
+    <p>ログイン試行の制限やセッション管理の考え方は、71 の <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-10">セッション管理とログイン試行の制限</a> も参照してください。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>AI にコードを書かせたときに見るところ</h2>
+    <p>AI はログインの確認（1 つ目の関門）はほぼ必ず書いてくれます。よく知られているからです。しかし 2 つ目の関門は、<strong>仕様に書いていないと抜けやすい</strong> です。次の 4 点を確認します。</p>
+    <ol>
+      <li><strong>番号で取ってきて、そのまま返していないか</strong>（4.2 の危険な形）</li>
+      <li><strong>ログインの確認だけで安心していないか</strong>（401 を返す行があると、守っている気になってしまう）</li>
+      <li><strong>新しい入口を足したとき、2 つ目の関門を通っているか</strong>（スマホ用の入口を AI に足してもらったときが危ない）</li>
+      <li><strong>テストに「他人の番号で頼んで断られる」が入っているか</strong>（自分の注文が見えるだけのテストは、関門がなくても通る。4 章の図でも A さんの 101 は関門なしで届いていた）</li>
+    </ol>
+    <div class="callout tip">
+      <p class="callout-title">断られることを確かめるテスト</p>
+      <p>AI に頼むときも「他人の番号で断られるテストを書いて」と言えば済みます。他人の 102 を頼んで <strong>断られることまで</strong> 確かめましょう。</p>
+    </div>
+
+    <h2 id="sec-15"><span class="num">15.</span>まとめ</h2>
+    <ul>
+      <li><strong>認証</strong> は「あなたは誰ですか？」を確認する。<strong>認可</strong> は「その操作をしても良いですか？」を確認する。失敗時は 401 と 403。</li>
+      <li><strong>認証が通っても認可は済んでいない</strong>。番号を変えたら他人の注文が見える事故は、これを混ぜた結果。</li>
+      <li>認可は <strong>画面ではなくサーバーで</strong>、<strong>データを取る手前の 1 か所で</strong>、<strong>決まっていなければ断る</strong>。<strong>誰が・どれに・何をするか</strong> の 3 つで決める。</li>
+      <li>札（トークン）は「誰か」を伝えるのが得意。「してよいか」は今の表で決め、札に役割を書くなら期限を短くする。</li>
+      <li><strong>パスワード</strong> は必ずハッシュ化する。<strong>トークン</strong> や <strong>セッション</strong> を使って認証状態を管理する。</li>
+      <li><strong>ロール</strong> や <strong>リソース</strong> に基づいて認可を実装する。</li>
+      <li>API 認証の 4 方式：Base64 は暗号ではないので Basic 認証は中身が丸見えの前提。API キーは利用量の計測、JWT は署名による改ざん検知とステートレス性、OAuth はパスワードを預からない委譲が特徴。</li>
+      <li>札が本物かどうか（暗号の数学）は道具に任せ、<strong>その人がそれをしてよいかは自分で決める</strong>。セキュリティを最優先に考える。</li>
+    </ul>
+
+    <h2 id="sec-16"><span class="num">16.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 認証と認可の違いを、それぞれの「問い」と失敗時のステータスコードで説明してください。</summary>
+      <div class="body"><p>認証は「あなたは誰か」を確かめることで、失敗すると 401（名乗ってください）。認可は「それをしてよいか」を決めることで、失敗すると 403（誰かは分かったがダメ）です。</p></div>
+    </details>
+    <details>
+      <summary>Q2. ちゃんとログインしているのに 403 が返ってきました。何が起きていますか？</summary>
+      <div class="body"><p>認証（1 つ目の関門）は通っていて、認可（2 つ目の関門）で「その操作をする権限がない」と断られています。</p></div>
+    </details>
+    <details>
+      <summary>Q3. URL の注文番号を 101 から 102 に変えたら他人の注文が見えました。原因と直し方は？</summary>
+      <div class="body"><p>ログインしているか（認証）だけを確かめ、その注文の持ち主か（認可）を確かめていないことが原因です。注文を探すときに「番号＋持ち主は私」という条件を付け、見つからなければ 404（または 403）を返すように直します。取ってきた後で確かめるより、取り方そのものに持ち主を組み込むほうが漏れにくくなります。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 管理者の画面にだけ削除ボタンを出しています。これで一般ユーザーの削除を防げますか？</summary>
+      <div class="body"><p>防げません。ブラウザが送る依頼はただの文字なので、開発者ツールやプログラムで同じ依頼を作って送れます。画面で隠すのは目隠しであって鍵ではありません。サーバー側で役割を確かめる認可が必要です。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 認可の確かめを「入口ごと」に書くと、どんな問題が起きますか？</summary>
+      <div class="body"><p>スマホ用の入口や夜間集計など、入口が増えるたびに確かめを写し忘れる抜け道が増えます。確かめはデータを取る手前の 1 か所に集め、どの入口から来ても必ず通る形にします。</p></div>
+    </details>
+    <details>
+      <summary>Q6. トークンに「管理者」と書いておく作りの注意点は何ですか？</summary>
+      <div class="body"><p>管理者を外れた後も、手元の札には「管理者」と残っていて操作できてしまいます。札は本物なので認証としては正しいのが厄介な点です。「してよいか」は今の役割で決め、札に役割を書くなら有効期限を短くします。</p></div>
+    </details>
+    <details>
+      <summary>Q7. Basic 認証のパスワードは Base64 にしてあるので安全、と言えますか？</summary>
+      <div class="body"><p>言えません。Base64 は 64 文字でデータを表す置き換えのルールにすぎず、鍵もないので誰でも元に戻せます。暗号化ではないため、必ず HTTPS 上で使います。</p></div>
+    </details>
+    <details>
+      <summary>Q8. 「決まっていなければ断る」を基本にする理由は何ですか？</summary>
+      <div class="body"><p>新しい画面や入口に確かめをかけ忘れたとき、「何もしなければ通る」作りだとデータが漏れますが、「何もしなければ断る」作りなら困るのは作った人が試したときだけで済むからです。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：73_認証認可/10_基礎概念/01_認証と認可とは</li>
+      <li>ノート：73_認証認可/10_基礎概念/02_認証と認可の違い（ねる前エンジニアリング）</li>
+      <li>ノート：73_認証認可/10_基礎概念/05_API認証の仕組み（直也テック）</li>
+      <li>ねる前エンジニアリング「認証と認可、何がどう違うのか」 https://www.youtube.com/watch?v=Yu1LIOc_Pec</li>
+      <li>直也テック「API認証の仕組み」 https://www.youtube.com/shorts/LnpbqJlORTE</li>
+      <li>OWASP「Authorization Cheat Sheet」 https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html</li>
+      <li>MDN「401 Unauthorized」「403 Forbidden」 https://developer.mozilla.org/ja/docs/Web/HTTP/Status</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">71 アクセス制御と認証の失敗</a>、<a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">71 最小権限とデータ最小化</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_認証認可の全体像.html"><span class="lbl">← 前のページ</span>認証認可の全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-2_ログイン方式と認証の概念.html"><span class="lbl">次のページ →</span>ログイン方式と認証の概念</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>脅威モデリングとデータフロー図｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 脅威モデリング › 脅威モデリングとデータフロー図</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 脅威モデリング</span>
+      <h1>脅威モデリングとデータフロー図</h1>
+      <p class="lead">システムを作る前に「攻撃者ならどこを狙うか」を整理し、守る順番を決める作業が脅威モデリングです。このページでは、脅威モデリングの4つの問いと進め方、そしてその出発点になる「データフロー図（DFD）」と「信頼境界」の描き方を、小さな写真投稿アプリを例に解説します。</p>
+      <p class="meta">もとにしたノート：71_セキュリティ基礎/30_脅威モデリング/01_脅威モデリングの基礎、05_データフロー図</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>「攻撃者の立場で自分のシステムを見て、弱点を先に見つける」</strong> 作業です。まずデータの流れを図（DFD）にして、「信用できない場所との境目（信頼境界）」に線を引く。そこが攻撃者と接触する場所なので、重点的に守ります。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>脅威モデリングとは</h2>
+    <p><strong>脅威モデリング</strong>（Threat Modeling）とは、システムを作る前や運用中に、</p>
+    <ul>
+      <li><strong>どんな攻撃があり得るか</strong>（脅威＝起こりうる悪いこと）</li>
+      <li><strong>何を守るべきか</strong>（守りたいデータや機能）</li>
+    </ul>
+    <p>を整理し、<strong>対策の優先順位</strong> を決める作業です。「モデリング」と聞くと難しそうですが、やっていることは「設計図を見ながら、泥棒の気持ちになって弱点を探す」ことです。</p>
+    <div class="callout tip">
+      <p class="callout-title">たとえ：家を建てる前の防犯相談</p>
+      <p>家を建てた後に「この窓、外から簡単に開くね」と気づいても、窓を付け替えるのは大変です。設計図の段階で「玄関・勝手口・1階の窓が侵入口になりそう。玄関には2つ鍵を、窓には格子を」と決めておけば、安く確実に守れます。脅威モデリングはこの「設計図の段階での防犯相談」にあたります。</p>
+    </div>
+
+    <h3 id="sec-1-1">このページで使う題材：写真投稿アプリ「フォトボックス」</h3>
+    <p>30章の3ページ（このページ、<a href="30-2_STRIDE.html">STRIDE</a>、<a href="30-3_DREADとアタックツリー.html">DREADとアタックツリー</a>）では、同じ架空のアプリを通しで使います。</p>
+    <div class="card">
+      <h4>フォトボックス（架空の小さなWebアプリ）</h4>
+      <ul>
+        <li>ユーザーはメールアドレスとパスワードで <strong>ログイン</strong> する</li>
+        <li>ログインしたユーザーは <strong>写真をアップロード</strong> できる</li>
+        <li>アップロードされた写真は <strong>他のユーザーにも配信</strong> される（CDN＝写真を速く配る配信網を経由）</li>
+        <li>ユーザー情報は <strong>ユーザーDB</strong>、写真は <strong>画像ストレージ</strong> に保存される</li>
+        <li>運営者用の <strong>管理者アカウント</strong> がある</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ脅威モデリングが必要なのか</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>① 設計段階で守れる</h4>
+        <p>セキュリティは <strong>作ってから足すのが最も高コスト</strong> です。設計時に脅威を洗い出せば、作り直しを避けられます。</p>
+      </div>
+      <div class="card">
+        <h4>② 優先順位が必要だから</h4>
+        <p>人・時間・お金は有限で、「全部対策」は不可能です。<strong>重要なものから守る</strong> ための判断材料になります。</p>
+      </div>
+      <div class="card">
+        <h4>③ チームの共通認識になる</h4>
+        <p>開発者・運用・セキュリティ担当が、<strong>同じ図と同じ言葉で</strong> リスクを議論できるようになります。</p>
+      </div>
+      <div class="card">
+        <h4>④ 設計の欠陥を予防できる</h4>
+        <p>OWASP Top 10 の「<strong>安全でない設計</strong>」（2021年版の A04）は、脅威モデリングをしていれば防げるケースが多いです。</p>
+      </div>
+    </div>
+    <p>設計段階からセキュリティを組み込む考え方は <a href="20-4_セキュアバイデザイン.html">セキュアバイデザイン</a> でも扱いました。脅威モデリングは、それを実際に進めるための具体的な道具です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>脅威モデリングの4つの問い</h2>
+    <p>脅威モデリングは、次の <strong>4つの問い</strong> に順に答える作業だと整理できます（脅威モデリングの第一人者 Adam Shostack が推奨する枠組み）。</p>
+    <figure>
+    <svg viewBox="0 0 760 175" role="img" aria-label="脅威モデリングの4つの問いのサイクル">
+      <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="20" width="160" height="92" rx="10" class="d-box-accent"/>
+      <text x="100" y="48" text-anchor="middle" class="d-text-bold">① 何を作って</text>
+      <text x="100" y="68" text-anchor="middle" class="d-text-bold">いるのか？</text>
+      <text x="100" y="94" text-anchor="middle" class="d-text-sub">→ DFDで図にする</text>
+      <rect x="210" y="20" width="160" height="92" rx="10" class="d-box-bad"/>
+      <text x="290" y="48" text-anchor="middle" class="d-text-bold">② 何が問題に</text>
+      <text x="290" y="68" text-anchor="middle" class="d-text-bold">なり得るか？</text>
+      <text x="290" y="94" text-anchor="middle" class="d-text-sub">→ STRIDEなど</text>
+      <rect x="400" y="20" width="160" height="92" rx="10" class="d-box-good"/>
+      <text x="480" y="48" text-anchor="middle" class="d-text-bold">③ それに対して</text>
+      <text x="480" y="68" text-anchor="middle" class="d-text-bold">何をするか？</text>
+      <text x="480" y="94" text-anchor="middle" class="d-text-sub">→ 緩和・受容など</text>
+      <rect x="590" y="20" width="160" height="92" rx="10" class="d-box"/>
+      <text x="670" y="48" text-anchor="middle" class="d-text-bold">④ うまく</text>
+      <text x="670" y="68" text-anchor="middle" class="d-text-bold">やれたか？</text>
+      <text x="670" y="94" text-anchor="middle" class="d-text-sub">→ 評価・見直し</text>
+      <line x1="180" y1="66" x2="208" y2="66" class="d-line" marker-end="url(#a1)"/>
+      <line x1="370" y1="66" x2="398" y2="66" class="d-line" marker-end="url(#a1)"/>
+      <line x1="560" y1="66" x2="588" y2="66" class="d-line" marker-end="url(#a1)"/>
+      <path d="M670,112 V140 H100 V115" class="d-line-dash" marker-end="url(#a1)"/>
+      <text x="385" y="162" text-anchor="middle" class="d-text-sub">システムの変更・新しい脅威情報・事故のたびに繰り返す</text>
+    </svg>
+    <figcaption>図1：4つの問いは一度で終わらず、ぐるぐる回し続ける</figcaption>
+    </figure>
+
+    <h3 id="sec-3-1">問い1：何を作っているのか？（システムを図にする）</h3>
+    <p>脅威を議論する前に、まず <strong>システムを図で描きます</strong>。主に使うのが <strong>データフロー図（DFD）</strong> です。プロセス（処理）・データストア（保存場所）・外部エンティティ（外側の人やシステム）・データフロー（データの流れ）、そして <strong>信頼境界</strong> を描きます。描き方は5章以降で詳しく説明します。</p>
+    <p>特に大事なのが信頼境界です。図にすると「<strong>境界を越えて入ってくるデータは常に検証すべき</strong>」という基本原則が、どこに当てはまるのか見えてきます。</p>
+
+    <h3 id="sec-3-2">問い2：何が問題になり得るか？（脅威を見つける）</h3>
+    <p>描いた図をもとに、どんな脅威があるかを洗い出します。代表的な手法は次の4つです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手法</th><th>どんなものか</th><th>詳しくは</th></tr></thead>
+      <tbody>
+        <tr><td><strong>STRIDE</strong></td><td>脅威を6つのカテゴリ（なりすまし・改ざん・否認・情報漏洩・サービス妨害・権限昇格）に分けて、漏れなく探す。Microsoft が提唱</td><td><a href="30-2_STRIDE.html">30-2 STRIDE</a></td></tr>
+        <tr><td><strong>アタックツリー</strong></td><td>攻撃者の最終目標を一番上に置き、その達成方法を木の形に枝分かれさせて書き出す</td><td><a href="30-3_DREADとアタックツリー.html">30-3</a></td></tr>
+        <tr><td><strong>悪用ケース</strong>（Misuse Case）</td><td>ユースケース（利用シナリオ）の「悪役版」。正常な使い方に対して「攻撃者ならこうする」を書き出す</td><td>—</td></tr>
+        <tr><td><strong>チェックリスト法</strong></td><td>OWASP Top 10 や CWE Top 25（よくある弱点の一覧）に照らして、当てはまるリスクを確認する簡易手法</td><td><a href="40-1_OWASP_Top10とは.html">40-1</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-3">問い3：それに対して何をするか？（対応を決める）</h3>
+    <p>見つけた脅威ごとに、次の4つのどれで対応するかを決めます（<a href="10-4_リスク管理とリスクアセスメント.html">リスク管理</a> で学んだリスク対応と同じ考え方です）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対応</th><th>内容</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>緩和</strong>（Mitigate）</td><td>技術的・運用的に対策して、起きにくく・被害を小さくする</td><td>入力検証、暗号化、レート制限（回数制限）</td></tr>
+        <tr><td><strong>移転</strong>（Transfer）</td><td>他者に責任を移す</td><td>クラウドサービスの利用、保険加入</td></tr>
+        <tr><td><strong>受容</strong>（Accept）</td><td>リスクを認識した上で、あえて対策しない</td><td>影響が軽微、または対策が高すぎる</td></tr>
+        <tr><td><strong>回避</strong>（Avoid）</td><td>その機能自体をやめる</td><td>リスクの高い機能を実装しない</td></tr>
+      </tbody>
+    </table></div>
+    <p>緩和策を考えるときは、次の設計原則が土台になります。</p>
+    <ul>
+      <li><strong>最小権限の原則</strong>：必要最小限の権限だけ与える（→ <a href="20-1_最小権限とデータ最小化.html">20-1</a>）</li>
+      <li><strong>深層防御</strong>：複数の防御層で多重に守る（→ <a href="20-2_深層防御.html">20-2</a>）</li>
+      <li><strong>フェイルセーフ</strong>：失敗したときは「安全側」に倒れる（迷ったら拒否する＝デフォルト拒否）</li>
+      <li><strong>監査ログ</strong>：何が起きたか後から追跡できるようにする</li>
+    </ul>
+
+    <h3 id="sec-3-4">問い4：うまくやれたか？（評価と反復）</h3>
+    <p>脅威モデリングは <strong>一度やって終わりではありません</strong>。次のタイミングで見直します。</p>
+    <ul>
+      <li>システムに変更が入ったとき</li>
+      <li>新しい脅威情報（CVE＝公開された脆弱性の番号付き情報、業界の事故）が出たとき</li>
+      <li>インシデント（セキュリティ事故）が起きたとき。見逃していた脅威を学びとしてフィードバックする</li>
+      <li>定期的な「ウォークスルー」（図を順に指でたどりながら抜けを確認する会）</li>
+    </ul>
+    <p>見つけた脅威の <strong>優先順位</strong> は、「被害の大きさ」と「起こりやすさ」を掛け合わせて決めます。代表的な評価手法は、5つの軸で点数をつける <strong>DREAD</strong>（→ <a href="30-3_DREADとアタックツリー.html">30-3</a>）、公開脆弱性に使われる業界標準スコアの <strong>CVSS</strong>、高・中・低で格付けする <strong>リスクマトリクス</strong> などです。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>実践の流れ（ミニマム版）と、誰がいつやるか</h2>
+    <p>最初から完璧を目指すと挫折します。<strong>小さく始める</strong> のがコツです。ノートでは次の5ステップ・合計2時間半ほどの流れを目安にしています。</p>
+    <ol class="steps">
+      <li><strong>システム図を描く（30分）</strong><br>ホワイトボードに、主要な部品とデータの流れを描く。</li>
+      <li><strong>信頼境界を引く（10分）</strong><br>「この線の外から来るデータは信用できない」という線を引く。</li>
+      <li><strong>STRIDEで脅威を列挙（60分）</strong><br>図の各部品・各矢印に、S/T/R/I/D/E をチェックリストのように当てる。</li>
+      <li><strong>緩和策を決める（30分）</strong><br>優先度の高いものから対策を決める。「やらない」も立派な選択肢。</li>
+      <li><strong>記録して共有（15分）</strong><br>チームで共有し、次に見直す時期を決める。</li>
+    </ol>
+
+    <div class="grid c2">
+      <div class="card">
+        <h4>誰がやるのか</h4>
+        <ul>
+          <li><strong>理想</strong>：開発者・セキュリティ担当・PdM（プロダクトの責任者）・運用が同席</li>
+          <li><strong>現実</strong>：開発チームが主導し、セキュリティ担当が要所でレビュー</li>
+        </ul>
+        <p>セキュリティ担当だけで進めると形だけになりがちです。<strong>作る人がやる</strong> のが本質です。</p>
+      </div>
+      <div class="card">
+        <h4>いつやるのか</h4>
+        <ul>
+          <li><strong>設計フェーズ</strong>（推奨）：大きな設計変更の前</li>
+          <li><strong>機能追加時</strong>：新機能が信頼境界を越えるなら必須</li>
+          <li><strong>インシデント後</strong>：教訓を組み込む</li>
+          <li><strong>定期的</strong>：半年〜1年に1回は棚卸し</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>ツール</strong>：Microsoft Threat Modeling Tool（無料）、OWASP Threat Dragon（オープンソース）、IriusRisk・ThreatModeler（商用、自動化機能あり）などがありますが、<strong>最初は紙・ホワイトボード・Miro・FigJam で十分</strong> です。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>データフロー図（DFD）の4つの記号</h2>
+    <p><strong>データフロー図</strong>（DFD：Data Flow Diagram）は、システムの中を <strong>データがどう流れるか</strong> を描く図です。脅威モデリングでは、次の理由で使います。</p>
+    <ul>
+      <li>どの部品が <strong>信用できない入力</strong> を受け取るかが分かる</li>
+      <li>どこで <strong>認証</strong>（本人確認）や <strong>認可</strong>（権限チェック）が必要かが分かる</li>
+      <li>次のページで学ぶ <strong>STRIDE を各要素に当てはめる土台</strong> になる</li>
+    </ul>
+    <p>つまり「<strong>攻撃者とどこで接触するか</strong>」を目に見える形にするのが DFD です。記号はたった4種類（＋信頼境界）です。</p>
+    <figure>
+    <svg viewBox="0 0 760 175" role="img" aria-label="DFDの記号一覧">
+      <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="20" width="160" height="48" class="d-box-warn"/>
+      <text x="100" y="49" text-anchor="middle" class="d-text">ユーザー</text>
+      <text x="100" y="92" text-anchor="middle" class="d-text-bold">外部エンティティ</text>
+      <text x="100" y="110" text-anchor="middle" class="d-text-sub">長方形：システムの外側</text>
+      <rect x="210" y="20" width="160" height="48" rx="24" class="d-box-accent"/>
+      <text x="290" y="49" text-anchor="middle" class="d-text">ログインAPI</text>
+      <text x="290" y="92" text-anchor="middle" class="d-text-bold">プロセス</text>
+      <text x="290" y="110" text-anchor="middle" class="d-text-sub">円・角丸：データを処理</text>
+      <rect x="400" y="20" width="160" height="48" class="d-box"/>
+      <line x1="400" y1="20" x2="560" y2="20" class="d-line"/>
+      <line x1="400" y1="68" x2="560" y2="68" class="d-line"/>
+      <text x="480" y="49" text-anchor="middle" class="d-text">ユーザーDB</text>
+      <text x="480" y="92" text-anchor="middle" class="d-text-bold">データストア</text>
+      <text x="480" y="110" text-anchor="middle" class="d-text-sub">二重線・円筒：保存場所</text>
+      <line x1="600" y1="44" x2="735" y2="44" class="d-line" marker-end="url(#a2)"/>
+      <text x="668" y="34" text-anchor="middle" class="d-text-sub">ログイン要求</text>
+      <text x="670" y="92" text-anchor="middle" class="d-text-bold">データフロー</text>
+      <text x="670" y="110" text-anchor="middle" class="d-text-sub">矢印＋何が流れるか</text>
+      <line x1="20" y1="138" x2="740" y2="138" class="d-line-dash"/>
+      <text x="380" y="164" text-anchor="middle" class="d-text-bold">点線＝信頼境界（信頼レベルが変わる境目）</text>
+    </svg>
+    <figcaption>図2：DFDで使う記号。ホワイトボードに手描きできる程度の単純さ</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>意味</th><th>記号</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>プロセス</strong>（Process）</td><td>データを <strong>処理するもの</strong></td><td>円 または 角丸長方形</td><td>ログインAPI、決済サービス、画像変換関数</td></tr>
+        <tr><td><strong>データストア</strong>（Data Store）</td><td>データが <strong>保存されるもの</strong></td><td>2本の水平線で挟んだ長方形、または円筒</td><td>データベース、ファイル、キャッシュ、オブジェクトストレージ</td></tr>
+        <tr><td><strong>外部エンティティ</strong>（External Entity）</td><td>システムの <strong>外側にいる</strong> 人やシステム</td><td>長方形</td><td>ユーザー、外部の決済サービス、他社API</td></tr>
+        <tr><td><strong>データフロー</strong>（Data Flow）</td><td>データの流れ</td><td>矢印（何が流れるかのラベル付き）</td><td>「ログインリクエスト」「クエリ結果」「JWT」</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">DFD と UML（設計図の別の書き方）の違い</p>
+      <p>UML はクラスの関係や振る舞いなど「コードの構造」を描くのが得意です。一方 DFD は <strong>データの流れ</strong> に特化しており、脅威モデリングや業務分析で使います。脅威モデリングでは <strong>DFD が第一選択</strong> で、UML の配置図やシーケンス図は補助として使えます。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>信頼境界 ― DFDで一番大事な線</h2>
+    <p><strong>信頼境界</strong>（Trust Boundary）とは、<strong>信頼レベルが異なる領域の間に引く線</strong> です。DFD の中で最も重要な概念です。</p>
+    <div class="callout tip">
+      <p class="callout-title">たとえ：銀行の窓口カウンター</p>
+      <p>銀行のロビーには誰でも入れますが、カウンターの奥には行員しか入れません。カウンターが「信頼境界」です。お客さんが差し出す書類（入力）は、カウンターを越える時点で必ず本人確認・内容確認をします。奥の金庫室にはさらに別の境界があります。システムも同じで、<strong>境界ごとに「検問所」を置く</strong> のが基本です。</p>
+    </div>
+    <h3 id="sec-6-1">どこに引くか</h3>
+    <p>信頼レベルが変わる場所＝信頼境界です。典型的には次のような場所に引きます。</p>
+    <div class="grid c2">
+      <div class="card">
+        <ul>
+          <li><strong>インターネット ↔ 自社ネットワーク</strong>（最大の境界）</li>
+          <li>フロントエンド ↔ バックエンド</li>
+          <li>バックエンド ↔ データベース</li>
+          <li>一般ユーザー領域 ↔ 管理者領域</li>
+        </ul>
+      </div>
+      <div class="card">
+        <ul>
+          <li>社内ネット ↔ クラウドサービス</li>
+          <li>アプリ ↔ OSカーネル（OSの中核部分）</li>
+          <li>コンテナ ↔ ホスト（コンテナを動かしている本体のマシン）</li>
+        </ul>
+      </div>
+    </div>
+    <h3 id="sec-6-2">なぜ重要か</h3>
+    <p><strong>境界を越えてくるデータは、常に信用できないものとして扱う</strong> 必要があるからです。</p>
+    <ul>
+      <li>境界を越えたら、まず <strong>検証・認証・エスケープ</strong>（危険な文字を無害化すること）</li>
+      <li>境界がどこにあるか分からないと、<strong>どこで検証すべきか分からない</strong></li>
+      <li>境界の見落としが、そのまま <strong>設計の脆弱性</strong> になる</li>
+    </ul>
+    <p>この「境界を前提にした守り方」をさらに推し進め、「社内ネットワークの中でも無条件には信用しない」とするのが <a href="20-3_ゼロトラスト.html">ゼロトラスト</a> の考え方です。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>実例：フォトボックスのDFDを描く</h2>
+    <p>では、フォトボックスを DFD にしてみましょう。ログイン（①〜④）、写真のアップロード（⑤⑥）、他のユーザーへの配信（⑦⑧）という3つの流れがあります。</p>
+    <figure>
+    <svg viewBox="0 0 760 450" role="img" aria-label="フォトボックスのデータフロー図。ユーザー、ログインAPI、アップロードAPI、配信、ユーザーDB、画像ストレージと2本の信頼境界">
+      <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="20" y="30" class="d-text-bold">インターネット側</text>
+      <text x="20" y="48" class="d-text-sub">（信頼できない）</text>
+      <rect x="210" y="40" width="535" height="395" rx="12" class="d-line-dash"/>
+      <text x="225" y="64" class="d-text-bold">信頼境界①：自社システム</text>
+      <line x1="522" y1="76" x2="522" y2="425" class="d-line-dash"/>
+      <text x="535" y="64" class="d-text-bold">信頼境界②：データ層</text>
+
+      <rect x="30" y="105" width="130" height="56" class="d-box-warn"/>
+      <text x="95" y="130" text-anchor="middle" class="d-text-bold">ユーザー</text>
+      <text x="95" y="149" text-anchor="middle" class="d-text-sub">（ブラウザ）</text>
+      <rect x="30" y="340" width="130" height="56" class="d-box-warn"/>
+      <text x="95" y="365" text-anchor="middle" class="d-text-bold">他のユーザー</text>
+      <text x="95" y="384" text-anchor="middle" class="d-text-sub">（ブラウザ）</text>
+
+      <rect x="280" y="105" width="150" height="56" rx="28" class="d-box-accent"/>
+      <text x="355" y="138" text-anchor="middle" class="d-text-bold">ログインAPI</text>
+      <rect x="280" y="230" width="150" height="56" rx="28" class="d-box-accent"/>
+      <text x="355" y="263" text-anchor="middle" class="d-text-bold">アップロードAPI</text>
+      <rect x="280" y="340" width="150" height="56" rx="28" class="d-box-accent"/>
+      <text x="355" y="373" text-anchor="middle" class="d-text-bold">配信（CDN）</text>
+
+      <rect x="548" y="105" width="170" height="56" class="d-box"/>
+      <line x1="548" y1="105" x2="718" y2="105" class="d-line"/>
+      <line x1="548" y1="161" x2="718" y2="161" class="d-line"/>
+      <text x="633" y="138" text-anchor="middle" class="d-text-bold">ユーザーDB</text>
+      <rect x="548" y="230" width="170" height="56" class="d-box"/>
+      <line x1="548" y1="230" x2="718" y2="230" class="d-line"/>
+      <line x1="548" y1="286" x2="718" y2="286" class="d-line"/>
+      <text x="633" y="263" text-anchor="middle" class="d-text-bold">画像ストレージ</text>
+
+      <line x1="160" y1="122" x2="278" y2="122" class="d-line" marker-end="url(#a3)"/>
+      <text x="217" y="114" class="d-text-sub">①ログイン</text>
+      <line x1="280" y1="146" x2="162" y2="146" class="d-line" marker-end="url(#a3)"/>
+      <text x="217" y="178" class="d-text-sub">④トークン</text>
+      <line x1="430" y1="122" x2="546" y2="122" class="d-line" marker-end="url(#a3)"/>
+      <text x="474" y="114" text-anchor="middle" class="d-text-sub">②検索</text>
+      <line x1="548" y1="146" x2="432" y2="146" class="d-line" marker-end="url(#a3)"/>
+      <text x="474" y="178" text-anchor="middle" class="d-text-sub">③結果</text>
+      <path d="M110,161 V258 H278" class="d-line" marker-end="url(#a3)"/>
+      <text x="217" y="250" class="d-text-sub">⑤写真送信</text>
+      <line x1="430" y1="258" x2="546" y2="258" class="d-line" marker-end="url(#a3)"/>
+      <text x="474" y="250" text-anchor="middle" class="d-text-sub">⑥保存</text>
+      <path d="M633,286 V368 H432" class="d-line" marker-end="url(#a3)"/>
+      <text x="585" y="360" text-anchor="middle" class="d-text-sub">⑦読み出し</text>
+      <line x1="280" y1="368" x2="162" y2="368" class="d-line" marker-end="url(#a3)"/>
+      <text x="217" y="360" class="d-text-sub">⑧写真</text>
+    </svg>
+    <figcaption>図3：フォトボックスのDFD（Level 1）。点線が信頼境界。矢印が点線をまたぐ所が「検問所」を置くべき場所</figcaption>
+    </figure>
+    <p>図を描いたら、<strong>矢印が点線（信頼境界）をまたいでいる場所</strong> に注目します。ノートのログインAPIの例をフォトボックスに当てはめると、次のように脅威と対策が見えてきます（S・T・I などの記号は次のページの STRIDE の頭文字です）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>場所</th><th>考えられる脅威</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>① ユーザー → ログインAPI</strong><br><span>境界①をまたぐ</span></td><td><strong>S</strong>：他人になりすましてログイン<br><strong>T</strong>：通信途中でリクエストを改ざん<br><strong>D</strong>：大量のリクエストで止める</td><td>堅牢な認証・MFA（多要素認証）<br>HTTPS 必須<br>レート制限</td></tr>
+        <tr><td><strong>②③ ログインAPI ↔ ユーザーDB</strong><br><span>境界②をまたぐ</span></td><td><strong>T</strong>：クエリ（DBへの命令）を改ざん<br><strong>I</strong>：暗号化していないDB接続から盗み見</td><td>プリペアドステートメント（SQLインジェクション対策）<br>TLS、VPC（閉じた社内ネットワーク）内に限定</td></tr>
+        <tr><td><strong>④ JWT（ログイン後の通行証）</strong></td><td><strong>T</strong>：トークンの中身を書き換え<br><strong>I</strong>：中身が読まれる</td><td>サーバーで署名を必ず検証<br>トークンに機密情報を入れない</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-7-1">アップロードと配信の流れで議論すべき点</h3>
+    <p>ノートの「画像アップロード＋外部CDN」の例も、フォトボックスの ⑤〜⑧ にそのまま当てはまります。ここでは信頼境界が「ユーザー ↔ API」「API ↔ ストレージ」「CDN ↔ ブラウザ（誰でもアクセスできる公開の配信）」の3か所にあります。</p>
+    <ul>
+      <li><strong>ファイル種別の検証</strong>：画像のふりをした悪意あるファイルを弾けるか</li>
+      <li><strong>ファイル名のサニタイズ</strong>（無害化）：<code>../../</code> のような名前で保存先の外に書き込む「パストラバーサル」を防げるか</li>
+      <li><strong>ストレージの公開設定</strong>：バケット（保存領域）が全世界に公開されていないか（設定ミス）</li>
+      <li><strong>配信URLの推測可能性</strong>：URLの番号を1つずらすと他人の非公開写真が見えないか（IDOR＝他人のデータへの直接アクセス）</li>
+      <li><strong>ウイルススキャン</strong>：アップロードされたファイルを検査しているか</li>
+    </ul>
+
+    <h3 id="sec-7-2">DFDの階層化：Level 0 → Level 1 → Level 2</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>レベル</th><th>描くもの</th><th>フォトボックスなら</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Level 0</strong>（コンテキスト図）</td><td>システム全体を <strong>1つのプロセス</strong> として、外部とのやりとりだけを描く。俯瞰用</td><td>「ユーザー ⇄ フォトボックス ⇄ 他のユーザー」だけ</td></tr>
+        <tr><td><strong>Level 1</strong></td><td>主要な部品（フロント・バックエンド・DBなど）に分解</td><td>上の図3</td></tr>
+        <tr><td><strong>Level 2 以降</strong></td><td>必要な部分だけ、さらに内部構造まで掘り下げる</td><td>アップロードAPIの中の「検証→変換→保存」など</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">コツ</p>
+      <p>最初から Level 2 を描かないこと。<strong>Level 1 で信頼境界を正しく引く</strong> ことに集中しましょう。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>DFDを描くときのコツ</h2>
+    <ol class="steps">
+      <li><strong>完璧でなくていい</strong><br>ホワイトボードや紙の手描きで十分。<strong>議論のための図</strong> であって、芸術作品ではありません。</li>
+      <li><strong>外部エンティティをすべて洗い出す</strong><br>利用者（一般ユーザー・管理者・ゲスト）、外部API（決済・認証・メール配信）、依存するクラウドサービス、社内の他サービス。見落としは、そのまま <strong>認証・認可の抜け</strong> につながります。</li>
+      <li><strong>すべての入力ポイントを把握する</strong><br>Webフォーム、APIエンドポイント、アップロード、Webhook（他サービスからの通知）、メッセージキュー、設定ファイル・環境変数、他サービスからの呼び出し。それぞれで「ここから悪意ある入力が来たら？」と問います。</li>
+      <li><strong>データの機密度をラベル化する</strong><br>各データフローに「公開／内部／機密／極秘」を付けると、優先度が見えます。フォトボックスなら ①のパスワードは「機密」、⑧の公開写真は「公開」です。</li>
+      <li><strong>認証状態を明示する</strong><br>「ログイン済みユーザーからの流れ」と「匿名ユーザーからの流れ」を分けて描くと、認証の境界が見えやすくなります。</li>
+    </ol>
+    <p><strong>DFDのツール</strong>：Microsoft Threat Modeling Tool（無料、STRIDEを自動で当ててくれる）、OWASP Threat Dragon（オープンソース、GitHub連携）、draw.io / diagrams.net（無料の汎用作図）、Miro / FigJam（共同編集）、PlantUML（テキストで書けるのでコードと一緒に管理しやすい）。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある失敗</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>完璧主義で挫折</h4>
+        <p>全脅威を網羅しようとして止まってしまう。<strong>上位2割の重要な脅威を押さえる</strong>（パレートの法則的な考え方）だけでも大きな効果があります。</p>
+      </div>
+      <div class="card">
+        <h4>セキュリティ担当に丸投げ</h4>
+        <p>「セキュリティの人がやってくれる」と開発者が関わらない。<strong>作る人の参加が必須</strong> です。</p>
+      </div>
+      <div class="card">
+        <h4>図を描いて満足</h4>
+        <p>DFD は出発点にすぎません。<strong>脅威の分析・対策の決定</strong> までやって初めて意味があります。</p>
+      </div>
+      <div class="card">
+        <h4>一度やって終わり</h4>
+        <p>システムも脅威も変化します。<strong>定期的な見直し</strong> が不可欠です。</p>
+      </div>
+      <div class="card">
+        <h4>「どれも深刻」で優先順位なし</h4>
+        <p>リソースは有限です。<strong>やらないことを決める勇気</strong> も必要です。</p>
+      </div>
+      <div class="card">
+        <h4>DFD特有の失敗</h4>
+        <ul>
+          <li><strong>信頼境界の引き忘れ</strong>：DFDを描く意味がなくなる</li>
+          <li><strong>1枚に全部描いて破綻</strong>：階層化で整理する</li>
+          <li><strong>実装と食い違ったまま放置</strong>：変更時に更新するか、PlantUML や Threat Dragon などテキストで管理できるツールを使う</li>
+          <li><strong>データストアしか見ない</strong>：プロセス間・外部サービスとの通信も確認する</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解：「脅威モデリングはセキュリティ専門家の仕事」</p>
+      <p>システムのデータの流れを一番よく知っているのは、作っている開発者です。専門家はレビューで助けてくれますが、<strong>図を描き、境界を引くのは作る人</strong> です。</p>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>脅威モデリングは「<strong>何を作っているか・何が問題か・何をするか・うまくやれたか</strong>」の4つの問いに答える作業</li>
+      <li><strong>設計段階</strong> でやるのが最もコスト効率が良く、「安全でない設計」の予防になる</li>
+      <li>DFD は <strong>プロセス／データストア／外部エンティティ／データフロー</strong> の4要素で描く</li>
+      <li>最重要は <strong>信頼境界</strong>。境界をまたぐ所で認証・検証・暗号化を検討する</li>
+      <li><strong>Level 1</strong> から始め、<strong>DFD＋STRIDE</strong> の定番の組み合わせで脅威を当てていく</li>
+      <li>「完璧」より「習慣化」。作る人が主体となり、変更のたびに見直す</li>
+    </ul>
+
+    <h2 id="sec-11"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 脅威モデリングの「4つの問い」を順に言えますか？</summary>
+      <div class="body">
+        <p>① 何を作っているのか？（システムの理解・DFD）→ ② 何が問題になり得るか？（脅威の特定・STRIDEなど）→ ③ それに対して何をするか？（緩和・移転・受容・回避）→ ④ うまくやれたか？（評価・見直し）。④のあとは①に戻って繰り返します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. フォトボックスに「パスワードを忘れた人向けに、メールでリセット用リンクを送る」機能を追加します。DFDに何を書き足すべき？</summary>
+      <div class="body">
+        <p>外部エンティティとして <strong>メール配信サービス</strong>、プロセスとして <strong>パスワードリセットAPI</strong>、データフローとして「リセット要求」「リセット用リンク（トークン）」を追加し、<strong>外部サービスとの間にも信頼境界</strong> を引きます。新機能が信頼境界を越えるので、脅威モデリングの見直しが必須のケースです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 「DFDはきれいに描けたので、脅威モデリングは完了」。どこが問題？</summary>
+      <div class="body">
+        <p>DFD は4つの問いの1つ目にすぎません。<strong>脅威の洗い出し（STRIDEなど）と対策の決定、記録・共有</strong> までやって初めて意味があります。また、一度で終わりではなく、システムの変更時や定期的に見直す必要があります。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Adam Shostack による脅威モデリングの「4つの問い」の枠組み</li>
+      <li>Microsoft Threat Modeling Tool ／ OWASP Threat Dragon</li>
+      <li>OWASP Top 10（安全でない設計）</li>
+    </ul>
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-4_セキュアバイデザイン.html"><span class="lbl">← 前のページ</span>セキュアバイデザイン</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-2_STRIDE.html"><span class="lbl">次のページ →</span>STRIDE</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>目次｜セキュリティ基礎解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セキュリティ基礎解説</a>
+    <span class="crumb">目次</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+        <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>セキュリティ基礎解説 — 目次</h1>
+      <p class="lead">Obsidian の「71_セキュリティ基礎」ノートをもとにした、初心者向け解説ページの入口です。「何を守るのか」という基本の考え方から、設計の原則、攻撃者目線での点検（脅威モデリング）、Web の代表的な弱点（OWASP Top 10）、日々の運用まで、全24ページで順を追って解説します。</p>
+      <p class="meta">もとにしたノート：MOC_セキュリティ体系 と、10〜50 の各フォルダのノート</p>
+    </div>
+
+    <h2 id="how"><span class="num">1.</span>このサイトの読み方</h2>
+    <p>ページは下の順番に並んでいて、各ページ下部の「前のページ／次のページ」で順に読み進められます。上部の「セキュリティ基礎解説」からいつでもこの目次に戻れます。どのページも単体で読めるように書いてあるので、気になるテーマから読んでもかまいません。各ページの最後には「まとめ」と「理解度チェック」があります。</p>
+    <div class="grid c3">
+      <div class="card"><h4>はじめて学ぶなら</h4><p>まず <a href="00-1_セキュリティの全体像.html">セキュリティの全体像</a> で地図を手に入れ、10 基本概念 → 20 設計原則 の順に進むのがおすすめです。</p></div>
+      <div class="card"><h4>Web 開発者なら</h4><p>10 基本概念を押さえたら、<a href="40-1_OWASP_Top10とは.html">OWASP Top 10</a> で「よくある弱点」とコードでの対策を見てみましょう。</p></div>
+      <div class="card"><h4>運用・インフラ担当なら</h4><p>50 運用・監視で、防御の仕組み・ログ・脆弱性管理・ランサムウェア対策を実例とともに学べます。</p></div>
+    </div>
+
+    <h3 id="map">5つの領域のつながり</h3>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="5つの領域のつながり">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="20" width="680" height="54" rx="10" class="d-box-accent"/>
+      <text x="40" y="44" class="d-text-bold">10 基本概念 — 何を、何から守るのか</text>
+      <text x="40" y="63" class="d-text-sub">CIA（機密性・完全性・可用性）・脅威・脆弱性・リスク・用語・リスク管理</text>
+      <rect x="20" y="104" width="210" height="72" rx="10" class="d-box-good"/>
+      <text x="36" y="130" class="d-text-bold">20 設計原則</text>
+      <text x="36" y="150" class="d-text-sub">守りの「考え方」</text>
+      <text x="36" y="166" class="d-text-sub">最小権限・深層防御…</text>
+      <rect x="255" y="104" width="210" height="72" rx="10" class="d-box"/>
+      <text x="271" y="130" class="d-text-bold">30 脅威モデリング</text>
+      <text x="271" y="150" class="d-text-sub">攻撃者目線で「点検」</text>
+      <text x="271" y="166" class="d-text-sub">DFD・STRIDE…</text>
+      <rect x="490" y="104" width="210" height="72" rx="10" class="d-box-warn"/>
+      <text x="506" y="130" class="d-text-bold">40 OWASP Top 10</text>
+      <text x="506" y="150" class="d-text-sub">よくある「弱点」の一覧</text>
+      <text x="506" y="166" class="d-text-sub">コードでの対策</text>
+      <rect x="20" y="196" width="680" height="54" rx="10" class="d-box-bad"/>
+      <text x="40" y="220" class="d-text-bold">50 運用・監視・インシデント — 動かしながら守り続ける</text>
+      <text x="40" y="239" class="d-text-sub">FW/WAF・監視・ログ・脆弱性管理・ランサムウェア・サプライチェーン</text>
+      <line x1="125" y1="76" x2="125" y2="100" class="d-line" marker-end="url(#ah)"/>
+      <line x1="360" y1="76" x2="360" y2="100" class="d-line" marker-end="url(#ah)"/>
+      <line x1="595" y1="76" x2="595" y2="100" class="d-line" marker-end="url(#ah)"/>
+      <line x1="232" y1="140" x2="251" y2="140" class="d-line-dash" marker-end="url(#ah)"/>
+      <line x1="467" y1="140" x2="486" y2="140" class="d-line-dash" marker-end="url(#ah)"/>
+      <line x1="360" y1="178" x2="360" y2="192" class="d-line" marker-end="url(#ah)"/>
+    </svg>
+    <figcaption>基本概念が土台。設計で守り、点検し、典型的な弱点をつぶし、運用で守り続ける</figcaption>
+    </figure>
+
+    <h2 id="g00"><span class="num">2.</span>00 全体像</h2>
+    <p>セキュリティという分野の地図。最初にここを読むと、残りのページの位置づけがわかります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="00-1_セキュリティの全体像.html">00-1 セキュリティの全体像</a></td><td>セキュリティとは何か・なぜ必要かと、5つの学習領域のつながり・おすすめの読む順</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="g10"><span class="num">3.</span>10 基本概念</h2>
+    <p>「何を守るのか」「何が危ないのか」を言葉にするための土台。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="10-1_CIA三原則と脅威・脆弱性・リスク.html">10-1 CIA三原則と脅威・脆弱性・リスク</a></td><td>CIA三原則、脅威・脆弱性・リスクの違い、リスク対応の4分類、攻撃者の種類と基本の守り方</td></tr>
+        <tr><td><a href="10-2_さまざまな脅威と対策の基本.html">10-2 さまざまな脅威と対策の基本</a></td><td>マルウェア・設定ミス・Web の脆弱性・パスワード攻撃・フィッシングなど脅威の全体像と対策の柱</td></tr>
+        <tr><td><a href="10-3_セキュリティの専門用語.html">10-3 セキュリティの専門用語</a></td><td>7要素、エクスプロイトなどの攻撃用語、CVE/CWE/CVSS/EPSS/KEV、暗号・PKI・TLS の用語</td></tr>
+        <tr><td><a href="10-4_リスク管理とリスクアセスメント.html">10-4 リスク管理とリスクアセスメント</a></td><td>ISO 27005・IPA 方式・ALE/FAIR によるリスク分析、リスク対応、リスク登録簿の付け方と回し方</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="g20"><span class="num">4.</span>20 設計原則</h2>
+    <p>システムを作るときに、最初から守りを組み込むための考え方。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="20-1_最小権限とデータ最小化.html">20-1 最小権限とデータ最小化</a></td><td>権限は種類・範囲・期間で絞り、データは集めない・持たない・消す・分けるで減らす</td></tr>
+        <tr><td><a href="20-2_深層防御.html">20-2 深層防御</a></td><td>性質の違う対策を何層にも重ね、1層が破られても止める・気づく・戻す考え方</td></tr>
+        <tr><td><a href="20-3_ゼロトラスト.html">20-3 ゼロトラスト</a></td><td>社内でも無条件に信頼せず、ID・端末・状況をアクセスのたびに確かめる防御モデル</td></tr>
+        <tr><td><a href="20-4_セキュアバイデザイン.html">20-4 セキュアバイデザイン</a></td><td>セキュリティを後付けせず設計段階から組み込み、初期設定のままで安全に届ける</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="g30"><span class="num">5.</span>30 脅威モデリング</h2>
+    <p>作る前に「どこを、どう攻められるか」を洗い出して優先順位をつける方法。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="30-1_脅威モデリングとデータフロー図.html">30-1 脅威モデリングとデータフロー図</a></td><td>4つの問いで脅威モデリングの進め方を知り、DFD と信頼境界の描き方を実例で学ぶ</td></tr>
+        <tr><td><a href="30-2_STRIDE.html">30-2 STRIDE</a></td><td>脅威を6分類で漏れなく洗い出す STRIDE を、具体例・対策・DFD への当てはめ方で学ぶ</td></tr>
+        <tr><td><a href="30-3_DREADとアタックツリー.html">30-3 DREAD とアタックツリー</a></td><td>DREAD で脅威に点数をつけて順位を決め、アタックツリーで攻撃経路を OR/AND で深掘り</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="g40"><span class="num">6.</span>40 OWASP Top 10</h2>
+    <p>Web アプリで実際によく起きている弱点のランキング。2021年版と2025年版の番号を併記しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="40-1_OWASP_Top10とは.html">40-1 OWASP Top 10 とは</a></td><td>OWASP Top 10 の意味と学ぶ理由、2021年版の10項目、2025年版との対応表と変更点</td></tr>
+        <tr><td><a href="40-2_アクセス制御と認証の失敗.html">40-2 アクセス制御と認証の失敗</a></td><td>認証と認可の違いから、IDOR・パスワード保存・MFA・セッション管理の守り方をコードで</td></tr>
+        <tr><td><a href="40-3_インジェクションと暗号化の不備.html">40-3 インジェクションと暗号化の不備</a></td><td>データとコードの分離でインジェクションを防ぎ、データの3状態・鍵管理・推奨暗号で守る</td></tr>
+        <tr><td><a href="40-4_安全でない設計・設定ミス・古い部品.html">40-4 安全でない設計・設定ミス・古い部品</a></td><td>設計の穴・設定の掛け忘れ・古いライブラリという「コードの外側」の3つのリスクと防ぎ方</td></tr>
+        <tr><td><a href="40-5_サプライチェーンと整合性の不備.html">40-5 サプライチェーンと整合性の不備</a></td><td>作る・配る・更新する仕組みの乗っ取りと、署名・ハッシュ・SBOM で本物を確かめる方法</td></tr>
+        <tr><td><a href="40-6_ログ不足・SSRF・例外処理.html">40-6 ログ不足・SSRF・例外処理</a></td><td>攻撃に気づくログとアラート、サーバーの踏み台化（SSRF）、失敗時のフェイルクローズ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="g50"><span class="num">7.</span>50 運用・監視・インシデント</h2>
+    <p>リリースしたあとも守り続けるための仕組みと、実際の事例。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="50-1_ネットワークと端末の防御.html">50-1 ネットワークと端末の防御</a></td><td>FW・IDS/IPS・WAF の配置と DMZ、DDoS 対策、VPN/HTTPS、メール認証、EDR で端末を守る</td></tr>
+        <tr><td><a href="50-2_セキュリティ監視とツール.html">50-2 セキュリティ監視とツール</a></td><td>SIEM・SOAR での監視、評価ツール、マルウェア分析、フォレンジック、ATT&amp;CK を整理</td></tr>
+        <tr><td><a href="50-3_セキュアな運用とログ出力.html">50-3 セキュアな運用とログ出力</a></td><td>設計・セキュアコーディングから、ログに何をどう残すか、インシデント対応までを解説</td></tr>
+        <tr><td><a href="50-4_脆弱性管理とランサムウェア対策.html">50-4 脆弱性管理とランサムウェア対策</a></td><td>境界機器の穴をふさぐ脆弱性管理のサイクルと、ランサムウェアの段取り・バックアップ・初動</td></tr>
+        <tr><td><a href="50-5_サプライチェーン攻撃と2026年の事例.html">50-5 サプライチェーン攻撃と2026年の事例</a></td><td>委託先・SaaS 経由の攻撃と対策、2026年の国内漏洩事例から共通原因と優先対策を整理</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="next"><span class="num">8.</span>この先の学習</h2>
+    <p>71 は分野共通の基礎です。より具体的なテーマは、Vault の次のフォルダのノートで扱っています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>72_Web脆弱性対策</td><td>XSS・SQLインジェクション・CSRF・CORS など Web アプリ固有の脆弱性と対策</td></tr>
+        <tr><td><a href="../../73_認証認可/00_全体像/00-0_目次.html">73_認証認可</a></td><td>本人確認・権限・OAuth / OIDC / SAML と実装</td></tr>
+        <tr><td>74_セッション管理</td><td>Cookie・セッション・トークン（JWT）とその攻撃</td></tr>
+        <tr><td>75_セキュリティ教養</td><td>歴史・経済学・匿名通信・ハッカー文化・書籍</td></tr>
+      </tbody>
+    </table></div>
+
+    <nav class="pager" aria-label="ページ移動">
+      <span class="empty"></span>
+      <span class="idx">目次</span>
+      <a class="next" href="00-1_セキュリティの全体像.html"><span class="lbl">次のページ →</span>セキュリティの全体像</a>
+    </nav>
+  </main>
+</div>
+
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

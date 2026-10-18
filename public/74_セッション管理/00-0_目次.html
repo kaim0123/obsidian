@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>目次｜セッション管理解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セッション管理解説</a>
+    <span class="crumb">目次</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>セッション管理解説 — 目次</h1>
+      <p class="lead">Obsidian の「74_セッション管理」ノートをもとにした、初心者向け解説ページの入口です。HTTP は 1 回ごとのやりとりを覚えていない（<strong>ステートレス</strong>）ので、Web アプリは <strong>Cookie</strong>・<strong>セッション</strong>・<strong>トークン</strong> という仕組みで「ログインしている状態」を保っています。このサイトでは、その仕組みと、それを狙う攻撃と対策を順に解説します。</p>
+      <p class="meta">もとにしたノート：MOC_セッション管理 と、10〜40 の各フォルダのノート</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このサイトの読み方</h2>
+    <p>ページは下の順番に並んでいて、各ページ下部の「前のページ／次のページ」で順に読み進められます。上部の「セッション管理解説」からいつでもこの目次に戻れます。各ページの最後には「まとめ」と「理解度チェック」があります。</p>
+    <p>ログインそのもの（本人確認の方法）は <a href="../../73_認証認可/00_全体像/00-0_目次.html">認証認可解説</a>（73）、Cookie を悪用する CSRF や XSS は <a href="../../72_Web脆弱性対策/00_全体像/00-0_目次.html">Web脆弱性対策解説</a>（72）、分野共通の基礎は <a href="../../71_セキュリティ基礎/00_全体像/00-0_目次.html">セキュリティ基礎解説</a>（71）で扱っています。</p>
+    <h3 id="sec-1-1">おすすめの読む順</h3>
+    <ol class="steps">
+      <li><strong>00 全体像</strong> — <a href="00-1_セッション管理の全体像.html">セッション管理の全体像</a> で地図を手に入れます。</li>
+      <li><strong>10 クッキー</strong> — すべての土台です。Cookie の流れと属性（Secure・HttpOnly・SameSite など）を押さえます。</li>
+      <li><strong>20 セッション</strong> — HTTP の基本と、Cookie にセッション ID を入れてログイン状態を保つ仕組みを学びます。</li>
+      <li><strong>30 トークン</strong> — JWT などのトークン方式と、セッション方式との違いを学びます。API や SPA を作るときに特に大切です。</li>
+      <li><strong>40 攻撃と対策</strong> — セッションハイジャック・固定化・Cookie 属性の不備など、ここまでの仕組みを狙う攻撃を学びます。</li>
+    </ol>
+
+    <h2 id="sec-2"><span class="num">2.</span>00 全体像</h2>
+    <p>セッション管理の地図。最初にここを読むと、残りのページの位置づけがわかります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="00-1_セッション管理の全体像.html">00-1 セッション管理の全体像</a></td><td>ステートレスな HTTP でログイン状態を保つ流れ、Cookie・セッション・トークンの関係、各フォルダの役割、隣の分野との境界</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>10 クッキー</h2>
+    <p>ブラウザに小さなメモを保存させ、次のリクエストで自動的に送り返してもらう仕組み。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="10-1_Cookieの仕組み.html">10-1 Cookieの仕組み</a></td><td>Cookie の流れ（Set-Cookie と Cookie ヘッダー）、中身と保存場所、属性（Domain・Path・Expires・Secure・HttpOnly・SameSite）、種類、localStorage との違い、確認方法と注意点</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>20 セッション</h2>
+    <p>サーバー側に情報を置き、Cookie には「番号（セッション ID）」だけを入れてログイン状態を保つ仕組み。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="20-1_HTTPとセッション管理.html">20-1 HTTPとセッション管理</a></td><td>HTTP のリクエスト・レスポンス、GET と POST、パーセントエンコード、Referer、hidden パラメータ、Basic 認証、Cookie によるセッション管理（徳丸本1章）</td></tr>
+        <tr><td><a href="20-2_セッションとCookieによるログイン.html">20-2 セッションとCookieによるログイン</a></td><td>セッションと Cookie の違い、ログイン処理の全体像と実装例、サーバー・インフラから見たセッション管理、セキュリティの注意点</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>30 トークン</h2>
+    <p>サーバーが覚えておかなくても、署名つきの「通行証」で誰かを判断する仕組み。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="30-1_セッション方式とトークン方式.html">30-1 セッション方式とトークン方式</a></td><td>セッションとトークンの違いと使い分け、アクセストークン・リフレッシュトークン・ID トークンの関係、実装例、ハイブリッド方式</td></tr>
+        <tr><td><a href="30-2_JWTの構造と検証.html">30-2 JWTの構造と検証</a></td><td>JWT の 3 つの部分とクレーム、署名方式、alg none などの攻撃、正しい検証の手順、鍵の入れ替え、取り消しにくさ</td></tr>
+        <tr><td><a href="30-3_アクセストークンとリフレッシュトークン.html">30-3 アクセストークンとリフレッシュトークン</a></td><td>2 つのトークンを分ける理由、ローテーションと再利用検知、期限と無効化、送信者制約（DPoP など）、クライアント別の考え方</td></tr>
+        <tr><td><a href="30-4_トークンの保存場所.html">30-4 トークンの保存場所</a></td><td>Cookie・localStorage・メモリなど置き場所ごとの比較、BFF 方式、第三者 Cookie の状況、判断の早見表</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>40 攻撃と対策</h2>
+    <p>セッション ID や Cookie を盗む・推測する・押し付ける攻撃と、その防ぎ方。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="40-1_セッション管理の不備.html">40-1 セッション管理の不備</a></td><td>セッションハイジャック、セッション ID の推測・URL 埋め込み・Referer からの漏えい、セッション固定化攻撃と、認証後に ID を変える対策（徳丸本9章）</td></tr>
+        <tr><td><a href="40-2_クッキー出力にまつわる脆弱性.html">40-2 クッキー出力にまつわる脆弱性</a></td><td>Cookie に保存すべきでない情報、Secure 属性の不備とその対策、その他の属性値の注意点（徳丸本11章）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>関連するフォルダ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="../../71_セキュリティ基礎/00_全体像/00-0_目次.html">71_セキュリティ基礎</a></td><td>CIA三原則・設計原則・脅威モデリング・OWASP Top 10・運用など分野共通の基礎</td></tr>
+        <tr><td><a href="../../72_Web脆弱性対策/00_全体像/00-0_目次.html">72_Web脆弱性対策</a></td><td>同一オリジンポリシー・CORS・XSS・CSRF など、Cookie やトークンを悪用する脆弱性</td></tr>
+        <tr><td><a href="../../73_認証認可/00_全体像/00-0_目次.html">73_認証認可</a></td><td>ログイン（認証）の方法、OAuth 2.0 / OIDC、権限（認可）の設計</td></tr>
+      </tbody>
+    </table></div>
+
+    <nav class="pager">
+      <span class="empty"></span>
+      <span class="idx">目次</span>
+      <a class="next" href="00-1_セッション管理の全体像.html"><span class="lbl">次のページ →</span>セッション管理の全体像</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

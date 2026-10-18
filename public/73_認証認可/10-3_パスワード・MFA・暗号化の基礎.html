@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>パスワード・MFA・暗号化の基礎｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 基礎概念 › パスワード・MFA・暗号化の基礎</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎概念</span>
+      <h1>パスワード・MFA・暗号化の基礎</h1>
+      <p class="lead">「パスワードはどうやって安全に保存されているの？」「多要素認証や SSO はどういう仕組み？」「公開鍵暗号やデジタル署名は何を証明しているの？」――認証を支える具体的な技術を、パスワード・MFA・SSO・暗号化・ソーシャルエンジニアリングの順にやさしく整理します。</p>
+      <p class="meta">もとにしたノート：10_基礎概念/06_認証・認可・暗号化（基礎講座第2回）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>認証と認可の違い（おさらい）</li>
+        <li>パスワードの安全な保存方法（ハッシュ・ソルト）と安全なパスワードの条件</li>
+        <li>多要素認証（MFA）・プッシュ通知 MFA・MFA 疲労攻撃の仕組み</li>
+        <li>SSO（シングルサインオン）と IdP・SAML・SP の関係</li>
+        <li>共通鍵暗号・公開鍵暗号・ハッシュ・デジタル署名・PKI の要点</li>
+        <li>「人間の隙」を突くソーシャルエンジニアリング</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>認証と認可：似ているようで全然違う</h2>
+    <p>まず土台となる 2 つの言葉をおさらいします。詳しくは <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> で解説しているので、ここでは要点だけを確認します。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>認証（Authentication）</h4>
+        <p><strong>「あなたは誰ですか？」</strong> を確認すること。</p>
+        <ul>
+          <li>会社の入口で ID カードをかざす →「田中さんですね」</li>
+          <li>ログイン画面で ID・パスワードを入力 →「このアカウントの持ち主ですね」</li>
+          <li>スマホの顔認証 →「あなた本人ですね」</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>認可（Authorization）</h4>
+        <p><strong>「あなたは何ができますか？」</strong> を確認すること。</p>
+        <ul>
+          <li>入館できても「社長室には入れない」</li>
+          <li>ログインできても「管理者ページは見られない」</li>
+          <li>ファイルにアクセスできても「削除はできない（読み取りのみ）」</li>
+        </ul>
+      </div>
+    </div>
+    <p>処理の順番は「アクセス要求 →【認証】ID とパスワードで本人確認 →【認可】権限・ロール（役割）を確認（管理者なら全操作 OK、一般ユーザーなら読み取りのみ）→ 許可または拒否」です。ホテルにたとえると、<strong>認証＝チェックイン時の身分証確認</strong>、<strong>認可＝カードキーの権限設定</strong>（305 号室には入れるが 501 号室には入れない、レストランは使えるが VIP ラウンジは NG）です。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>パスワードの仕組みと安全な保存</h2>
+
+    <h3 id="sec-2-1">2.1 やってはいけない保存方法</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>保存方法</th><th>何が起きるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>平文保存</strong>（<code>password123</code> をそのまま保存）</td><td>データベース（DB）が漏洩したら、全員のパスワードが即座にバレる</td></tr>
+        <tr><td><strong>暗号化して保存</strong>（元に戻せる＝可逆）</td><td>暗号化の鍵が漏れたら、全パスワードが解読される</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-2">2.2 正しい保存方法：ハッシュ化</h3>
+    <p><strong>ハッシュ関数</strong> は、入力データから決まった長さの値（<strong>ハッシュ値</strong>）を作る関数です。パスワードそのものではなく、ハッシュ値だけを保存します。</p>
+<pre><code>「password123」→ SHA-256 → 「ef92b778bafe771...」（これを保存）</code></pre>
+    <p>ハッシュ値には次の特徴があります。</p>
+    <ol>
+      <li><strong>元のパスワードに戻せない</strong>（一方向性）</li>
+      <li><strong>同じ入力なら必ず同じ出力</strong> になる</li>
+      <li><strong>少しでも違う入力なら全く違う出力</strong> になる</li>
+    </ol>
+    <p>ログイン時は、入力されたパスワードを同じ方法でハッシュ化し、保存済みのハッシュ値と比較します。一致すれば認証 OK です。サーバーはパスワードそのものを知らなくても、本人確認ができます。</p>
+
+    <h3 id="sec-2-3">2.3 ハッシュだけでは不十分：レインボーテーブル攻撃</h3>
+    <p><strong>レインボーテーブル攻撃</strong> とは、「よく使われるパスワードのハッシュ値」をあらかじめ大量に計算して表（テーブル）にしておき、漏洩したハッシュ値と突き合わせるだけでパスワードを割り出す攻撃です。</p>
+<pre><code>password → ef92b778...
+123456   → 8d969eef...
+qwerty   → 65e84be3...
+（数十億件のテーブル）</code></pre>
+
+    <h3 id="sec-2-4">2.4 ソルトでレインボーテーブル攻撃を防ぐ</h3>
+    <p><strong>ソルト（Salt）</strong> は、パスワードに付け加えるランダムな文字列です。ユーザーごとに異なるソルトを使うので、同じパスワードでも違うハッシュ値になり、事前に作った表が使えなくなります。</p>
+<pre><code>ソルトなし：「password123」            → ハッシュ → 「ef92b778...」
+ソルトあり：「password123」+「x7kP9m」 → ハッシュ → 「3a8f2c1b...」（全く違う値）</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 245" role="img" aria-label="登録時はパスワードにソルトを加えてハッシュ関数に通し、ソルトとハッシュ値をDBに保存する。ログイン時は入力されたパスワードにDBのソルトを加えて同じハッシュ関数に通し、保存済みのハッシュ値と比較する流れ">
+      <defs>
+        <marker id="arw1031a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="22" class="d-text-bold">登録時</text>
+      <rect x="20" y="32" width="170" height="56" rx="8" class="d-box-accent"/>
+      <text x="105" y="56" text-anchor="middle" class="d-text-bold">password123</text>
+      <text x="105" y="76" text-anchor="middle" class="d-text-sub">＋ ソルト x7kP9m</text>
+      <path d="M190,60 L250,60" class="d-line" marker-end="url(#arw1031a)"/>
+      <rect x="252" y="32" width="160" height="56" rx="8" class="d-box"/>
+      <text x="332" y="56" text-anchor="middle" class="d-text-bold">ハッシュ関数</text>
+      <text x="332" y="76" text-anchor="middle" class="d-text-sub">bcrypt / Argon2 など</text>
+      <path d="M412,60 L472,60" class="d-line" marker-end="url(#arw1031a)"/>
+      <rect x="474" y="32" width="226" height="56" rx="8" class="d-box-good"/>
+      <text x="587" y="56" text-anchor="middle" class="d-text-bold">DB に保存</text>
+      <text x="587" y="76" text-anchor="middle" class="d-text-sub">ソルト ＋ ハッシュ値 3a8f2c1b…</text>
+
+      <path d="M587,88 L587,170" class="d-line-dash" marker-end="url(#arw1031a)"/>
+      <text x="597" y="134" class="d-text-sub">保存済みの値</text>
+
+      <text x="20" y="152" class="d-text-bold">ログイン時</text>
+      <rect x="20" y="172" width="170" height="56" rx="8" class="d-box-accent"/>
+      <text x="105" y="196" text-anchor="middle" class="d-text-bold">入力されたパスワード</text>
+      <text x="105" y="216" text-anchor="middle" class="d-text-sub">＋ DB のソルト</text>
+      <path d="M190,200 L250,200" class="d-line" marker-end="url(#arw1031a)"/>
+      <rect x="252" y="172" width="160" height="56" rx="8" class="d-box"/>
+      <text x="332" y="196" text-anchor="middle" class="d-text-bold">ハッシュ関数</text>
+      <text x="332" y="216" text-anchor="middle" class="d-text-sub">登録時と同じ方法</text>
+      <path d="M412,200 L472,200" class="d-line" marker-end="url(#arw1031a)"/>
+      <rect x="474" y="172" width="226" height="56" rx="8" class="d-box-warn"/>
+      <text x="587" y="196" text-anchor="middle" class="d-text-bold">ハッシュ値どうしを比較</text>
+      <text x="587" y="216" text-anchor="middle" class="d-text-sub">一致すれば認証 OK</text>
+    </svg>
+    <figcaption>図：サーバーが保存するのはソルトとハッシュ値だけ。パスワードそのものは保存しない</figcaption>
+    </figure>
+
+    <span class="code-label bad">危険な例：平文・速いハッシュだけ</span>
+<pre><code>保存値 = "password123"            # 平文 → 漏れたら即アウト
+保存値 = sha256("password123")    # ソルトなし → レインボーテーブルで割り出される</code></pre>
+    <span class="code-label good">安全な例：ソルト付きの専用パスワードハッシュ関数</span>
+<pre><code>保存値 = bcrypt.hash("password123")  # bcrypt / scrypt / Argon2
+                                     # ユーザーごとのソルトはライブラリが自動で付ける</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">現在の推奨</p>
+      <p><strong>bcrypt・scrypt・Argon2</strong> などの、ソルト付きの <strong>専用パスワードハッシュ関数</strong> を使います。これらは「わざと遅く」作られており、総当たりにも強くなっています。コード例を含む詳しい比較は <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-8">パスワードの保存：平文・MD5・bcrypt</a>（セキュリティ基礎）を参照してください。実装の詳細は、このサイトの 20 系（パスワード・MFA・パスキー）で扱う予定です。</p>
+    </div>
+
+    <h3 id="sec-2-5">2.5 安全なパスワードの条件</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>条件</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>12 文字以上</td><td>短いと総当たり攻撃（全組み合わせを試す攻撃）で解読される</td></tr>
+        <tr><td>大文字・小文字・数字・記号を混在</td><td>文字の種類が多いほど総当たりに時間がかかる</td></tr>
+        <tr><td>辞書に載っている単語を避ける</td><td>辞書攻撃（よく使われる単語を順に試す攻撃）を防ぐ</td></tr>
+        <tr><td>サービスごとに異なるパスワード</td><td>1 つ漏洩しても他に影響しない</td></tr>
+        <tr><td>パスワードマネージャーを使う</td><td>複雑なパスワードを安全に管理できる</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">補足：運営側のパスワードポリシー</p>
+      <p>利用者が自分で選ぶときは上の表が目安になります。一方、サービス側が「記号を必ず混ぜる」「定期的に変更させる」と <strong>強制する</strong> ことは、米国 NIST のガイドラインでは推奨されなくなっています（長さと漏洩済みパスワードの禁止を重視）。詳しくは <a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html#sec-9">パスワードポリシーの最新推奨</a> を参照してください。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>多要素認証（MFA）の仕組み</h2>
+
+    <h3 id="sec-3-1">3.1 認証の 3 要素</h3>
+    <p><strong>多要素認証（MFA：Multi-Factor Authentication）</strong> は、性質の違う認証要素を 2 つ以上組み合わせて本人確認をする方式です。認証要素は次の 3 種類に分けられます（考え方は <a href="10-2_ログイン方式と認証の概念.html">ログイン方式と認証の概念</a> も参照）。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>知識情報</h4>
+        <p>Something You Know</p>
+        <ul><li>パスワード</li><li>PIN</li><li>秘密の質問</li></ul>
+      </div>
+      <div class="card">
+        <h4>所持情報</h4>
+        <p>Something You Have</p>
+        <ul><li>スマートフォン（認証アプリ）</li><li>SMS で届くワンタイムパスワード</li><li>セキュリティキー（YubiKey など）</li></ul>
+      </div>
+      <div class="card">
+        <h4>生体情報</h4>
+        <p>Something You Are</p>
+        <ul><li>指紋</li><li>顔認証</li><li>虹彩認証</li></ul>
+      </div>
+    </div>
+
+    <h3 id="sec-3-2">3.2 TOTP の仕組み（Google Authenticator など）</h3>
+    <p><strong>TOTP（Time-based One-Time Password）</strong> は、時刻をもとに作る使い捨てのパスワードです。</p>
+    <ol class="steps">
+      <li>サービスとスマホが「シークレットキー」（秘密の値）を共有する</li>
+      <li>現在時刻 ＋ シークレットキー から 6 桁の数字を生成する</li>
+      <li>30 秒ごとに新しい数字に変わる</li>
+    </ol>
+    <p>サービス側も同じ計算をして照合します。毎回違う数字なので、盗まれてもすぐ使えなくなり、インターネット接続なしでも生成できます。</p>
+
+    <h3 id="sec-3-3">3.3 SMS・TOTP・セキュリティキーなどの比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>安全性</th><th>利便性</th><th>備考</th></tr></thead>
+      <tbody>
+        <tr><td>SMS 認証</td><td>★★★</td><td>★★★★★</td><td>SIM スワップ攻撃（電話番号を乗っ取る攻撃）のリスクあり</td></tr>
+        <tr><td>TOTP アプリ</td><td>★★★★</td><td>★★★★</td><td>Google Authenticator 等</td></tr>
+        <tr><td>プッシュ通知</td><td>★★★★</td><td>★★★★★</td><td>MFA 疲労攻撃のリスクあり（次の章）</td></tr>
+        <tr><td>セキュリティキー</td><td>★★★★★</td><td>★★★</td><td>YubiKey 等・最も安全</td></tr>
+        <tr><td>生体認証</td><td>★★★★</td><td>★★★★★</td><td>デバイス依存</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>プッシュ通知 MFA と MFA 疲労攻撃</h2>
+
+    <h3 id="sec-4-1">4.1 プッシュ通知 MFA の仕組み</h3>
+    <p><strong>プッシュ通知 MFA</strong> は、ログイン時にスマホへ「承認しますか？」という通知が届き、タップするだけで認証できる方式です。Microsoft や Duo などで広く使われています。</p>
+    <ol class="steps">
+      <li>ユーザーが ID とパスワードを入力する</li>
+      <li>サーバーがスマホに「承認リクエスト」を送信する</li>
+      <li>スマホに「example.com へのログインを承認しますか？［承認］［拒否］」という通知が届く</li>
+      <li>［承認］をタップすると認証完了・ログイン成功</li>
+    </ol>
+    <p>メリットは、6 桁のコードを入力する手間がないこと、直感的でわかりやすいことです。多くのビジネス向けサービスで採用されています。</p>
+
+    <h3 id="sec-4-2">4.2 MFA 疲労攻撃（MFA Fatigue Attack）</h3>
+    <p>プッシュ通知 MFA には <strong>MFA 疲労攻撃</strong> という弱点があります。大量の通知で利用者を疲れさせ、うっかり承認させる手口です。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="攻撃者が盗んだIDとパスワードで何度もログインを試し、サーバーが利用者のスマホに大量の承認通知を送り、利用者がうっかり承認をタップすると攻撃者のログインが成功する流れ">
+      <defs>
+        <marker id="arw1032a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw1032b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="40" width="170" height="70" rx="8" class="d-box-bad"/>
+      <text x="105" y="66" text-anchor="middle" class="d-text-bold">攻撃者</text>
+      <text x="105" y="88" text-anchor="middle" class="d-text-sub">盗んだ ID・パスワード</text>
+
+      <rect x="300" y="40" width="170" height="70" rx="8" class="d-box"/>
+      <text x="385" y="66" text-anchor="middle" class="d-text-bold">ログインサーバー</text>
+      <text x="385" y="88" text-anchor="middle" class="d-text-sub">承認リクエストを送信</text>
+
+      <path d="M190,75 L298,75" class="d-line-bad" marker-end="url(#arw1032b)"/>
+      <text x="245" y="65" text-anchor="middle" class="d-text-sub">① 連続ログイン</text>
+      <path d="M470,75 L548,75" class="d-line" marker-end="url(#arw1032a)"/>
+      <text x="509" y="65" text-anchor="middle" class="d-text-sub">② 大量通知</text>
+
+      <rect x="550" y="20" width="150" height="140" rx="8" class="d-box-warn"/>
+      <text x="625" y="42" text-anchor="middle" class="d-text-bold">利用者のスマホ</text>
+      <rect x="565" y="54" width="120" height="24" rx="5" class="d-box"/>
+      <text x="625" y="71" text-anchor="middle" class="d-text-sub">承認しますか？</text>
+      <rect x="565" y="86" width="120" height="24" rx="5" class="d-box"/>
+      <text x="625" y="103" text-anchor="middle" class="d-text-sub">承認しますか？</text>
+      <rect x="565" y="118" width="120" height="24" rx="5" class="d-box"/>
+      <text x="625" y="135" text-anchor="middle" class="d-text-sub">承認しますか？</text>
+
+      <path d="M625,160 L625,178" class="d-line-bad" marker-end="url(#arw1032b)"/>
+      <rect x="300" y="180" width="400" height="54" rx="8" class="d-box-bad"/>
+      <text x="500" y="203" text-anchor="middle" class="d-text-bold">③ うっかり／止めたくて「承認」をタップ</text>
+      <text x="500" y="223" text-anchor="middle" class="d-text-sub">利用者は「何の通知だろう？」「うるさい！」と感じている</text>
+
+      <path d="M300,207 C170,207 105,170 105,112" class="d-line-bad" marker-end="url(#arw1032b)"/>
+      <text x="210" y="232" text-anchor="middle" class="d-text-bold">④ ログイン成功</text>
+    </svg>
+    <figcaption>図：パスワードは盗まれていても、最後の「承認」を押すのは利用者自身。その心理を突く</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li>攻撃者がパスワードを入手する（フィッシング等）</li>
+      <li>ログインを何度も試み、スマホに「承認しますか？」通知が大量に届く</li>
+      <li>ユーザーが「なんの通知だろう？」とうっかりタップ、または「通知がうるさい！」と止めようとタップしてしまう</li>
+      <li>攻撃者がログインに成功する</li>
+    </ol>
+    <div class="callout bad">
+      <p class="callout-title">実際の事例：2022 年 Uber 社</p>
+      <p>攻撃者が WhatsApp で「IT 部門です」と連絡し、承認を押すよう説得して社内システムに侵入しました。技術（MFA）と人の心理（ソーシャルエンジニアリング、<a href="#sec-9">9 章</a>）を組み合わせた攻撃です。</p>
+    </div>
+
+    <h3 id="sec-4-3">4.3 MFA 疲労攻撃への対策</h3>
+    <ul>
+      <li>通知に「ログイン場所・デバイス情報」を表示する</li>
+      <li><strong>数字照合（ナンバーマッチング）</strong> を有効にする：ログイン画面に表示された数字と、通知の数字が一致するかを確認してから承認する方式です。うっかりタップを防げます</li>
+      <li>身に覚えのない承認リクエストは必ず拒否する</li>
+      <li>大量のリクエストが来たらすぐパスワードを変更する</li>
+      <li>セキュリティキー（FIDO2）に移行する（最も安全）</li>
+    </ul>
+    <p>パスキー・FIDO2 など、より強い認証方式の詳細は、このサイトの 20 系（パスワード・MFA・パスキー）で扱う予定です。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>SSO（シングルサインオン）</h2>
+
+    <h3 id="sec-5-1">5.1 SSO とは</h3>
+    <p><strong>SSO（Single Sign-On）</strong> は、<strong>1 回のログインで複数のサービスを使えるようにする仕組み</strong> です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>SSO なし</h4>
+        <p>Google・Slack・GitHub・Salesforce……サービスごとに毎回 ID とパスワードを入力する必要があります。</p>
+      </div>
+      <div class="card">
+        <h4>SSO あり</h4>
+        <p>IdP に 1 回ログインするだけで、Google・Slack・GitHub・Salesforce をすべて使えます。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-5-2">5.2 用語の整理：IdP・SAML・SP</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>IdP</strong>（Identity Provider：アイデンティティプロバイダー）</td><td>「認証を一手に引き受ける管理者」。ユーザーの ID・パスワードを管理し、「この人は本物です」という証明を発行する</td><td>Okta・Microsoft Entra ID（旧 Azure AD）・OneLogin</td></tr>
+        <tr><td><strong>SAML</strong>（Security Assertion Markup Language：サムル）</td><td>IdP とサービスの間で認証情報を安全にやり取りする規格。「この人は認証済みです」という情報を XML 形式で送受信する。企業向け SSO で広く使われている標準プロトコル</td><td>ほかに OAuth 2.0・OpenID Connect（OIDC）という規格もある</td></tr>
+        <tr><td><strong>SP</strong>（Service Provider：サービスプロバイダー）</td><td>実際に使うサービス側。IdP を信頼して認証を委ねる</td><td>Slack・GitHub・Salesforce</td></tr>
+      </tbody>
+    </table></div>
+    <p>まとめると「ユーザー → IdP（認証）→ SAML（やり取り）→ SP（利用）」という関係です。</p>
+
+    <h3 id="sec-5-3">5.3 SSO の仕組み（SAML の場合）</h3>
+    <figure>
+    <svg viewBox="0 0 720 320" role="img" aria-label="ユーザーがSlackにアクセスするとIdPにリダイレクトされ、IdPで一度ログインすると認証済みの証明が発行され、Slackがそれを検証してアクセスを許可する流れ">
+      <defs>
+        <marker id="arw1033a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="30" y="16" width="160" height="48" rx="8" class="d-box-accent"/>
+      <text x="110" y="45" text-anchor="middle" class="d-text-bold">ユーザー（ブラウザ）</text>
+      <rect x="280" y="16" width="160" height="48" rx="8" class="d-box"/>
+      <text x="360" y="45" text-anchor="middle" class="d-text-bold">SP（Slack）</text>
+      <rect x="530" y="16" width="160" height="48" rx="8" class="d-box-good"/>
+      <text x="610" y="45" text-anchor="middle" class="d-text-bold">IdP（Okta など）</text>
+
+      <path d="M110,64 L110,270" class="d-line-dash"/>
+      <path d="M360,64 L360,270" class="d-line-dash"/>
+      <path d="M610,64 L610,270" class="d-line-dash"/>
+
+      <text x="235" y="96" text-anchor="middle" class="d-text-sub">① Slack にアクセス</text>
+      <path d="M112,104 L356,104" class="d-line" marker-end="url(#arw1033a)"/>
+
+      <text x="235" y="132" text-anchor="middle" class="d-text-sub">② IdP へリダイレクト（転送）</text>
+      <path d="M358,140 L114,140" class="d-line" marker-end="url(#arw1033a)"/>
+
+      <text x="485" y="168" text-anchor="middle" class="d-text-sub">③ IdP でログイン（1 回だけ）</text>
+      <path d="M112,176 L606,176" class="d-line" marker-end="url(#arw1033a)"/>
+
+      <text x="485" y="204" text-anchor="middle" class="d-text-sub">④「認証済み」の証明を発行</text>
+      <path d="M608,212 L114,212" class="d-line" marker-end="url(#arw1033a)"/>
+
+      <text x="235" y="240" text-anchor="middle" class="d-text-sub">⑤ 証明を渡す → 検証して許可</text>
+      <path d="M112,248 L356,248" class="d-line" marker-end="url(#arw1033a)"/>
+
+      <rect x="30" y="278" width="660" height="34" rx="8" class="d-box-warn"/>
+      <text x="360" y="300" text-anchor="middle" class="d-text">⑥ 次に GitHub にアクセスしても、IdP で認証済みなので再ログイン不要</text>
+    </svg>
+    <figcaption>図：SP はパスワードを受け取らず、IdP が発行した「認証済み」の証明を検証するだけ</figcaption>
+    </figure>
+    <ol class="steps">
+      <li>ユーザーが Slack にアクセスする</li>
+      <li>Slack が IdP（例：Okta）にリダイレクトする</li>
+      <li>ユーザーが IdP でログインする（1 回だけ）</li>
+      <li>IdP が「このユーザーは認証済み」という証明書を発行する</li>
+      <li>Slack が証明書を検証し、アクセスを許可する</li>
+      <li>次に GitHub にアクセスしても、IdP はすでに認証済みなので再ログイン不要</li>
+    </ol>
+    <p>SAML・OIDC など SSO を実現するプロトコル（フェデレーション）の詳細は、このサイトの 30 系（フェデレーション）で扱う予定です。</p>
+
+    <h3 id="sec-5-4">5.4 SSO のメリット・デメリット</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メリット</h4>
+        <ul>
+          <li>ユーザーの利便性向上（覚えるパスワードの数が減る）</li>
+          <li>パスワードの使い回しを防ぐ</li>
+          <li>退職者のアクセス管理を一元化できる</li>
+          <li>セキュリティポリシーを一箇所で管理できる</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>デメリット</h4>
+        <ul>
+          <li>IdP が攻撃されると全サービスに影響する</li>
+          <li>IdP が落ちると全サービスにログインできない</li>
+          <li>導入・運用コストがかかる</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>暗号化の仕組み：共通鍵暗号と公開鍵暗号</h2>
+    <p>暗号の用語は <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#crypto-two">共通鍵暗号と公開鍵暗号</a>（セキュリティ基礎）で詳しく解説しています。ここではノートの要点を表で整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>共通鍵暗号（対称暗号）</th><th>公開鍵暗号（非対称暗号）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>鍵</strong></td><td><strong>同じ鍵</strong> で暗号化・復号する</td><td><strong>秘密鍵</strong>（自分だけが持つ）と <strong>公開鍵</strong>（誰にでも配る）のペアを使う</td></tr>
+        <tr><td><strong>使い方</strong></td><td>送信者が共通鍵で暗号化 → 受信者が同じ共通鍵で復号</td><td>暗号化通信：送信者が公開鍵で暗号化 → 受信者が秘密鍵で復号（秘密鍵を持つ人だけが読める）<br>デジタル署名：送信者が秘密鍵で署名 → 受信者が公開鍵で検証</td></tr>
+        <tr><td><strong>メリット</strong></td><td>処理が高速</td><td>鍵の配布が安全</td></tr>
+        <tr><td><strong>デメリット</strong></td><td>鍵を安全に共有する方法が問題</td><td>処理が重い（共通鍵の 10〜1000 倍）</td></tr>
+        <tr><td><strong>代表的なアルゴリズム</strong></td><td>AES-128・AES-256（現在の標準・非常に安全）<br>3DES（古い・非推奨）<br>DES（非常に古い・危険）</td><td>RSA（広く普及・鍵長 2048bit 以上推奨）<br>ECDSA（楕円曲線・より短い鍵で同等の安全性）<br>Ed25519（最新・高速・SSH で普及中）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-1">6.1 実際の通信では両方を組み合わせる（ハイブリッド暗号）</h3>
+    <p>HTTPS では、<strong>① 公開鍵暗号で「共通鍵」を安全に交換し、② あとは高速な共通鍵暗号で通信</strong> します。公開鍵暗号は安全だが遅く、共通鍵暗号は速いが鍵の共有が問題なので、「安全な鍵配送」だけ公開鍵暗号を使い、「実際のデータ通信」は共通鍵暗号で処理する、いいとこどりの方式です。TLS の流れは <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#tls">TLS — HTTPS の「S」の正体</a> を参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>ハッシュ関数とデジタル署名</h2>
+    <p>どちらも <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#hash">ハッシュ関数</a>・<a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#signature">電子署名</a>（セキュリティ基礎）で解説しています。ここでは要点をまとめます。</p>
+
+    <h3 id="sec-7-1">7.1 ハッシュ関数</h3>
+    <p>任意の長さのデータを、固定長のハッシュ値に変換します。</p>
+<pre><code>「Hello」                → SHA-256 → 「185f8db32...」（64 文字）
+「Hello!」               → SHA-256 → 「334d016f7...」（64 文字・全然違う）
+「War and Peace（全文）」→ SHA-256 → 「a1b2c3d4...」（同じく 64 文字）</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>重要な特性</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>① 一方向性</td><td>ハッシュ値から元データを復元できない</td></tr>
+        <tr><td>② 衝突耐性</td><td>異なるデータが同じハッシュ値にならない</td></tr>
+        <tr><td>③ 雪崩効果</td><td>1 ビット変わるだけでハッシュ値が大きく変わる</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>用途</strong>：① パスワードの保存（<a href="#sec-2">2 章</a>）、② ファイルの改ざん検知（ダウンロードしたファイルのハッシュ値を計算し、公式が公開している値と一致すれば改ざんなし）、③ ブロックチェーン（前のブロックのハッシュ値を次のブロックに含めるので、1 つでも改ざんすると以降のハッシュがすべて変わる）。</p>
+    <p><strong>代表的なアルゴリズム</strong>：SHA-256（現在の標準・Bitcoin 等でも使用）、SHA-3（次世代標準）。MD5・SHA-1 は衝突が発見済みで非推奨です。</p>
+
+    <h3 id="sec-7-2">7.2 デジタル署名</h3>
+    <p><strong>「このデータは確かに私が作り、改ざんされていない」ことを証明する仕組み</strong> です。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>署名する（送信者）</h4>
+        <ol>
+          <li>元データをハッシュ関数に通してハッシュ値を作る</li>
+          <li>ハッシュ値を <strong>秘密鍵</strong> で暗号化 → デジタル署名</li>
+          <li>元データ ＋ デジタル署名を送る</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h4>検証する（受信者）</h4>
+        <ol>
+          <li>受け取ったデータをハッシュ化 → ハッシュ値 A</li>
+          <li>デジタル署名を <strong>公開鍵</strong> で復号 → ハッシュ値 B</li>
+          <li>A ＝ B なら正当・改ざんなし、A ≠ B なら改ざんありか偽物</li>
+        </ol>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>証明すること</th><th>内容</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>① 真正性（Authenticity）</td><td>確かにその人が作成した</td><td>秘密鍵を持っている人しか署名できないから</td></tr>
+        <tr><td>② 完全性（Integrity）</td><td>署名後に改ざんされていない</td><td>1 ビットでも変わるとハッシュ値が変わるから</td></tr>
+        <tr><td>③ 否認防止（Non-repudiation）</td><td>「自分は署名していない」と言い張れない</td><td>秘密鍵を持っている本人しか署名できないから</td></tr>
+      </tbody>
+    </table></div>
+    <p>デジタル署名は、SAML の証明や、トークン（JWT など）の改ざん検知にも使われています。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>PKI（公開鍵基盤）と証明書</h2>
+    <p>信頼の連鎖の図を含む詳しい説明は <a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#pki">PKI（公開鍵基盤）</a>（セキュリティ基礎）を参照してください。ここではノートの要点を整理します。</p>
+
+    <h3 id="sec-8-1">8.1 なぜ証明書が必要か</h3>
+    <p>公開鍵だけでは「<strong>この公開鍵は本当に google.com のものか？</strong>」が分かりません。攻撃者が偽の google.com を作り、偽の公開鍵を配ることができてしまいます（<strong>中間者攻撃</strong>：通信の間に割り込んでなりすます攻撃）。そこで「この公開鍵は確かに本物」と証明する仕組みが必要になります。</p>
+
+    <h3 id="sec-8-2">8.2 PKI の仕組み</h3>
+    <p><strong>PKI（Public Key Infrastructure）</strong> は、公開鍵の正当性を証明する仕組みです。中心になるのが <strong>認証局（CA：Certificate Authority）</strong> で、公開鍵の正当性を証明する信頼できる機関です（DigiCert・Let's Encrypt・VeriSign など）。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>デジタル証明書の中身</h4>
+        <ul>
+          <li>誰の証明書か（example.com）</li>
+          <li>公開鍵</li>
+          <li>有効期限</li>
+          <li>発行した CA</li>
+          <li>CA のデジタル署名</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>信頼の連鎖（Chain of Trust）</h4>
+        <p>ルート CA（最上位・ブラウザに組み込み済み）→ 署名 → 中間 CA → 署名 → サーバー証明書（example.com）→ ユーザーが接続。</p>
+        <p>ルート CA を信頼することで、中間 CA、サーバー証明書まで信頼がつながります。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-8-3">8.3 HTTPS の証明書確認</h3>
+    <p>ブラウザの鍵マークをクリックすると、発行先（example.com）、発行者（Let's Encrypt）、有効期限（2026/09/01 まで）、公開鍵（RSA 2048bit）などが見られます。ブラウザは接続のたびに、次の確認を自動で行っています。</p>
+    <ol class="steps">
+      <li>証明書の有効期限を確認する</li>
+      <li>CA の署名を検証する（信頼できる CA か？）</li>
+      <li>ドメイン名が一致するか確認する</li>
+      <li>証明書が失効していないか確認する（OCSP / CRL：失効した証明書を確認する仕組み）</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>ソーシャルエンジニアリング：「人間の隙」を突く攻撃</h2>
+    <p>どんなに強固な認証・暗号化も、<strong>人間の心理的な弱点</strong> を突かれると一瞬で突破されます。「システムを攻撃するより人間を騙す方がずっと簡単だ」という有名なハッカーの言葉のとおり、人を騙せば鍵を開けてもらえるからです。</p>
+    <p><strong>ソーシャルエンジニアリング</strong> とは、人間の心理・行動・信頼を悪用して情報を盗み出したり、不正操作をさせたりする攻撃手法です。手口の種類と対策は <a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#human">人を狙う攻撃 — フィッシングとソーシャルエンジニアリング</a>（セキュリティ基礎）でも解説しています。ここではノートの例を中心に整理します。</p>
+
+    <h3 id="sec-9-1">9.1 代表的な手口</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手口</th><th>内容と例</th><th>対策・見分け方</th></tr></thead>
+      <tbody>
+        <tr><td><strong>フィッシング</strong>（Phishing）</td><td>偽のメール・サイトで認証情報を騙し取る。例：「【緊急】Amazon アカウントが不正アクセスされました。こちらから確認してください」→ 偽サイトで ID・パスワードを入力させる<br>種類：スピアフィッシング（特定の人・組織を狙い撃ち）、ホエーリング（経営幹部を標的）、スミッシング（SMS）、ビッシング（電話）</td><td>送信元アドレスが微妙に違う（amazon.co.jp → amaz0n.co.jp など）、URL が本物と少し違う、「今すぐ」「緊急」など焦らせる言葉、日本語が不自然</td></tr>
+        <tr><td><strong>プリテキスティング</strong>（Pretexting）</td><td>架空のシナリオ（口実）で信頼させて情報を引き出す。例：「IT 部門の XX ですが、メンテナンスでパスワードを確認させてください」「人事部です。口座変更の確認で社員番号を教えてください」「警察です。捜査でアカウント情報が必要です」</td><td>本物の組織はパスワードや秘密情報を電話やメールで聞くことは絶対にない</td></tr>
+        <tr><td><strong>テールゲーティング</strong>（Tailgating）</td><td>物理的なセキュリティを突破する。例：「荷物を持っているので、ドアを押さえてください」「今日から来た新入社員ですが、カードをまだもらっていなくて…」と同情を誘って侵入</td><td>どんな理由があっても第三者を連れ込まない。不審な人物は必ず確認・受付に連絡</td></tr>
+        <tr><td><strong>ベイティング</strong>（Baiting）</td><td>好奇心・欲求を利用する。例：「当選おめでとうございます！USB ドライブをお送りします」→ 刺すとマルウェア（悪意あるプログラム）が起動。駐車場に USB を落としておき、拾った人が会社の PC に刺して社内ネットワークに感染</td><td>出所不明の USB は絶対に刺さない。拾った USB は IT 部門に届ける</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-2">9.2 人間を守る 3 つの対策</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>① 教育・訓練</h4>
+        <ul>
+          <li>定期的なフィッシングメール訓練</li>
+          <li>「怪しいと思ったら確認する」文化を作る</li>
+          <li>事例を共有して組織全体の意識を高める</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>② プロセス・ルール</h4>
+        <ul>
+          <li>「電話でパスワードを教えない」ルールを明文化</li>
+          <li>本人確認の手順を決めておく</li>
+          <li>不審なアクセスの報告フローを整備</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>③ 技術的な補完</h4>
+        <ul>
+          <li>フィッシングサイトをブロックする DNS フィルタリング</li>
+          <li>怪しいメールを自動検知するメールフィルタ</li>
+          <li>MFA で「パスワードが盗まれても突破されない」設計</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout key">
+      <p class="callout-title">最大の防御</p>
+      <p>最終的には <strong>「おかしいと思ったら確認する」</strong>。この一言を習慣にすることが最大の防御です。</p>
+    </div>
+
+    <h3 id="sec-9-3">9.3 ソーシャルエンジニアリングまとめ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手口</th><th>狙うもの</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td>フィッシング</td><td>認証情報・クレジットカード</td><td>URL を確認・公式サイトから直接アクセス</td></tr>
+        <tr><td>プリテキスティング</td><td>機密情報・アカウント</td><td>電話・メールで機密情報を教えない</td></tr>
+        <tr><td>テールゲーティング</td><td>物理的な侵入</td><td>不審者を連れ込まない</td></tr>
+        <tr><td>ベイティング</td><td>マルウェア感染</td><td>不審な USB を刺さない</td></tr>
+        <tr><td>MFA 疲労攻撃</td><td>MFA の突破</td><td>身に覚えのない承認を拒否</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>一言で言うと</th></tr></thead>
+      <tbody>
+        <tr><td>認証</td><td>「あなたは誰？」本人確認</td></tr>
+        <tr><td>認可</td><td>「あなたは何ができる？」権限確認</td></tr>
+        <tr><td>ハッシュ</td><td>元に戻せない一方向の変換・改ざん検知に使う</td></tr>
+        <tr><td>ソルト</td><td>ハッシュにランダム文字列を追加してレインボーテーブルを防ぐ</td></tr>
+        <tr><td>MFA</td><td>複数の認証要素を組み合わせて安全性を高める</td></tr>
+        <tr><td>プッシュ通知 MFA</td><td>便利だが MFA 疲労攻撃に注意・ナンバーマッチングで対策</td></tr>
+        <tr><td>SSO</td><td>1 回のログインで複数サービスを使える仕組み</td></tr>
+        <tr><td>共通鍵暗号</td><td>同じ鍵で暗号化・復号。高速だが鍵配送が課題</td></tr>
+        <tr><td>公開鍵暗号</td><td>公開鍵で暗号化・秘密鍵で復号。安全だが遅い</td></tr>
+        <tr><td>デジタル署名</td><td>秘密鍵で署名・公開鍵で検証。真正性・完全性を証明</td></tr>
+        <tr><td>PKI</td><td>公開鍵の正当性を証明する仕組み（CA と証明書）</td></tr>
+        <tr><td>ソーシャルエンジニアリング</td><td>技術ではなく「人間の隙」を突く攻撃</td></tr>
+      </tbody>
+    </table></div>
+    <p>認証・認可・暗号化はセキュリティの核心技術です。普段なんとなく使っている HTTPS・パスワード・MFA の裏側には、ここで見た仕組みが動いています。ログイン後の状態をどう保つか（セッション）は 74_セッション管理 で、社内システムでどの方式を選ぶかは次のページで扱います。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>理解度チェック</h2>
+    <details><summary>Q1. パスワードを「暗号化して保存」するのがよくないのはなぜですか？</summary><div class="body"><p>暗号化は元に戻せる（可逆）ため、暗号化の鍵が漏れると全パスワードが解読されてしまうからです。パスワードは元に戻せない <strong>ハッシュ化</strong> で保存し、ログイン時は入力をハッシュ化して比較します。</p></div></details>
+    <details><summary>Q2. ソルトはどんな攻撃を防ぐために使いますか？</summary><div class="body"><p><strong>レインボーテーブル攻撃</strong> です。ユーザーごとに異なるランダムな文字列を混ぜてからハッシュ化するので、同じパスワードでも違うハッシュ値になり、事前に計算した表が使えなくなります。実際には bcrypt・scrypt・Argon2 などソルト付きの専用関数を使います。</p></div></details>
+    <details><summary>Q3. MFA 疲労攻撃とは何で、どう防ぎますか？</summary><div class="body"><p>盗んだパスワードで何度もログインを試み、プッシュ通知を大量に送って利用者にうっかり（または止めたくて）承認させる攻撃です。対策は、数字照合（ナンバーマッチング）、通知への場所・デバイス情報の表示、身に覚えのない承認の拒否、パスワード変更、セキュリティキー（FIDO2）への移行などです。</p></div></details>
+    <details><summary>Q4. SSO における IdP・SAML・SP の役割をそれぞれ答えてください。</summary><div class="body"><p><strong>IdP</strong> は認証を一手に引き受け「この人は本物」という証明を発行する側（Okta、Entra ID など）。<strong>SAML</strong> はその認証情報を XML 形式で安全にやり取りする規格。<strong>SP</strong> は IdP を信頼して認証を委ねる、実際に使うサービス側（Slack、GitHub など）です。</p></div></details>
+    <details><summary>Q5. HTTPS で公開鍵暗号と共通鍵暗号を組み合わせるのはなぜですか？</summary><div class="body"><p>公開鍵暗号は鍵配送が安全だが処理が重く、共通鍵暗号は高速だが鍵の共有が難しいからです。そこで、共通鍵の受け渡しだけを公開鍵暗号で行い、実際のデータ通信は共通鍵暗号で高速に処理します（ハイブリッド暗号）。</p></div></details>
+    <details><summary>Q6. デジタル署名が証明する 3 つのことは何ですか？</summary><div class="body"><p>① <strong>真正性</strong>（確かにその人が作成した）、② <strong>完全性</strong>（署名後に改ざんされていない）、③ <strong>否認防止</strong>（「署名していない」と言い張れない）です。</p></div></details>
+    <details><summary>Q7. 「IT 部門です。メンテナンスのためパスワードを教えてください」と電話が来ました。これは何という手口で、どう対応すべきですか？</summary><div class="body"><p>架空の口実で信頼させる <strong>プリテキスティング</strong> です。本物の組織はパスワードを電話やメールで聞くことはないので、教えずに、決められた本人確認・報告の手順に従って確認します。</p></div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>元記事：🔐 セキュリティ基礎講座【第二回】認証・認可・暗号化を完全解説！パスワード・MFA・公開鍵・デジタル署名（toamoku-20220418, Qiita, 2026-04-27）<a href="https://qiita.com/toamoku-20220418/items/e81cf805706e6844390f">https://qiita.com/toamoku-20220418/items/e81cf805706e6844390f</a></li>
+      <li>関連ページ：<a href="10-1_認証と認可の違い.html">認証と認可の違い</a>（認証認可解説）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/10-3_セキュリティの専門用語.html#crypto">暗号技術の用語</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/10-2_さまざまな脅威と対策の基本.html#human">人を狙う攻撃 — フィッシングとソーシャルエンジニアリング</a>（セキュリティ基礎）</li>
+      <li>関連ページ：<a href="../../71_セキュリティ基礎/00_全体像/40-2_アクセス制御と認証の失敗.html">アクセス制御と認証の失敗</a>（セキュリティ基礎）</li>
+    </ul>
+
+    <nav class="pager">
+      <a class="prev" href="10-2_ログイン方式と認証の概念.html"><span class="lbl">← 前のページ</span>ログイン方式と認証の概念</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-4_社内システム向け認証方式の選び方.html"><span class="lbl">次のページ →</span>社内システム向け認証方式の選び方</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

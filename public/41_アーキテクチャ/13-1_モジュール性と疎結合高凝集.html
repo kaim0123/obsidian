@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>モジュール性・疎結合と高凝集｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">10 基礎 › 13 モジュール性・結合 › モジュール性・疎結合と高凝集</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎 ／ 13 モジュール性・結合</span>
+      <h1>モジュール性・疎結合と高凝集</h1>
+      <p class="lead">良い設計かどうかを判断する最も基本的な物差しが「凝集度」と「結合度」です。このページでは、モジュールとは何かから始めて、凝集度・結合度のレベル、結合を語る言葉としてのコナーセンスの概要、そして「疎結合 × 高凝集」をどう実現するかを、コード例とリファクタリング例で解説します。</p>
+      <p class="meta">もとにしたノート：10_基礎/13_モジュール性・結合/01モジュール性、03_疎結合と高凝集、10_基礎/00_解説_アーキテクチャの基礎（§3 モジュール性）</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>「良い設計とは何か」と聞かれたとき、もっとも基本的で、もっとも広く使われている答えが <strong>「疎結合（Loose Coupling）かつ高凝集（High Cohesion）」</strong> です。クラス設計からマイクロサービスの境界決めまで、規模を問わず同じ物差しが使えます。</p>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>凝集度（Cohesion）</h4>
+        <p>1つのモジュール <strong>の中</strong> のまとまりの強さ。<strong>強い（高い）ほうが良い</strong>。</p>
+      </div>
+      <div class="card accent">
+        <h4>結合度（Coupling）</h4>
+        <p>モジュール <strong>同士</strong> のつながりの強さ。<strong>弱い（疎な）ほうが良い</strong>。</p>
+      </div>
+    </div>
+    <p>このページでは次の内容を扱います。</p>
+    <ul>
+      <li><strong>モジュールとモジュール性</strong>：そもそも「モジュール」とは何を指すのか</li>
+      <li><strong>凝集度</strong>：高凝集・低凝集の例と、凝集度の7つのレベル</li>
+      <li><strong>結合度</strong>：疎結合・密結合の例と、結合度の6つのレベル、結合を数える指標（求心性・遠心性）の入口</li>
+      <li><strong>コナーセンスの概要</strong>：結合の「種類と強さ」を表す言葉</li>
+      <li><strong>疎結合 × 高凝集</strong>：4つの組み合わせ、なぜ良いのか、どう達成するか、失敗パターン</li>
+      <li><strong>判断の目安とリファクタリング例</strong>：実際のコードでどう見分け、どう直すか</li>
+    </ul>
+    <p>結合の指標の詳細は <a href="13-2_結合の指標.html">結合の指標（求心性・遠心性・主系列からの距離）</a>、コナーセンスの詳細は <a href="13-3_コナーセンス.html">コナーセンス</a> で扱います。このページはその入口にあたります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>モジュールとモジュール性</h2>
+    <h3>2.1 モジュールの定義</h3>
+    <p><strong>モジュール</strong> とは、<strong>より複雑な構造を組み立てるために使う、標準化された部品（独立した単位）</strong> のことです。言語のパラダイムによって、具体的に指すものは変わります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パラダイム</th><th>モジュールにあたるもの</th></tr></thead>
+      <tbody>
+        <tr><td>オブジェクト指向</td><td>関連する <strong>クラスの集まり</strong></td></tr>
+        <tr><td>構造化言語・関数型言語</td><td>関連する <strong>関数の集まり</strong></td></tr>
+        <tr><td>アーキテクチャの議論（広い意味）</td><td>パッケージ・名前空間・ライブラリ・コンポーネント・サービスなど、<strong>あらゆる「まとまりの単位」</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>アーキテクチャの文脈では、モジュールを特定の言語機能に限定せず、<strong>「中身をまとめて、外とは境界で区切った単位」</strong> として広くとらえます。このページで「モジュール」と言うときも、クラス・パッケージ・サービスのどれにも当てはまる話だと考えてください。</p>
+
+    <h3>2.2 モジュール性とは</h3>
+    <p><strong>モジュール性（Modularity）</strong> とは、システムがこうした部品にうまく分けられている度合いのことです。『ソフトウェアアーキテクチャの基礎』では、モジュール性をアーキテクチャの <strong>組織化の原則</strong> として扱い、その良し悪しを測る手段として次の3つを挙げています。</p>
+    <ol class="steps">
+      <li><strong>凝集度</strong>：モジュールの中の要素が、どれだけ同じ目的のためにまとまっているか（→ 3章）</li>
+      <li><strong>結合度</strong>：モジュール同士がどれだけ依存し合っているか。求心性結合・遠心性結合などの指標で数える（→ 4章）</li>
+      <li><strong>コナーセンス</strong>：結合の「数」ではなく「種類と強さ」を正確に表す言葉（→ 5章）</li>
+    </ol>
+    <div class="callout key">
+      <p class="callout-title">ポイント</p>
+      <p>モジュール性は「分けること」そのものではなく、<strong>うまく分けること</strong> です。分け方が悪ければ、モジュールの数を増やしても変更は楽になりません。うまく分けられているかを判断する物差しが、凝集度・結合度・コナーセンスです。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>凝集度（Cohesion）— モジュールの中のまとまり</h2>
+    <h3>3.1 凝集度とは</h3>
+    <p><strong>凝集度</strong> とは、<strong>あるモジュールが機能するのに必要な要素が、どの程度そのモジュールの中にまとまっているか</strong> を表す指標です。言い換えると、モジュール内の要素同士の関連性の強さを測るものです。</p>
+    <p><strong>高凝集</strong> とは、1つのモジュール（クラス・ファイル・パッケージ）の中にあるコードの関連性が強く、<strong>同じ目的のために動いている</strong> 状態を指します。「このモジュールは何をするものか」を一文で言えるなら、凝集度は高いといえます。</p>
+
+    <h3>3.2 例：高凝集なクラス</h3>
+    <span class="code-label good">○ 高凝集</span>
+    <pre><code>class Order {
+  private items: OrderItem[];
+  private status: OrderStatus;
+
+  addItem(item) { /* ... */ }
+  removeItem(id) { /* ... */ }
+  confirm() { /* ... */ }
+  cancel() { /* ... */ }
+  total() { /* ... */ }
+}</code></pre>
+    <p>このクラスは <strong>「注文」に関する操作だけ</strong> を持っています。すべてのメソッドが同じ目的（注文の管理）に貢献しており、どのメソッドも <code>items</code> や <code>status</code> という同じデータを扱っています。</p>
+
+    <h3>3.3 例：低凝集なクラス</h3>
+    <span class="code-label bad">✕ 低凝集</span>
+    <pre><code>class Utility {
+  sendEmail() { /* ... */ }
+  parseJSON() { /* ... */ }
+  encryptPassword() { /* ... */ }
+  formatDate() { /* ... */ }
+  calculateTax() { /* ... */ }
+}</code></pre>
+    <p>メール送信・JSON の解析・パスワードの暗号化・日付の整形・税計算と、互いに関係のない機能が詰め込まれています。これは凝集度が <strong>低い</strong> 状態です。どれか1つを変更するときにも、このクラス全体を開いて読む必要があり、「このクラスは何のためにあるのか」を説明できません。</p>
+
+    <h3>3.4 凝集度の7つのレベル</h3>
+    <p>凝集度は、構造化設計（Larry Constantine らによる）以来、次の7段階で整理されるのが一般的です。<strong>上ほど望ましく（強い凝集）、下ほど望ましくない（弱い凝集）</strong> 並びにしています。</p>
+    <figure>
+    <svg viewBox="0 0 720 400" role="img" aria-label="凝集度の7つのレベル">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="140" y="20" width="440" height="42" rx="8" class="d-box-good"/>
+      <text x="360" y="46" text-anchor="middle" class="d-text-bold">① 機能的凝集：単一の目的に集中</text>
+      <rect x="160" y="72" width="400" height="42" rx="8" class="d-box-good"/>
+      <text x="360" y="98" text-anchor="middle" class="d-text">② 逐次的凝集：出力が次の入力になる</text>
+      <rect x="180" y="124" width="360" height="42" rx="8" class="d-box"/>
+      <text x="360" y="150" text-anchor="middle" class="d-text">③ 通信的凝集：同じデータを使う</text>
+      <rect x="200" y="176" width="320" height="42" rx="8" class="d-box"/>
+      <text x="360" y="202" text-anchor="middle" class="d-text">④ 手続き的凝集：決まった順序</text>
+      <rect x="220" y="228" width="280" height="42" rx="8" class="d-box-warn"/>
+      <text x="360" y="254" text-anchor="middle" class="d-text">⑤ 時間的凝集：同じタイミング</text>
+      <rect x="240" y="280" width="240" height="42" rx="8" class="d-box-warn"/>
+      <text x="360" y="306" text-anchor="middle" class="d-text">⑥ 論理的凝集：似た種類</text>
+      <rect x="260" y="332" width="200" height="42" rx="8" class="d-box-bad"/>
+      <text x="360" y="358" text-anchor="middle" class="d-text-bold">⑦ 偶発的凝集</text>
+      <line x1="80" y1="370" x2="80" y2="30" class="d-line" marker-end="url(#arw1)"/>
+      <text x="66" y="40" text-anchor="end" class="d-text-accent">望ましい</text>
+      <text x="66" y="365" text-anchor="end" class="d-text-sub">望ましく</text>
+      <text x="66" y="382" text-anchor="end" class="d-text-sub">ない</text>
+      <text x="610" y="46" class="d-text-sub">変更が1か所に</text>
+      <text x="610" y="64" class="d-text-sub">閉じる</text>
+      <text x="490" y="358" class="d-text-sub">Utils の寄せ集め</text>
+    </svg>
+    <figcaption>図：凝集度のレベル。上ほど「同じ目的」で強く結びついている</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>順位</th><th>レベル</th><th>まとめている理由</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td class="c">1（最高）</td><td><strong>機能的凝集</strong></td><td>1つの機能に必要なものだけがそろっている。単一の目的に集中</td><td>注文の管理だけを行う <code>Order</code> クラス</td></tr>
+        <tr><td class="c">2</td><td><strong>逐次的凝集</strong></td><td>ある処理の出力が次の処理の入力になる、手順の連続</td><td>「読み込む → 整形する → 検証する」と結果を受け渡す処理群</td></tr>
+        <tr><td class="c">3</td><td><strong>通信的凝集</strong></td><td>同じデータを扱う処理をまとめた</td><td>同じ顧客レコードを読み、表示用と集計用の値を作る処理</td></tr>
+        <tr><td class="c">4</td><td><strong>手続き的（手順的）凝集</strong></td><td>決まった実行順序でまとめた（データの受け渡しはない）</td><td>「権限チェックをして、ログを書いて、画面を開く」を1関数に</td></tr>
+        <tr><td class="c">5</td><td><strong>時間的凝集</strong></td><td>「同じタイミングで動く」というだけでまとめた</td><td>起動時の初期化処理を1か所に集めた <code>init()</code></td></tr>
+        <tr><td class="c">6</td><td><strong>論理的凝集</strong></td><td>「種類が似ている」というだけでまとめた</td><td>あらゆる入出力処理を集めた <code>IOHelper</code></td></tr>
+        <tr><td class="c">7（最低）</td><td><strong>偶発的凝集</strong></td><td>関係のないものが、たまたま同じ場所にあるだけ</td><td>前述の <code>Utility</code> クラス、何でも入った <code>utils</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>前述の <code>Utility</code> クラスは <strong>偶発的凝集</strong> に近く、分割すべき対象です。たとえば <code>Mailer</code>・<code>JsonParser</code>・<code>PasswordHasher</code>・<code>DateFormatter</code>・<code>TaxCalculator</code> のように、目的ごとに分けると機能的凝集に近づきます。</p>
+    <div class="callout tip">
+      <p class="callout-title">覚え方</p>
+      <p>下の3つ（時間的・論理的・偶発的）は「<strong>たまたま</strong>」でまとめた凝集、上の2つ（機能的・逐次的）は「<strong>目的や流れ</strong>」でまとめた凝集です。名前に「Utils」「Helper」「Common」「Misc」が付くモジュールは、下の3つになっていないか疑ってみましょう。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>結合度（Coupling）— モジュール同士のつながり</h2>
+    <h3>4.1 結合度とは</h3>
+    <p><strong>結合度</strong> とは、<strong>モジュール同士がどれだけ依存し合っているか</strong> を表す指標です。<strong>疎結合</strong> とは、モジュール同士が <strong>ゆるやかに</strong> つながっていて、一方を変えても他方にあまり影響しない状態を指します。</p>
+
+    <h3>4.2 例：疎結合</h3>
+    <span class="code-label good">○ 疎結合</span>
+    <pre><code>interface Mailer {
+  send(to: string, body: string): Promise&lt;void&gt;;
+}
+
+class OrderService {
+  constructor(private mailer: Mailer) {} // インターフェースに依存
+}</code></pre>
+    <p><code>OrderService</code> は <strong><code>Mailer</code> の中身を知りません</strong>。知っているのは「<code>send(to, body)</code> を呼べばメールが送られる」という約束だけです。そのため、実装が SendGrid でも AWS（Amazon SES など）でも、テスト用の偽物でも差し替えられます。</p>
+
+    <h3>4.3 例：密結合</h3>
+    <span class="code-label bad">✕ 密結合</span>
+    <pre><code>class OrderService {
+  async sendMail() {
+    const sendgrid = require('@sendgrid/mail');
+    sendgrid.setApiKey('xxx');
+    await sendgrid.send(...);
+  }
+}</code></pre>
+    <p><code>OrderService</code> が <strong>SendGrid の詳細</strong>（ライブラリ名・API キーの設定方法・送信メソッド）まで知っています。メールの送信サービスを変えるには <code>OrderService</code> 自体を書き換える必要があり、テスト時に本物のメールを送らないようにするのも困難です。変更・差し替えが不可能に近い状態です。</p>
+
+    <h3>4.4 結合度の6つのレベル</h3>
+    <p>結合度も、構造化設計の時代から次の6段階で整理されています。<strong>上ほど弱い結合（良い）、下ほど強い結合（悪い）</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>順位</th><th>レベル</th><th>状態</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td class="c">1（最弱）</td><td><strong>データ結合</strong></td><td>必要な値だけを引数で渡す</td><td><code>calcTax(price)</code></td></tr>
+        <tr><td class="c">2</td><td><strong>スタンプ結合</strong></td><td>オブジェクト（データ構造）全体を渡し、受け取り側はその一部しか使わない</td><td><code>calcTax(order)</code> で <code>order.price</code> だけ使う</td></tr>
+        <tr><td class="c">3</td><td><strong>制御結合</strong></td><td>フラグを渡して、相手の振る舞い（処理の分岐）を制御する</td><td><code>save(data, isDraft)</code> の中で分岐</td></tr>
+        <tr><td class="c">4</td><td><strong>外部結合</strong></td><td>外部で決められたデータ形式・通信手順・デバイスなどに、複数のモジュールが直接依存する</td><td>複数のモジュールが外部 API の形式を直接扱う</td></tr>
+        <tr><td class="c">5</td><td><strong>共通結合</strong></td><td>グローバル変数（共有データ）を複数のモジュールが読み書きする</td><td>グローバルな <code>config</code> を各所で書き換える</td></tr>
+        <tr><td class="c">6（最強）</td><td><strong>内容結合</strong></td><td>他のモジュールの内部（非公開のデータや処理）を直接参照・書き換える</td><td>リフレクションで他クラスの private フィールドを変更する</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="結合度の6つのレベル">
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="40" width="102" height="60" rx="8" class="d-box-good"/>
+      <text x="71" y="76" text-anchor="middle" class="d-text">データ</text>
+      <rect x="135" y="40" width="102" height="60" rx="8" class="d-box-good"/>
+      <text x="186" y="76" text-anchor="middle" class="d-text">スタンプ</text>
+      <rect x="250" y="40" width="102" height="60" rx="8" class="d-box"/>
+      <text x="301" y="76" text-anchor="middle" class="d-text">制御</text>
+      <rect x="365" y="40" width="102" height="60" rx="8" class="d-box-warn"/>
+      <text x="416" y="76" text-anchor="middle" class="d-text">外部</text>
+      <rect x="480" y="40" width="102" height="60" rx="8" class="d-box-warn"/>
+      <text x="531" y="76" text-anchor="middle" class="d-text">共通</text>
+      <rect x="595" y="40" width="102" height="60" rx="8" class="d-box-bad"/>
+      <text x="646" y="76" text-anchor="middle" class="d-text">内容</text>
+      <line x1="30" y1="135" x2="690" y2="135" class="d-line" marker-end="url(#arw2)"/>
+      <text x="30" y="165" class="d-text-accent">弱い結合（良い）</text>
+      <text x="690" y="165" text-anchor="end" class="d-text-bold">強い結合（悪い）</text>
+      <text x="360" y="190" text-anchor="middle" class="d-text-sub">右に行くほど、相手の内部事情を多く知っている</text>
+    </svg>
+    <figcaption>図：結合度のレベル。右へ行くほど変更が波及しやすい</figcaption>
+    </figure>
+    <p>判断の軸は「<strong>相手のことをどれだけ知っているか</strong>」です。データ結合では値の意味しか知りませんが、制御結合では相手の内部の分岐を、共通結合では共有データの存在を、内容結合では相手の非公開の中身まで知っています。知っていることが多いほど、相手の変更に巻き込まれます。</p>
+
+    <h3>4.5 結合を「数える」指標の入口</h3>
+    <p>レベル分けは結合の「質」を見る方法ですが、結合を <strong>数で測る</strong> 方法もあります。『ソフトウェアアーキテクチャの基礎』では、次の2つを基本の指標として紹介しています。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>求心性結合（Ca：Afferent Coupling）</h4>
+        <p>外部から自分に <strong>入ってくる</strong> 接続（依存）の数。どれだけ <strong>頼られているか</strong>。</p>
+      </div>
+      <div class="card">
+        <h4>遠心性結合（Ce：Efferent Coupling）</h4>
+        <p>自分から他のモジュールへ <strong>出ていく</strong> 接続（依存）の数。どれだけ <strong>他に頼っているか</strong>。</p>
+      </div>
+    </div>
+    <p>この2つから、さらに次の指標を計算できます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指標</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>不安定度 I = Ce / (Ca + Ce)</td><td>1 に近いほど、他の変更の影響を受けやすい（変わりやすい）</td></tr>
+        <tr><td>抽象度 A</td><td>モジュール内の抽象要素（インターフェース・抽象クラス）の割合</td></tr>
+        <tr><td>主系列からの距離 D = |A + I − 1|</td><td>0 に近いほど、抽象度と安定度のバランスが良い</td></tr>
+      </tbody>
+    </table></div>
+    <p>根底にあるのは「<strong>よく頼られる（安定した）モジュールほど抽象的であるべき</strong>」という考え方で、<a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a> の裏付けにもなっています。詳しい計算方法や苦痛ゾーン・無駄ゾーンの読み方は <a href="13-2_結合の指標.html">結合の指標</a> で解説します。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>コナーセンス（Connascence）の概要</h2>
+    <h3>5.1 結合の「種類と強さ」を表す言葉</h3>
+    <p>求心性結合・遠心性結合は結合の <strong>数</strong> を測りますが、「その結合がどれくらい壊れやすいか」は分かりません。そこで使われるのが <strong>コナーセンス</strong> です。コナーセンスは、結合度のメトリクスではなく、<strong>異なる種類の結合をより正確に説明するための言語</strong> であり、結合の種類ごとの一般的な影響を理解するためのものです。</p>
+    <blockquote><p><strong>2つの部品のうち一方を変えたとき、もう一方も変えなければシステムが正しく動かない</strong> なら、その2つはコナーセント（connascent）である。</p></blockquote>
+
+    <h3>5.2 静的コナーセンスと動的コナーセンス</h3>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>静的コナーセンス</h4>
+        <p><strong>ソースコードのレベル</strong> の結合。コードを読めば分かる。</p>
+      </div>
+      <div class="card purple">
+        <h4>動的コナーセンス</h4>
+        <p><strong>実行時の呼び出し</strong> を分析して分かる結合。実行しないと分からない。</p>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分類</th><th>種類</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="5">静的<br><span class="small muted">（ソースコードで分かる）</span></td><td>名前</td><td>関数名を変えると、呼び出し側も直す必要がある</td></tr>
+        <tr><td>型</td><td>引数の型が一致している必要がある</td></tr>
+        <tr><td>意味</td><td><code>1</code> が「有効」を意味する、と双方が知っている</td></tr>
+        <tr><td>位置</td><td>引数の順番に依存している</td></tr>
+        <tr><td>アルゴリズム</td><td>送信側と受信側が同じハッシュ方式を使う必要がある</td></tr>
+        <tr><td rowspan="4">動的<br><span class="small muted">（実行時に分かる）</span></td><td>実行順序</td><td><code>open()</code> の後に <code>write()</code> を呼ぶ必要がある</td></tr>
+        <tr><td>タイミング</td><td>同時に実行されると壊れる（競合状態）</td></tr>
+        <tr><td>値</td><td>複数の値が同時に整合している必要がある</td></tr>
+        <tr><td>同一性</td><td>同じインスタンスを参照している必要がある</td></tr>
+      </tbody>
+    </table></div>
+    <p>表の <strong>上ほど弱く、下ほど強い</strong> 結合です。動的コナーセンスは、もっとも弱いものでも静的コナーセンスより強いとされます。</p>
+
+    <h3>5.3 コナーセンスの3つの指針</h3>
+    <ol class="steps">
+      <li><strong>強いコナーセンスは弱いものに置き換える</strong>：例として、位置 → 名前（引数をオブジェクトにまとめる）</li>
+      <li><strong>距離が遠いほど弱くする</strong>：同じクラスの中なら強い結合も許容できるが、サービス間では弱い結合だけにする</li>
+      <li><strong>強いコナーセンスはモジュールの内側に閉じ込める</strong>：これは高凝集の言い換えでもある</li>
+    </ol>
+    <p>9種類それぞれの詳しい例と弱め方、サービス間での使い方は <a href="13-3_コナーセンス.html">コナーセンス</a> で解説します。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>疎結合 × 高凝集 — 4つの組み合わせ</h2>
+    <p>凝集度と結合度は、別々に評価するのではなく <strong>セットで</strong> 考えます。2つの軸を組み合わせると、次の4つの状態ができます。</p>
+    <figure>
+    <svg viewBox="0 0 720 440" role="img" aria-label="凝集度と結合度の4象限">
+      <defs><marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="130" y="20" width="270" height="170" rx="8" class="d-box-warn"/>
+      <text x="265" y="62" text-anchor="middle" class="d-text-bold">高凝集 × 密結合</text>
+      <text x="265" y="92" text-anchor="middle" class="d-text">中身はまとまっているが</text>
+      <text x="265" y="114" text-anchor="middle" class="d-text">変更が波及する</text>
+      <text x="265" y="150" text-anchor="middle" class="d-text-sub">差し替え・テストが困難</text>
+      <rect x="420" y="20" width="270" height="170" rx="8" class="d-box-good"/>
+      <text x="555" y="62" text-anchor="middle" class="d-text-bold">高凝集 × 疎結合</text>
+      <text x="555" y="92" text-anchor="middle" class="d-text">理想。変更が局所化し、</text>
+      <text x="555" y="114" text-anchor="middle" class="d-text">テストしやすい</text>
+      <text x="555" y="150" text-anchor="middle" class="d-text-sub">目指す場所</text>
+      <rect x="130" y="210" width="270" height="170" rx="8" class="d-box-bad"/>
+      <text x="265" y="252" text-anchor="middle" class="d-text-bold">低凝集 × 密結合</text>
+      <text x="265" y="282" text-anchor="middle" class="d-text">最悪。変更が怖く、</text>
+      <text x="265" y="304" text-anchor="middle" class="d-text">テストできない</text>
+      <text x="265" y="340" text-anchor="middle" class="d-text-sub">大きな泥団子への道</text>
+      <rect x="420" y="210" width="270" height="170" rx="8" class="d-box-warn"/>
+      <text x="555" y="252" text-anchor="middle" class="d-text-bold">低凝集 × 疎結合</text>
+      <text x="555" y="282" text-anchor="middle" class="d-text">つながりは少ないが、</text>
+      <text x="555" y="304" text-anchor="middle" class="d-text">何のモジュールか不明</text>
+      <text x="555" y="340" text-anchor="middle" class="d-text-sub">読みにくい</text>
+      <line x1="100" y1="380" x2="100" y2="24" class="d-line" marker-end="url(#arw3)"/>
+      <text x="88" y="110" text-anchor="end" class="d-text-accent">凝集度</text>
+      <text x="88" y="130" text-anchor="end" class="d-text-sub">高い</text>
+      <text x="88" y="300" text-anchor="end" class="d-text-sub">低い</text>
+      <line x1="130" y1="410" x2="686" y2="410" class="d-line" marker-end="url(#arw3)"/>
+      <text x="265" y="432" text-anchor="middle" class="d-text-sub">結合度：密（強い）</text>
+      <text x="555" y="432" text-anchor="middle" class="d-text-accent">結合度：疎（弱い）</text>
+    </svg>
+    <figcaption>図：凝集度 × 結合度の4象限。右上（高凝集 × 疎結合）が理想</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>疎結合</th><th>密結合</th></tr></thead>
+      <tbody>
+        <tr><th>高凝集</th><td><span class="badge good">理想</span> 変更が局所化し、テストしやすい</td><td>中身はまとまっているが、変更が波及する</td></tr>
+        <tr><th>低凝集</th><td>つながりは少ないが、何のモジュールか分からない</td><td><span class="badge bad">最悪</span> 大きな泥団子（Big Ball of Mud）への道</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>6.1 なぜ「疎結合 × 高凝集」が良いのか</h3>
+    <p>両方がそろうと、次の4つのメリットが生まれます。高凝集と疎結合がそれぞれ別の角度から効いている点に注目してください。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メリット</th><th>高凝集の効き目</th><th>疎結合の効き目</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. 変更の影響が狭い</strong></td><td>変更が1か所に閉じる</td><td>他のモジュールに波及しない</td></tr>
+        <tr><td><strong>2. 理解しやすい</strong></td><td>「このクラスは何をするもの？」が明確</td><td>1つのモジュールを読むのに、他を読まずに済む</td></tr>
+        <tr><td><strong>3. 再利用しやすい</strong></td><td>機能の塊として取り出せる</td><td>他に引きずられずに使える</td></tr>
+        <tr><td><strong>4. テストしやすい</strong></td><td>1つの責任をテストすればよい</td><td>モック（偽物）が少なく済む</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">実践的な目安：凝集の単位 = 変更の単位</p>
+      <p><strong>同じ理由で変わるものは一緒に、違う理由で変わるものは別々に</strong> 置きます。一緒に変わるものを一緒に置けば、変更が1つのモジュールに閉じ（高凝集）、他のモジュールを触らずに済む（疎結合）ので、自然と両方が達成されます。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>「疎結合 × 高凝集」を達成する手段</h2>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>1. 関心の分離</h4>
+        <p>異なる責任は別のモジュールに分けます。（41 外のノート：48_原則『01_関心の分離』）</p>
+      </div>
+      <div class="card accent">
+        <h4>2. SOLID 原則</h4>
+        <p>単一責任（SRP）・開放閉鎖（OCP）・リスコフの置換（LSP）・インターフェース分離（ISP）・依存性逆転（DIP）。どれも結合度・凝集度の改善に寄与します。（41 外のノート：48_原則『SOLID』）</p>
+      </div>
+      <div class="card accent">
+        <h4>3. 依存性注入・抽象化</h4>
+        <p>具体的な実装ではなく抽象（インターフェース）に依存させます。→ <a href="24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root</a>、<a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a>、<a href="24-3_インターフェースと抽象化.html">インターフェースと抽象化</a></p>
+      </div>
+      <div class="card accent">
+        <h4>4. レイヤー分け</h4>
+        <p>レイヤー間のつながりは厳密に（細く）、層内のつながりは濃く。→ <a href="21-1_層化・三層・レイヤード.html">層化・三層・レイヤード（4層）</a></p>
+      </div>
+    </div>
+    <div class="card good">
+      <h4>5. 凝集の単位 = 変更の単位</h4>
+      <p><strong>同じ理由で変わるものは一緒に、違う理由で変わるものは別々に</strong>。上の4つの手段はすべて、最終的にはこの目標のための道具です。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>対となる失敗パターン</h2>
+    <p>4象限の「理想」以外の3つを、コードで見てみます。</p>
+    <h3>8.1 低凝集 × 密結合 = 最悪</h3>
+    <span class="code-label bad">✕ 低凝集 × 密結合</span>
+    <pre><code>class App {
+  // 認証も、支払いも、メールも、DB接続も、全部ここに
+  login() { /* SendGridに直書き */ }
+  payment() { /* Stripeに直書き */ }
+  mail() { /* MySQLに直書き */ }
+}</code></pre>
+    <ul>
+      <li>関係のない機能が同じクラスに同居している（<strong>低凝集</strong>）</li>
+      <li>具体的な外部サービスや DB の実装に直接依存している（<strong>密結合</strong>）</li>
+    </ul>
+    <p>メソッドの中身もちぐはぐで、どこに何が書かれているか予測できません。<strong>変更が怖くて、テストできない</strong> 典型です。</p>
+
+    <h3>8.2 高凝集だが密結合</h3>
+    <span class="code-label bad">△ 高凝集 × 密結合</span>
+    <pre><code>// 注文に関することだけ扱う（高凝集）
+class OrderService {
+  // でも StripeとSendGridに直接依存（密結合）
+  async place(input) {
+    await Stripe.charge(...);
+    await SendGrid.send(...);
+  }
+}</code></pre>
+    <p>凝集は良いのですが、結合が強いので、決済サービスやメール送信サービスの差し替えや、テスト（本物の決済を走らせずに試すこと）が困難です。</p>
+
+    <h3>8.3 疎結合だが低凝集</h3>
+    <span class="code-label bad">△ 疎結合 × 低凝集</span>
+    <pre><code>// インターフェースは使っている（疎結合）
+class Utility {
+  constructor(
+    private mailer: Mailer,
+    private db: Database,
+    private encryptor: Encryptor,
+    // ...10個の依存
+  ) {}
+  // 何でもやる（低凝集）
+}</code></pre>
+    <p>依存先はすべてインターフェースなので結合は良いのですが、1つのクラスに関係のない機能が同居しているため読みにくくなります。<strong>コンストラクタの引数が極端に多い</strong> のは、低凝集のサインであることがよくあります。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>判断の目安 — チェックリスト</h2>
+    <div class="grid c2">
+      <div class="card accent">
+        <h4>凝集度のチェック</h4>
+        <ul>
+          <li><strong>クラス名を一言で言えるか？</strong>「UserService」「OrderRepository」のような明確な名前で表せるか</li>
+          <li><strong>クラスの全メソッドが同じ目的か？</strong></li>
+          <li><strong>クラス名を見ただけで、メソッドの内容が想像できるか？</strong></li>
+        </ul>
+      </div>
+      <div class="card accent">
+        <h4>結合度のチェック</h4>
+        <ul>
+          <li><strong>このクラスを変更したら、どれだけ多くの他クラスが影響を受けるか？</strong></li>
+          <li><strong>このクラスを単体でテストできるか？</strong></li>
+          <li><strong>依存先を差し替えられるか？</strong></li>
+        </ul>
+      </div>
+    </div>
+    <p>どちらも「はい」と答えにくい項目があれば、そこが改善の候補です。結合の数を客観的に見たい場合は <a href="13-2_結合の指標.html">結合の指標</a>、結合の壊れやすさを言葉にしたい場合は <a href="13-3_コナーセンス.html">コナーセンス</a> が役立ちます。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>実例：リファクタリング</h2>
+    <h3>10.1 Before：低凝集 × 密結合</h3>
+    <span class="code-label bad">✕ Before</span>
+    <pre><code>class OrderController {
+  async handle(req, res) {
+    // バリデーション
+    if (!req.body.items) return res.status(400).send();
+    // 料金計算
+    const total = req.body.items.reduce((s, i) =&gt; s + i.price, 0);
+    // 支払い（Stripeに直接）
+    await stripe.charges.create({ amount: total });
+    // DBに直接SQL
+    await db.query('INSERT INTO orders ...');
+    // メール（SendGridに直接）
+    await sendgrid.send(req.body.email, '完了');
+    res.json({ total });
+  }
+}</code></pre>
+    <p>1つのメソッドに、バリデーション・料金計算・支払い・永続化・メール送信という5つの責任が詰め込まれ（低凝集）、Stripe・生の SQL・SendGrid に直接依存しています（密結合）。料金計算のルールを1つ変えるだけでも、HTTP や決済の知識が混ざったこのメソッドを触ることになります。</p>
+
+    <h3>10.2 After：高凝集 × 疎結合</h3>
+    <span class="code-label good">○ After</span>
+    <pre><code>// それぞれが1つの責任に集中 = 高凝集
+class OrderValidator { validate(input) { /* ... */ } }
+class OrderPriceCalculator { calc(items) { /* ... */ } }
+
+interface PaymentGateway { charge(amount): Promise&lt;void&gt;; }
+interface OrderRepository { save(order): Promise&lt;void&gt;; }
+interface Mailer { send(to, body): Promise&lt;void&gt;; }
+
+// UseCase は抽象に依存 = 疎結合
+class PlaceOrderUseCase {
+  constructor(
+    private validator: OrderValidator,
+    private calc: OrderPriceCalculator,
+    private payment: PaymentGateway,
+    private repo: OrderRepository,
+    private mailer: Mailer
+  ) {}
+  async execute(input) {
+    this.validator.validate(input);
+    const total = this.calc.calc(input.items);
+    await this.payment.charge(total);
+    await this.repo.save(input);
+    await this.mailer.send(input.email, '完了');
+  }
+}
+
+class OrderController {
+  constructor(private useCase: PlaceOrderUseCase) {}
+  async handle(req, res) {
+    const result = await this.useCase.execute(req.body);
+    res.json(result);
+  }
+}</code></pre>
+    <figure>
+    <svg viewBox="0 0 740 360" role="img" aria-label="リファクタリング後の依存関係">
+      <defs><marker id="arw4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="40" width="170" height="56" rx="8" class="d-box"/>
+      <text x="105" y="74" text-anchor="middle" class="d-text">OrderController</text>
+      <line x1="190" y1="68" x2="268" y2="68" class="d-line" marker-end="url(#arw4)"/>
+      <rect x="270" y="40" width="200" height="56" rx="8" class="d-box-accent"/>
+      <text x="370" y="74" text-anchor="middle" class="d-text-bold">PlaceOrderUseCase</text>
+      <rect x="540" y="14" width="180" height="40" rx="8" class="d-box-good"/>
+      <text x="630" y="39" text-anchor="middle" class="d-text">OrderValidator</text>
+      <rect x="540" y="66" width="180" height="40" rx="8" class="d-box-good"/>
+      <text x="630" y="91" text-anchor="middle" class="d-text">PriceCalculator</text>
+      <line x1="470" y1="60" x2="538" y2="36" class="d-line" marker-end="url(#arw4)"/>
+      <line x1="470" y1="76" x2="538" y2="86" class="d-line" marker-end="url(#arw4)"/>
+      <rect x="250" y="170" width="150" height="50" rx="8" class="d-box-purple"/>
+      <text x="325" y="192" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="325" y="210" text-anchor="middle" class="d-text">PaymentGateway</text>
+      <rect x="415" y="170" width="150" height="50" rx="8" class="d-box-purple"/>
+      <text x="490" y="192" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="490" y="210" text-anchor="middle" class="d-text">OrderRepository</text>
+      <rect x="580" y="170" width="140" height="50" rx="8" class="d-box-purple"/>
+      <text x="650" y="192" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="650" y="210" text-anchor="middle" class="d-text">Mailer</text>
+      <line x1="340" y1="96" x2="325" y2="168" class="d-line" marker-end="url(#arw4)"/>
+      <line x1="380" y1="96" x2="480" y2="168" class="d-line" marker-end="url(#arw4)"/>
+      <line x1="420" y1="96" x2="630" y2="168" class="d-line" marker-end="url(#arw4)"/>
+      <rect x="250" y="290" width="150" height="44" rx="8" class="d-box"/>
+      <text x="325" y="317" text-anchor="middle" class="d-text">Stripe 実装</text>
+      <rect x="415" y="290" width="150" height="44" rx="8" class="d-box"/>
+      <text x="490" y="317" text-anchor="middle" class="d-text">MySQL 実装</text>
+      <rect x="580" y="290" width="140" height="44" rx="8" class="d-box"/>
+      <text x="650" y="317" text-anchor="middle" class="d-text">SendGrid 実装</text>
+      <line x1="325" y1="288" x2="325" y2="222" class="d-line-dash" marker-end="url(#arw4)"/>
+      <line x1="490" y1="288" x2="490" y2="222" class="d-line-dash" marker-end="url(#arw4)"/>
+      <line x1="650" y1="288" x2="650" y2="222" class="d-line-dash" marker-end="url(#arw4)"/>
+      <text x="20" y="200" class="d-text-sub">実線：利用（依存）</text>
+      <text x="20" y="222" class="d-text-sub">破線：実装する</text>
+      <text x="20" y="317" class="d-text-sub">差し替え可能な詳細 →</text>
+    </svg>
+    <figcaption>図：After の構造。UseCase は抽象（インターフェース）にだけ依存し、具体的な実装は差し替えられる</figcaption>
+    </figure>
+    <p>各クラスは <strong>1つのことに集中</strong> し（高凝集）、<strong>抽象に依存</strong> しています（疎結合）。この結果、次のような変化が起きます。</p>
+    <ul>
+      <li>料金計算のルールを変えるときは <code>OrderPriceCalculator</code> だけを触ればよい</li>
+      <li>Stripe を別の決済サービスに変えるときは、<code>PaymentGateway</code> の新しい実装を作って差し替えるだけで、<code>PlaceOrderUseCase</code> は変わらない</li>
+      <li><code>PlaceOrderUseCase</code> は、偽物の <code>PaymentGateway</code>・<code>OrderRepository</code>・<code>Mailer</code> を渡せば、外部サービスなしでテストできる</li>
+      <li><code>OrderController</code> は HTTP の受け渡しだけに集中する</li>
+    </ul>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある誤解</h2>
+    <details>
+      <summary>「疎結合とは、依存をゼロにすることだ」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> モジュールが協力して動く以上、依存は必ずあります。目指すのは依存をなくすことではなく、<strong>弱い種類の結合（データ結合や名前のコナーセンス）にし、変わりにくいもの（抽象）に向ける</strong> ことです。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「インターフェースを挟めば、それで良い設計になる」</summary>
+      <div class="body">
+        <p><strong>不十分です。</strong> 8.3 の「疎結合だが低凝集」の例のように、インターフェースで結合を弱めても、1つのクラスに無関係な責任が集まっていれば読みにくいままです。凝集度と結合度は <strong>両方</strong> 見る必要があります。また、誰からも差し替えられない抽象を大量に作ると、かえって複雑になります（→ <a href="13-2_結合の指標.html">結合の指標</a> の「無駄ゾーン」）。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「共通処理は1か所にまとめれば凝集度が上がる」</summary>
+      <div class="body">
+        <p><strong>まとめ方によります。</strong> 「再利用できそうなもの」を何でも <code>utils</code> や <code>common</code> に集めると、偶発的凝集や論理的凝集になります。さらに、多くのモジュールがそこに依存するので、変更の影響が広がる場所にもなります。まとめる基準は「似ているか」ではなく「<strong>同じ理由で変わるか</strong>」です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「クラスを細かく分けるほど高凝集になる」</summary>
+      <div class="body">
+        <p><strong>誤りです。</strong> 一緒に変わるものまでバラバラにすると、1つの変更のために多くのクラスを同時に直す必要が生じ、モジュール間の結合が増えます。分ける単位は「変更の単位」に合わせます。</p>
+      </div>
+    </details>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <div class="callout key">
+      <p class="callout-title">このページの要点</p>
+      <ul>
+        <li><strong>モジュール</strong>：より大きな構造を組み立てるための独立した部品。クラスや関数の集まりから、パッケージ・サービスまで含む</li>
+        <li><strong>凝集度</strong>：モジュール内のまとまり。高いほど良い。機能的凝集（最高）〜偶発的凝集（最低）の7段階</li>
+        <li><strong>結合度</strong>：モジュール間のつながり。弱いほど良い。データ結合（最弱）〜内容結合（最強）の6段階</li>
+        <li>結合は <strong>求心性結合（Ca）・遠心性結合（Ce）</strong> で数えられ、不安定度・抽象度・主系列からの距離に発展する</li>
+        <li><strong>コナーセンス</strong>：結合の種類と強さを表す言葉。静的5種類・動的4種類。強いものは弱く、遠いものほど弱く、強いものは内側へ</li>
+        <li><strong>疎結合 × 高凝集</strong> が理想。変更の影響が狭く、理解・再利用・テストがしやすい</li>
+        <li>達成する手段は関心の分離・SOLID・依存性注入と抽象化・レイヤー分け。根本は <strong>「凝集の単位 = 変更の単位」</strong></li>
+      </ul>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>関連ページ</h2>
+    <ul>
+      <li><a href="13-2_結合の指標.html">結合の指標（求心性・遠心性・主系列からの距離）</a> — 結合を数値で測る</li>
+      <li><a href="13-3_コナーセンス.html">コナーセンス</a> — 結合の種類と強さ</li>
+      <li><a href="13-4_アーキテクチャ量子と論理コンポーネント.html">アーキテクチャ量子と粒度・論理コンポーネント</a> — サービスの単位での結合</li>
+      <li><a href="12-3_トレードオフと原則.html">トレードオフとアーキテクチャに効く原則</a> — 関心の分離・凝集・結合・不変条件の境界</li>
+      <li><a href="24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root</a>、<a href="24-1_依存性逆転の原則.html">依存性逆転の原則（DIP）</a>、<a href="24-3_インターフェースと抽象化.html">インターフェースと抽象化</a></li>
+      <li>（41 外のノート：48_原則『SOLID』『01_関心の分離』『02_デメテルの法則』、43_モジュール設計『04_モジュール分割の考え方』）</li>
+    </ul>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Mark Richards, Neal Ford『ソフトウェアアーキテクチャの基礎』第3章（モジュール性）</li>
+      <li>Edward Yourdon, Larry L. Constantine『Structured Design』（凝集度・結合度のレベル分けの由来）</li>
+      <li>Meilir Page-Jones『What Every Programmer Should Know about Object-Oriented Design』（コナーセンス）</li>
+      <li><a href="https://connascence.io/">connascence.io</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="12-3_トレードオフと原則.html"><span class="lbl">← 前のページ</span>トレードオフとアーキテクチャに効く原則</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="13-2_結合の指標.html"><span class="lbl">次のページ →</span>結合の指標（求心性・遠心性・主系列からの距離）</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+# リソース解放
+
+## リソースとは
+使ったら**解放が必要なもの**の総称です。
+- ファイルハンドル
+- ネットワークソケット
+- DB接続
+- ロック・ミューテックス
+- メモリ（手動管理の言語）
+- GUIウィンドウ、タイマー
+
+解放を忘れると**リソースリーク**となり、メモリ消費増・ファイル数上限超過・DB接続枯渇などの問題を起こします。
+
+## 素朴な解放の問題
+```javascript
+const file = openFile(path);
+doSomething(file);       // ここで例外発生すると…
+file.close();            // 実行されない → リーク
+```
+
+例外や早期returnがあると解放漏れが起きやすい。
+
+## 解決策① try/finally
+```javascript
+const file = openFile(path);
+try {
+  doSomething(file);
+} finally {
+  file.close();          // 必ず実行される
+}
+```
+成功・失敗どちらでも `finally` が呼ばれる。最も古典的で確実な方法。
+
+## 解決策② 専用構文
+
+### Java: try-with-resources
+```java
+try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+    return br.readLine();
+}  // ブロックを抜けると自動で close()
+```
+`AutoCloseable` を実装したリソースが対象。
+
+### Python: with文
+```python
+with open(path) as f:
+    data = f.read()
+# ここで自動的にclose
+```
+コンテキストマネージャ（`__enter__` / `__exit__`）で実装。
+
+### C#: using
+```csharp
+using (var stream = File.OpenRead(path)) {
+    // 使う
+}
+// 自動でDispose
+```
+C# 8〜はブロックなしの `using var` も可能。
+
+### Go: defer
+関数を抜ける時に実行される登録。
+```go
+file, err := os.Open(path)
+if err != nil { return err }
+defer file.Close()       // 関数終了時に必ず実行
+
+// 使う処理
+```
+
+### Swift: defer
+```swift
+let file = try openFile(path)
+defer { file.close() }
+```
+
+## 解決策③ スマートポインタ / RAII（C++, Rust）
+
+### C++のRAII
+オブジェクトのライフタイムに解放を紐付ける。スコープを抜けると自動でデストラクタが呼ばれる。
+```cpp
+{
+    std::ifstream file("a.txt");     // 開く
+    // ...
+}  // ← ここで自動close
+```
+
+### Rustの所有権
+変数がスコープを抜けると自動的に `drop` が呼ばれ、解放される。
+```rust
+{
+    let file = File::open("a.txt")?;
+    // 使う
+}  // ← ここで自動close
+```
+
+## 解決策④ コールバック形式
+リソース管理をライブラリ側が担う。
+```javascript
+db.withConnection(conn => {
+  conn.query(...);
+});
+// ライブラリが開いて閉じてくれる
+```
+
+## 解決策⑤ ガベージコレクタに任せる
+- メモリはGC任せでOK
+- ファイル・ソケット等は**GCを当てにしない**
+
+### なぜGCだけでは不十分か
+GCは「メモリ不足になったら動く」程度のタイミング。ファイルハンドルは先に尽きてしまう。
+
+## 複数リソースの同時解放
+
+### Java
+```java
+try (InputStream in = ...;
+     OutputStream out = ...) {
+    in.transferTo(out);
+}
+```
+
+### Python
+```python
+with open("a") as src, open("b", "w") as dst:
+    dst.write(src.read())
+```
+
+### C#
+```csharp
+using var a = File.OpenRead("a.txt");
+using var b = File.Create("b.txt");
+```
+
+## ロックの解放
+同じく「使ったら返す」が必要。
+
+### try/finally
+```java
+lock.lock();
+try {
+    // クリティカルセクション
+} finally {
+    lock.unlock();
+}
+```
+
+### Rustのガード
+```rust
+let mutex = Mutex::new(0);
+{
+    let mut guard = mutex.lock().unwrap();
+    *guard += 1;
+}  // スコープを抜けると自動でunlock
+```
+
+## アンチパターン
+
+### ① finally を忘れる
+例外で飛んで解放されない古典的リーク。
+
+### ② finally 内で例外を投げる
+```java
+try { ... }
+finally { file.close(); }  // close が例外を投げると元の例外が上書き
+```
+Javaの `try-with-resources` は元例外を保持して抑制例外を添付してくれる。
+
+### ③ リソースを早く閉じすぎる
+```java
+try (Connection c = ...) {
+    var stmt = c.createStatement();
+    return stmt;    // ← c が閉じられた後にstmtを使う → エラー
+}
+```
+
+### ④ 遅すぎる解放
+ループ内で開いたリソースをループ外でまとめてcloseしようとすると、途中で詰まる。
+
+## 実務的な注意点
+
+### ファイル数上限
+LinuxではプロセスごとにファイルディスクリプタのULimitがある（`ulimit -n`）。長時間動くサーバーで接続を閉じ忘れるとすぐ枯渇。
+
+### DBコネクションプール
+コネクションは有限。使い終わったら**必ず返却**。コネクションプールも `try-with-resources` で管理。
+
+### メモリリークの兆候
+- 長時間動かすとRAMが増え続ける
+- プロファイラで大量の同じオブジェクトを観測
+- GCが頻発してCPUを食う
+
+### 非同期処理でのリーク
+Promise、Channel、Goroutineなども「終了し忘れ」でリーク。コンテキストキャンセルや `AbortController` を使う。
+
+## 言語ごとのベストプラクティス
+
+| 言語 | 推奨 |
+|---|---|
+| Java | try-with-resources |
+| Python | with文 |
+| C# | using |
+| Go | defer |
+| Swift | defer |
+| C++ | RAII / スマートポインタ |
+| Rust | スコープ（所有権）で自動 |
+| JavaScript | `try/finally` or `using`（ES2024〜） |
+
+### JavaScriptの `using`（新機能）
+```javascript
+{
+  using file = await openFile(path);
+  // ...
+}  // Symbol.dispose で自動close
+```
+
+## まとめ
+- リソースは**開いたら必ず閉じる**、例外時も解放漏れがないように
+- **言語固有の構文**（with, using, try-with-resources, defer, RAII）を活用
+- GCは**メモリ以外のリソース**を管理してくれないと心得る
+- ロック・DB接続・ファイル・ソケットは特に注意
+- 非同期・長期プロセスでは解放漏れがシステム障害に直結する

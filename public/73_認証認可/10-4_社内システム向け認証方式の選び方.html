@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>社内システム向け認証方式の選び方｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 基礎概念 › 社内システム向け認証方式の選び方</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 基礎概念</span>
+      <h1>社内システム向け認証方式の選び方</h1>
+      <p class="lead">社内システムで「社員だけがログインできる」ようにするには、どの認証方式を選べばよいのでしょうか。このページでは、モダンな第一候補である OIDC + 社内 IdP への SSO を中心に、OIDC 以外の代替手段と選び方の指針を整理します。後半では、TypeScript の認証ライブラリ Better Auth を使って「社員・部署・入退社・権限を一元管理する認証基盤」を自社で作り、複数の業務アプリに SSO する設計例を、ファイル構成・DB テーブル・環境変数まで含めて解説します。</p>
+      <p class="meta">もとにしたノート：10_基礎概念/07_社内システム向け認証方式の選び方</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>社員向けログインの第一候補は <strong>OIDC で社内 IdP に SSO</strong> することです。「社員だけ」を決めるのは認証方式そのものより、<strong>どの IdP（社員の ID を管理する仕組み）に繋ぐか</strong> です。JWT やセッション Cookie は、ログインした <strong>後</strong> の状態をどう持つかの選択肢です。</p>
+    </div>
+
+    <p>このページに出てくる OIDC・SAML・SSO・JWT・OAuth 2 などの用語の基本は、<a href="10-2_ログイン方式と認証の概念.html">ログイン方式と認証の概念</a> で解説しています。パスワードのハッシュや MFA の基礎は <a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a> を参照してください。ここでは、それらを「社内システムでどう選ぶか」という視点でまとめます。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>結論：モダンな第一候補</h2>
+    <p><strong>OIDC + 社内 IdP への SSO</strong> が第一候補です。</p>
+    <ul>
+      <li><strong>OIDC（OpenID Connect）</strong>：OAuth 2 の上に「ログインした人が誰か」を伝える仕組みを足した認証プロトコルです。</li>
+      <li><strong>IdP（Identity Provider / アイデンティティプロバイダ）</strong>：ユーザーの ID とパスワードなどを管理し、ログインを代行するサービスです。</li>
+      <li><strong>SSO（シングルサインオン）</strong>：一度ログインすれば、複数のアプリにログインし直さずに入れる仕組みです。</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>やりたいこと</th><th>選ぶもの</th></tr></thead>
+      <tbody>
+        <tr><td>社員の本人確認</td><td><strong>OIDC</strong>（ID トークンで「誰か」を確定）</td></tr>
+        <tr><td>一度ログインで複数社内アプリ</td><td><strong>SSO</strong>（UX。実装は OIDC / SAML）</td></tr>
+        <tr><td>ログイン後の API 呼び出し</td><td><strong>Bearer + JWT</strong>（Access / Refresh）または <strong>セッション + Cookie</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ID トークン</strong> は、IdP が発行する「この人は誰で、いつログインしたか」を記した署名付きのデータです。<strong>UX</strong> は使い勝手のことです。</p>
+    <p>「社員だけ」は認証方式そのものより、<strong>どの IdP に繋ぐか</strong> で決まります。代表的な IdP は次のとおりです。</p>
+    <ul>
+      <li>Microsoft Entra ID（旧 Azure AD）</li>
+      <li>Google Workspace</li>
+      <li>Okta など</li>
+    </ul>
+    <p>アプリは OIDC で IdP に <strong>リダイレクト</strong>（ブラウザを別の URL へ移動させること）し、返ってきた ID トークンの <code>email</code> / <code>sub</code>（ユーザーの一意な ID）/ グループクレーム（所属グループの情報）で、在籍社員かどうかを判定します。<strong>クレーム</strong> とは、トークンの中に書かれた個々の情報のことです。</p>
+
+    <h3 id="sec-1-1">1.1 社員以外を弾く典型的な制御</h3>
+    <ul>
+      <li>許可ドメインのみ（例：<code>@yourcompany.com</code>）</li>
+      <li>IdP の「全社員」グループ／ロールのみ許可</li>
+      <li>必要なら VPN や社内ネットワークと併用（認証の代替ではなく補強）</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">VPN は「認証の代わり」にはならない</p>
+      <p>「社内ネットワークの中なら安全」という考え方の限界は、71 の <a href="../../71_セキュリティ基礎/00_全体像/20-3_ゼロトラスト.html">ゼロトラスト</a> で解説しています。VPN はあくまでネットワーク層での補強であり、アプリ側でも必ず認証します。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>概念の整理（一覧）</h2>
+    <p>認証まわりの用語は「方式」「形式」「フレームワーク」「UX パターン」など、種類の違うものが混ざっています。まず分類を並べて整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>分類</th><th>一言</th></tr></thead>
+      <tbody>
+        <tr><td>Basic / Digest</td><td>認証方式（レガシー）</td><td>ヘッダで資格情報／ハッシュを毎回送る</td></tr>
+        <tr><td>API キー</td><td>認証方式</td><td>DB ルックアップが必要な不透明キー</td></tr>
+        <tr><td>セッション + Cookie</td><td>認証方式</td><td>ステートフル、古典的 Web</td></tr>
+        <tr><td>Bearer</td><td>パターン</td><td>トークン保持者にアクセス</td></tr>
+        <tr><td>JWT</td><td>トークン形式</td><td>署名付き・自己完結可能</td></tr>
+        <tr><td>Access / Refresh</td><td>トークン運用</td><td>短命 API 用 + 長命更新用</td></tr>
+        <tr><td>OAuth 2</td><td>認可フレームワーク</td><td>第三者アプリのリソースアクセス許可</td></tr>
+        <tr><td>OIDC</td><td>認証（+ OAuth 2）</td><td>ID トークンで本人確認</td></tr>
+        <tr><td>SSO</td><td>UX パターン</td><td>一度のログインで複数サービス</td></tr>
+        <tr><td>SAML / OIDC</td><td>アイデンティティプロトコル</td><td>SSO の下層技術</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>不透明キー</strong> は、文字列自体に意味がなく、サーバーが DB を引いて初めて持ち主が分かるキーです。<strong>ステートフル</strong> は、サーバー側にログイン状態を保存しておく方式のことです。各概念の詳しい説明は <a href="10-2_ログイン方式と認証の概念.html">ログイン方式と認証の概念</a> を参照してください。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>社員ログイン用途ごとの向き不向き</h2>
+
+    <h3 id="sec-3-1">3.1 向かない・別用途</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Basic / Digest</strong></td><td>レガシー。社員向け本番ログインの主役にはしない</td></tr>
+        <tr><td><strong>API キー</strong></td><td>人間のブラウザログインではなく、バッチ・連携・マシン間向け</td></tr>
+        <tr><td><strong>OAuth 2 単体</strong></td><td>認可フレームワーク。社員ログインの本体には <strong>OIDC</strong> が必要（OAuth 2 だけでは「誰か」の保証が弱い）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-2">3.2 よく使うが「単体の答え」ではない</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>位置づけ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>JWT / Bearer / Access・Refresh</strong></td><td>ログイン <strong>後</strong> のトークン運用。OIDC ログインのあと、自前 JWT を発行するかセッションに載せ替えるかの話</td></tr>
+        <tr><td><strong>セッション + Cookie</strong></td><td>モダンでも有効（特に社内 Web の BFF 構成）。多くは <strong>OIDC で IdP ログイン → サーバーがセッション発行</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>BFF（Backend for Frontend）</strong> は、画面専用のサーバーを1枚挟み、トークンなどの扱いをそのサーバーに任せる構成です。ブラウザにはセッション Cookie だけを渡すので、トークンを JavaScript から触らせずに済みます。</p>
+
+    <h3 id="sec-3-3">3.3 エンタープライズでまだ多い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>位置づけ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SAML</strong></td><td>既存 IdP・アプリが SAML 固定なら現実的。新規なら <strong>OIDC 優先</strong>（JSON / JWT エコシステムと相性がよい）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>実務でよくある構成</h2>
+    <p>社員が社内アプリを開いてから使えるようになるまでの流れは、次のようになります。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 360" role="img" aria-label="社員が社内アプリにアクセスすると、アプリは社内IdPへOIDCリダイレクトし、社員がログインすると認可コードとIDトークンがアプリに返り、アプリが検証と社員判定をしてセッションCookieかアクセストークンを渡す流れ">
+      <defs><marker id="arw104a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="40" y="16" width="140" height="40" rx="8" class="d-box"/>
+      <text x="110" y="41" text-anchor="middle" class="d-text-bold">社員</text>
+      <rect x="290" y="16" width="140" height="40" rx="8" class="d-box-accent"/>
+      <text x="360" y="41" text-anchor="middle" class="d-text-bold">社内アプリ</text>
+      <rect x="540" y="16" width="140" height="40" rx="8" class="d-box-good"/>
+      <text x="610" y="41" text-anchor="middle" class="d-text-bold">社内 IdP</text>
+      <line x1="110" y1="56" x2="110" y2="340" class="d-line-dash"/>
+      <line x1="360" y1="56" x2="360" y2="340" class="d-line-dash"/>
+      <line x1="610" y1="56" x2="610" y2="340" class="d-line-dash"/>
+
+      <line x1="112" y1="95" x2="356" y2="95" class="d-line" marker-end="url(#arw104a)"/>
+      <text x="235" y="87" text-anchor="middle" class="d-text-sub">① アクセス</text>
+      <line x1="362" y1="135" x2="606" y2="135" class="d-line" marker-end="url(#arw104a)"/>
+      <text x="485" y="127" text-anchor="middle" class="d-text-sub">② OIDC リダイレクト（SSO）</text>
+      <line x1="608" y1="175" x2="114" y2="175" class="d-line" marker-end="url(#arw104a)"/>
+      <text x="360" y="167" text-anchor="middle" class="d-text-sub">③ ログイン（既存セッションなら省略可）</text>
+      <line x1="608" y1="215" x2="364" y2="215" class="d-line" marker-end="url(#arw104a)"/>
+      <text x="485" y="207" text-anchor="middle" class="d-text-sub">④ 認可コード / ID トークン</text>
+      <path d="M362,240 H420 V270 H364" class="d-line" marker-end="url(#arw104a)"/>
+      <text x="430" y="260" class="d-text-sub">⑤ ID トークン検証・社員判定</text>
+      <line x1="358" y1="310" x2="114" y2="310" class="d-line" marker-end="url(#arw104a)"/>
+      <text x="235" y="302" text-anchor="middle" class="d-text-sub">⑥ セッション Cookie</text>
+      <text x="235" y="328" text-anchor="middle" class="d-text-sub">または Access Token</text>
+    </svg>
+    <figcaption>図：社内アプリは自分でパスワードを確認せず、社内 IdP に任せる。返ってきた ID トークンで「在籍社員か」を判定する</figcaption>
+    </figure>
+
+    <ul>
+      <li><strong>社内 Web 1 本</strong> … OIDC + <strong>セッション + HttpOnly Cookie</strong>（CSRF 対策込み）が扱いやすいことが多いです。</li>
+      <li><strong>SPA / モバイル / 複数 API</strong> … OIDC のあと <strong>短命 Access + Refresh</strong> が一般的です。</li>
+    </ul>
+    <p><strong>HttpOnly</strong> は JavaScript から読めない Cookie にする属性、<strong>SPA</strong>（Single Page Application）は画面遷移を JavaScript で行う Web アプリです。Cookie を使う場合の CSRF 対策は 72 の <a href="../../72_Web脆弱性対策/00_全体像/30-1_CSRF.html">CSRF</a> を、セッションそのものの安全な扱い方は 74_セッション管理 を参照してください。</p>
+    <p>Microsoft 365 を利用しているなら Entra ID の OIDC、Google Workspace なら Google の OIDC、という形が多いです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>OIDC 以外に使えるもの</h2>
+
+    <h3 id="sec-5-1">5.1 同じ「SSO・社内 IdP」系（OIDC の兄弟）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>向き</th><th>補足</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SAML 2.0</strong></td><td>エンタープライズ SSO</td><td>既存 IdP・アプリが SAML 固定のとき。XML・リダイレクト型。新規は OIDC が多いが社内では十分現役</td></tr>
+        <tr><td><strong>WS-Federation</strong></td><td>Microsoft 系レガシー</td><td>Entra / ADFS 周りで残っていることがある</td></tr>
+      </tbody>
+    </table></div>
+    <p>いずれも「社員だけ」は <strong>IdP 側のユーザー／グループ</strong> で縛る点は OIDC と同じです。<strong>ADFS</strong>（Active Directory Federation Services）は、オンプレミスの Active Directory を IdP として使うための Microsoft の製品です。</p>
+
+    <h3 id="sec-5-2">5.2 Web アプリ向け（IdP 連携なし〜弱い連携）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>向き</th><th>補足</th></tr></thead>
+      <tbody>
+        <tr><td><strong>セッション + Cookie</strong>（自前 ID/パスワード）</td><td>小規模・社内ツール</td><td>DB にユーザー、ログイン後セッション。MFA・退職対応は自前。IdP がなくても動く</td></tr>
+        <tr><td><strong>LDAP / Active Directory 直接バインド</strong></td><td>オンプレ AD 中心</td><td>アプリが AD に認証。OIDC ほど標準化されていないが社内では昔からある</td></tr>
+        <tr><td><strong>Windows 統合認証（Kerberos / NTLM）</strong></td><td>ドメイン参加 PC のイントラネット</td><td>ブラウザがドメイン資格情報を使い画面なし SSO に近い。社外・Mac では弱い</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>LDAP</strong> はユーザー情報を管理するディレクトリに問い合わせるためのプロトコル、<strong>バインド</strong> は LDAP サーバーに ID とパスワードで認証することです。<strong>Kerberos / NTLM</strong> は Windows ドメインで使われる認証方式で、PC にログインした時点の資格情報を使い回せます。</p>
+
+    <h3 id="sec-5-3">5.3 トークン・API 寄り（人のログインの「本体」にはしにくい）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>向き</th><th>補足</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Bearer + JWT</strong>（自前発行）</td><td>API・マイクロサービス</td><td>ログイン画面は別途必要。認証の代わりではなくログイン後の形式</td></tr>
+        <tr><td><strong>Access / Refresh</strong></td><td>同上</td><td>OIDC / SAML / セッションの <strong>後</strong> に自前で発行するパターンが多い</td></tr>
+        <tr><td><strong>API キー</strong></td><td>バッチ・連携・社内スクリプト</td><td>人間のブラウザログインには不向き</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-4">5.4 レガシー（社内限定なら「使える」がモダン推奨ではない）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>補足</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Basic / Digest</strong></td><td>社内限定ツール・Postman 程度。本番の社員ポータル主役にはしない</td></tr>
+        <tr><td><strong>OAuth 2 のみ（OIDC なし）</strong></td><td>第三者アプリの認可向け。社員ログインの本体には非推奨</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-5">5.5 その他（条件付き）</h3>
+    <ul>
+      <li><strong>mTLS（クライアント証明書）</strong> … 極めて閉じた社内 API 向けです。サーバーだけでなくクライアント側も証明書で身元を示す TLS 通信のことで、ブラウザを使う一般ユーザー向けには運用が重くなります。</li>
+      <li><strong>VPN + 上記のいずれか</strong> … 「社員だけ」をネットワーク層でも補強します（認証方式の代替ではありません）。</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>選び方の指針</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>環境・要件</th><th>おすすめ</th></tr></thead>
+      <tbody>
+        <tr><td>既に Microsoft / Google / Okta がある</td><td><strong>OIDC</strong> が第一候補。ダメなら <strong>SAML</strong>（ベンダー・既存アプリの都合）</td></tr>
+        <tr><td>小さい社内ツール・IdP を立てたくない</td><td><strong>セッション + 自前アカウント</strong> または <strong>AD / LDAP 直結</strong></td></tr>
+        <tr><td>社内 Windows PC のみ・イントラネット</td><td><strong>Kerberos 統合認証</strong> も選択肢（OIDC リダイレクト不要）</td></tr>
+        <tr><td>API・ジョブだけ</td><td><strong>API キー</strong> や <strong>サービス用 JWT</strong>（人のログインとは別）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-1">6.1 ここまでの要点</h3>
+    <ul>
+      <li><strong>モダンで社員限定</strong> … <strong>OIDC で社内 IdP に SSO</strong>（必要なら SAML）</li>
+      <li><strong>JWT / セッション / Access・Refresh</strong> … その <strong>後</strong> にどうセッションを持たせるかの選択</li>
+      <li><strong>自前の ID/パスワード DB だけ</strong> … MFA・退職者無効化・パスワードポリシーを全部自前で背負うため、社員規模なら IdP 連携が一般的</li>
+      <li><strong>OIDC 以外で社員ログインとしてよくあるもの</strong> … <strong>SAML</strong>、<strong>セッション + AD/LDAP</strong>、環境によって <strong>Kerberos</strong></li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>Better Auth を使った社内 SSO 設計（複数アプリ）</h2>
+    <p>ここからは設計例です。社員マスタ・部署・入退社・権限を <strong>1 つの認証基盤アプリ</strong> で一元管理し、他のアプリは <strong>Better Auth + 標準 OIDC</strong> で SSO する構成を考えます。<strong>プロトコル・暗号・セッションを一から自前実装する案は採用しません</strong>（理由は 7.2 で説明します）。</p>
+
+    <h3 id="sec-7-1">7.1 用語の整理：IAM / Better Auth / AWS</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>何か</th><th>本設計での役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>AWS IAM</strong></td><td>AWS リソースへの権限管理サービス</td><td><strong>使わない</strong>（高コスト・本件と無関係）</td></tr>
+        <tr><td><strong>認証基盤（旧メモの「IAM 基盤」）</strong></td><td>社員・部署・入退社・権限を持つ <strong>自社アプリ</strong> の通称</td><td><strong>1 台の Next.js（等）アプリ</strong> として実装</td></tr>
+        <tr><td><strong>Better Auth</strong></td><td>TypeScript 向け <strong>認証ライブラリ</strong>（旧 Auth.js / NextAuth 系の後継）</td><td>認証基盤と各業務アプリに <strong>組み込む実装部品</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>IAM（認証基盤）と Better Auth は別物ですが、セットで使います。</strong></p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>認証基盤アプリ</h4>
+        <p>社員マスタ・管理画面・SSO の <strong>中心（IdP）</strong> という <strong>役割・データの正</strong>（正しい元データを持つ場所）</p>
+      </div>
+      <div class="card">
+        <h4>Better Auth</h4>
+        <p>ログイン・セッション・MFA・OIDC 発行・管理 API を <strong>安全に実装するためのライブラリ</strong></p>
+      </div>
+    </div>
+    <p>AWS に課金するサービスではなく、<strong>自社サーバー上のアプリ + OSS ライブラリ</strong> で構成します。</p>
+
+    <h3 id="sec-7-2">7.2 「自前は危ない」とは何を避けるか</h3>
+    <p>危ないのは <strong>「認証基盤という名前のアプリを自社で作る」こと自体ではなく</strong>、次をゼロから書くことです。</p>
+    <ul>
+      <li>パスワードハッシュ・タイミング攻撃対策</li>
+      <li>セッション固定・CSRF・オープンリダイレクト</li>
+      <li>Authorization Code / PKCE / トークン署名・失効</li>
+      <li>MFA・レート制限・監査ログ</li>
+    </ul>
+    <p><strong>タイミング攻撃</strong> は処理時間の差から秘密の値を推測する攻撃、<strong>セッション固定</strong> は攻撃者が用意したセッション ID を被害者に使わせる攻撃、<strong>PKCE</strong> は認可コードを横取りされても使えないようにする OAuth の追加の仕組みです。オープンリダイレクトについては 72 の <a href="../../72_Web脆弱性対策/00_全体像/30-2_リダイレクトとHTTPヘッダインジェクション.html">リダイレクトとHTTPヘッダインジェクション</a> を参照してください。</p>
+    <div class="callout key">
+      <p class="callout-title">Better Auth を使う ＝ 自社運用の認証基盤</p>
+      <p>Better Auth を使うことは、上記をライブラリと標準プロトコルに委ねる <strong>「自社運用の認証基盤」</strong> を作ることであり、Entra ID のような <strong>マネージド SaaS IdP</strong>（運用まで事業者が担うクラウドの IdP）とは別物です。自社で書くのは、自社固有の部分（部署マスタ・業務権限・入退社 UI）だけです。</p>
+    </div>
+
+    <h3 id="sec-7-3">7.3 ゴールと責務分担</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>責務</th><th>認証基盤アプリ</th><th>業務アプリ（複数）</th></tr></thead>
+      <tbody>
+        <tr><td>社員・部署マスタ</td><td>正（Better Auth <code>user</code> + 拡張 + Organization）</td><td>API 参照・キャッシュ</td></tr>
+        <tr><td>入退社</td><td>Admin <code>banUser</code> 等で即時無効化</td><td>Webhook / 同期で追随</td></tr>
+        <tr><td>ログイン</td><td>ログイン画面・MFA・OIDC 発行</td><td>Better Auth が IdP へリダイレクト</td></tr>
+        <tr><td>権限</td><td>Organization RBAC + カスタム permission</td><td>アプリ固有データは各アプリ</td></tr>
+        <tr><td>SSO</td><td>OIDC Provider（Authorization Code + PKCE）</td><td>OIDC クライアントとして接続</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>RBAC</strong>（Role-Based Access Control）はロール（役割）ごとに権限を割り当てる方式、<strong>Webhook</strong> は出来事が起きたときに相手のサーバーへ HTTP で通知する仕組みです。認可モデルの詳細は、今後追加予定の 40 系（認可モデル）のページで扱います。</p>
+
+    <h3 id="sec-7-4">7.4 全体構成</h3>
+    <figure>
+    <svg viewBox="0 0 720 380" role="img" aria-label="社員のブラウザが業務アプリAとBにアクセスし、各業務アプリは未ログイン時に認証基盤アプリのOIDC Providerへリダイレクトし、UserInfoや社員APIで認証基盤を参照する。認証基盤の中ではBetter Authサーバー、各種プラグイン、社員・部署APIが共通のDBを使う">
+      <defs><marker id="arw104b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="16" y="150" width="120" height="60" rx="8" class="d-box"/>
+      <text x="76" y="176" text-anchor="middle" class="d-text-bold">社員</text>
+      <text x="76" y="196" text-anchor="middle" class="d-text-sub">ブラウザ</text>
+
+      <rect x="180" y="70" width="150" height="60" rx="8" class="d-box-accent"/>
+      <text x="255" y="96" text-anchor="middle" class="d-text-bold">業務アプリ A</text>
+      <text x="255" y="116" text-anchor="middle" class="d-text-sub">+ Better Auth</text>
+      <rect x="180" y="230" width="150" height="60" rx="8" class="d-box-accent"/>
+      <text x="255" y="256" text-anchor="middle" class="d-text-bold">業務アプリ B</text>
+      <text x="255" y="276" text-anchor="middle" class="d-text-sub">+ Better Auth</text>
+
+      <line x1="136" y1="170" x2="178" y2="115" class="d-line" marker-end="url(#arw104b)"/>
+      <line x1="136" y1="190" x2="178" y2="245" class="d-line" marker-end="url(#arw104b)"/>
+
+      <rect x="430" y="12" width="276" height="356" rx="10" class="d-box"/>
+      <text x="568" y="36" text-anchor="middle" class="d-text-bold">認証基盤アプリ</text>
+      <text x="568" y="54" text-anchor="middle" class="d-text-sub">auth.corp.example.com</text>
+
+      <rect x="446" y="70" width="210" height="40" rx="6" class="d-box-good"/>
+      <text x="551" y="95" text-anchor="middle" class="d-text">OIDC Provider プラグイン</text>
+      <rect x="446" y="128" width="210" height="40" rx="6" class="d-box-accent"/>
+      <text x="551" y="153" text-anchor="middle" class="d-text">Better Auth サーバー</text>
+      <rect x="446" y="186" width="210" height="40" rx="6" class="d-box-accent"/>
+      <text x="551" y="211" text-anchor="middle" class="d-text-sub">Admin / Org / 2FA プラグイン</text>
+      <rect x="446" y="244" width="210" height="40" rx="6" class="d-box-warn"/>
+      <text x="551" y="269" text-anchor="middle" class="d-text-sub">社員・部署 API（自前ルート）</text>
+      <rect x="446" y="306" width="210" height="46" rx="6" class="d-box"/>
+      <text x="551" y="334" text-anchor="middle" class="d-text-bold">DB（PostgreSQL 等）</text>
+
+      <line x1="551" y1="110" x2="551" y2="126" class="d-line" marker-end="url(#arw104b)"/>
+      <path d="M656,148 H684 V329 H660" class="d-line" marker-end="url(#arw104b)"/>
+      <line x1="656" y1="206" x2="684" y2="206" class="d-line"/>
+      <line x1="656" y1="264" x2="684" y2="264" class="d-line"/>
+
+      <line x1="330" y1="88" x2="444" y2="88" class="d-line" marker-end="url(#arw104b)"/>
+      <line x1="330" y1="248" x2="444" y2="98" class="d-line" marker-end="url(#arw104b)"/>
+      <line x1="330" y1="112" x2="444" y2="258" class="d-line-dash" marker-end="url(#arw104b)"/>
+      <line x1="330" y1="272" x2="444" y2="270" class="d-line-dash" marker-end="url(#arw104b)"/>
+
+      <line x1="20" y1="320" x2="60" y2="320" class="d-line"/>
+      <text x="68" y="324" class="d-text-sub">未ログイン時 OIDC リダイレクト</text>
+      <line x1="20" y1="346" x2="60" y2="346" class="d-line-dash"/>
+      <text x="68" y="350" class="d-text-sub">UserInfo / 社員 API の参照</text>
+    </svg>
+    <figcaption>図：業務アプリはログインを認証基盤に任せ、社員・部署データも認証基盤から参照する。認証基盤の中の部品は共通の DB を使う</figcaption>
+    </figure>
+
+    <h3 id="sec-7-5">7.5 SSO フロー（Better Auth OIDC Provider）</h3>
+    <p>認証基盤に <strong>OIDC Provider プラグイン</strong> を載せ、業務アプリを <strong>OAuth クライアント</strong>（IdP にログインを頼む側のアプリ）として登録します。外部の Okta や Entra ではなく、<strong>自社の Better Auth が IdP</strong> になります。</p>
+    <ol class="steps">
+      <li>社員 → 業務アプリ：保護ページへアクセス</li>
+      <li>業務アプリ → 認証基盤：OIDC 認可リダイレクト</li>
+      <li>社員 → 認証基盤：ログイン（セッションがあればスキップ）</li>
+      <li>認証基盤 → 社員：同意画面（<code>trustedClient</code> なら省略可）</li>
+      <li>認証基盤 → 業務アプリ：<code>redirect_uri?code=...</code>（認可コードを付けて戻す）</li>
+      <li>業務アプリ → 認証基盤：トークン交換（サーバー間）</li>
+      <li>認証基盤 → 業務アプリ：<code>access_token</code> / <code>id_token</code></li>
+      <li>業務アプリ：ローカルセッション Cookie 発行</li>
+      <li>業務アプリ → 社員：ログイン完了</li>
+    </ol>
+    <p>手順 6 のトークン交換はブラウザを通らず、サーバー同士で行われます。そのためトークンがブラウザの履歴や URL に残りません。</p>
+    <div class="callout warn">
+      <p class="callout-title">注意：プラグインの成熟度を確認する</p>
+      <p>OIDC Provider プラグインは開発が活発です。本番前に <a href="https://www.better-auth.com/docs/plugins/oidc-provider">公式ドキュメント</a> と後継の <a href="https://www.better-auth.com/docs/plugins/oauth-provider">OAuth Provider プラグイン</a> の安定性を確認してください。</p>
+    </div>
+
+    <h3 id="sec-7-6">7.6 認証基盤アプリの Better Auth 設定（例）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プラグイン</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コア</strong>（email + password）</td><td>社員ログイン。招待制は sign-up 無効 + Admin でユーザー作成</td></tr>
+        <tr><td><strong>twoFactor</strong></td><td>TOTP / バックアップコード（MFA 一元化）</td></tr>
+        <tr><td><strong>admin</strong></td><td>ユーザー作成・ロール・<strong>ban（退職時は全セッション失効）</strong></td></tr>
+        <tr><td><strong>organization</strong></td><td>部署・チーム相当、メンバー・招待</td></tr>
+        <tr><td><strong>oidcProvider</strong> + <strong>jwt</strong></td><td>他アプリ向け SSO（IdP）</td></tr>
+        <tr><td><strong>databaseHooks</strong></td><td>社員ドメイン検証、<code>active</code> チェック</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>TOTP</strong> は認証アプリに表示される、30 秒ごとに変わるワンタイムパスワードです（MFA の基礎は <a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a> を参照）。<strong>ban</strong> はアカウントを利用停止にすることです。</p>
+    <span class="code-label">認証基盤 auth.ts（概念例・抜粋）</span>
+<pre><code>// 認証基盤 auth.ts（概念例・抜粋）
+import { betterAuth } from "better-auth";
+import { admin, organization, twoFactor, oidcProvider, jwt } from "better-auth/plugins";
+
+export const auth = betterAuth({
+  emailAndPassword: { enabled: true },
+  disabledPaths: ["/token"],
+  plugins: [
+    twoFactor(),
+    admin(),
+    organization({ /* カスタム role / permission */ }),
+    jwt(),
+    oidcProvider({
+      loginPage: "/sign-in",
+      consentPage: "/consent",
+      useJWTPlugin: true,
+      trustedClients: [
+        {
+          clientId: "app-a",
+          clientSecret: process.env.APP_A_SECRET!,
+          name: "業務アプリ A",
+          type: "web",
+          redirectUrls: ["https://app-a.corp.example.com/api/auth/callback/oauth2"],
+          skipConsent: true,
+        },
+      ],
+      getAdditionalUserInfoClaim: async (user) =&gt; ({
+        department_id: user.departmentId,
+        permissions: user.appPermissions,
+      }),
+    }),
+  ],
+});</code></pre>
+    <ul>
+      <li><code>trustedClients</code> は、あらかじめ信頼する業務アプリ（OAuth クライアント）の一覧です。<code>redirectUrls</code> に登録した URL 以外には認可コードを返しません。</li>
+      <li><code>getAdditionalUserInfoClaim</code> で、部署 ID や権限を UserInfo（ログイン中ユーザーの情報を返す OIDC 標準の窓口）に追加しています。</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>目的</th><th>やり方</th></tr></thead>
+      <tbody>
+        <tr><td><strong>社員だけ</strong></td><td>招待制・社用ドメイン・<code>banUser</code>・カスタム <code>active</code> フラグ</td></tr>
+        <tr><td><strong>退職</strong></td><td><code>auth.api.banUser({ userId, banReason: "退職" })</code> → サインイン不可 + 既存セッション全失効</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-7-7">7.7 業務アプリの Better Auth 設定（例）</h3>
+    <span class="code-label">業務アプリ auth.ts（概念例・抜粋）</span>
+<pre><code>// 業務アプリ auth.ts（概念例・抜粋）
+import { betterAuth } from "better-auth";
+import { genericOAuth } from "better-auth/plugins";
+
+export const auth = betterAuth({
+  baseURL: "https://app-a.corp.example.com",
+  plugins: [
+    genericOAuth({
+      config: [
+        {
+          providerId: "corp-auth",
+          clientId: process.env.OAUTH_CLIENT_ID!,
+          clientSecret: process.env.OAUTH_CLIENT_SECRET!,
+          discoveryUrl: "https://auth.corp.example.com/.well-known/openid-configuration",
+          scopes: ["openid", "profile", "email"],
+        },
+      ],
+    }),
+  ],
+});</code></pre>
+    <p><code>discoveryUrl</code> は、IdP の各エンドポイント（ログイン画面やトークン交換の URL など）をまとめて教えてくれる OIDC 標準の URL です。ブラウザ向けは <strong>BFF + HttpOnly セッション Cookie</strong> を推奨します。パスワードは認証基盤だけが保持し、業務アプリは持ちません。</p>
+
+    <h3 id="sec-7-8">7.8 社員・部署マスタの持ち方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>データ</th><th>実装</th></tr></thead>
+      <tbody>
+        <tr><td>社員 ID・メール・氏名</td><td>Better Auth <code>user</code></td></tr>
+        <tr><td>部署</td><td><strong>organization</strong> の org / team、または <code>departmentId</code> カスタムフィールド</td></tr>
+        <tr><td>入社日・退職日</td><td>カスタムフィールド + Admin UI</td></tr>
+        <tr><td>アプリ横断の権限</td><td>organization のカスタム role / permission + <code>getAdditionalUserInfoClaim</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>API（例）</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /api/internal/employees</code></td><td>一覧（サービス間トークン）</td></tr>
+        <tr><td><code>GET /api/internal/departments</code></td><td>部署ツリー</td></tr>
+        <tr><td><code>GET /oauth2/userinfo</code></td><td>OIDC 標準（ログイン中ユーザー）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-7-9">7.9 認可（権限）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>レイヤ</th><th>担当</th></tr></thead>
+      <tbody>
+        <tr><td>アプリに入れるか</td><td>OIDC <code>scope</code> / UserInfo の <code>permissions</code></td></tr>
+        <tr><td>組織内ロール</td><td>organization の <code>hasPermission</code></td></tr>
+        <tr><td>案件の担当者か等</td><td>各業務アプリ DB</td></tr>
+      </tbody>
+    </table></div>
+    <p>権限は必要最小限にとどめるのが原則です（71 の <a href="../../71_セキュリティ基礎/00_全体像/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a> を参照）。</p>
+
+    <h3 id="sec-7-10">7.10 SAML が必要な場合</h3>
+    <p><strong>SSO プラグイン（<code>@better-auth/sso</code>）</strong> は、アプリを <strong>SAML SP</strong>（SAML でログインを頼む側＝サービスプロバイダ）として外部 IdP に繋ぐ用途です。自社認証基盤が IdP となって複数アプリに SSO する本構成では、まず <strong>OIDC Provider</strong> で足ります。将来 Entra 連携が必要になったら SSO プラグインを追加します。</p>
+
+    <h3 id="sec-7-11">7.11 入退社・権限変更の伝播</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手段</th><th>実装</th></tr></thead>
+      <tbody>
+        <tr><td>即時</td><td><code>banUser</code> / <code>setRole</code> / organization メンバー更新</td></tr>
+        <tr><td>Webhook</td><td>認証基盤から業務アプリへ POST（自前実装）</td></tr>
+        <tr><td>定期同期</td><td>Admin <code>listUsers</code> + <code>updatedAt</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-7-12">7.12 セキュリティ（Better Auth が担う例）</h3>
+    <ul>
+      <li>パスワードハッシュ・セッション管理・CSRF（フレームワーク連携）</li>
+      <li>OIDC 標準フロー（PKCE、redirect URI 検証、<code>trustedOrigins</code>）</li>
+      <li>MFA（twoFactor）、レート制限（設定可能）</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">運用で足すもの</p>
+      <p>HTTPS、監査ログ、秘密情報のローテーション（定期的な入れ替え）は、ライブラリではなく運用側で用意します。</p>
+    </div>
+
+    <h3 id="sec-7-13">7.13 新規業務アプリの追加手順</h3>
+    <ol class="steps">
+      <li><code>oidcProvider.trustedClients</code> に client 登録</li>
+      <li>業務アプリに Better Auth + OIDC クライアント設定</li>
+      <li>organization / カスタム permission でアプリ用ロール定義</li>
+      <li>結合テスト（ログイン → UserInfo → ban 後 401）</li>
+    </ol>
+    <p><strong>401</strong> は「認証されていない」ことを表す HTTP ステータスコードです。退職者を ban したあと、確かにアクセスできなくなることまで確認します。</p>
+
+    <h3 id="sec-7-14">7.14 方式の比較（本要件）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>採用</th></tr></thead>
+      <tbody>
+        <tr><td>プロトコル完全自前（独自 code 交換のみ）</td><td><strong>不採用</strong></td></tr>
+        <tr><td>AWS IAM / Cognito</td><td><strong>不採用</strong></td></tr>
+        <tr><td>Better Auth + 自社 OIDC Provider</td><td><strong>採用</strong></td></tr>
+        <tr><td>Better Auth + Organization / Admin</td><td><strong>採用</strong></td></tr>
+        <tr><td>外部 Entra / Google</td><td>任意（SSO プラグインで追加可）</td></tr>
+        <tr><td>SAML</td><td>外部 IdP 連携が必要になったら検討</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-8"><span class="num">8.</span>実装ファイル一覧（Next.js App Router 想定）</h2>
+    <p>「Auth フォルダ」「セッション用ファイル」を自分で書いていた場合、Better Auth では <strong>役割が公式の置き場所に分かれます</strong>。<strong>セッションの生成・検証ロジック自体は <code>auth.ts</code> と <code>/api/auth/*</code> に集約</strong> し、自前で <code>session.ts</code> に crypto（暗号処理）を書きません。</p>
+
+    <h3 id="sec-8-1">8.1 認証基盤アプリ（1 台）— 最低限ほしいファイル</h3>
+<pre><code>auth-hub/                          # 例: auth.corp.example.com
+├── .env.local
+├── src/
+│   ├── lib/
+│   │   ├── auth.ts                # ① サーバー側の認証の「本体」
+│   │   └── auth-client.ts         # ② ブラウザから auth API を呼ぶ窓口
+│   ├── app/
+│   │   ├── api/auth/[...all]/
+│   │   │   └── route.ts           # ③ /api/auth/* を Better Auth に渡す
+│   │   ├── (auth)/sign-in/page.tsx    # ④ ログイン画面（UI）
+│   │   ├── (auth)/consent/page.tsx    # ⑤ OIDC 同意画面（任意）
+│   │   └── (admin)/employees/page.tsx # ⑥ 入退社・権限 UI（自前）
+│   ├── middleware.ts              # ⑦ 未ログイン → /sign-in へ
+│   └── db/schema.ts               # ⑧ DB 定義（CLI 生成が楽）</code></pre>
+
+    <h3 id="sec-8-2">8.2 業務アプリ（各 1 台）— 認証基盤より少ない</h3>
+<pre><code>app-a/
+├── .env.local                       # 認証基盤の URL、OAuth client_id/secret
+├── src/lib/auth.ts                  # ① OIDC クライアント設定（genericOAuth）
+├── src/lib/auth-client.ts           # ② signIn / useSession
+├── src/app/api/auth/[...all]/route.ts  # ③ 同上
+├── src/middleware.ts                # ④ 未ログイン → signIn へ
+└── src/app/...                      # ⑤ 業務画面（在庫・経費など）</code></pre>
+
+    <h3 id="sec-8-3">8.3 各ファイルの役割</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ファイル</th><th>担うこと</th><th>自分で書く量</th></tr></thead>
+      <tbody>
+        <tr><td><strong><code>lib/auth.ts</code></strong></td><td>DB 接続、プラグイン（admin / organization / oidcProvider 等）、パスワード・MFA・SSO のルール</td><td>設定が中心（ロジックはライブラリ）</td></tr>
+        <tr><td><strong><code>lib/auth-client.ts</code></strong></td><td>ログイン・ログアウト・<code>useSession()</code> などフロント用 API</td><td>数行〜十数行</td></tr>
+        <tr><td><strong><code>api/auth/[...all]/route.ts</code></strong></td><td><code>POST/GET /api/auth/sign-in</code> 等 <strong>すべての認証 HTTP</strong> を処理</td><td><strong>ほぼ定型</strong>（コピペ可）</td></tr>
+        <tr><td><strong><code>sign-in/page.tsx</code></strong></td><td>メール・パスワード入力、<code>authClient.signIn.email()</code> 呼び出し</td><td>UI は自前</td></tr>
+        <tr><td><strong><code>middleware.ts</code></strong></td><td>Cookie のセッションを見て保護ページをガード</td><td>十数行</td></tr>
+        <tr><td><strong><code>db/schema.ts</code></strong></td><td>テーブル定義</td><td><code>npx auth generate</code> で生成推奨</td></tr>
+        <tr><td><strong><code>(admin)/employees/page.tsx</code></strong></td><td>社員招待・ban・ロール変更</td><td><strong>完全自前</strong>（<code>auth.api.banUser</code> 等を呼ぶ）</td></tr>
+        <tr><td><strong><code>api/internal/employees/route.ts</code></strong></td><td>他アプリ向け社員一覧 API</td><td><strong>自前</strong>（サービス間トークン検証）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card">
+        <h4>③ route.ts ＝ 昔の「Auth ルート一式」</h4>
+        <p>ここに sign-in / sign-out / callback がまとまるので、<code>auth/login.ts</code> をバラバラに書く必要はありません。</p>
+      </div>
+      <div class="card">
+        <h4>① auth.ts ＝ 昔の「セッション管理 + パスワード検証」</h4>
+        <p>ただし中身の実装は Better Auth が持ち、ここは設定ファイルに近いものです。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-8-4">8.4 ③ route.ts の中身（定型）</h3>
+<pre><code>// src/app/api/auth/[...all]/route.ts
+import { auth } from "@/lib/auth";
+import { toNextJsHandler } from "better-auth/next-js";
+
+export const { GET, POST } = toNextJsHandler(auth);</code></pre>
+    <p><code>[...all]</code> は Next.js の「それ以降のすべてのパスを受け取る」ルートの書き方です。<code>/api/auth/</code> 以下へのリクエストをすべて Better Auth に渡します。</p>
+
+    <h3 id="sec-8-5">8.5 ⑦ middleware.ts のイメージ</h3>
+<pre><code>// src/middleware.ts（概念例）
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
+
+export function middleware(request: NextRequest) {
+  const session = getSessionCookie(request);
+  if (!session &amp;&amp; request.nextUrl.pathname.startsWith("/dashboard")) {
+    return NextResponse.redirect(new URL("/sign-in", request.url));
+  }
+  return NextResponse.next();
+}</code></pre>
+    <p>業務アプリでは、未ログイン時に <strong><code>authClient.signIn.oauth2({ providerId: "corp-auth" })</code></strong> で認証基盤へ飛ばします。</p>
+    <div class="callout warn">
+      <p class="callout-title">middleware は「入口の振り分け」</p>
+      <p><code>getSessionCookie</code> は Cookie が <strong>あるかどうか</strong> を見るだけです。Cookie の中身が本当に有効なセッションかは、サーバーが DB の <code>session</code> と照合して初めて分かります（9 章）。重要なデータを返す処理では、サーバー側でもセッションを検証します。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>DB：何を保存するか</h2>
+
+    <h3 id="sec-9-1">9.1 原則</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>保存してよい</th><th>絶対に平文で保存しない</th></tr></thead>
+      <tbody>
+        <tr><td>パスワードの <strong>ハッシュ</strong></td><td>パスワード本体</td></tr>
+        <tr><td>セッション用の <strong>ランダム token</strong></td><td>セッション token を推測可能な値（連番など）</td></tr>
+        <tr><td>ユーザー ID・メール・部署 ID</td><td>—</td></tr>
+        <tr><td>OAuth の <strong>client_secret</strong>（環境変数推奨）</td><td>ソースコードへの直書き</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ハッシュ</strong> は、元に戻せない形に変換した値です（詳しくは <a href="10-3_パスワード・MFA・暗号化の基礎.html">パスワード・MFA・暗号化の基礎</a>）。</p>
+    <ul>
+      <li><strong>ブラウザの Cookie に入るもの</strong> … 多くの場合 <strong>セッション token</strong>（またはそれを指す署名付き Cookie）です。Cookie だけでは「誰か」は確定せず、<strong>サーバーが DB の <code>session</code> と照合</strong> します。</li>
+      <li><strong><code>.env</code> の <code>BETTER_AUTH_SECRET</code></strong> … DB には入れません。トークン署名・暗号化用の鍵（32 文字以上のランダム文字列）です。</li>
+    </ul>
+
+    <h3 id="sec-9-2">9.2 最低限の DB テーブル（コア 4 つ）</h3>
+    <p>Better Auth 本体が使うテーブルです。<code>npx auth migrate</code> または <code>npx auth generate</code> で作ります。</p>
+
+    <h4><code>user</code> — 「社員」その人</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>カラム</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><code>id</code></td><td>社員の一意 ID（UUID 等）</td><td><code>clx7abc...</code></td></tr>
+        <tr><td><code>name</code></td><td>表示名</td><td><code>山田 太郎</code></td></tr>
+        <tr><td><code>email</code></td><td>ログイン ID 兼連絡先</td><td><code>taro@corp.example.com</code></td></tr>
+        <tr><td><code>emailVerified</code></td><td>メール確認済みか</td><td><code>true</code> / <code>false</code></td></tr>
+        <tr><td><code>image</code></td><td>アイコン URL（任意）</td><td><code>null</code></td></tr>
+        <tr><td><code>createdAt</code> / <code>updatedAt</code></td><td>作成・更新日時</td><td></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>社員だけにしたいとき</strong> は、<code>additionalFields</code> で <code>employeeNumber</code> / <code>departmentId</code> を足すか、別テーブル <code>employee_profile</code> を <code>userId</code> で紐づけます。</p>
+
+    <h4><code>account</code> — ログイン手段（パスワードはここ）</h4>
+    <p>1 人の <code>user</code> に、Google 連携・メール/パスワードなど <strong>手段ごとに 1 行</strong> 作られます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>カラム</th><th>意味</th><th>初心者メモ</th></tr></thead>
+      <tbody>
+        <tr><td><code>userId</code></td><td>どの社員か</td><td><code>user.id</code> への外部キー</td></tr>
+        <tr><td><code>providerId</code></td><td>手段の種類</td><td>メール/パスワードなら <code>"credential"</code></td></tr>
+        <tr><td><code>accountId</code></td><td>プロバイダ側 ID</td><td>credential なら多くの場合 <code>userId</code> と同じ</td></tr>
+        <tr><td><strong><code>password</code></strong></td><td><strong>ハッシュされたパスワード</strong></td><td><strong>平文ではない</strong>。Better Auth が bcrypt 等で保存</td></tr>
+        <tr><td><code>accessToken</code> 等</td><td>外部 SSO 用</td><td>メール/パスワードだけなら空でよい</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">users テーブルの password カラムはどこへ？</p>
+      <p>昔「users テーブルに password カラム」としていた構成は、Better Auth では <strong><code>account.password</code>（ハッシュ）</strong> に分かれるイメージです。</p>
+    </div>
+
+    <h4><code>session</code> — 「今ログイン中」の印</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>カラム</th><th>意味</th><th>初心者メモ</th></tr></thead>
+      <tbody>
+        <tr><td><code>id</code></td><td>セッション行の ID</td><td>DB 上の主キー</td></tr>
+        <tr><td><code>userId</code></td><td>誰のセッションか</td><td></td></tr>
+        <tr><td><strong><code>token</code></strong></td><td><strong>ランダムなセッション ID</strong></td><td>Cookie と照合する値。<strong>推測困難な長い文字列</strong></td></tr>
+        <tr><td><code>expiresAt</code></td><td>いつまで有効か</td><td>過ぎたら未ログイン扱い</td></tr>
+        <tr><td><code>ipAddress</code> / <code>userAgent</code></td><td>端末の手がかり（任意）</td><td>不正ログイン調査用</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>退職・ban 時</strong> は、該当 <code>userId</code> の <code>session</code> 行を削除します（Admin の <code>banUser</code> がやってくれます）。</p>
+
+    <h4><code>verification</code> — 一時的な確認用</h4>
+    <p>メール確認リンク・パスワードリセット・MFA セットアップなど <strong>短命のコード</strong> 用です。恒常的な社員データではありません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>カラム</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>identifier</code></td><td>何の確認か（例：メールアドレス）</td></tr>
+        <tr><td><code>value</code></td><td>確認コード or トークン</td></tr>
+        <tr><td><code>expiresAt</code></td><td>有効期限</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-3">9.3 プラグインを入れたときに増える表（目安）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プラグイン</th><th>主な追加テーブル</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>admin</strong></td><td><code>user</code> に <code>role</code>, <code>banned</code>, <code>banReason</code> 等</td><td>管理者・退職 ban</td></tr>
+        <tr><td><strong>organization</strong></td><td><code>organization</code>, <code>member</code>, <code>invitation</code></td><td>部署・所属</td></tr>
+        <tr><td><strong>twoFactor</strong></td><td><code>twoFactor</code> 関連</td><td>MFA 秘密鍵（暗号化して保存）</td></tr>
+        <tr><td><strong>oidcProvider</strong></td><td><code>oauthApplication</code>, <code>oauthAccessToken</code>, <code>oauthConsent</code></td><td>業務アプリを OAuth クライアントとして登録</td></tr>
+      </tbody>
+    </table></div>
+    <p>正確なカラムは、プラグイン追加後に <code>npx auth generate</code> を再実行して <code>schema</code> を確認します。</p>
+
+    <h3 id="sec-9-4">9.4 自前で足すことが多いテーブル（業務用）</h3>
+    <p>Better Auth の外側で、Prisma / Drizzle（TypeScript 向けの DB ライブラリ）を使って普通に定義します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーブル</th><th>用途</th><th>主なカラム例</th></tr></thead>
+      <tbody>
+        <tr><td><code>department</code></td><td>部署マスタ</td><td><code>id</code>, <code>name</code>, <code>parentId</code></td></tr>
+        <tr><td><code>employee_profile</code></td><td>社員属性の拡張</td><td><code>userId</code>, <code>hiredAt</code>, <code>leftAt</code>, <code>departmentId</code></td></tr>
+        <tr><td><code>audit_log</code></td><td>監査</td><td><code>actorUserId</code>, <code>action</code>, <code>createdAt</code></td></tr>
+      </tbody>
+    </table></div>
+    <p><code>user</code> に全部載せてもかまいませんが、人事項目が増えるなら分離した方が見通しがよくなります。</p>
+
+    <h3 id="sec-9-5">9.5 ログイン 1 回の流れと DB の対応</h3>
+    <figure>
+    <svg viewBox="0 0 720 380" role="img" aria-label="ブラウザがemailとpasswordでsignInすると、/api/authがDBのaccountをemailで検索し、パスワードハッシュと照合し、sessionの行をINSERTしてSet-Cookieでsession tokenを返す。以降のリクエストのCookieから、session.tokenでuserIdを取得する流れ">
+      <defs><marker id="arw104c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="40" y="16" width="140" height="40" rx="8" class="d-box"/>
+      <text x="110" y="41" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <rect x="290" y="16" width="140" height="40" rx="8" class="d-box-accent"/>
+      <text x="360" y="41" text-anchor="middle" class="d-text-bold">/api/auth/*</text>
+      <rect x="540" y="16" width="140" height="40" rx="8" class="d-box-good"/>
+      <text x="610" y="41" text-anchor="middle" class="d-text-bold">DB</text>
+      <line x1="110" y1="56" x2="110" y2="364" class="d-line-dash"/>
+      <line x1="360" y1="56" x2="360" y2="364" class="d-line-dash"/>
+      <line x1="610" y1="56" x2="610" y2="364" class="d-line-dash"/>
+
+      <line x1="112" y1="90" x2="356" y2="90" class="d-line" marker-end="url(#arw104c)"/>
+      <text x="235" y="82" text-anchor="middle" class="d-text-sub">① signIn（email + password）</text>
+      <line x1="362" y1="128" x2="606" y2="128" class="d-line" marker-end="url(#arw104c)"/>
+      <text x="485" y="120" text-anchor="middle" class="d-text-sub">② account を email で検索</text>
+      <path d="M362,150 H420 V176 H364" class="d-line" marker-end="url(#arw104c)"/>
+      <text x="430" y="168" class="d-text-sub">③ password ハッシュと照合</text>
+      <line x1="362" y1="214" x2="606" y2="214" class="d-line" marker-end="url(#arw104c)"/>
+      <text x="485" y="206" text-anchor="middle" class="d-text-sub">④ session 行を INSERT</text>
+      <text x="485" y="232" text-anchor="middle" class="d-text-sub">（token, expiresAt）</text>
+      <line x1="358" y1="262" x2="114" y2="262" class="d-line" marker-end="url(#arw104c)"/>
+      <text x="235" y="254" text-anchor="middle" class="d-text-sub">⑤ Set-Cookie（session token）</text>
+      <line x1="112" y1="302" x2="356" y2="302" class="d-line" marker-end="url(#arw104c)"/>
+      <text x="235" y="294" text-anchor="middle" class="d-text-sub">⑥ 以降のリクエストに Cookie</text>
+      <line x1="362" y1="342" x2="606" y2="342" class="d-line" marker-end="url(#arw104c)"/>
+      <text x="485" y="334" text-anchor="middle" class="d-text-sub">⑦ session.token で userId 取得</text>
+    </svg>
+    <figcaption>図：パスワードは account のハッシュと照合し、ログイン状態は session 行と Cookie の token で表す</figcaption>
+    </figure>
+
+    <h2 id="sec-10"><span class="num">10.</span>環境変数と設計確定前の確認事項</h2>
+
+    <h3 id="sec-10-1">10.1 環境変数（最低限）</h3>
+<pre><code># 認証基盤・業務アプリ共通
+BETTER_AUTH_SECRET=        # 32文字以上のランダム（openssl rand -base64 32）
+BETTER_AUTH_URL=             # そのアプリの公開 URL
+DATABASE_URL=                # PostgreSQL 等
+
+# 業務アプリのみ（認証基盤が IdP の場合）
+OAUTH_CLIENT_ID=
+OAUTH_CLIENT_SECRET=
+CORP_AUTH_ISSUER=https://auth.corp.example.com</code></pre>
+    <p><code>openssl rand -base64 32</code> は、ランダムな 32 バイトを文字列にして出力するコマンドです。<strong>issuer</strong> はトークンの発行者（ここでは認証基盤の URL）を表します。</p>
+
+    <h3 id="sec-10-2">10.2 確認したいこと（設計確定前）</h3>
+    <ol class="steps">
+      <li>業務アプリは <strong>すべて Next.js</strong> か。</li>
+      <li>認証基盤の <strong>本番時期</strong>（OIDC Provider プラグインの成熟度）。</li>
+      <li>部署は <strong>organization の team</strong> か <strong>フラットな department テーブル</strong> か。</li>
+      <li>社外アクセス（VPN のみか、MFA 付きインターネットか）。</li>
+    </ol>
+    <p>実装の詳細は、今後追加予定の 50 系（実装）のページで扱います。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>トピック</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>第一候補</td><td>OIDC で社内 IdP に SSO（必要なら SAML）</td></tr>
+        <tr><td>「社員だけ」</td><td>どの IdP に繋ぐか＋許可ドメイン・グループで決まる。VPN は補強</td></tr>
+        <tr><td>JWT / セッション</td><td>ログイン <strong>後</strong> の状態の持ち方。単体の答えではない</td></tr>
+        <tr><td>向かないもの</td><td>Basic / Digest、API キー（人のログイン）、OAuth 2 単体</td></tr>
+        <tr><td>OIDC 以外</td><td>SAML、セッション + AD/LDAP、Kerberos、WS-Federation</td></tr>
+        <tr><td>自前は危ない</td><td>危ないのはハッシュ・セッション・PKCE などをゼロから書くこと</td></tr>
+        <tr><td>Better Auth 構成</td><td>認証基盤が自社 OIDC Provider、業務アプリは genericOAuth で接続</td></tr>
+        <tr><td>退職</td><td><code>banUser</code> でサインイン不可＋全セッション失効</td></tr>
+        <tr><td>DB</td><td>user / account（パスワードハッシュ）/ session（token）/ verification</td></tr>
+        <tr><td>秘密情報</td><td><code>BETTER_AUTH_SECRET</code> や client_secret は環境変数。DB やコードに置かない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 社内システムで「社員だけ」がログインできるようにするとき、最も重要な判断は何ですか？</summary>
+      <div class="body">
+        <p>どの IdP（Entra ID・Google Workspace・Okta など）に繋ぐかです。アプリは OIDC で IdP にログインを任せ、返ってきた ID トークンの <code>email</code> / <code>sub</code> / グループクレームで在籍社員かを判定します。許可ドメインや「全社員」グループでの制限を組み合わせます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q2. 社員ログインに OAuth 2 だけ（OIDC なし）を使うのが勧められないのはなぜですか？</summary>
+      <div class="body">
+        <p>OAuth 2 は第三者アプリにリソースへのアクセスを許可する <strong>認可</strong> のフレームワークで、「ログインした人が誰か」の保証が弱いからです。本人確認には、ID トークンを発行する OIDC を使います。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q3. 「JWT を使えば社員ログインは完成」という考えはなぜ誤りですか？</summary>
+      <div class="body">
+        <p>JWT はトークンの <strong>形式</strong> で、ログイン <strong>後</strong> の状態をどう持つかの選択肢だからです。ログイン画面と本人確認（OIDC / SAML / パスワードなど）は別に必要です。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q4. 「認証基盤を自社で作るのは危ない」と言われるとき、本当に避けるべきなのは何ですか？</summary>
+      <div class="body">
+        <p>認証基盤アプリを作ること自体ではなく、パスワードハッシュ・セッション固定や CSRF 対策・PKCE やトークン署名・MFA やレート制限などを <strong>ゼロから自前で書く</strong> ことです。Better Auth などのライブラリと標準プロトコルに任せ、部署マスタや入退社 UI など自社固有の部分だけを書きます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q5. 社員が退職したとき、この設計ではどうやってアクセスを止めますか？</summary>
+      <div class="body">
+        <p>認証基盤で <code>auth.api.banUser({ userId, banReason: "退職" })</code> を呼びます。サインインできなくなり、その社員の <code>session</code> 行が削除されて既存セッションもすべて失効します。業務アプリへは Webhook や定期同期で伝え、結合テストで ban 後に 401 になることを確認します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q6. Better Auth では、パスワードとログイン状態はそれぞれどのテーブルに保存されますか？</summary>
+      <div class="body">
+        <p>パスワードは <code>account</code> テーブルの <code>password</code> カラムに <strong>ハッシュ</strong> として保存されます。ログイン状態は <code>session</code> テーブルに推測困難なランダム <code>token</code> と有効期限 <code>expiresAt</code> として保存され、ブラウザの Cookie の token と照合されます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>Q7. <code>BETTER_AUTH_SECRET</code> はどこに置き、どのような値にしますか？</summary>
+      <div class="body">
+        <p>DB やソースコードではなく、<code>.env</code> などの環境変数に置きます。トークン署名・暗号化用の鍵なので、<code>openssl rand -base64 32</code> などで作った 32 文字以上のランダムな文字列にします。</p>
+      </div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：73_認証認可/10_基礎概念/07_社内システム向け認証方式の選び方</li>
+      <li>ノート：73_認証認可/10_基礎概念/04_開発者が知るべき認証の7つの概念（Hayk Simonyan）</li>
+      <li>Better Auth「OIDC Provider」 https://www.better-auth.com/docs/plugins/oidc-provider</li>
+      <li>Better Auth「OAuth Provider」 https://www.better-auth.com/docs/plugins/oauth-provider</li>
+      <li>Better Auth「Organization」 https://www.better-auth.com/docs/plugins/organization</li>
+      <li>Better Auth「Admin」 https://www.better-auth.com/docs/plugins/admin</li>
+      <li>Better Auth「SSO（外部 SAML / OIDC）」 https://www.better-auth.com/docs/plugins/sso</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-3_パスワード・MFA・暗号化の基礎.html"><span class="lbl">← 前のページ</span>パスワード・MFA・暗号化の基礎</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-1_ログイン機能への攻撃と対策.html"><span class="lbl">次のページ →</span>ログイン機能への攻撃と対策</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

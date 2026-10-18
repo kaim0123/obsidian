@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コンウェイの法則と Team Topologies｜アーキテクチャ解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">アーキテクチャ解説</a>
+    <span class="crumb">70 進化と組織 › コンウェイの法則と Team Topologies</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">70 進化と組織</span>
+      <h1>コンウェイの法則と Team Topologies</h1>
+      <p class="lead">システムの形はそれを作る組織の形に引っ張られる、というコンウェイの法則と、それを逆手にとってチームを設計する逆コンウェイ戦略を解説します。Team Topologies の4つのチームタイプ・3つのインタラクションモード・認知負荷を使って、チームの境界とソフトウェアの境界をそろえる考え方が分かります。</p>
+      <p class="meta">もとにしたノート：70_進化と組織/04進化型アーキテクチャとリバースコンウェイの法則.md（§2〜§5）、70_進化と組織/00_解説_進化と組織.md（§3）、00_全体像/00_解説_アーキテクチャ体系.md（§7-3・§9-3）。Team Topologies は公式サイトなどで補足</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>アーキテクチャは技術だけの問題ではありません。<strong>システムの形は、それを作る組織の形と表裏一体</strong>です。「きれいなサービス分割の図を描いたのに、組織が追いつかず分散モノリスになった」というよくある失敗の背景には、このページで扱う法則があります。</p>
+    <ul>
+      <li><strong>コンウェイの法則</strong>：組織のコミュニケーション構造がシステムの構造に写る、という観察</li>
+      <li><strong>逆コンウェイ戦略（リバースコンウェイ）</strong>：望むアーキテクチャから逆算してチームの境界を設計する、という実践</li>
+      <li><strong>ドメイン・チーム・コードの3つの境界</strong>をそろえる考え方（DDD の境界づけられたコンテキストとのつながり）</li>
+      <li><strong>Team Topologies</strong>：4つのチームタイプ、3つのインタラクションモード、認知負荷、チーム API、破断面</li>
+      <li><strong>プラットフォームエンジニアリング</strong>と、この話をいつ深く考えるべきか</li>
+    </ul>
+    <p>Team Topologies にはまだ個別ノートがないため、フォルダの解説ノートと全体解説をもとに、Team Topologies の公式サイトなどの公開資料で詳しく補っています。</p>
+    <div class="callout key">
+      <p class="callout-title">境界の目安</p>
+      <p>「組織そのものをどう良くするか（組織構造・組織文化・チームづくり）」は Vault 内の別分野（020Management の 30_チーム・40_組織）の担当です。このページは「<strong>組織の形がシステムの形にどう効くか</strong>」に絞ります。Team Topologies のチームタイプも、ソフトウェアの境界と結びつけて語る範囲で扱います。</p>
+    </div>
+    <p>前提として、<a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a> と、41 外のノート（42_ソフトウェア設計『03_境界づけられたコンテキストとコンテキストマップ』）を読んでおくと理解しやすくなります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>コンウェイの法則</h2>
+    <p><strong>コンウェイの法則（Conway's Law）</strong>は、1968年に Melvin Conway が論文「How Do Committees Invent?」で述べた観察です。</p>
+    <blockquote><p>システムを設計する組織は、その組織のコミュニケーション構造をまねた設計を生み出す</p></blockquote>
+    <p>原文は「Any organization that designs a system (defined broadly) will produce a design whose structure is a copy of the organization's communication structure.」です。ここでの「システム」はソフトウェアに限らず広い意味で使われています。</p>
+
+    <h3>なぜそうなるのか</h3>
+    <p>ソフトウェアの部品同士をつなぐには、それを作る人同士が話し合ってインターフェースを決める必要があります。よく話す相手とは細かく密につながった設計になり、あまり話さない相手とは、粗いインターフェースでしかつながれません。結果として、<strong>コミュニケーションの経路がそのまま部品の境界と依存関係になる</strong>のです。</p>
+    <ul>
+      <li>1つの大きなチーム → <strong>まとまった1つのモノリス</strong>になりやすい</li>
+      <li>注文チームと在庫チームが別々 → <strong>注文サービスと在庫サービス</strong>に分かれやすい</li>
+      <li>フロントエンド・バックエンド・DB で分かれたチーム → <strong>技術で分かれたレイヤー構造</strong>になりやすい</li>
+    </ul>
+
+    <figure>
+    <svg viewBox="0 0 760 430" role="img" aria-label="コンウェイの法則：組織とシステムの対応">
+      <text x="180" y="28" text-anchor="middle" class="d-text-bold">組織のつながり方</text>
+      <text x="580" y="28" text-anchor="middle" class="d-text-bold">システムのつながり方</text>
+      <!-- row1 -->
+      <text x="20" y="56" class="d-text-sub">例1：ドメインで分かれたチーム</text>
+      <rect x="20" y="66" width="320" height="140" rx="10" class="d-line-dash"/>
+      <rect x="420" y="66" width="320" height="140" rx="10" class="d-line-dash"/>
+      <rect x="40" y="84" width="120" height="44" rx="22" class="d-box-purple"/>
+      <text x="100" y="111" text-anchor="middle" class="d-text">注文チーム</text>
+      <rect x="200" y="84" width="120" height="44" rx="22" class="d-box-purple"/>
+      <text x="260" y="111" text-anchor="middle" class="d-text">在庫チーム</text>
+      <rect x="120" y="150" width="120" height="44" rx="22" class="d-box-purple"/>
+      <text x="180" y="177" text-anchor="middle" class="d-text">決済チーム</text>
+      <line x1="160" y1="100" x2="200" y2="100" class="d-line-accent"/>
+      <line x1="160" y1="112" x2="200" y2="112" class="d-line-accent"/>
+      <line x1="110" y1="128" x2="150" y2="150" class="d-line"/>
+      <text x="180" y="78" text-anchor="middle" class="d-text-sub">連携多</text>
+      <rect x="440" y="84" width="120" height="44" rx="6" class="d-box-accent"/>
+      <text x="500" y="111" text-anchor="middle" class="d-text">注文サービス</text>
+      <rect x="600" y="84" width="120" height="44" rx="6" class="d-box-accent"/>
+      <text x="660" y="111" text-anchor="middle" class="d-text">在庫サービス</text>
+      <rect x="520" y="150" width="120" height="44" rx="6" class="d-box-accent"/>
+      <text x="580" y="177" text-anchor="middle" class="d-text">決済サービス</text>
+      <line x1="560" y1="100" x2="600" y2="100" class="d-line-accent"/>
+      <line x1="560" y1="112" x2="600" y2="112" class="d-line-accent"/>
+      <line x1="510" y1="128" x2="550" y2="150" class="d-line"/>
+      <text x="580" y="78" text-anchor="middle" class="d-text-sub">API 多</text>
+      <text x="380" y="146" text-anchor="middle" class="d-text-bold">≈</text>
+      <!-- row2 -->
+      <text x="20" y="246" class="d-text-sub">例2：技術で分かれたチーム</text>
+      <rect x="20" y="256" width="320" height="160" rx="10" class="d-line-dash"/>
+      <rect x="420" y="256" width="320" height="160" rx="10" class="d-line-dash"/>
+      <rect x="60" y="270" width="240" height="38" rx="19" class="d-box-purple"/>
+      <text x="180" y="294" text-anchor="middle" class="d-text">フロントエンドチーム</text>
+      <rect x="60" y="318" width="240" height="38" rx="19" class="d-box-purple"/>
+      <text x="180" y="342" text-anchor="middle" class="d-text">バックエンドチーム</text>
+      <rect x="60" y="366" width="240" height="38" rx="19" class="d-box-purple"/>
+      <text x="180" y="390" text-anchor="middle" class="d-text">DB チーム</text>
+      <rect x="460" y="270" width="240" height="38" rx="6" class="d-box-accent"/>
+      <text x="580" y="294" text-anchor="middle" class="d-text">UI 層</text>
+      <rect x="460" y="318" width="240" height="38" rx="6" class="d-box-accent"/>
+      <text x="580" y="342" text-anchor="middle" class="d-text">ロジック層</text>
+      <rect x="460" y="366" width="240" height="38" rx="6" class="d-box-accent"/>
+      <text x="580" y="390" text-anchor="middle" class="d-text">データ層</text>
+      <text x="380" y="346" text-anchor="middle" class="d-text-bold">≈</text>
+    </svg>
+    <figcaption>図：コミュニケーションの多い組み合わせは、システムでも密につながる。チームの分け方がそのまま部品の分け方になる</figcaption>
+    </figure>
+
+    <div class="callout tip">
+      <p class="callout-title">呪いではなく、事実の描写</p>
+      <p>コンウェイの法則は「こうすべき」という規範ではなく、「こうなりやすい」という<strong>観察</strong>です。逆らうのは難しいので、うまく<strong>利用する</strong>ことを考えます。それが次の逆コンウェイ戦略です。</p>
+    </div>
+    <p>例2 の「技術で分かれたチーム」の場合、1つの業務の変更（例：注文に「ギフト包装」を追加）でも、フロント・バック・DB の3チームの調整が必要になります。<a href="40-1_分散とスタイル.html">技術で分割するスタイルとドメインで分割するスタイル</a> の違いは、チームの分け方の違いでもあるのです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>逆コンウェイ戦略（リバースコンウェイ）</h2>
+    <p><strong>逆コンウェイ戦略（Inverse Conway Maneuver）</strong>は、コンウェイの法則を逆手にとる考え方です。ノートでは「リバースコンウェイの法則」とも呼んでいます。</p>
+    <blockquote><p>望むアーキテクチャを得るために、組織構造（チームの境界）を意図的に設計する</p></blockquote>
+    <p>システムの形が組織の形に引っ張られるなら、<strong>先に組織の形を望むシステムの形に合わせておけばよい</strong>、という発想です。</p>
+
+    <h3>例</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>望むアーキテクチャ</th><th>組織側の工夫（例）</th></tr></thead>
+      <tbody>
+        <tr><td>注文と在庫を独立したサービスにしたい</td><td>注文チームと在庫チームを別のユニットにする。共通の DB チームに閉じ込めない</td></tr>
+        <tr><td>モジュラーモノリスを維持したい</td><td>モジュールごとのオーナーシップを明確にする。モジュールをまたぐ変更はアーキテクトのグループで調整する</td></tr>
+        <tr><td>プラットフォームとプロダクトを分けたい</td><td>インフラと共通 API はプラットフォームチームが担当する</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout bad">
+      <p class="callout-title">チームを分けないまま、図の上だけで分割すると</p>
+      <p>チームを分けないまま図の上だけでサービスを分けると、サービス同士が密に結合したまま、ネットワーク越しの呼び出しだけが増えた<strong>分散モノリス</strong>になりやすくなります（<a href="40-2_モノリスとマイクロサービス.html">モノリス・分散モノリス・マイクロサービス</a>）。「マイクロサービスにしたのにチームは1つ」「チームは分かれたのにモノリスを全員で触っている」は、どちらもコンウェイの法則に逆らっている状態です。</p>
+    </div>
+
+    <h3>注意点</h3>
+    <ul>
+      <li><strong>組織変更はコストが高い</strong>：絵に描いたマイクロサービスだけでは足りません。人の異動・役割の変更・評価の仕組みまで関わります。</li>
+      <li><strong>コミュニケーション経路そのものが設計</strong>：チーム間の「API」は、コードの API だけでなく、会議・Slack・ドキュメントなどのやり取りも含みます。</li>
+      <li><strong>無理な分割は逆効果</strong>：小さすぎるチームを乱立させると、調整と運用の負荷だけが増えます。</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">初心者向けの実践</p>
+      <p>大きな分割をするときは、<strong>「この境界のオーナーは誰か？」</strong>を必ずセットで聞く習慣をつけるとよいでしょう。オーナーのいない境界は、時間とともに崩れていきます。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>ドメイン・チーム・コードの3つの境界</h2>
+    <p>DDD の<strong>境界づけられたコンテキスト（Bounded Context）</strong>は、進化と組織の両方につながります（41 外のノート：42_ソフトウェア設計『03_境界づけられたコンテキストとコンテキストマップ』）。境界には3種類あり、これらがそろっているほど変更とデプロイが楽になります。</p>
+    <figure>
+    <svg viewBox="0 0 760 260" role="img" aria-label="ドメイン・チーム・コードの境界をそろえる">
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="200" y="20" width="360" height="54" rx="10" class="d-box-good"/>
+      <text x="380" y="44" text-anchor="middle" class="d-text-bold">ドメインの境界</text>
+      <text x="380" y="64" text-anchor="middle" class="d-text-sub">境界づけられたコンテキスト</text>
+      <rect x="200" y="103" width="360" height="54" rx="10" class="d-box-purple"/>
+      <text x="380" y="127" text-anchor="middle" class="d-text-bold">チームの境界</text>
+      <text x="380" y="147" text-anchor="middle" class="d-text-sub">オーナーシップ</text>
+      <rect x="200" y="186" width="360" height="54" rx="10" class="d-box-accent"/>
+      <text x="380" y="210" text-anchor="middle" class="d-text-bold">コードの境界</text>
+      <text x="380" y="230" text-anchor="middle" class="d-text-sub">モジュール・サービス</text>
+      <line x1="380" y1="76" x2="380" y2="101" class="d-line" marker-start="url(#arw1)" marker-end="url(#arw1)"/>
+      <line x1="380" y1="159" x2="380" y2="184" class="d-line" marker-start="url(#arw1)" marker-end="url(#arw1)"/>
+      <text x="580" y="94" class="d-text-sub">そろえると変更が楽</text>
+      <text x="580" y="177" class="d-text-sub">そろえるとデプロイが楽</text>
+    </svg>
+    <figcaption>図：3つの境界が大きくずれると、どこを直せばよいか分からなくなる</figcaption>
+    </figure>
+    <p>3つが大きくずれていると、<strong>どこを直せばよいか分からない</strong>状態になりやすくなります。たとえば「注文」というドメインのコードが3つのチームのリポジトリに散らばっていると、注文の仕様変更のたびに3チームの調整が必要です。</p>
+    <p>進化的アーキテクチャ（<a href="70-2_進化的アーキテクチャと適応度関数.html">進化的アーキテクチャと適応度関数</a>）では、まず<strong>ドメインの境界を意識し、チームとコードを少しずつ寄せていく</strong>ことが多いです。チームの境界がサービスの境界になったら、移行パターン（ストラングラーフィグなど）でコードを寄せていきます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>Team Topologies の全体像</h2>
+    <p>Matthew Skelton と Manuel Pais の書籍『チームトポロジー』（<em>Team Topologies</em>、2019）は、逆コンウェイ戦略を実践するための<strong>チームの型とやり取りの型</strong>を整理しました。目的は「価値を速く、継続的に届ける流れ（fast flow）」をつくることです。</p>
+
+    <h3>チームファースト：チームを単位に考える</h3>
+    <p>Team Topologies は、個人ではなく<strong>長く続く安定したチーム</strong>を、仕事を割り当てる単位として考えます。書籍ではチームを、概ね5〜9人程度の少人数で、メンバーを頻繁に入れ替えないまとまりとしています。プロジェクトごとに人を集めて解散するのではなく、チームに仕事を流すという考え方です。</p>
+
+    <figure>
+    <svg viewBox="0 0 760 430" role="img" aria-label="Team Topologies の4つのチームタイプと3つのインタラクションモード">
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <line x1="170" y1="30" x2="736" y2="30" class="d-line-accent" marker-end="url(#arw3)"/>
+      <text x="455" y="22" text-anchor="middle" class="d-text-accent">価値の流れ（顧客へ）</text>
+      <!-- enabling -->
+      <rect x="20" y="50" width="110" height="200" rx="10" class="d-box-good"/>
+      <text x="75" y="155" text-anchor="middle" class="d-text-bold">イネイブリング</text>
+      <!-- streams -->
+      <rect x="170" y="55" width="400" height="50" rx="8" class="d-box-accent"/>
+      <text x="370" y="85" text-anchor="middle" class="d-text-bold">ストリームアラインド（注文）</text>
+      <rect x="170" y="125" width="400" height="50" rx="8" class="d-box-accent"/>
+      <text x="370" y="155" text-anchor="middle" class="d-text-bold">ストリームアラインド（検索）</text>
+      <rect x="170" y="195" width="400" height="50" rx="8" class="d-box-accent"/>
+      <text x="370" y="225" text-anchor="middle" class="d-text-bold">ストリームアラインド（会員）</text>
+      <!-- complicated -->
+      <rect x="605" y="120" width="145" height="60" rx="8" class="d-box-warn"/>
+      <text x="677" y="146" text-anchor="middle" class="d-text-bold">コンプリケイテッド</text>
+      <text x="677" y="166" text-anchor="middle" class="d-text-bold">サブシステム</text>
+      <!-- platform -->
+      <rect x="170" y="300" width="580" height="56" rx="8" class="d-box-purple"/>
+      <text x="460" y="325" text-anchor="middle" class="d-text-bold">プラットフォーム</text>
+      <text x="460" y="345" text-anchor="middle" class="d-text-sub">CI/CD・認証・観測性などをセルフサービスで提供</text>
+      <!-- facilitation -->
+      <line x1="132" y1="80" x2="168" y2="80" class="d-line-dash" marker-end="url(#arw2)"/>
+      <line x1="132" y1="150" x2="168" y2="150" class="d-line-dash" marker-end="url(#arw2)"/>
+      <line x1="132" y1="220" x2="168" y2="220" class="d-line-dash" marker-end="url(#arw2)"/>
+      <!-- xaas -->
+      <line x1="300" y1="298" x2="300" y2="248" class="d-line" marker-end="url(#arw2)"/>
+      <line x1="460" y1="298" x2="460" y2="248" class="d-line" marker-end="url(#arw2)"/>
+      <text x="310" y="280" class="d-text-sub">サービスとして提供</text>
+      <!-- collaboration -->
+      <line x1="573" y1="150" x2="602" y2="150" class="d-line-accent" marker-start="url(#arw3)" marker-end="url(#arw3)"/>
+      <text x="677" y="200" text-anchor="middle" class="d-text-sub">検索と協働中</text>
+      <!-- legend -->
+      <line x1="20" y1="400" x2="70" y2="400" class="d-line-dash" marker-end="url(#arw2)"/>
+      <text x="80" y="405" class="d-text-sub">ファシリテーション</text>
+      <line x1="250" y1="400" x2="300" y2="400" class="d-line" marker-end="url(#arw2)"/>
+      <text x="310" y="405" class="d-text-sub">X-as-a-Service</text>
+      <line x1="480" y1="400" x2="530" y2="400" class="d-line-accent" marker-start="url(#arw3)" marker-end="url(#arw3)"/>
+      <text x="540" y="405" class="d-text-sub">コラボレーション</text>
+    </svg>
+    <figcaption>図：4つのチームタイプ（緑・青・橙・紫）と3つのインタラクションモード（線の種類）</figcaption>
+    </figure>
+
+    <h2 id="sec-6"><span class="num">6.</span>4つのチームタイプ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チームタイプ</th><th>役割</th><th>ソフトウェアの境界との対応</th><th>主なやり取り</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ストリームアラインドチーム</strong></td><td>1つの価値の流れ（機能・顧客層・業務）を端から端まで担当する。中心となるチーム</td><td>境界づけられたコンテキスト・サービス単位</td><td>プラットフォームを X-as-a-Service で使う。必要に応じて他チームとコラボレーション</td></tr>
+        <tr><td><strong>プラットフォームチーム</strong></td><td>他のチームがセルフサービスで使える基盤を提供する</td><td>共通基盤・内部 API</td><td>X-as-a-Service で提供する。新しい機能を探るときはコラボレーション</td></tr>
+        <tr><td><strong>イネイブリングチーム</strong></td><td>他のチームに新しい技術や手法を教え、自立を助ける</td><td>特定の境界は持たない</td><td>ファシリテーション</td></tr>
+        <tr><td><strong>コンプリケイテッド・サブシステムチーム</strong></td><td>高度な専門知識が必要な部分を担当する</td><td>専門性の高いコンポーネント（例：動画変換エンジン、数理最適化）</td><td>主に X-as-a-Service で提供する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>ストリームアラインドチーム</h3>
+    <p>事業領域の一部に沿った<strong>仕事の流れ</strong>に合わせて作られたチームで、Team Topologies ではこれが組織の大部分を占める主役です。担当する価値の流れを、設計・実装・テスト・デプロイ・運用まで<strong>他チームへの引き継ぎなしに</strong>届けられることを目指します。他の3タイプは、すべてストリームアラインドチームの負担を減らすために存在します。</p>
+    <p>アーキテクチャとの対応でいえば、ストリームアラインドチームの担当範囲が、<a href="40-2_モノリスとマイクロサービス.html">サービス</a>やモジュラーモノリスのモジュール、DDD の境界づけられたコンテキストと重なるのが理想です。</p>
+
+    <h3>プラットフォームチーム</h3>
+    <p>ストリームアラインドチームが、下回りの複雑さを気にせずに価値の流れに集中できるよう、<strong>内部向けのサービス</strong>を提供します。CI/CD、認証、観測性（<a href="50-2_観測性.html">ログ・メトリクス・トレース</a>）、デプロイ基盤などが典型です。大事なのは「セルフサービス」であることで、使う側がチケットを出して待つのではなく、ドキュメントと API で自分で使えるようにします。</p>
+    <p>Team Topologies は、必要十分な機能だけを持つ<strong>「最も薄い実用的なプラットフォーム（Thinnest Viable Platform）」</strong>を勧めています。最初はドキュメントのページ1枚（「この手順でデプロイする」）でもプラットフォームになり得ます。大きすぎるプラットフォームは、かえって使う側の速度を落とします。</p>
+
+    <h3>イネイブリングチーム</h3>
+    <p>特定の技術領域（テスト自動化、クラウド、セキュリティなど）の専門家が集まり、ストリームアラインドチームが新しい能力を身につけるのを<strong>一時的に</strong>手伝います。代わりに作業をするのではなく、教えて自立させるのが役目です。支援が終われば別のチームに移ります。</p>
+
+    <h3>コンプリケイテッド・サブシステムチーム</h3>
+    <p>高度な専門知識（数学・映像処理・機械学習・特殊なプロトコルなど）が必要な部分を担当します。その部分をストリームアラインドチームが抱えると認知負荷が大きすぎる場合にだけ作ります。何でも「複雑だから」と切り出すと、引き継ぎと待ちが増えるので注意が必要です。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>3つのインタラクションモード</h2>
+    <p>Team Topologies では、チーム同士のやり取りを3つのモードに限定し、<strong>今どのモードでやり取りしているのかを明確にする</strong>ことを勧めています。曖昧なやり取りは、コンウェイの法則によって曖昧な境界のシステムを生むからです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モード</th><th>内容</th><th>向いている場面</th><th>注意点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コラボレーション</strong></td><td>2つのチームが、決めた期間、密に協力して一緒に作業する</td><td>新しい技術や領域の探索。境界がまだ分からないとき</td><td>長く続けるとコストが高い。責任の境界がぼやける</td></tr>
+        <tr><td><strong>X-as-a-Service</strong></td><td>一方がサービスとして提供し、もう一方は最小限のやり取りで使うだけ</td><td>境界が安定した状態。プラットフォームの利用</td><td>境界が間違っていると、使う側の不便が続く</td></tr>
+        <tr><td><strong>ファシリテーション</strong></td><td>一方が他方を、一時的に支援・指導する</td><td>主にイネイブリングチームが、ストリームアラインドチームの能力を高めるとき</td><td>代わりに作業すると依存が生まれる。教えて自立させる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>モードは時間とともに変える</h3>
+    <p>インタラクションモードは固定ではありません。典型的な流れは、<strong>最初はコラボレーションで境界を探り、境界が見えてきたら X-as-a-Service に移る</strong>というものです。たとえば新しいログ基盤を作るとき、最初はプラットフォームチームと1つのストリームアラインドチームが協働し、使い方が固まったらセルフサービスとして全チームに提供します。</p>
+    <p>コラボレーションが予定より長引いていたら、「境界の引き方が間違っているのではないか」というサインとして読むことができます。チーム間のやり取りの変化を観察することは、アーキテクチャの境界を見直すきっかけにもなります。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>認知負荷・チーム API・破断面</h2>
+    <h3>認知負荷（Cognitive Load）</h3>
+    <p>Team Topologies で特に重要なのが<strong>認知負荷</strong>の考え方です。1つのチームが理解し保守できる範囲には限りがあります。だから、<strong>サービスの大きさや担当範囲は、チームの認知負荷に収まるように決める</strong>べきだ、という指針になります。公式サイトでも、負荷が大きすぎるチームは良い判断ができなくなると述べています。</p>
+    <p>認知負荷は、心理学の認知負荷理論に基づいて3種類に分けられます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>意味</th><th>例</th><th>方針</th></tr></thead>
+      <tbody>
+        <tr><td><strong>内在的（Intrinsic）</strong></td><td>問題領域そのものの基本的な難しさ</td><td>言語やフレームワークの基礎知識</td><td>研修や学習で小さくする</td></tr>
+        <tr><td><strong>外在的（Extraneous）</strong></td><td>作業環境に由来する、本質的でない負荷</td><td>複雑なデプロイ手順、どこにあるか分からない設定</td><td>できる限りなくす（プラットフォームで肩代わりする）</td></tr>
+        <tr><td><strong>本質的（Germane）</strong></td><td>価値を生む部分の学習と思考</td><td>業務ドメインの理解、顧客の課題の理解</td><td>ここに使える余地を最大にする</td></tr>
+      </tbody>
+    </table></div>
+    <p>外在的な負荷をプラットフォームチームが引き受け、内在的な負荷をイネイブリングチームが下げることで、ストリームアラインドチームは本質的な負荷、つまり業務の価値に集中できる、という構図です。</p>
+
+    <h3>チーム API</h3>
+    <p>チームの境界を明確にするために、Team Topologies は<strong>チーム API</strong>という考え方を示しています。コードの API だけでなく、そのチームと<strong>どうやり取りすればよいか</strong>を明文化したものです。</p>
+    <ul>
+      <li>チームが提供するサービスやコード、その API とバージョン管理の方針</li>
+      <li>ドキュメントの場所、サポートの受け方</li>
+      <li>連絡の取り方（チャットのチャンネル、定例の会議など）</li>
+      <li>今取り組んでいることと、今後のロードマップ</li>
+    </ul>
+    <p>これは前の節で触れた「チーム間の API はコードの API だけでなく、会議・Slack・ドキュメントも含む」という逆コンウェイ戦略の注意点を、具体的な形にしたものといえます。</p>
+
+    <h3>破断面（Fracture Planes）— どこで分けるか</h3>
+    <p>システム（とチーム）をどこで分けるかの候補として、Team Topologies は<strong>破断面</strong>（自然に割れやすい線）を挙げています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>破断面</th><th>分ける理由</th></tr></thead>
+      <tbody>
+        <tr><td><strong>事業ドメイン（境界づけられたコンテキスト）</strong></td><td>最も基本となる分け方。業務の変更が1か所に閉じやすい</td></tr>
+        <tr><td><strong>規制への準拠</strong></td><td>厳しい規制（決済カード情報など）がかかる部分だけを分け、監査の範囲を小さくする</td></tr>
+        <tr><td><strong>変更の頻度</strong></td><td>頻繁に変わる部分と、めったに変わらない部分を分ける</td></tr>
+        <tr><td><strong>チームの所在地</strong></td><td>時差や場所の違いでコミュニケーションが取りにくいなら、その線で分ける</td></tr>
+        <tr><td><strong>リスク</strong></td><td>失敗の影響が大きい部分と、実験的に変えてよい部分を分ける</td></tr>
+        <tr><td><strong>性能の分離</strong></td><td>特別な性能要件がある部分を分け、独立してスケールさせる</td></tr>
+        <tr><td><strong>技術</strong></td><td>扱う技術が大きく違う部分（例：組み込み機器とクラウド）を分ける</td></tr>
+        <tr><td><strong>利用者のペルソナ</strong></td><td>利用者の種類（一般顧客・法人顧客・管理者など）で分ける</td></tr>
+      </tbody>
+    </table></div>
+    <p>どの破断面で分けた場合でも、分けたあとの各部分が<strong>1つのチームの認知負荷に収まるか</strong>を確認します。この考え方は <a href="13-4_アーキテクチャ量子と論理コンポーネント.html">アーキテクチャ量子と粒度</a> の議論ともつながります。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>プラットフォームエンジニアリング</h2>
+    <p>2020年代に注目されている<strong>プラットフォームエンジニアリング</strong>は、Team Topologies のプラットフォームチームを具体化したものです。<strong>社内開発者向けプラットフォーム（IDP）</strong>を作り、各チームの認知負荷を下げることを目指します。</p>
+    <ul>
+      <li>サービスのひな形、CI/CD、観測性、シークレット管理などをセルフサービスで提供する</li>
+      <li>各チームが同じ仕組みを使うので、<a href="50-1_横断的関心事と認証認可.html">横断的関心事</a> の実装がそろいやすい</li>
+      <li>分散アーキテクチャの運用コスト（マイクロサービス・プレミアム）を、組織的に下げる手段ともいえる</li>
+    </ul>
+    <p>「マイクロサービスにしたいが、各チームが運用まで抱えきれない」という悩みに対して、アーキテクチャだけでなく<strong>チームの構成</strong>で答えるアプローチです。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>いつこのテーマを深く考えるか</h2>
+    <p>組織とアーキテクチャの話は、規模が小さいうちは必要以上に気にしなくてかまいません。組織や分割の話が具体化してきたタイミングで戻ってくると効果的です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>状況</th><th>優先すること</th></tr></thead>
+      <tbody>
+        <tr><td>個人〜小さなチーム、モノリス</td><td>モジュールの境界と ADR で十分なことが多い</td></tr>
+        <tr><td>チームが2〜3に分かれた</td><td>コンウェイの法則を意識し、コンテキストマップを更新する</td></tr>
+        <tr><td>マイクロサービスへの移行を検討している</td><td>逆コンウェイ戦略＋データ所有権（<a href="40-4_データ所有権とSAGA.html">データ所有権・分散トランザクション・SAGA</a>）</td></tr>
+        <tr><td>レガシーシステムの置き換え</td><td>ストラングラーフィグ＋適応度関数（<a href="70-2_進化的アーキテクチャと適応度関数.html">進化的アーキテクチャと適応度関数</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p>どの段階でも、境界を決めたら「なぜこの境界にしたのか」「オーナーは誰か」を ADR に残しておくと、組織が変わったときに見直しやすくなります（<a href="60-1_意思決定とADR.html">意思決定の進め方と ADR</a>）。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>アーキテクチャは技術だけの問題</td><td>組織構造と表裏一体（コンウェイの法則）。チームの分け方がシステムの分け方になる</td></tr>
+        <tr><td>図の上でサービスを分ければマイクロサービスになる</td><td>チームとデータの所有権を分けないと分散モノリスになりやすい</td></tr>
+        <tr><td>コンウェイの法則は避けるべき悪い現象</td><td>事実の描写。逆らうより、逆コンウェイ戦略として利用する</td></tr>
+        <tr><td>チームは小さく、たくさんあるほどよい</td><td>小さすぎるチームの乱立は調整と運用の負荷を増やす。認知負荷に収まる範囲で、安定したチームにする</td></tr>
+        <tr><td>コラボレーションは多いほどよい</td><td>コラボレーションは探索のためのモードで、長く続けるとコストが高い。境界が見えたら X-as-a-Service に移る</td></tr>
+        <tr><td>プラットフォームは大きく作り込むほど便利</td><td>必要十分な「最も薄い実用的なプラットフォーム」から始める。大きすぎると使う側の速度を落とす</td></tr>
+        <tr><td>イネイブリングチームは作業を代わりにやってくれるチーム</td><td>教えて自立させるのが役目。代わりに作業すると依存が生まれる</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>覚えること</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>コンウェイの法則</td><td>組織のつながり方 ≈ システムのつながり方</td></tr>
+        <tr><td>逆コンウェイ戦略</td><td>望む形から逆算してチームの境界を設計する。「この境界のオーナーは誰か」をセットで聞く</td></tr>
+        <tr><td>3つの境界</td><td>ドメイン・チーム・コードの境界をそろえると、変更とデプロイが楽になる</td></tr>
+        <tr><td>4つのチームタイプ</td><td>ストリームアラインド（主役）・プラットフォーム・イネイブリング・コンプリケイテッド・サブシステム</td></tr>
+        <tr><td>3つのインタラクションモード</td><td>コラボレーション・X-as-a-Service・ファシリテーション。時間とともにモードを変える</td></tr>
+        <tr><td>認知負荷</td><td>サービスの大きさはチームの認知負荷に収まるように決める。外在的な負荷はプラットフォームで減らす</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>Melvin E. Conway, How Do Committees Invent?（1968）：<a href="https://www.melconway.com/Home/Committees_Paper.html">https://www.melconway.com/Home/Committees_Paper.html</a></li>
+      <li>Martin Fowler, Conway's Law：<a href="https://martinfowler.com/bliki/ConwaysLaw.html">https://martinfowler.com/bliki/ConwaysLaw.html</a></li>
+      <li>Thoughtworks Technology Radar — Inverse Conway Maneuver：<a href="https://www.thoughtworks.com/radar/techniques/inverse-conway-maneuver">https://www.thoughtworks.com/radar/techniques/inverse-conway-maneuver</a></li>
+      <li>Matthew Skelton, Manuel Pais『チームトポロジー』（<em>Team Topologies</em>, 2019）／ Team Topologies 公式サイト Key Concepts：<a href="https://teamtopologies.com/key-concepts">https://teamtopologies.com/key-concepts</a></li>
+      <li>Team Topologies（continuous-architecture.org）：<a href="https://continuous-architecture.org/practices/team-topologies/">https://continuous-architecture.org/practices/team-topologies/</a></li>
+      <li>Book notes: Team Topologies（Dan Lebrero、認知負荷・破断面の整理）：<a href="https://danlebrero.com/2021/01/20/team-topologies-summary/">https://danlebrero.com/2021/01/20/team-topologies-summary/</a></li>
+      <li>Finding good stream boundaries with Independent Service Heuristics（Team Topologies）：<a href="https://teamtopologies.com/key-concepts-content/finding-good-stream-boundaries-with-independent-service-heuristics">https://teamtopologies.com/key-concepts-content/finding-good-stream-boundaries-with-independent-service-heuristics</a></li>
+      <li>Martin Fowler, Microservice Premium：<a href="https://martinfowler.com/bliki/MicroservicePremium.html">https://martinfowler.com/bliki/MicroservicePremium.html</a></li>
+      <li>Neal Ford, Rebecca Parsons, Patrick Kua『進化的アーキテクチャ』：<a href="https://nealford.com/books/buildingevolutionaryarchitectures.html">https://nealford.com/books/buildingevolutionaryarchitectures.html</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="70-2_進化的アーキテクチャと適応度関数.html"><span class="lbl">← 前のページ</span>進化的アーキテクチャと適応度関数</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="00-0_目次.html"><span class="lbl">次のページ →</span>目次</a>
+    </nav>
+    <footer class="page-foot">41_アーキテクチャ ノートをもとに作成（2026-10-05）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JWTの構造と検証｜セッション管理解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">セッション管理解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 トークン › JWTの構造と検証</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 トークン</span>
+      <h1>JWTの構造と検証</h1>
+      <p class="lead">JWT（JSON Web Token）は、<strong>中身を誰でも読めるが、改ざんすると分かる</strong> トークンです。サーバーが何も覚えていなくてもログイン状態が分かるのは、署名があるからです。ただし安全かどうかは <strong>受け取った側がどう検証するか</strong> で決まります。このページでは、JWT の仕組みと 3 つの部分、署名の方式、よくある攻撃と実際の脆弱性、正しい検証の手順、鍵の入れ替え、そして「取り消しにくい」という弱点への対処を解説します。</p>
+      <p class="meta">もとにしたノート：30_トークン/03_JWTとは_サーバーが覚えていなくても分かる理由（つるチャンネル）、30_トークン/04_JWTの構造と検証</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>JWT の署名は「読めなくする」ためではなく「改ざんを見つける」ためのもの</strong> です。中身は読めても、鍵がないと正しい署名は作れません。事故のほとんどは <strong>トークンのヘッダに書かれた内容を信じる</strong> ことから起きるので、方式・鍵・宛先は <strong>サーバー側で決めて</strong> 検証します。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>JWT とは：サーバーが覚えていなくても分かる理由</h2>
+
+    <h3 id="sec-1-1">1.1 出発点：セッション方式</h3>
+    <p>セッション方式では、ログインするとサーバー側のテーブルに「<code>abc123</code> はユーザー 42、ログイン済み」と書き込みます。ブラウザに渡るのは番号（<code>session_id</code>）だけです。次のリクエストでこの番号を送ると、サーバーがテーブルを引いてユーザー 42 だと分かります。</p>
+    <p>サーバーが 1 台なら単純です。しかし 3 台に増えると、どのサーバーからでも同じテーブルを参照できなければなりません。これは <strong>Redis</strong> のような共有ストア（複数のサーバーから使える共通の置き場）で解決できます。</p>
+    <p>セッション方式が悪いわけではありません。ただ、<strong>状態をサーバー側で管理し続ける</strong> ことに変わりはありません。ここが出発点です。セッション方式とトークン方式の比較は <a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a> にまとめています。</p>
+
+    <h3 id="sec-1-2">1.2 JWT の仕組み</h3>
+    <p>そこで、テーブルに書く代わりに <strong>情報そのものをトークンに入れて渡す</strong> のが JWT です。</p>
+    <ol class="steps">
+      <li>ログインに成功すると、サーバーは「ユーザー 42、ロール（役割）は user、有効期限」を入れたトークンを作る</li>
+      <li>ブラウザはこれを保存し、次回からは <strong>Authorization ヘッダー</strong>（認証情報を載せる HTTP ヘッダー）に付けて送る</li>
+      <li>サーバーはテーブルを引かず、届いたトークンを <strong>検証</strong> してユーザー 42 だと確認する</li>
+    </ol>
+    <p>毎回テーブルを引かなくてよいのが JWT の特徴です。</p>
+
+    <h3 id="sec-1-3">1.3 書き換えたら管理者になれる？</h3>
+    <p>ここで疑問が浮かびます。トークンはブラウザが持っているのだから、ロールを <code>user</code> から <code>admin</code> に書き換えたら管理者になれるのでは？</p>
+    <p>答えは「書き換えること自体はできるが、拒否される」です。JWT の <strong>署名</strong> は、ヘッダとペイロードから <strong>サーバーだけが知る鍵</strong> で作られます。ヘッダかペイロードを 1 文字でも変えると、署名と合わなくなります。攻撃者は鍵を持っていないので、書き換えた内容に合う正しい署名を作れません。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 290" role="img" aria-label="ロールをadminに書き換えたトークンは、サーバーが鍵で計算し直した署名と届いた署名が合わず拒否される。発行時のままの正しいトークンは署名が一致して受け付けられる">
+      <defs>
+        <marker id="arw302a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw302b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="20" y="30" width="200" height="100" rx="8" class="d-box-warn"/>
+      <text x="120" y="62" text-anchor="middle" class="d-text-bold">書き換えたトークン</text>
+      <text x="120" y="86" text-anchor="middle" class="d-text-sub">role: user → admin</text>
+      <text x="120" y="108" text-anchor="middle" class="d-text-sub">署名は元のまま</text>
+
+      <rect x="20" y="170" width="200" height="100" rx="8" class="d-box"/>
+      <text x="120" y="210" text-anchor="middle" class="d-text-bold">正しいトークン</text>
+      <text x="120" y="234" text-anchor="middle" class="d-text-sub">発行されたまま</text>
+
+      <rect x="280" y="30" width="190" height="240" rx="8" class="d-box-accent"/>
+      <text x="375" y="122" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <text x="375" y="148" text-anchor="middle" class="d-text-sub">鍵で署名を計算し直し</text>
+      <text x="375" y="168" text-anchor="middle" class="d-text-sub">届いた署名と比べる</text>
+
+      <rect x="540" y="30" width="160" height="100" rx="8" class="d-box-bad"/>
+      <text x="620" y="70" text-anchor="middle" class="d-text-bold">拒否</text>
+      <text x="620" y="94" text-anchor="middle" class="d-text-sub">署名が合わない</text>
+
+      <rect x="540" y="170" width="160" height="100" rx="8" class="d-box-good"/>
+      <text x="620" y="210" text-anchor="middle" class="d-text-bold">受け付ける</text>
+      <text x="620" y="234" text-anchor="middle" class="d-text-sub">署名が一致</text>
+
+      <path d="M220,80 L278,80" class="d-line" marker-end="url(#arw302a)"/>
+      <path d="M220,220 L278,220" class="d-line" marker-end="url(#arw302a)"/>
+      <path d="M470,80 L538,80" class="d-line-bad" marker-end="url(#arw302b)"/>
+      <path d="M470,220 L538,220" class="d-line" marker-end="url(#arw302a)"/>
+    </svg>
+    <figcaption>図1：書き換えはできても、鍵を持たない攻撃者には合う署名が作れないので拒否される</figcaption>
+    </figure>
+
+    <div class="callout warn">
+      <p class="callout-title">一般的な JWT は暗号化されていない</p>
+      <p>ペイロードは <strong>Base64URL</strong>（データを URL で使える文字だけに置き換えるルール）でエンコードされているだけで、誰でもデコードして読めます。署名は読めなくするためではなく、改ざんを見つけるためのものです。だから <strong>パスワードなどの秘密をペイロードに入れてはいけません</strong>。</p>
+    </div>
+    <p>サーバーが覚えていなくても分かるのは署名があるから。中身は読める、でもこっそり書き換えることはできない。これが JWT です。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>JWT の構造</h2>
+
+    <h3 id="sec-2-1">2.1 3 つの部分</h3>
+    <p>JWT は、3 つの部分をそれぞれ Base64URL で表し、<code>.</code>（ドット）でつないだ文字列です。</p>
+<pre><code>eyJhbGciOiJSUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6IjIwMjYtMTAifQ . eyJpc3MiOi... . SflKxwRJSMeKKF2QT4f...
+└──────────────── ヘッダ ────────────────┘   └ ペイロード ┘   └── 署名 ──┘</code></pre>
+
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="ヘッダとペイロードを鍵で署名した結果が署名の部分になる。3つの部分はそれぞれBase64URLで表してドットでつなぐ">
+      <defs>
+        <marker id="arw302c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="20" width="190" height="90" rx="8" class="d-box"/>
+      <text x="115" y="50" text-anchor="middle" class="d-text-bold">ヘッダ</text>
+      <text x="115" y="74" text-anchor="middle" class="d-text-sub">alg・typ・kid</text>
+      <text x="115" y="94" text-anchor="middle" class="d-text-sub">署名の方式と鍵の情報</text>
+      <text x="230" y="72" text-anchor="middle" class="d-text-bold">.</text>
+      <rect x="250" y="20" width="210" height="90" rx="8" class="d-box"/>
+      <text x="355" y="50" text-anchor="middle" class="d-text-bold">ペイロード</text>
+      <text x="355" y="74" text-anchor="middle" class="d-text-sub">iss・sub・aud・exp など</text>
+      <text x="355" y="94" text-anchor="middle" class="d-text-sub">クレーム（主張）</text>
+      <text x="480" y="72" text-anchor="middle" class="d-text-bold">.</text>
+      <rect x="500" y="20" width="200" height="90" rx="8" class="d-box-accent"/>
+      <text x="600" y="50" text-anchor="middle" class="d-text-bold">署名</text>
+      <text x="600" y="74" text-anchor="middle" class="d-text-sub">左の 2 つに対する署名</text>
+      <text x="600" y="94" text-anchor="middle" class="d-text-sub">秘密鍵がないと作れない</text>
+
+      <rect x="180" y="160" width="300" height="60" rx="8" class="d-box-good"/>
+      <text x="330" y="186" text-anchor="middle" class="d-text-bold">鍵で署名する</text>
+      <text x="330" y="206" text-anchor="middle" class="d-text-sub">対象＝「ヘッダ . ペイロード」</text>
+      <path d="M115,110 L230,158" class="d-line" marker-end="url(#arw302c)"/>
+      <path d="M355,110 L355,158" class="d-line" marker-end="url(#arw302c)"/>
+      <path d="M480,190 C560,190 600,160 600,112" class="d-line" marker-end="url(#arw302c)"/>
+      <text x="360" y="254" text-anchor="middle" class="d-text-sub">3 つとも Base64URL で表すだけ。暗号化ではないので中身は誰でも読める</text>
+    </svg>
+    <figcaption>図2：JWT の 3 つの部分。署名はヘッダとペイロードから作られるので、どちらを変えても署名と合わなくなる</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>部分</th><th>中身</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ヘッダ</strong></td><td>署名の方式と鍵の情報</td><td><code>{"alg":"RS256","typ":"at+jwt","kid":"2026-10"}</code></td></tr>
+        <tr><td><strong>ペイロード</strong></td><td>クレーム（主張）の集まり</td><td><code>{"iss":"https://auth.example.com","sub":"user_123","aud":"api","exp":1792300000}</code></td></tr>
+        <tr><td><strong>署名</strong></td><td>ヘッダとペイロードに対する署名</td><td>秘密鍵がないと作れない</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>ポイント：</strong> Base64URL は <strong>暗号化ではありません</strong>。ペイロードは誰でも読めます。パスワード・個人情報・社内の情報を入れてはいけません。中身を隠したいなら <strong>JWE</strong>（JSON Web Encryption、暗号化した JWT）を使います。</p>
+
+    <h3 id="sec-2-2">2.2 主なクレーム</h3>
+    <p><strong>クレーム</strong> は、ペイロードに書かれる「このトークンについての主張」の 1 つ 1 つです。決まった名前のものがいくつかあり、検証で確かめる対象になります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>クレーム</th><th>意味</th><th>検証で確かめること</th></tr></thead>
+      <tbody>
+        <tr><td><code>iss</code>（issuer）</td><td>発行者</td><td>信頼している発行者か</td></tr>
+        <tr><td><code>sub</code>（subject）</td><td>誰についてのトークンか</td><td>利用者 ID として使う</td></tr>
+        <tr><td><code>aud</code>（audience）</td><td>誰に向けたトークンか</td><td><strong>自分宛てか</strong>。別の API 向けのトークンを受け付けない</td></tr>
+        <tr><td><code>exp</code>（expiration）</td><td>有効期限</td><td>過ぎていないか</td></tr>
+        <tr><td><code>nbf</code>（not before）</td><td>この時刻より前は無効</td><td>まだ早すぎないか</td></tr>
+        <tr><td><code>iat</code>（issued at）</td><td>発行時刻</td><td>古すぎないか</td></tr>
+        <tr><td><code>jti</code>（JWT ID）</td><td>トークンごとの ID</td><td>使い捨てにしたい場合や、失効リストに使う</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>署名の方式</h2>
+    <p>署名の作り方には、<strong>共通鍵</strong>（作る側と確かめる側が同じ秘密を持つ）と <strong>公開鍵</strong>（秘密鍵で作り、誰でも持てる公開鍵で確かめる）の 2 系統があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>例</th><th>鍵</th><th>向いている場面</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HMAC</strong>（共通鍵）</td><td>HS256</td><td>発行と検証で <strong>同じ秘密</strong></td><td>発行と検証が同じサーバーのとき</td></tr>
+        <tr><td><strong>RSA</strong>（公開鍵）</td><td>RS256、PS256</td><td>秘密鍵で署名、公開鍵で検証</td><td>認証サーバーと API が別のとき</td></tr>
+        <tr><td><strong>楕円曲線</strong>（公開鍵）</td><td>ES256、EdDSA</td><td>同上。鍵と署名が短い</td><td>同上</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>認証サーバーと API が分かれているなら <strong>公開鍵方式</strong> にします。HMAC だと、検証するすべてのサーバーが「トークンを作れる秘密」を持つことになります。</li>
+      <li>HMAC の秘密は <strong>ランダムな 32 バイト以上</strong> にします。人が覚えられるパスワードを使うと、漏れたトークンを使って手元で総当たりされます。</li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>よくある攻撃</h2>
+    <p>JWT の事故のほとんどは、<strong>トークンのヘッダに書かれた内容を信じてしまう</strong> ことが原因です。ヘッダは攻撃者が自由に書き換えられる部分だということを忘れないようにします。</p>
+
+    <h3 id="sec-4-1">4.1 攻撃の手口と対策</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃</th><th>手口</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong><code>alg: none</code></strong></td><td>ヘッダを <code>"alg":"none"</code> にして署名を消す。署名なしのトークンを受け付けるライブラリがあった</td><td>受け付ける方式を <strong>サーバー側で固定</strong> する。<code>noNE</code> のような大文字小文字違いにも注意</td></tr>
+        <tr><td><strong>方式の取り違え</strong>（アルゴリズム混同）</td><td>RS256 の <strong>公開鍵</strong> を HMAC の秘密として使わせ、<code>HS256</code> のトークンを偽造する。公開鍵は誰でも手に入る</td><td>1 つの鍵は 1 つの方式でしか使わない。HMAC と公開鍵方式を同じ検証処理で混ぜない</td></tr>
+        <tr><td><strong><code>kid</code> の悪用</strong></td><td>鍵を選ぶ <code>kid</code>（鍵の名札）に <code>../../dev/null</code> や SQL を入れ、空の鍵や攻撃者の鍵を選ばせる</td><td><code>kid</code> は決まった一覧から選ぶだけにする。ファイルパスや SQL に使わない</td></tr>
+        <tr><td><strong><code>jku</code>・<code>x5u</code> の悪用</strong></td><td>「この URL の鍵で検証して」と指定し、攻撃者の鍵を読ませる。SSRF（サーバーに好きな宛先へ通信させる攻撃）にもなる（<a href="../../72_Web脆弱性対策/00_全体像/30-3_SSRF.html">SSRF</a>）</td><td>鍵の取得先は <strong>サーバーの設定で固定</strong> する。トークンの指定は無視する</td></tr>
+        <tr><td><strong>トークンの使い回し</strong></td><td>別のサービス向けのトークンや ID トークンを、API のアクセストークンとして送る</td><td><code>aud</code>・<code>iss</code>・<code>typ</code> を確かめる</td></tr>
+        <tr><td><strong>弱い HMAC の秘密</strong></td><td>漏れたトークンから、手元で秘密を総当たりする</td><td>長いランダムな秘密を使い、定期的に入れ替える</td></tr>
+      </tbody>
+    </table></div>
+    <p>ID トークンとアクセストークンの役割の違いは <a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a> の 6 章、OpenID Connect での使われ方は <a href="../../73_認証認可/00_全体像/30-2_SAML・OAuth・OIDCの違い.html">SAML・OAuth・OIDCの違い</a> を参照してください。</p>
+
+    <h3 id="sec-4-2">4.2 実際の脆弱性の例</h3>
+    <p>CVE は、公表された脆弱性に付く通し番号です。</p>
+    <ul>
+      <li><strong>jsonwebtoken</strong>（Node.js）：v8 以前は、検証時に方式を指定しないと <code>none</code> などを受け付ける余地があった（CVE-2022-23540 など。v9 で修正）。</li>
+      <li><strong>Java の ECDSA</strong>（CVE-2022-21449、通称 Psychic Signatures）：値が 0 の署名を正しいと判定してしまい、ES256 の JWT を偽造できた。</li>
+      <li><strong>2026 年にも</strong>、JWK（JSON で表した鍵）に <code>alg</code> が書かれていないときに、トークンのヘッダの <code>alg</code> を使って検証してしまう脆弱性が報告されています（Hono の CVE-2026-22817、libjwt の CVE-2026-44699 など）。</li>
+    </ul>
+    <div class="callout bad">
+      <p class="callout-title">原因はどれも同じ</p>
+      <p>どの事例も、<strong>方式をトークンから決めている</strong> ことが原因です。トークンは攻撃者が作れるものなので、「どう検証するか」をトークンに決めさせてはいけません。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>検証の手順</h2>
+    <ol class="steps">
+      <li>形式を確かめる（3 つの部分、Base64URL の文字だけ）</li>
+      <li>ヘッダの <code>alg</code> が「サーバーが許可した方式」と一致するか確かめる</li>
+      <li><code>kid</code> で、サーバーが持っている鍵の一覧から鍵を選ぶ</li>
+      <li>署名を検証する</li>
+      <li><code>iss</code>・<code>aud</code>・<code>exp</code>・<code>nbf</code> を確かめる（時計のずれは 1 分程度まで許す）</li>
+      <li><code>typ</code> を確かめる（アクセストークンなら <code>at+jwt</code>）</li>
+      <li>必要なら <code>jti</code> で失効済みでないか確かめる</li>
+      <li>ここまで通って初めて、<code>sub</code> や権限のクレームを使う</li>
+    </ol>
+
+    <h3 id="sec-5-1">5.1 署名の検証より前にペイロードを使わない</h3>
+    <p><code>jwt.decode()</code>（検証しない読み取り）の結果で処理を分けると、偽造されたトークンで通ってしまいます。</p>
+    <span class="code-label bad">危険な例：検証せずに読んだ中身で判断している</span>
+<pre><code>const payload = jwt.decode(token); // 署名を確かめていない
+if (payload.role === 'admin') {
+  // 書き換えたトークンでも、ここに入れてしまう
+}</code></pre>
+    <span class="code-label good">安全な例：検証を通った中身だけを使う（Node.js・jose）</span>
+<pre><code>import { jwtVerify, createRemoteJWKSet } from 'jose';
+
+// 鍵の取得先はサーバー側で固定する（トークンの jku は使わない）
+const JWKS = createRemoteJWKSet(new URL('https://auth.example.com/.well-known/jwks.json'));
+
+export async function verifyAccessToken(token) {
+  const { payload } = await jwtVerify(token, JWKS, {
+    algorithms: ['RS256'],               // 許可する方式を固定
+    issuer: 'https://auth.example.com',  // 発行者
+    audience: 'https://api.example.com', // 自分宛てか
+    typ: 'at+jwt',                       // アクセストークンか
+    clockTolerance: 60,                  // 時計のずれ（秒）
+  });
+  return payload; // 検証済みのクレームだけを使う
+}</code></pre>
+    <ul>
+      <li><code>createRemoteJWKSet</code> は鍵を取ってきて覚えておき、知らない <code>kid</code> が来たときだけ取り直します。鍵の入れ替え（ローテーション）に自動で追いつけます。</li>
+      <li>自分で署名の検証を書かないこと。実績のあるライブラリを使い、<strong>最新に保つ</strong> ことも対策の一部です。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">検証できても「してよいか」は別の話</p>
+      <p>署名の検証で分かるのは「このトークンは本物で、誰のものか」までです。その人がその操作をしてよいかは、別に確かめます（<a href="../../73_認証認可/00_全体像/10-1_認証と認可の違い.html">認証と認可の違い</a>）。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>鍵の入れ替え</h2>
+    <p>署名用の鍵は、ずっと同じものを使い続けず定期的に入れ替えます。<strong>JWKS</strong>（JSON Web Key Set、公開鍵の一覧）と <code>kid</code> を使うと、使っている途中のトークンを壊さずに入れ替えられます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手順</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>新しい鍵ペアを作り、公開鍵を JWKS に <strong>追加</strong> する</td></tr>
+        <tr><td>2</td><td>検証側のキャッシュが更新されるのを待つ</td></tr>
+        <tr><td>3</td><td>新しい鍵で署名を始める（<code>kid</code> で区別される）</td></tr>
+        <tr><td>4</td><td>古い鍵で署名したトークンの期限が全部切れたら、古い公開鍵を JWKS から消す</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">秘密鍵が漏れたとき</p>
+      <p>すぐに古い鍵を消し、それで署名したトークンをすべて無効にします。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>JWT の弱点：取り消しにくい</h2>
+    <p>JWT は「サーバーが覚えていなくても検証できる」ことが長所ですが、その裏返しで <strong>一度出したトークンを期限前に無効にしにくい</strong> という短所があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方法</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>期限を短くする</strong></td><td>アクセストークンは 5〜15 分程度にし、リフレッシュトークンで更新する（<a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>）</td></tr>
+        <tr><td><strong>失効リスト</strong></td><td>ログアウトや乗っ取りが分かったときの <code>jti</code> を、期限まで Redis などに置いて拒否する</td></tr>
+        <tr><td><strong>トークンの中身を問い合わせる</strong></td><td>API が毎回、認証サーバーに有効か問い合わせる（Token Introspection）。即時に止められるが、JWT の長所は薄れる</td></tr>
+      </tbody>
+    </table></div>
+    <p>ログイン状態を保つだけなら、<strong>サーバー側のセッション + Cookie のほうが簡単で安全</strong> なことも多いです（<a href="20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>）。JWT は、複数のサービスやサーバー間で認可の情報を渡す場面で特に役立ちます。トークンをブラウザのどこに置くかは <a href="30-4_トークンの保存場所.html">トークンの保存場所</a> で扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>チェックリスト</h2>
+    <ul>
+      <li>許可する <code>alg</code> をサーバー側で固定している（<code>none</code> を受け付けない）</li>
+      <li>HMAC と公開鍵方式を同じ鍵・同じ検証処理で混ぜていない</li>
+      <li><code>iss</code>・<code>aud</code>・<code>exp</code> を検証している</li>
+      <li><code>kid</code>・<code>jku</code>・<code>x5u</code> をそのまま使っていない</li>
+      <li>ペイロードに秘密の情報を入れていない</li>
+      <li>アクセストークンの期限が短く、取り消しの手段がある</li>
+      <li>JWT のライブラリを最新に保っている</li>
+    </ul>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>仕組み</strong></td><td>情報そのものをトークンに入れて渡し、サーバーは表を引かずに署名を検証する</td></tr>
+        <tr><td><strong>構造</strong></td><td>ヘッダ・ペイロード・署名を Base64URL で表し <code>.</code> でつなぐ。暗号化ではないので秘密は入れない</td></tr>
+        <tr><td><strong>署名</strong></td><td>改ざんを見つけるためのもの。認証サーバーと API が別なら公開鍵方式。HMAC の秘密は 32 バイト以上のランダム値</td></tr>
+        <tr><td><strong>攻撃</strong></td><td><code>alg: none</code>、方式の取り違え、<code>kid</code>・<code>jku</code> の悪用、使い回し、弱い秘密。原因は「ヘッダを信じる」こと</td></tr>
+        <tr><td><strong>検証</strong></td><td>方式と鍵の取得先はサーバーで固定し、<code>iss</code>・<code>aud</code>・<code>exp</code>・<code>typ</code> を確かめ、検証後の中身だけ使う</td></tr>
+        <tr><td><strong>鍵</strong></td><td>JWKS に追加 → 待つ → 切り替え → 古い鍵を消す</td></tr>
+        <tr><td><strong>弱点</strong></td><td>取り消しにくい。短い期限・失効リスト・問い合わせで補う。ログイン状態を保つだけならセッションも有力</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. JWT のペイロードのロールを user から admin に書き換えて送ると、どうなりますか？</summary>
+      <div class="body"><p>書き換え自体はできますが、署名はヘッダとペイロードからサーバーだけが知る鍵で作られているため、書き換えた中身と署名が合わなくなり拒否されます。攻撃者は鍵を持たないので、合う署名を作り直せません。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 「JWT は署名されているから、ペイロードにパスワードを入れても安全」は正しいですか？</summary>
+      <div class="body"><p>正しくありません。一般的な JWT は Base64URL でエンコードしただけで暗号化されておらず、誰でも読めます。署名は改ざんを見つけるためのもので、読めなくするものではありません。隠したいなら JWE を使います。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 認証サーバーと複数の API が別々にあるとき、HS256 ではなく RS256 などを選ぶのはなぜですか？</summary>
+      <div class="body"><p>HS256（HMAC）は発行と検証で同じ秘密を使うため、検証するすべての API が「トークンを作れる秘密」を持つことになり、1 か所漏れれば偽造できます。公開鍵方式なら、API は検証用の公開鍵だけを持てばよくなります。</p></div>
+    </details>
+    <details>
+      <summary>Q4. ヘッダを <code>"alg":"none"</code> にしたトークンが通ってしまう原因と対策は？</summary>
+      <div class="body"><p>検証の方式をトークンのヘッダから決めていることが原因です。サーバー側で許可する方式（例：<code>algorithms: ['RS256']</code>）を固定し、それ以外は拒否します。<code>noNE</code> のような大文字小文字違いにも注意します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. ヘッダの <code>jku</code> に書かれた URL から鍵を取ってきて検証する作りの問題点は？</summary>
+      <div class="body"><p>攻撃者が自分の鍵を置いた URL を指定すれば、攻撃者が作ったトークンが正しいと判定されます。さらにサーバーに好きな宛先へ通信させる SSRF にもなります。鍵の取得先はサーバーの設定で固定し、トークンの指定は無視します。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 検証の前に <code>jwt.decode()</code> の結果で処理を分けてはいけないのはなぜですか？</summary>
+      <div class="body"><p><code>decode</code> は署名を確かめずに中身を読むだけなので、偽造されたトークンの中身でもそのまま使われてしまうからです。<code>sub</code> や権限のクレームは、署名・<code>iss</code>・<code>aud</code>・<code>exp</code> などの検証を通った後にだけ使います。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 別のサービス向けに発行されたトークンを自分の API で受け付けないためには、どのクレームを確かめますか？</summary>
+      <div class="body"><p><code>aud</code>（誰に向けたトークンか）が自分宛てかを確かめます。あわせて <code>iss</code>（発行者）と <code>typ</code>（アクセストークンなら <code>at+jwt</code>）も確かめると、ID トークンの使い回しも防げます。</p></div>
+    </details>
+    <details>
+      <summary>Q8. ログアウトしたユーザーの JWT を、期限前に使えなくするにはどんな方法がありますか？</summary>
+      <div class="body"><p>アクセストークンの期限を 5〜15 分程度に短くしてリフレッシュトークンで更新する、ログアウトしたトークンの <code>jti</code> を期限まで Redis などの失効リストに置いて拒否する、毎回認証サーバーに問い合わせる（Token Introspection）、のいずれかで補います。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：74_セッション管理/30_トークン/03_JWTとは_サーバーが覚えていなくても分かる理由（つるチャンネル）</li>
+      <li>ノート：74_セッション管理/30_トークン/04_JWTの構造と検証</li>
+      <li>つるチャンネル「JWTとは？ なぜサーバーが覚えていなくてもログイン状態が分かるのか」 https://www.youtube.com/shorts/DBPNxhkOxcs</li>
+      <li>RFC 7519: JSON Web Token https://www.rfc-editor.org/rfc/rfc7519</li>
+      <li>RFC 8725: JWT Best Current Practices https://www.rfc-editor.org/rfc/rfc8725（改訂版 draft-ietf-oauth-rfc8725bis を策定中 https://datatracker.ietf.org/doc/html/draft-ietf-oauth-rfc8725bis-06）</li>
+      <li>RFC 9068: アクセストークンの JWT プロファイル https://www.rfc-editor.org/rfc/rfc9068</li>
+      <li>OWASP JSON Web Token Cheat Sheet（Java 向けだが考え方は共通） https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html</li>
+      <li>関連ページ：<a href="30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a>、<a href="30-3_アクセストークンとリフレッシュトークン.html">アクセストークンとリフレッシュトークン</a>、<a href="../../72_Web脆弱性対策/00_全体像/30-3_SSRF.html">72 SSRF</a>、<a href="../../73_認証認可/00_全体像/30-1_OAuth2.0の仕組み.html">73 OAuth2.0の仕組み</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-1_セッション方式とトークン方式.html"><span class="lbl">← 前のページ</span>セッション方式とトークン方式</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-3_アクセストークンとリフレッシュトークン.html"><span class="lbl">次のページ →</span>アクセストークンとリフレッシュトークン</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>

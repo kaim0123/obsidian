@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDプロバイダとSSOプロバイダ｜認証認可解説</title>
+<link rel="stylesheet" href="../../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">認証認可解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 フェデレーション › IDプロバイダとSSOプロバイダ</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 フェデレーション</span>
+      <h1>IDプロバイダとSSOプロバイダ</h1>
+      <p class="lead"><strong>IDプロバイダ（IdP）</strong> は「この人は本人です」と証明するサービス、<strong>SSOプロバイダ</strong> は「一度のログインで複数のサービスを使えるようにする」サービスです。このページでは、両者の基本概念と違いを初心者向けに整理し、Auth0・AWS Cognito・Okta・Microsoft Entra ID などのおすすめサービスと選び方のガイドまでを見ていきます。</p>
+      <p class="meta">もとにしたノート：30_フェデレーション/04_IDプロバイダとSSOプロバイダとは</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">このページで分かること</p>
+      <ul>
+        <li>IDプロバイダ（IdP）の役割：ユーザー情報の管理・認証・認証情報の発行</li>
+        <li>SSOプロバイダの役割：一元認証・セッション管理・ユーザー管理</li>
+        <li>両者の違いと関係（SSOプロバイダ ＝ IDプロバイダ ＋ セッション管理機能）</li>
+        <li>個人開発・スタートアップ向け、エンタープライズ向け、中小企業向けのおすすめサービス</li>
+        <li>用途別の選び方と、選ぶときに確認するポイント</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>IDプロバイダ（IdP）とは</h2>
+
+    <h3 id="sec-1-1">1.1 基本概念</h3>
+    <p><strong>IDプロバイダ（Identity Provider、IdP）</strong> は、ユーザーの身元（アイデンティティ）を管理し、認証を行うサービスです。<strong>認証</strong> とは「ログインしようとしているのは本当にその人か」を確かめることです（認証と認可の違いは <a href="10-1_認証と認可の違い.html">認証と認可の違い</a> を参照してください）。</p>
+
+    <h3 id="sec-1-2">1.2 簡単な例え</h3>
+    <div class="callout tip">
+      <p class="callout-title">IDプロバイダ ＝ 身分証明書を発行する役所</p>
+      <ul>
+        <li>ユーザーが「私は○○です」と証明するための情報を管理します</li>
+        <li>ログイン時に「本当にその人か？」を確認（認証）します</li>
+        <li>確認が取れたら「この人は○○です」という証明書（<strong>トークン</strong>）を発行します</li>
+      </ul>
+    </div>
+    <p><strong>トークン</strong> は、認証が済んだことを示す「デジタルな証明書」のようなデータです。くわしくは <a href="10-2_ログイン方式と認証の概念.html#sec-7">トークンベース認証：Bearer と JWT</a> で説明しています。</p>
+
+    <h3 id="sec-1-3">1.3 IDプロバイダの役割</h3>
+    <ol class="steps">
+      <li><strong>ユーザー情報の管理</strong>
+        <ul>
+          <li>ユーザー名、メールアドレス、パスワードなどの基本情報</li>
+          <li>プロフィール情報、権限情報など</li>
+        </ul>
+      </li>
+      <li><strong>認証（Authentication）</strong>
+        <ul>
+          <li>ユーザーが正しい本人かどうかを確認します</li>
+          <li>パスワード、<strong>多要素認証（MFA）</strong>（パスワードに加えてスマホの確認コードなど、別の種類の要素も使う認証）などで確認します</li>
+        </ul>
+      </li>
+      <li><strong>認証情報の発行</strong>
+        <ul>
+          <li>認証が成功したら、トークンや証明書を発行します</li>
+          <li>他のサービスが「この人は認証済みです」と判断できるようにします</li>
+        </ul>
+      </li>
+    </ol>
+
+    <h3 id="sec-1-4">1.4 代表的なIDプロバイダ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>サービス</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Google</strong></td><td>Googleアカウントでログイン</td></tr>
+        <tr><td><strong>Microsoft</strong></td><td>Microsoftアカウントでログイン</td></tr>
+        <tr><td><strong>Facebook</strong></td><td>Facebookアカウントでログイン</td></tr>
+        <tr><td><strong>GitHub</strong></td><td>GitHubアカウントでログイン</td></tr>
+        <tr><td><strong>Apple</strong></td><td>Apple IDでログイン</td></tr>
+        <tr><td><strong>AWS Cognito</strong></td><td>AWSが提供するIDプロバイダ</td></tr>
+        <tr><td><strong>Auth0</strong></td><td>専門のIDプロバイダサービス</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-2"><span class="num">2.</span>SSOプロバイダとは</h2>
+
+    <h3 id="sec-2-1">2.1 基本概念</h3>
+    <p><strong>SSOプロバイダ（Single Sign-On Provider）</strong> は、一度ログインすれば複数のアプリケーションやサービスに自動的にログインできるようにするサービスです。SSO（シングルサインオン）そのものの考え方は <a href="10-2_ログイン方式と認証の概念.html#sec-10">シングルサインオン（SSO）とアイデンティティプロトコル</a> で図つきで説明しています。</p>
+
+    <h3 id="sec-2-2">2.2 簡単な例え</h3>
+    <div class="callout tip">
+      <p class="callout-title">SSOプロバイダ ＝ 共通の入場券</p>
+      <ul>
+        <li>一度入場券を買えば、複数の施設に入れます</li>
+        <li>各施設で個別にチケットを買う必要がありません</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-2-3">2.3 SSOプロバイダの役割</h3>
+    <ol class="steps">
+      <li><strong>一元認証</strong>
+        <ul>
+          <li>1つのアカウントで複数のサービスにアクセスできます</li>
+          <li>ユーザーは1つのパスワードだけ覚えれば済みます</li>
+        </ul>
+      </li>
+      <li><strong>セッション管理</strong>
+        <ul>
+          <li>ログイン状態（<strong>セッション</strong>）を管理します</li>
+          <li>複数のサービス間でセッションを共有します</li>
+        </ul>
+      </li>
+      <li><strong>ユーザー管理</strong>
+        <ul>
+          <li>複数のサービスで共通のユーザー情報を管理します</li>
+          <li>一元的にユーザーの追加・削除・権限変更ができます</li>
+        </ul>
+      </li>
+    </ol>
+
+    <h3 id="sec-2-4">2.4 SSOの仕組み</h3>
+    <p>ユーザーは SSO プロバイダで一度だけログインし、発行されたトークンを各アプリが確認することで、アプリごとのログインが不要になります。</p>
+<pre><code>ユーザー → SSOプロバイダでログイン
+    ↓
+認証成功 → SSOトークン発行
+    ↓
+アプリケーションA → SSOトークンを確認 → 自動ログイン OK
+アプリケーションB → SSOトークンを確認 → 自動ログイン OK
+アプリケーションC → SSOトークンを確認 → 自動ログイン OK</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="ユーザーがSSOプロバイダに一度だけログインする。SSOプロバイダの中にはユーザー管理・認証・トークン発行を行うIdPの機能と、複数サービスで共有するセッション管理がある。アプリA、B、C（SP）はSSOプロバイダのトークンを確認して自動ログインする">
+      <defs>
+        <marker id="arw303a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="105" width="110" height="80" rx="8" class="d-box"/>
+      <text x="75" y="141" text-anchor="middle" class="d-text-bold">ユーザー</text>
+      <text x="75" y="162" text-anchor="middle" class="d-text-sub">ブラウザ</text>
+
+      <path d="M132,145 L208,145" class="d-line" marker-end="url(#arw303a)"/>
+      <text x="170" y="118" text-anchor="middle" class="d-text-sub">① 一度だけ</text>
+      <text x="170" y="134" text-anchor="middle" class="d-text-sub">ログイン</text>
+
+      <rect x="210" y="30" width="270" height="220" rx="8" class="d-box-accent"/>
+      <text x="345" y="56" text-anchor="middle" class="d-text-bold">SSOプロバイダ（例：Okta）</text>
+      <rect x="228" y="70" width="234" height="80" rx="8" class="d-box"/>
+      <text x="345" y="96" text-anchor="middle" class="d-text-bold">IdP の機能</text>
+      <text x="345" y="117" text-anchor="middle" class="d-text-sub">ユーザー管理・認証</text>
+      <text x="345" y="135" text-anchor="middle" class="d-text-sub">トークン発行</text>
+      <rect x="228" y="164" width="234" height="72" rx="8" class="d-box"/>
+      <text x="345" y="192" text-anchor="middle" class="d-text-bold">セッション管理</text>
+      <text x="345" y="214" text-anchor="middle" class="d-text-sub">複数サービスで共有</text>
+
+      <path d="M482,110 L568,60" class="d-line-dash" marker-end="url(#arw303a)"/>
+      <path d="M482,145 L568,148" class="d-line-dash" marker-end="url(#arw303a)"/>
+      <path d="M482,180 L568,236" class="d-line-dash" marker-end="url(#arw303a)"/>
+      <text x="526" y="125" text-anchor="middle" class="d-text-sub">② トークン確認</text>
+
+      <rect x="570" y="30" width="130" height="58" rx="8" class="d-box-good"/>
+      <text x="635" y="55" text-anchor="middle" class="d-text-bold">アプリA</text>
+      <text x="635" y="75" text-anchor="middle" class="d-text-sub">SP</text>
+      <rect x="570" y="119" width="130" height="58" rx="8" class="d-box-good"/>
+      <text x="635" y="144" text-anchor="middle" class="d-text-bold">アプリB</text>
+      <text x="635" y="164" text-anchor="middle" class="d-text-sub">SP</text>
+      <rect x="570" y="208" width="130" height="58" rx="8" class="d-box-good"/>
+      <text x="635" y="233" text-anchor="middle" class="d-text-bold">アプリC</text>
+      <text x="635" y="253" text-anchor="middle" class="d-text-sub">SP</text>
+
+      <text x="345" y="284" text-anchor="middle" class="d-text-sub">SSOプロバイダ ＝ IdP の機能 ＋ セッション管理 → 各アプリは自動ログイン</text>
+    </svg>
+    <figcaption>図：IdP・SSOプロバイダ・複数アプリ（SP）の関係。SSOプロバイダは IdP の機能を含み、ログインを一度で済ませる</figcaption>
+    </figure>
+    <p>図の <strong>SP（Service Provider：サービスプロバイダー）</strong> は、IdP を信頼して認証を任せる「実際に使うアプリ側」のことです。SAML を使った SSO の具体的なやり取りは <a href="10-3_パスワード・MFA・暗号化の基礎.html#sec-5-3">SSO の仕組み（SAML の場合）</a>、プロトコルの違いは <a href="30-2_SAML・OAuth・OIDCの違い.html">SAML・OAuth・OIDCの違い</a> を参照してください。</p>
+
+    <h3 id="sec-2-5">2.5 代表的なSSOプロバイダ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>サービス</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Okta</strong></td><td>エンタープライズ向けSSO</td></tr>
+        <tr><td><strong>Microsoft Azure AD</strong>（現 Microsoft Entra ID）</td><td>MicrosoftのSSOサービス</td></tr>
+        <tr><td><strong>Google Workspace</strong></td><td>GoogleのSSOサービス</td></tr>
+        <tr><td><strong>OneLogin</strong></td><td>クラウドベースのSSO</td></tr>
+        <tr><td><strong>Ping Identity</strong></td><td>エンタープライズ向けSSO</td></tr>
+        <tr><td><strong>AWS SSO</strong>（現 AWS IAM Identity Center）</td><td>AWSのSSOサービス</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>IDプロバイダとSSOプロバイダの違い</h2>
+
+    <h3 id="sec-3-1">3.1 主な違い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>IDプロバイダ（IdP）</th><th>SSOプロバイダ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>主な目的</strong></td><td>ユーザーの身元を証明</td><td>複数サービスへの一元ログイン</td></tr>
+        <tr><td><strong>対象</strong></td><td>主に1つのサービス</td><td>複数のサービス</td></tr>
+        <tr><td><strong>機能</strong></td><td>認証（Authentication）</td><td>認証 ＋ セッション共有</td></tr>
+        <tr><td><strong>使用例</strong></td><td>GoogleアカウントでWebサイトにログイン</td><td>企業内の複数システムに1回のログインでアクセス</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-2">3.2 実際の関係</h3>
+    <p>多くの場合、<strong>SSOプロバイダはIDプロバイダの機能も含んでいます</strong>。</p>
+    <div class="callout key">
+      <ul>
+        <li><strong>SSOプロバイダ ＝ IDプロバイダ ＋ セッション管理機能</strong></li>
+        <li>SSOプロバイダは、IDプロバイダとしても機能します</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-3-3">3.3 具体例</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>IDプロバイダの例</h4>
+<pre><code>ユーザー → Googleアカウントでログイン
+    ↓
+認証成功 → Googleトークン発行
+    ↓
+WebサイトA → Googleトークンを確認
+           → ログイン OK</code></pre>
+      </div>
+      <div class="card">
+        <h4>SSOプロバイダの例</h4>
+<pre><code>ユーザー → Oktaでログイン
+    ↓
+認証成功 → Oktaトークン発行
+    ↓
+社内システムA → Oktaトークンを確認 → 自動ログイン OK
+社内システムB → Oktaトークンを確認 → 自動ログイン OK
+社内システムC → Oktaトークンを確認 → 自動ログイン OK</code></pre>
+      </div>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>おすすめのIDプロバイダ</h2>
+    <div class="callout warn">
+      <p>価格・無料枠・機能はノート作成時点の情報です。変わることがあるので、最新の内容は各サービスの公式サイトで確認してください。</p>
+    </div>
+    <p>以下の <strong>SDK</strong> は、各プログラミング言語から機能を呼び出すためのライブラリ一式のこと、<strong>エコシステム</strong> は、同じ会社のサービス群とその周辺ツールのことです。</p>
+
+    <h3 id="sec-4-1">4.1 個人開発・スタートアップ向け</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. Auth0</h4>
+        <p><strong>特徴</strong>：開発者向け、柔軟なカスタマイズ</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>無料プランあり（月7,000ユーザーまで）</li>
+          <li>豊富なドキュメントとサンプルコード</li>
+          <li>多くの認証方式をサポート（OAuth 2.0、OpenID Connect、SAML）</li>
+          <li>多言語SDKが充実</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>無料プランには機能制限あり</li>
+          <li>有料プランは高額</li>
+        </ul>
+        <p><strong>価格</strong>：無料プランあり、有料は月$240〜<br><strong>おすすめ度</strong>：★★★★★</p>
+      </div>
+      <div class="card">
+        <h4>2. AWS Cognito</h4>
+        <p><strong>特徴</strong>：AWSエコシステムとの統合が容易</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>AWSサービスと簡単に統合</li>
+          <li>無料枠が充実（月50,000ユーザーまで）</li>
+          <li>スケーラブル（利用者が増えても対応しやすい）</li>
+          <li>コストパフォーマンスが良い</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>AWSの知識が必要</li>
+          <li>UIのカスタマイズが限定的</li>
+        </ul>
+        <p><strong>価格</strong>：無料枠あり、従量課金<br><strong>おすすめ度</strong>：★★★★☆</p>
+        <p>Cognito の構成要素やメリット・デメリットは <a href="10-2_ログイン方式と認証の概念.html#sec-13">AWS Cognito：複数の方式をまとめて提供するサービス</a> でも説明しています。</p>
+      </div>
+      <div class="card">
+        <h4>3. Firebase Authentication</h4>
+        <p><strong>特徴</strong>：Googleが提供、モバイルアプリ向け</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>無料プランあり</li>
+          <li>モバイルアプリとの統合が簡単</li>
+          <li>Googleサービスとの連携が容易</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>主にモバイルアプリ向け</li>
+          <li>カスタマイズの自由度が低い</li>
+        </ul>
+        <p><strong>価格</strong>：無料プランあり<br><strong>おすすめ度</strong>：★★★★☆</p>
+      </div>
+      <div class="card">
+        <h4>4. Supabase Auth</h4>
+        <p><strong>特徴</strong>：オープンソース、PostgreSQLベース</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>無料プランあり</li>
+          <li>オープンソースで透明性が高い</li>
+          <li>モダンな開発体験</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>比較的新しいサービス</li>
+          <li>エンタープライズ機能が限定的</li>
+        </ul>
+        <p><strong>価格</strong>：無料プランあり、有料は月$25〜<br><strong>おすすめ度</strong>：★★★★☆</p>
+      </div>
+    </div>
+
+    <h3 id="sec-4-2">4.2 エンタープライズ向け</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. Microsoft Azure AD</h4>
+        <p><strong>特徴</strong>：Microsoftエコシステムとの統合</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>企業で広く使用されている</li>
+          <li>Office 365との統合</li>
+          <li>強力なセキュリティ機能</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>コストが高い</li>
+          <li>設定が複雑</li>
+        </ul>
+        <p><strong>価格</strong>：月$6〜/ユーザー<br><strong>おすすめ度</strong>：★★★★☆</p>
+      </div>
+      <div class="card">
+        <h4>2. Google Workspace</h4>
+        <p><strong>特徴</strong>：Googleエコシステムとの統合</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>Gmail、Google Driveとの統合</li>
+          <li>使いやすいUI</li>
+          <li>強力なセキュリティ</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>コストが高い</li>
+          <li>Googleサービスに依存</li>
+        </ul>
+        <p><strong>価格</strong>：月$6〜/ユーザー<br><strong>おすすめ度</strong>：★★★★☆</p>
+      </div>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>おすすめのSSOプロバイダ</h2>
+    <p>価格は前の節と同じく、ノート作成時点のものです。<strong>オンプレミス</strong> は、自社の建物内などに置いたサーバーで運用する形態のことです。</p>
+
+    <h3 id="sec-5-1">5.1 エンタープライズ向け</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. Okta</h4>
+        <p><strong>特徴</strong>：エンタープライズ向けSSOのリーダー</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>豊富な統合オプション（6,000以上のアプリ）</li>
+          <li>強力なセキュリティ機能</li>
+          <li>優れたユーザー管理機能</li>
+          <li>包括的なドキュメント</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>コストが高い</li>
+          <li>設定が複雑</li>
+        </ul>
+        <p><strong>価格</strong>：月$2〜/ユーザー<br><strong>おすすめ度</strong>：★★★★★</p>
+      </div>
+      <div class="card">
+        <h4>2. Microsoft Azure AD（Entra ID）</h4>
+        <p><strong>特徴</strong>：Microsoftエコシステムとの統合</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>Office 365との完全統合</li>
+          <li>企業で広く使用されている</li>
+          <li>強力なセキュリティ機能</li>
+          <li>条件付きアクセス（場所・端末などの条件でアクセスを許可／拒否する機能）</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>Microsoft環境に依存</li>
+          <li>コストが高い</li>
+        </ul>
+        <p><strong>価格</strong>：月$6〜/ユーザー<br><strong>おすすめ度</strong>：★★★★★</p>
+      </div>
+      <div class="card">
+        <h4>3. OneLogin</h4>
+        <p><strong>特徴</strong>：クラウドベースのSSO</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>使いやすいUI</li>
+          <li>豊富な統合オプション</li>
+          <li>柔軟なカスタマイズ</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>Oktaより機能が限定的</li>
+          <li>コストが高い</li>
+        </ul>
+        <p><strong>価格</strong>：月$2〜/ユーザー<br><strong>おすすめ度</strong>：★★★★☆</p>
+      </div>
+      <div class="card">
+        <h4>4. Ping Identity</h4>
+        <p><strong>特徴</strong>：エンタープライズ向け、カスタマイズ性が高い</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>高いカスタマイズ性</li>
+          <li>強力なセキュリティ機能</li>
+          <li>オンプレミスとクラウドの両方に対応</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>設定が複雑</li>
+          <li>コストが高い</li>
+        </ul>
+        <p><strong>価格</strong>：要問い合わせ<br><strong>おすすめ度</strong>：★★★★☆</p>
+      </div>
+      <div class="card">
+        <h4>5. AWS SSO（AWS IAM Identity Center）</h4>
+        <p><strong>特徴</strong>：AWSエコシステムとの統合</p>
+        <p><strong>メリット</strong></p>
+        <ul>
+          <li>AWSサービスとの完全統合</li>
+          <li>コストパフォーマンスが良い</li>
+          <li>スケーラブル</li>
+        </ul>
+        <p><strong>デメリット</strong></p>
+        <ul>
+          <li>AWS環境に依存</li>
+          <li>非AWSアプリとの統合が限定的</li>
+        </ul>
+        <p><strong>価格</strong>：無料（AWSリソースの使用料のみ）<br><strong>おすすめ度</strong>：★★★★☆</p>
+      </div>
+    </div>
+
+    <h3 id="sec-5-2">5.2 中小企業向け</h3>
+    <div class="card">
+      <h4>1. JumpCloud</h4>
+      <p><strong>特徴</strong>：中小企業向け、コストパフォーマンスが良い</p>
+      <p><strong>メリット</strong></p>
+      <ul>
+        <li>無料プランあり（10ユーザーまで）</li>
+        <li>使いやすいUI</li>
+        <li>包括的な機能</li>
+      </ul>
+      <p><strong>デメリット</strong></p>
+      <ul>
+        <li>エンタープライズ機能が限定的</li>
+      </ul>
+      <p><strong>価格</strong>：無料プランあり、有料は月$2〜/ユーザー<br><strong>おすすめ度</strong>：★★★★☆</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>選び方のガイド</h2>
+
+    <h3 id="sec-6-1">6.1 用途別の選び方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>候補（優先順）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>個人開発・スタートアップ</strong></td><td>
+          1. <strong>Auth0</strong> － 柔軟性と開発者体験を重視<br>
+          2. <strong>AWS Cognito</strong> － AWSを使用している場合<br>
+          3. <strong>Supabase Auth</strong> － オープンソースを好む場合</td></tr>
+        <tr><td><strong>中小企業</strong></td><td>
+          1. <strong>JumpCloud</strong> － コストパフォーマンス重視<br>
+          2. <strong>Okta</strong> － 機能の充実度を重視<br>
+          3. <strong>Microsoft Azure AD</strong> － Microsoft環境を使用している場合</td></tr>
+        <tr><td><strong>大企業・エンタープライズ</strong></td><td>
+          1. <strong>Okta</strong> － 最も包括的な機能<br>
+          2. <strong>Microsoft Azure AD</strong> － Microsoft環境を使用している場合<br>
+          3. <strong>Ping Identity</strong> － 高いカスタマイズ性が必要な場合</td></tr>
+      </tbody>
+    </table></div>
+    <p>社内システムのログインを「OIDC ＋ 社内 IdP」で組む考え方は <a href="10-4_社内システム向け認証方式の選び方.html#sec-1">社内システム向け認証方式の選び方</a> で詳しく説明しています。</p>
+
+    <h3 id="sec-6-2">6.2 選択のポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. 予算</h4>
+        <ul>
+          <li>無料プランで始められるか</li>
+          <li>ユーザー数に応じたコスト</li>
+          <li>隠れたコスト（サポート、追加機能など）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. 統合の容易さ</h4>
+        <ul>
+          <li>使用しているアプリケーションとの統合</li>
+          <li>SDKやAPIの充実度</li>
+          <li>ドキュメントの質</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>3. セキュリティ要件</h4>
+        <ul>
+          <li>必要なセキュリティ機能（MFA、条件付きアクセスなど）</li>
+          <li>コンプライアンス要件（法律や業界ルールで求められる基準）への対応</li>
+          <li>監査ログ（誰がいつ何をしたかの記録）の機能</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>4. スケーラビリティ</h4>
+        <ul>
+          <li>ユーザー数の増加に対応できるか</li>
+          <li>パフォーマンス</li>
+          <li>グローバル展開への対応</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>5. サポート</h4>
+        <ul>
+          <li>サポートの質と応答速度</li>
+          <li>コミュニティの活発さ</li>
+          <li>ドキュメントの充実度</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-6-3">6.3 推奨の組み合わせ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>規模</th><th>Next.jsアプリケーションの場合</th><th>モバイルアプリの場合</th></tr></thead>
+      <tbody>
+        <tr><td><strong>個人開発</strong></td><td>Auth0 または AWS Cognito</td><td>Firebase Authentication</td></tr>
+        <tr><td><strong>スタートアップ</strong></td><td>Auth0 または Supabase Auth</td><td>Auth0 または AWS Cognito</td></tr>
+        <tr><td><strong>エンタープライズ</strong></td><td>Okta または Microsoft Azure AD</td><td>Okta</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
+    <ul>
+      <li><strong>IDプロバイダ</strong>：ユーザーの身元を証明するサービスです（ユーザー情報の管理・認証・トークンの発行）。</li>
+      <li><strong>SSOプロバイダ</strong>：複数サービスへの一元ログインを実現するサービスです（一元認証・セッション管理・ユーザー管理）。</li>
+      <li>多くの場合、<strong>SSOプロバイダ ＝ IDプロバイダ ＋ セッション管理機能</strong> で、SSOプロバイダは IdP としても機能します。</li>
+      <li><strong>選び方</strong>：用途、予算、統合の容易さ、セキュリティ要件を考慮します。</li>
+    </ul>
+    <p>個人開発やスタートアップでは <strong>Auth0</strong> や <strong>AWS Cognito</strong> がおすすめです。エンタープライズでは <strong>Okta</strong> や <strong>Microsoft Azure AD</strong> が強力です。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>理解度チェック</h2>
+    <details><summary>Q1. IDプロバイダ（IdP）の3つの役割は何ですか？</summary><div class="body">
+      <p>① <strong>ユーザー情報の管理</strong>（ユーザー名・メールアドレス・パスワード・権限など）、② <strong>認証</strong>（パスワードや MFA で本人か確認）、③ <strong>認証情報の発行</strong>（トークンや証明書を発行し、他のサービスが「認証済み」と判断できるようにする）です。</p>
+    </div></details>
+    <details><summary>Q2. IDプロバイダとSSOプロバイダの違いを一言で説明してください。</summary><div class="body">
+      <p>IDプロバイダは「ユーザーの身元を証明する」サービス、SSOプロバイダは「一度のログインで複数のサービスに入れるようにする」サービスです。多くの場合、SSOプロバイダは IdP の機能にセッション管理（複数サービス間でのログイン状態の共有）を加えたものです。</p>
+    </div></details>
+    <details><summary>Q3. 「共通の入場券」の例えは、SSOプロバイダのどんな性質を表していますか？</summary><div class="body">
+      <p>一度入場券を買えば複数の施設に入れて、施設ごとにチケットを買う必要がない、という性質です。SSO では一度ログインすれば、アプリごとにログインし直す必要がありません。</p>
+    </div></details>
+    <details><summary>Q4. AWS を中心に開発している個人開発の Next.js アプリと、Microsoft 365 を使っている大企業の社内システム群では、それぞれ何が候補になりますか？</summary><div class="body">
+      <p>前者は <strong>AWS Cognito</strong>（AWS サービスと統合しやすく、無料枠が充実）、後者は <strong>Microsoft Azure AD（Entra ID）</strong>（Office 365 と完全統合、条件付きアクセスあり）が候補です。どちらも最終的には予算・統合の容易さ・セキュリティ要件・スケーラビリティ・サポートを比べて決めます。</p>
+    </div></details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：73_認証認可/30_フェデレーション/04_IDプロバイダとSSOプロバイダとは</li>
+      <li>Auth0 公式サイト https://auth0.com/</li>
+      <li>AWS Cognito 公式ドキュメント https://docs.aws.amazon.com/cognito/</li>
+      <li>Okta 公式サイト https://www.okta.com/</li>
+      <li>Microsoft Azure AD 公式サイト https://azure.microsoft.com/ja-jp/services/active-directory/</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-2_SAML・OAuth・OIDCの違い.html"><span class="lbl">← 前のページ</span>SAML・OAuth・OIDCの違い</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-1_認可不備と認可の要件定義.html"><span class="lbl">次のページ →</span>認可不備と認可の要件定義</a>
+    </nav>
+  </main>
+</div>
+<script src="../../_解説HTML/script.js"></script>
+</body>
+</html>
