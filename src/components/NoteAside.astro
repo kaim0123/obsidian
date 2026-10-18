@@ -59,6 +59,8 @@ const folderUrl = findFolder(folderPath)?.url ?? '/notes/';
   .note-aside {
     position: sticky;
     top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow: auto;
     font-size: 13px;
   }
   section + section {
