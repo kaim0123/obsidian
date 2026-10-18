@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>構成管理とAnsible｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 構築・IaC › 構成管理とAnsible</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 構築・IaC</span>
+      <h1>構成管理とAnsible</h1>
+      <p class="lead"><strong>Ansible</strong> は、サーバーの中身（パッケージ・設定ファイル・ユーザー・サービス）を「あるべき状態」にそろえる <strong>構成管理ツール</strong> です。このページでは、<strong>エージェントレス（SSH だけ）</strong> で動く仕組み、インベントリ・プレイブック・モジュールの書き方、冪等性と <code>changed</code> 表示の読み方、<code>--check --diff</code> による事前確認、ロール・変数・Jinja2 テンプレート・ansible-vault、Shop サーバー（Nginx + Node.js + systemd）を構成するプレイブックの完全な例、Terraform との分担を解説します。最後にネットワーク自動化の観点から Ansible・Terraform・Puppet・Chef を比較します。</p>
+      <p class="meta">もとにしたノート：40_構築・IaC/04_構成管理とAnsible</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>Ansible は <strong>「チェックリストを持って各部屋を回る、几帳面な管理人」</strong> です。リスト（プレイブック）の各項目について「もうできていればそのまま、できていなければ直す」を繰り返します。各部屋に常駐スタッフ（エージェント）は要らず、合鍵（<strong>SSH</strong>）さえあれば回れます。「箱」は Terraform、「中身」は Ansible という分担が定番です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>Ansible とは</h2>
+    <ul>
+      <li><strong>構成管理（Configuration Management）</strong> ツール：OS の中身（パッケージ、設定ファイル、ユーザー、サービス）を「あるべき状態」にそろえる</li>
+      <li>対象サーバーに <strong>SSH と Python があればよい</strong>（<strong>エージェントレス</strong>＝管理対象に専用プログラムを常駐させない）</li>
+      <li>YAML で書き、何度実行しても同じ結果になる（<strong>冪等</strong>）</li>
+    </ul>
+    <p>手作業の構築手順は <a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a>、「箱」を作る側は <a href="40-3_Terraform入門.html">40-3 Terraform入門</a> で扱っています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>仕組み：エージェントレスと SSH</h2>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="コントロールノード（手元PCやCI）がインベントリとプレイブックを読み、shop-web-01とshop-web-02に並列でSSH接続してPythonのモジュールを転送する。各サーバーはモジュールを実行して状態を確認し、必要なら変更して、結果（ok、changed、failed）をJSONで返す">
+      <defs>
+        <marker id="arw404a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="90" width="200" height="110" rx="8" class="d-box-accent"/>
+      <text x="110" y="120" text-anchor="middle" class="d-text-bold">コントロールノード</text>
+      <text x="110" y="142" text-anchor="middle" class="d-text-sub">手元 PC / CI</text>
+      <text x="110" y="166" text-anchor="middle" class="d-text-sub">インベントリと</text>
+      <text x="110" y="184" text-anchor="middle" class="d-text-sub">プレイブックを読む</text>
+
+      <rect x="480" y="20" width="230" height="110" rx="8" class="d-box"/>
+      <text x="595" y="48" text-anchor="middle" class="d-text-bold">shop-web-01</text>
+      <text x="595" y="72" text-anchor="middle" class="d-text-sub">モジュール（Python）を実行</text>
+      <text x="595" y="92" text-anchor="middle" class="d-text-sub">状態を確認し、必要なら変更</text>
+      <text x="595" y="114" text-anchor="middle" class="d-text-sub">エージェントは常駐しない</text>
+
+      <rect x="480" y="170" width="230" height="110" rx="8" class="d-box"/>
+      <text x="595" y="198" text-anchor="middle" class="d-text-bold">shop-web-02</text>
+      <text x="595" y="222" text-anchor="middle" class="d-text-sub">モジュール（Python）を実行</text>
+      <text x="595" y="242" text-anchor="middle" class="d-text-sub">状態を確認し、必要なら変更</text>
+      <text x="595" y="264" text-anchor="middle" class="d-text-sub">エージェントは常駐しない</text>
+
+      <path d="M210,110 L478,55" class="d-line" marker-end="url(#arw404a)"/>
+      <text x="300" y="72" class="d-text-sub">① SSH でモジュール転送</text>
+      <path d="M478,100 L212,140" class="d-line-dash" marker-end="url(#arw404a)"/>
+      <text x="300" y="138" class="d-text-sub">② 結果を JSON で返す</text>
+      <path d="M210,170 L478,205" class="d-line" marker-end="url(#arw404a)"/>
+      <path d="M478,250 L212,190" class="d-line-dash" marker-end="url(#arw404a)"/>
+      <text x="290" y="246" class="d-text-sub">並列に実行</text>
+    </svg>
+    <figcaption>図：Ansible は手元から SSH でモジュールを送り込んで実行し、結果（ok / changed / failed）を受け取る push 型</figcaption>
+    </figure>
+
+    <ul>
+      <li>Ansible を入れるのは <strong>コントロールノード</strong>（操作する側）だけ。管理対象には何も常駐しません</li>
+      <li>Chef / Puppet はエージェントが定期的にサーバーから設定を取りに行く <strong>pull 型</strong>、Ansible は手元から押し込む <strong>push 型</strong> です</li>
+    </ul>
+    <p>インストール（コントロールノード側）：</p>
+<pre><code>sudo apt install -y pipx
+pipx install --include-deps ansible
+ansible --version</code></pre>
+    <p>Ubuntu の apt にも <code>ansible</code> パッケージがありますが、新しいバージョンを使うなら <strong>pipx</strong>（Python の CLI ツールを隔離して入れる仕組み）が便利です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>インベントリ・プレイブック・モジュール</h2>
+
+    <h3 id="sec-3-1">3.1 インベントリ</h3>
+    <p><strong>インベントリ（Inventory）</strong> は「管理対象サーバーの一覧とグループ分け」です。</p>
+<pre><code># inventory/prod.yml
+all:
+  vars:
+    ansible_user: deploy
+    ansible_ssh_private_key_file: ~/.ssh/shop_deploy
+  children:
+    web:
+      hosts:
+        shop-web-01:
+          ansible_host: 203.0.113.21   # Terraform の output の IP
+        shop-web-02:
+          ansible_host: 203.0.113.22
+    db:
+      hosts:
+        shop-db-01:
+          ansible_host: 10.0.2.10</code></pre>
+    <p>接続確認：</p>
+<pre><code>ansible -i inventory/prod.yml web -m ansible.builtin.ping
+# shop-web-01 | SUCCESS =&gt; {"ping": "pong"}</code></pre>
+    <p>クラウドではサーバーが増減するので、AWS のタグからインベントリを自動生成する <strong>動的インベントリ</strong>（<code>amazon.aws.aws_ec2</code> プラグイン）もよく使われます。</p>
+
+    <h3 id="sec-3-2">3.2 プレイブックとモジュール</h3>
+    <p><strong>プレイブック（Playbook）</strong> は「どのホストに、どのタスクを、どの順で」を書いた YAML です。各タスクは <strong>モジュール（Module）</strong> を 1 つ呼び出します。</p>
+<pre><code># site.yml（最小例）
+- name: Shop web サーバーの基本設定
+  hosts: web
+  become: true            # sudo で実行
+  tasks:
+    - name: Nginx をインストール
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Nginx を起動し、自動起動を有効にする
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true</code></pre>
+    <p>よく使うモジュール（<code>ansible.builtin</code> に含まれるもの）：</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モジュール</th><th>役割</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><code>apt</code></td><td>パッケージ管理</td><td><code>name: nginx, state: present</code></td></tr>
+        <tr><td><code>user</code></td><td>ユーザー作成</td><td><code>name: shop, system: true, shell: /usr/sbin/nologin</code></td></tr>
+        <tr><td><code>file</code></td><td>ディレクトリ・権限</td><td><code>path: /opt/shop, state: directory, owner: shop</code></td></tr>
+        <tr><td><code>copy</code></td><td>ファイルをそのまま配置</td><td>静的な設定ファイル</td></tr>
+        <tr><td><code>template</code></td><td>Jinja2 で値を埋めて配置</td><td><code>nginx.conf.j2</code> → <code>/etc/nginx/sites-available/shop</code></td></tr>
+        <tr><td><code>service</code> / <code>systemd_service</code></td><td>サービスの起動・有効化</td><td><code>state: restarted</code></td></tr>
+        <tr><td><code>command</code> / <code>shell</code></td><td>任意のコマンド</td><td><strong>最後の手段</strong>。冪等にならないので注意</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">FQCN で書く</p>
+      <p><code>apt:</code> ではなく <code>ansible.builtin.apt:</code> のように <strong>FQCN（完全修飾コレクション名）</strong> で書くのが現在の推奨です。同名モジュールの取り違えを防げます。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>冪等性と changed 表示</h2>
+    <p>プレイブックを 2 回実行すると、結果の表示が変わります。</p>
+<pre><code># 1 回目
+TASK [Nginx をインストール] ************
+changed: [shop-web-01]
+PLAY RECAP *****************************
+shop-web-01 : ok=3  changed=2  unreachable=0  failed=0
+
+# 2 回目（何も変わっていない）
+TASK [Nginx をインストール] ************
+ok: [shop-web-01]
+PLAY RECAP *****************************
+shop-web-01 : ok=3  changed=0  unreachable=0  failed=0</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>表示</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>ok</code></td><td>すでにあるべき状態だった。何もしていない</td></tr>
+        <tr><td><code>changed</code></td><td>状態を変更した</td></tr>
+        <tr><td><code>failed</code></td><td>失敗（そのホストの以降のタスクは止まる）</td></tr>
+        <tr><td><code>skipped</code></td><td><code>when:</code> の条件で実行しなかった</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>2 回目に <code>changed=0</code> になること</strong> が、プレイブックが冪等である証拠です。毎回 <code>changed</code> が出るタスクは、たいてい <code>command</code> / <code>shell</code> を素のまま使っています。どうしても使う場合は <code>creates:</code> や <code>changed_when:</code> で冪等にします。</p>
+<pre><code>- name: 依存パッケージをインストール（package-lock.json が変わったときだけ）
+  ansible.builtin.command: npm ci --omit=dev
+  args:
+    chdir: /opt/shop/app
+  become_user: shop
+  when: lockfile.changed      # 直前の copy/git タスクの結果を register しておく</code></pre>
+    <p>本番に流す前は <strong>ドライラン</strong>（実際には変更しない試し実行）で確認します。Terraform の <code>plan</code> に相当します。</p>
+<pre><code>ansible-playbook -i inventory/prod.yml site.yml --check --diff</code></pre>
+    <p><code>--check</code> は変更せずに「変更されるはず」を表示し、<code>--diff</code> は設定ファイルの差分を表示します（<code>command</code> などチェックモード非対応のタスクは正確に予測できない点に注意）。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>変数・テンプレート・ロール・vault</h2>
+
+    <h3 id="sec-5-1">5.1 変数と Jinja2 テンプレート</h3>
+    <p>環境ごとに違う値は <strong>変数</strong> にし、設定ファイルは <strong>Jinja2 テンプレート</strong>（<code>{{ }}</code> に値を差し込む雛形の書式）で生成します。変数はグループ単位のファイルに置けます。</p>
+<pre><code># inventory/group_vars/web.yml
+shop_domain: shop.example.com
+shop_api_port: 3000
+node_major: 24</code></pre>
+<pre><code># roles/nginx/templates/shop.conf.j2
+server {
+    listen 80;
+    server_name {{ shop_domain }} api.{{ shop_domain }};
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ shop_api_port }};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}</code></pre>
+    <p><code>{{ 変数 }}</code> が値に置き換わります。<code>$host</code> などは Nginx の変数なのでそのまま残ります。proxy 設定の意味は <a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> を見てください。</p>
+
+    <h3 id="sec-5-2">5.2 ロール</h3>
+    <p>タスクが増えたら <strong>ロール（Role）</strong> に分けます。ロールは「Nginx 担当」「Node.js 担当」のような再利用単位で、決まったディレクトリ構成を持ちます。</p>
+<pre><code>ansible/
+├── ansible.cfg
+├── inventory/
+│   ├── prod.yml
+│   └── group_vars/
+│       ├── web.yml
+│       └── web_vault.yml    # 暗号化された秘密情報
+├── site.yml
+└── roles/
+    ├── common/      tasks/main.yml
+    ├── nginx/       tasks/main.yml  templates/shop.conf.j2  handlers/main.yml
+    ├── nodejs/      tasks/main.yml
+    └── shop_app/    tasks/main.yml  templates/shop.service.j2  templates/env.j2  handlers/main.yml</code></pre>
+    <p><strong>ハンドラー（Handler）</strong> は「設定ファイルが changed のときだけ Nginx を reload する」ための仕組みです。タスクに <code>notify:</code> を書いておくと、プレイの最後にまとめて 1 回だけ実行されます。</p>
+
+    <h3 id="sec-5-3">5.3 ansible-vault</h3>
+    <p>DB のパスワードなどの秘密情報は <strong>ansible-vault</strong> で暗号化してから Git に入れます。</p>
+<pre><code>ansible-vault create inventory/group_vars/web_vault.yml   # 作成（エディタが開く）
+ansible-vault edit   inventory/group_vars/web_vault.yml   # 編集
+ansible-playbook -i inventory/prod.yml site.yml --ask-vault-pass</code></pre>
+<pre><code># web_vault.yml の中身（保存時は暗号化される）
+vault_database_url: "postgres://shop:S3cr3t@10.0.2.10:5432/shop"</code></pre>
+    <p><code>group_vars/web.yml</code> 側で <code>database_url: "{{ vault_database_url }}"</code> と参照すると、どの変数が秘密か一目で分かります。秘密情報を使うタスクには <code>no_log: true</code> を付けてログに出さないようにします。vault パスワード自体は CI のシークレットや <code>--vault-password-file</code> で渡します（秘密情報全般は <a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a>）。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>Shop サーバーを構成するプレイブック例</h2>
+    <p><a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a> の手順 2〜8 をコード化したものです。<code>group_vars</code> に <code>shop_repo</code>、<code>shop_version</code>（Git のタグ）も定義しておきます。</p>
+
+    <h3 id="sec-6-1">6.1 site.yml と common ロール</h3>
+<pre><code># site.yml
+- name: Shop web サーバーを構成する
+  hosts: web
+  become: true
+  roles:
+    - common
+    - nginx
+    - nodejs
+    - shop_app</code></pre>
+<pre><code># roles/common/tasks/main.yml
+- name: パッケージを最新化
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: safe
+    cache_valid_time: 3600
+
+- name: タイムゾーンを設定
+  community.general.timezone:
+    name: Asia/Tokyo
+
+- name: 基本パッケージ（acl は become_user で一般ユーザーになるために必要）
+  ansible.builtin.apt:
+    name: [unattended-upgrades, acl, git]
+    state: present</code></pre>
+    <p>common ロールに入れたいハードニング項目は <a href="60-4_OSのハードニングとパッチ管理.html">60-4 OSのハードニングとパッチ管理</a> を参考にしてください。</p>
+
+    <h3 id="sec-6-2">6.2 nginx ロール</h3>
+<pre><code># roles/nginx/tasks/main.yml
+- name: Nginx をインストール
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+
+- name: Shop 用のサイト設定を配置
+  ansible.builtin.template:
+    src: shop.conf.j2
+    dest: /etc/nginx/sites-available/shop
+    mode: "0644"
+  notify: Reload nginx
+
+- name: サイトを有効化
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/shop
+    dest: /etc/nginx/sites-enabled/shop
+    state: link
+  notify: Reload nginx
+
+- name: default サイトを無効化
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Nginx を起動・自動起動
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true</code></pre>
+    <p>ハンドラーは <strong>同じ名前を listen する 2 つ</strong> にして、「文法チェックが通ったときだけ reload」にします。</p>
+<pre><code># roles/nginx/handlers/main.yml
+- name: Check nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  listen: Reload nginx
+
+- name: Reload nginx service
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  listen: Reload nginx</code></pre>
+    <p><code>nginx -t</code> が失敗すればそこで止まり、壊れた設定で reload されることはありません。</p>
+
+    <h3 id="sec-6-3">6.3 nodejs ロール</h3>
+<pre><code># roles/nodejs/tasks/main.yml
+- name: NodeSource リポジトリを追加
+  ansible.builtin.deb822_repository:
+    name: nodesource
+    types: deb
+    uris: "https://deb.nodesource.com/node_{{ node_major }}.x"
+    suites: nodistro
+    components: main
+    signed_by: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+
+- name: Node.js をインストール
+  ansible.builtin.apt:
+    name: nodejs
+    state: present
+    update_cache: true</code></pre>
+
+    <h3 id="sec-6-4">6.4 shop_app ロール</h3>
+<pre><code># roles/shop_app/tasks/main.yml
+- name: アプリ用ユーザー（ログイン不可）
+  ansible.builtin.user:
+    name: shop
+    system: true
+    home: /opt/shop
+    shell: /usr/sbin/nologin
+
+- name: ソースを取得（指定バージョン）
+  ansible.builtin.git:
+    repo: "{{ shop_repo }}"
+    dest: /opt/shop/app
+    version: "{{ shop_version }}"
+  become_user: shop
+  register: shop_src
+
+- name: 依存関係のインストールとビルド
+  ansible.builtin.shell: npm ci &amp;&amp; npm run build &amp;&amp; npm prune --omit=dev
+  args:
+    chdir: /opt/shop/app
+  become_user: shop
+  when: shop_src.changed
+  notify: Restart shop
+
+- name: 環境変数ファイル（秘密情報を含む）
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/shop.env
+    owner: root
+    group: shop
+    mode: "0640"
+  no_log: true
+  notify: Restart shop
+
+- name: systemd unit を配置
+  ansible.builtin.template:
+    src: shop.service.j2
+    dest: /etc/systemd/system/shop.service
+    mode: "0644"
+  notify: Restart shop
+
+- name: Shop API を起動・自動起動
+  ansible.builtin.systemd_service:
+    name: shop
+    state: started
+    enabled: true
+    daemon_reload: true</code></pre>
+<pre><code># roles/shop_app/templates/shop.service.j2
+[Unit]
+Description=Shop API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=shop
+WorkingDirectory=/opt/shop/app
+EnvironmentFile=/etc/shop.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=on-failure
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+<pre><code># roles/shop_app/handlers/main.yml
+- name: Restart shop
+  ansible.builtin.systemd_service:
+    name: shop
+    state: restarted
+    daemon_reload: true</code></pre>
+    <p>unit ファイルの各項目の意味は <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> で扱っています。</p>
+
+    <h3 id="sec-6-5">6.5 実行</h3>
+<pre><code>ansible-playbook -i inventory/prod.yml site.yml --check --diff --ask-vault-pass  # 確認
+ansible-playbook -i inventory/prod.yml site.yml --ask-vault-pass                 # 適用
+ansible-playbook -i inventory/prod.yml site.yml --limit shop-web-01 ...          # 1 台だけ</code></pre>
+    <p><code>community.general.timezone</code> は community.general コレクションのモジュールです（pipx で入れた <code>ansible</code> パッケージには同梱。<code>ansible-core</code> だけの場合は <code>ansible-galaxy collection install community.general</code>）。HTTPS（certbot）もロールにできますが、最初の 1 回は DNS が向いてからの手動実行にして、更新は certbot のタイマーに任せる運用も現実的です（<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>）。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>Terraform との分担</h2>
+
+    <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="TerraformがVPC、SG、EC2、EIP、RDS、Route 53を作り、outputのIPやタグをインベントリ（静的または動的）に渡す。インベントリをもとにAnsibleがOS設定、Nginx、Node.js、systemdを整え、動いているShopサーバーができる">
+      <defs>
+        <marker id="arw404b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="30" width="160" height="90" rx="8" class="d-box"/>
+      <text x="90" y="56" text-anchor="middle" class="d-text-bold">Terraform</text>
+      <text x="90" y="80" text-anchor="middle" class="d-text-sub">VPC・SG・EC2・EIP</text>
+      <text x="90" y="100" text-anchor="middle" class="d-text-sub">RDS・Route 53</text>
+      <rect x="220" y="40" width="140" height="70" rx="8" class="d-box-warn"/>
+      <text x="290" y="70" text-anchor="middle" class="d-text-bold">インベントリ</text>
+      <text x="290" y="92" text-anchor="middle" class="d-text-sub">静的 or 動的</text>
+      <rect x="410" y="30" width="160" height="90" rx="8" class="d-box-accent"/>
+      <text x="490" y="56" text-anchor="middle" class="d-text-bold">Ansible</text>
+      <text x="490" y="80" text-anchor="middle" class="d-text-sub">OS 設定・Nginx</text>
+      <text x="490" y="100" text-anchor="middle" class="d-text-sub">Node.js・systemd</text>
+      <rect x="610" y="40" width="100" height="70" rx="8" class="d-box-good"/>
+      <text x="660" y="70" text-anchor="middle" class="d-text-bold">Shop</text>
+      <text x="660" y="92" text-anchor="middle" class="d-text-sub">稼働中</text>
+      <path d="M170,75 L218,75" class="d-line" marker-end="url(#arw404b)"/>
+      <text x="194" y="140" text-anchor="middle" class="d-text-sub">output: IP / タグ</text>
+      <path d="M360,75 L408,75" class="d-line" marker-end="url(#arw404b)"/>
+      <path d="M570,75 L608,75" class="d-line" marker-end="url(#arw404b)"/>
+    </svg>
+    <figcaption>図：Terraform が「箱」を作って IP を渡し、Ansible が箱の「中身」を整える</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Terraform</th><th>Ansible</th></tr></thead>
+      <tbody>
+        <tr><td>得意</td><td>クラウドリソースの作成・削除</td><td>サーバー内部の設定</td></tr>
+        <tr><td>状態</td><td>state ファイルで管理</td><td>持たない（毎回実機を確認）</td></tr>
+        <tr><td>削除</td><td>コードから消せば実体も消える</td><td>「消す」には <code>state: absent</code> を明示的に書く</td></tr>
+        <tr><td>実行タイミング</td><td>インフラ変更時</td><td>構築時・設定変更時・定期的なドリフト修正</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>Terraform の <code>user_data</code>（cloud-init＝起動時に初期設定スクリプトを流す仕組み）でも初期設定はできますが、<strong>起動時 1 回だけ</strong> です。継続的な設定変更は Ansible が向いています</li>
+      <li>Ansible でも EC2 を作れますが（<code>amazon.aws</code> コレクション）、状態管理がないので削除や差分把握が苦手です</li>
+      <li><strong>イミュータブル</strong> にしたい場合は、Ansible を Packer から実行して AMI に焼き込み、Terraform はその AMI を使うだけにします（<a href="40-2_IaCとは.html">40-2 IaCとは</a>）</li>
+    </ul>
+
+    <h2 id="sec-8"><span class="num">8.</span>発展：構成管理ツールの比較（ネットワーク自動化の観点）</h2>
+    <p>ネットワーク機器の自動化の観点から、Ansible・Terraform・Puppet・Chef の方式と使い分けを比較します。ネットワーク自動化全体は <a href="40-6_ネットワーク自動化とSDN.html">40-6 ネットワーク自動化とSDN</a> で扱います。</p>
+
+    <h3 id="sec-8-1">8.1 構成管理ツールとは</h3>
+    <p><strong>構成管理ツール</strong> は、機器やサーバーの「あるべき設定」をコード（ファイル）として記述し、そのとおりに自動で設定・維持するツールです。代表は <strong>Ansible・Terraform</strong>、比較対象として <strong>Puppet・Chef</strong> です。</p>
+
+    <h3 id="sec-8-2">8.2 プッシュ型とプル型</h3>
+<pre><code> プッシュ型（Ansible）                     プル型（Puppet / Chef）
+
+  管理サーバ ──SSHで接続して設定を送る──&gt;   管理サーバ &lt;──定期的に設定を取りに行く── エージェント
+       │                    機器             (Puppet Master /          (各機器に
+       ├──────────────────&gt; 機器              Chef Server)              インストール)
+       └──────────────────&gt; 機器
+  ・管理サーバが主体                        ・機器側のエージェントが主体
+  ・エージェント不要                        ・エージェントが必要</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>動作</th><th>代表例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>プッシュ型</strong></td><td><strong>管理サーバが主体</strong> となって機器に接続し、設定を送り込む</td><td><strong>Ansible</strong></td></tr>
+        <tr><td><strong>プル型</strong></td><td>機器に入れた <strong>エージェント</strong> が、定期的に管理サーバへ設定を <strong>取りに行く</strong></td><td><strong>Puppet、Chef</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>ネットワーク機器には追加のソフト（エージェント）を入れられないことが多いため、<strong>エージェント不要のプッシュ型（Ansible）はネットワークの自動化と相性がよい</strong> のです。（「ブロードキャスト型」「ピアツーピア型」は構成管理ツールの方式を表す用語ではありません。）</p>
+
+    <h3 id="sec-8-3">8.3 ツール比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>Ansible</th><th>Terraform</th><th>Puppet</th><th>Chef</th></tr></thead>
+      <tbody>
+        <tr><td>方式</td><td><strong>プッシュ型</strong></td><td>プッシュ型（API 経由）</td><td>プル型</td><td>プル型</td></tr>
+        <tr><td>エージェント</td><td><strong>不要</strong>（SSH / API で接続）</td><td>不要（プロバイダが API を呼ぶ）</td><td>必要</td><td>必要</td></tr>
+        <tr><td>記述言語</td><td><strong>YAML</strong>（プレイブック）</td><td><strong>HCL</strong></td><td>Puppet 独自 DSL（マニフェスト）</td><td><strong>Ruby</strong>（レシピ／クックブック）</td></tr>
+        <tr><td>記述スタイル</td><td>主に <strong>手順的</strong>（タスクを順に実行）</td><td><strong>宣言的</strong>（あるべき状態を書く）</td><td>宣言的</td><td>手順的</td></tr>
+        <tr><td>状態の記録</td><td>なし</td><td><strong>ステートファイル</strong></td><td>―</td><td>―</td></tr>
+        <tr><td>よく使う用途</td><td><strong>機器の設定変更</strong></td><td><strong>リソースの構築</strong>（クラウド、ネットワーク）</td><td>サーバ構成管理</td><td>サーバ構成管理</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">補足：Ansible は手順的？宣言的？</p>
+      <p>Ansible のモジュール自体は冪等に作られており「あるべき状態」を書く側面もありますが、プレイブックはタスクを上から順に実行する手順的な記述です。学習上は「Ansible＝YAML のプレイブックで処理の手順を記述」「Terraform＝HCL で宣言的」と区別します。</p>
+    </div>
+
+    <h3 id="sec-8-4">8.4 Ansible の構成要素（ネットワーク機器の例）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>インベントリ</strong></td><td>管理対象の機器の <strong>ホスト名・IP アドレス・グループ</strong>（routers、switches 等）を書く一覧。「<strong>どの機器に</strong>」</td></tr>
+        <tr><td><strong>プレイブック</strong></td><td>実行する処理の内容と手順を <strong>YAML</strong> で書くファイル。「<strong>何をするか</strong>」</td></tr>
+        <tr><td>モジュール</td><td>個々の処理の部品（例：<code>cisco.ios.ios_vlans</code>、<code>ios_config</code>）</td></tr>
+        <tr><td>変数・テンプレート</td><td>機器ごとに違う値（ホスト名、IP など）の扱い。テンプレートは Jinja2</td></tr>
+      </tbody>
+    </table></div>
+    <p>インベントリの例（INI 形式）：</p>
+<pre><code>[routers]
+R1 ansible_host=10.1.1.1
+R2 ansible_host=10.1.1.2
+
+[switches]
+SW1 ansible_host=10.1.1.11
+SW2 ansible_host=10.1.1.12
+
+[all:vars]
+ansible_network_os=cisco.ios.ios
+ansible_connection=ansible.netcommon.network_cli</code></pre>
+    <p>プレイブックの例（YAML）：</p>
+<pre><code>---
+- name: VLANを作成
+  hosts: switches            # インベントリのグループ名 → SW1, SW2 の全台に実行
+  gather_facts: false
+  tasks:
+    - name: VLAN 10 Sales を作る
+      cisco.ios.ios_vlans:
+        config:
+          - vlan_id: 10
+            name: Sales
+        state: merged</code></pre>
+    <p>実行：</p>
+<pre><code>$ ansible-playbook -i inventory.ini vlan.yml</code></pre>
+    <p>プレイブックで <strong>グループ名を指定すると、そのグループのすべての機器に同じ処理を実行</strong> できます。</p>
+    <p>Ansible の特徴まとめ：</p>
+    <ul>
+      <li><strong>エージェント不要</strong>、<strong>SSH</strong> で接続（API 接続も可）</li>
+      <li><strong>YAML</strong> のプレイブック</li>
+      <li><strong>プッシュ型</strong></li>
+      <li>監視ツールではなく、主に <strong>設定の自動化</strong> ツール（SNMP 監視専用ツールではない）</li>
+    </ul>
+
+    <h3 id="sec-8-5">8.5 Terraform（おさらい）</h3>
+    <ul>
+      <li>インフラの「<strong>あるべき状態</strong>」を <strong>HCL（HashiCorp Configuration Language）</strong> で <strong>宣言的</strong> に記述し、その状態になるようにリソースを作成・変更する。</li>
+      <li><strong>宣言的</strong> ＝「どういう手順で作るか」ではなく「<strong>最終的にどうなっていてほしいか</strong>」を書く。</li>
+      <li>現在の状態を <strong>ステートファイル</strong>（terraform.tfstate）に記録し、書かれた状態との <strong>差分だけを適用</strong> する。</li>
+      <li>クラウドやネットワークのリソースをコードで構築・管理する <strong>IaC（Infrastructure as Code）</strong> の代表的ツール。</li>
+    </ul>
+    <p>HCL の例：</p>
+<pre><code>resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+}
+
+resource "aws_subnet" "web" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+}</code></pre>
+    <p>Terraform の基本ワークフロー：</p>
+<pre><code> terraform init  ──&gt;  terraform plan  ──&gt;  terraform apply   (… terraform destroy)
+   準備                変更内容の確認          適用                 全削除
+ (プロバイダ取得)     (差分の一覧を表示)</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><code>terraform init</code></td><td>作業ディレクトリを初期化し、必要な <strong>プロバイダ（プラグイン）</strong> を準備</td></tr>
+        <tr><td><strong><code>terraform plan</code></strong></td><td>現在の状態と設定ファイルの差分から、<strong>何が作成・変更・削除されるかを表示</strong>（実際には変更しない）</td></tr>
+        <tr><td><code>terraform apply</code></td><td>変更を <strong>実際に適用</strong></td></tr>
+        <tr><td><code>terraform destroy</code></td><td>管理しているリソースを <strong>すべて削除</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p><code>plan</code> で <strong>意図しない削除などがないかを確認してから <code>apply</code></strong> することで、作業ミスによる事故を防げます。</p>
+<pre><code>$ terraform plan
+  + resource "aws_subnet" "web" { cidr_block = "10.0.1.0/24" ... }
+  - resource "aws_subnet" "old" { ... }      ← 意図しない削除がないか確認！
+Plan: 1 to add, 0 to change, 1 to destroy.</code></pre>
+
+    <h3 id="sec-8-6">8.6 Ansible と Terraform の使い分け</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Ansible</th><th>Terraform</th></tr></thead>
+      <tbody>
+        <tr><td>得意</td><td>既存機器の <strong>設定変更</strong></td><td>リソース（VM、VPC、ネットワーク）の <strong>構築</strong></td></tr>
+        <tr><td>ファイル</td><td>インベントリ ＋ プレイブック（YAML）</td><td>設定ファイル（HCL）＋ ステートファイル</td></tr>
+        <tr><td>スタイル</td><td>手順を記述</td><td>あるべき状態を宣言</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-8-7">8.7 ひっかけポイントと押さえておくポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ひっかけポイント・よくある誤解</h4>
+        <ul>
+          <li>「機器ごとにエージェントが必要」は <strong>Puppet / Chef</strong> の特徴。Ansible は <strong>エージェント不要</strong>。</li>
+          <li>「Ruby で記述」は <strong>Chef</strong>。Ansible は YAML。</li>
+          <li>Ansible は監視ツールではない。</li>
+          <li>「HCL で宣言的」＝ <strong>Terraform</strong>。Ansible は YAML のプレイブックで手順を記述。Syslog / NTP はプロトコル。</li>
+          <li>Ansible ＝ <strong>プッシュ型</strong>。プル型は Puppet / Chef。ブロードキャスト型・ピアツーピア型という方式名はない。</li>
+          <li>機器の一覧＝<strong>インベントリ</strong>、処理内容＝<strong>プレイブック</strong>、Terraform の状態記録＝<strong>ステートファイル</strong>、running-config は Cisco 機器の動作中の設定。</li>
+          <li>変更前の確認＝ <strong><code>terraform plan</code></strong>。apply は適用、init は準備、destroy は全削除。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>押さえておくポイント</h4>
+        <ul>
+          <li><strong>Ansible：エージェントレス・SSH・YAML プレイブック・プッシュ型・インベントリ</strong>。</li>
+          <li><strong>Puppet / Chef：エージェント型・プル型。Chef は Ruby</strong>。</li>
+          <li><strong>Terraform：HCL・宣言的・ステートファイル・init → plan → apply</strong>。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li><strong>✕ <code>shell</code> / <code>command</code> で手順書のコマンドを並べれば Ansible 化できる</strong><br>◯ それは「SSH で流すシェルスクリプト」で、冪等になりません。可能な限り専用モジュール（apt、user、template など）を使い、<code>shell</code> には <code>when</code> / <code>creates</code> / <code>changed_when</code> を付けます。</li>
+        <li><strong>✕ プレイブックから行を消せば、サーバーからも消える</strong><br>◯ Ansible は state を持たないので、書かれていないものには何もしません。削除したいときは <code>state: absent</code> のタスクを書きます。</li>
+        <li><strong>✕ 設定ファイルを変えたら、毎回 <code>state: restarted</code> のタスクで再起動する</strong><br>◯ 毎回再起動すると冪等でなくなり、無駄な瞬断も起きます。ハンドラーで「変更があったときだけ」reload / restart します。</li>
+        <li><strong>✕ vault で暗号化すれば、パスワードはどこにも漏れない</strong><br>◯ 実行時のログ（<code>-v</code>）やエラー表示に出ることがあります。<code>no_log: true</code> を付け、配置先ファイルの権限（<code>0640</code> など）も絞ります。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>Ansible はエージェントレスで、SSH 経由でモジュールを送り込んで実行する push 型の構成管理ツール</li>
+      <li>インベントリ（対象）＋プレイブック（何を）＋モジュール（どうやって）で構成する</li>
+      <li>2 回目の実行で <code>changed=0</code> が冪等の証拠。本番前は <code>--check --diff</code></li>
+      <li>ロール・group_vars・Jinja2 テンプレート・ハンドラーで整理し、秘密情報は ansible-vault で暗号化</li>
+      <li>「箱」は Terraform、「中身」は Ansible。イミュータブルにするなら Packer で焼き込む</li>
+      <li>Puppet / Chef はエージェント型・プル型。エージェント不要のプッシュ型の Ansible はネットワーク機器の自動化と相性がよい</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 同じプレイブックを 2 回続けて実行したら、2 回目も <code>changed=3</code> と表示されました。何が疑われますか。</summary>
+      <div class="body"><p>冪等でないタスクがあることが疑われます。<code>command</code> / <code>shell</code> を条件なしで使っている、毎回 <code>state: restarted</code> にしている、テンプレートに実行時刻など毎回変わる値を埋め込んでいる、などが典型例です。</p></div>
+    </details>
+    <details>
+      <summary>Q2. Nginx の設定テンプレートを変更したときだけ Nginx を reload したい。どう書きますか。</summary>
+      <div class="body"><p><code>template</code> タスクに <code>notify: Reload nginx</code> を付け、<code>handlers/main.yml</code> に <code>state: reloaded</code> のハンドラーを定義します。テンプレートの内容が変わって <code>changed</code> になったときだけ、プレイの最後に 1 回 reload されます。さらに <code>nginx -t</code> のハンドラーを同じ名前で listen させれば、文法チェックが通ったときだけ reload できます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. Terraform と Ansible の両方で EC2 を作れるのに、作成を Terraform に任せることが多いのはなぜですか。</summary>
+      <div class="body"><p>Terraform は state で「作ったもの」を把握しているため、差分の確認（plan）や、コードから消したリソースの削除ができます。Ansible は state を持たないので、リソースのライフサイクル全体を管理するのが苦手だからです。</p></div>
+    </details>
+    <details>
+      <summary>Q4. Ansible の管理対象サーバーに、事前に必要なものは何ですか。</summary>
+      <div class="body"><p>SSH で接続できることと Python です。エージェントを常駐させる必要はありません。Ansible 本体はコントロールノード（手元 PC や CI）にだけ入れます。</p></div>
+    </details>
+    <details>
+      <summary>Q5. プレイブックからパッケージのインストールタスクを消しました。次の実行で、サーバーからそのパッケージは消えますか。</summary>
+      <div class="body"><p>消えません。Ansible は state を持たず、書かれていないものには何もしないからです。削除したいときは <code>state: absent</code> のタスクを明示的に書きます。</p></div>
+    </details>
+    <details>
+      <summary>Q6. プッシュ型とプル型の違いと、それぞれの代表的なツールを答えてください。</summary>
+      <div class="body"><p>プッシュ型は管理サーバーが主体となって機器に接続し、設定を送り込みます（Ansible）。プル型は機器に入れたエージェントが定期的に管理サーバーへ設定を取りに行きます（Puppet、Chef）。エージェントを入れにくいネットワーク機器にはプッシュ型が向いています。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 本番に適用する前に、何が変わるかを確かめるには Ansible でどうしますか。</summary>
+      <div class="body"><p><code>ansible-playbook ... --check --diff</code> でドライランします。<code>--check</code> は変更せず「変更されるはず」を表示し、<code>--diff</code> は設定ファイルの差分を表示します。ただし <code>command</code> などチェックモード非対応のタスクは正確に予測できません。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/40_構築・IaC/04_構成管理とAnsible</li>
+      <li>Ansible Documentation https://docs.ansible.com/</li>
+      <li>Installing Ansible (pipx) https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html</li>
+      <li>ansible.builtin.apt module https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html</li>
+      <li>ansible.builtin.template module https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html</li>
+      <li>ansible.builtin.deb822_repository module https://docs.ansible.com/ansible/latest/collections/ansible/builtin/deb822_repository_module.html</li>
+      <li>Handlers: running operations on change https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_handlers.html</li>
+      <li>Protecting sensitive data with Ansible vault https://docs.ansible.com/ansible/latest/vault_guide/index.html</li>
+      <li>NodeSource distributions https://github.com/nodesource/distributions</li>
+      <li>関連ページ：<a href="40-3_Terraform入門.html">40-3 Terraform入門</a>、<a href="40-2_IaCとは.html">40-2 IaCとは</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>、<a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a>、<a href="60-4_OSのハードニングとパッチ管理.html">60-4 OSのハードニングとパッチ管理</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-3_Terraform入門.html"><span class="lbl">← 前のページ</span>Terraform入門</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-5_CloudFormationとCDK.html"><span class="lbl">次のページ →</span>CloudFormationとCDK</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Node.jsアプリを本番で動かす｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 アプリ実行環境 › Node.jsアプリを本番で動かす</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 アプリ実行環境</span>
+      <h1>Node.jsアプリを本番で動かす</h1>
+      <p class="lead">Node.js は <strong>イベントループ 1 本</strong> で動くので、待ち時間の多い仕事には強い一方、CPU を使う重い処理には弱いという特徴があります。このページでは、その特徴が本番運用で何を意味するか、正しい起動方法（ビルド済み JS を <code>node</code> で起動、<code>NODE_ENV=production</code>）、cluster / PM2 / 複数コンテナによるマルチコア活用と PM2 の基本設定、<strong>グレースフルシャットダウン</strong>・メモリ上限・未処理例外への備え、2026 年時点の LTS バージョンの選び方、Nginx の後ろに置く構成を解説します。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/30_アプリ実行環境/02_Node.jsアプリを本番で動かす</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>Node.js は「<strong>とても手際のいい料理人が 1 人で回している厨房</strong>」です。煮込みを火にかけたら待たずに次の注文に取りかかるので、待ち時間の多い仕事（DB や外部 API の呼び出し）なら 1 人で驚くほど多くの注文をさばけます。ただし、この料理人が「玉ねぎ 100 個のみじん切り」（CPU を使う重い処理）を始めると、その間は他の注文がすべて止まります。</p>
+    </div>
+
+    <p>この記事は <a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a> を読んでいると理解しやすいです。本番運用では、上の特徴を前提に次のことを整えます。</p>
+    <ul>
+      <li>料理人を CPU コアの数だけ増やす（cluster / PM2 / コンテナを複数）</li>
+      <li>倒れたらすぐ代わりを立てる（プロセスの自動再起動）</li>
+      <li>閉店時は作りかけの料理を仕上げてから帰る（グレースフルシャットダウン）</li>
+      <li>開発用の道具（ts-node、ホットリロード）は本番の厨房に持ち込まない</li>
+    </ul>
+
+    <h2 id="sec-1"><span class="num">1.</span>イベントループとシングルスレッドの意味</h2>
+
+    <h3 id="sec-1-1">1.1 仕組み</h3>
+    <p>Node.js の JavaScript は <strong>1 本のメインスレッド</strong> 上の <strong>イベントループ（event loop）</strong> で実行されます。DB への問い合わせのような I/O（入出力）は OS や libuv（Node.js 内部のライブラリ）に任せ、結果が返ってきたらコールバックや <code>await</code> の続きを実行します。</p>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="イベントループはリクエスト A を受け取り A の SELECT を PostgreSQL に投げる。待たずにリクエスト B を受け取り B の SELECT を投げる。A の結果が返ったら A のレスポンスを返し、B の結果が返ったら B のレスポンスを返す">
+      <defs>
+        <marker id="arrow-30-2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="40" y="15" width="240" height="50" rx="8" class="d-box-accent"/>
+      <text x="160" y="45" text-anchor="middle" class="d-text-bold">イベントループ（1 スレッド）</text>
+      <rect x="500" y="15" width="180" height="50" rx="8" class="d-box"/>
+      <text x="590" y="45" text-anchor="middle" class="d-text-bold">PostgreSQL</text>
+      <path d="M160,65 L160,320" class="d-line-dash"/>
+      <path d="M590,65 L590,320" class="d-line-dash"/>
+      <text x="150" y="92" text-anchor="end" class="d-text-sub">リクエスト A 受信</text>
+      <text x="375" y="102" text-anchor="middle" class="d-text">A の SELECT を投げる</text>
+      <path d="M160,112 L588,112" class="d-line" marker-end="url(#arrow-30-2a)"/>
+      <text x="150" y="140" text-anchor="end" class="d-text-sub">待たずに B 受信</text>
+      <text x="375" y="150" text-anchor="middle" class="d-text">B の SELECT を投げる</text>
+      <path d="M160,160 L588,160" class="d-line" marker-end="url(#arrow-30-2a)"/>
+      <text x="375" y="200" text-anchor="middle" class="d-text">A の結果</text>
+      <path d="M590,210 L162,210" class="d-line-dash" marker-end="url(#arrow-30-2a)"/>
+      <text x="150" y="232" text-anchor="end" class="d-text-sub">A に返す</text>
+      <text x="375" y="262" text-anchor="middle" class="d-text">B の結果</text>
+      <path d="M590,272 L162,272" class="d-line-dash" marker-end="url(#arrow-30-2a)"/>
+      <text x="150" y="294" text-anchor="end" class="d-text-sub">B に返す</text>
+    </svg>
+    <figcaption>図：DB の応答を待っている間に、1 本のスレッドが次のリクエストを進める</figcaption>
+    </figure>
+
+    <h3 id="sec-1-2">1.2 CPU の重い処理はブロックする</h3>
+    <p>問題は、JavaScript の処理そのものが長いときです。</p>
+    <span class="code-label bad">✕ 悪い例：CPU を占有する同期処理</span>
+<pre><code>app.get("/report", (req, res) =&gt; {
+  const hash = crypto.pbkdf2Sync(req.query.pw as string, "salt", 1_000_000, 64, "sha512"); // 数百ms〜数秒
+  res.json({ hash: hash.toString("hex") });
+});</code></pre>
+    <p>この処理が走っている間、<strong>同じプロセスの他のリクエストは 1 件も処理されません</strong>。ヘルスチェック（生きているかの定期確認）すら応答できず、ロードバランサーから「死んでいる」と判定されることもあります。対策は次のとおりです。</p>
+    <ul>
+      <li><code>pbkdf2Sync</code> などの <code>〜Sync</code> 関数を使わず、非同期版（<code>crypto.pbkdf2</code>、<code>fs.promises</code>）を使う</li>
+      <li>重い計算は <code>worker_threads</code> に逃がす、またはジョブキュー（BullMQ など）でバックグラウンドワーカーに渡す</li>
+      <li>巨大な JSON の <code>JSON.parse</code> / <code>JSON.stringify</code> もブロック要因。ページングでデータ量を抑える</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>本番での起動方法</h2>
+
+    <h3 id="sec-2-1">2.1 ビルドして node で起動する</h3>
+    <p>Shop API は TypeScript で書かれています。開発中は <code>ts-node</code> や <code>tsx --watch</code> で直接動かしますが、本番では <strong>事前に JavaScript にビルドしたものを <code>node</code> で起動</strong> します。</p>
+<pre><code>// package.json（抜粋）
+{
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  }
+}</code></pre>
+<pre><code># サーバー上（またはCI）で
+npm ci                  # package-lock.json どおりに厳密にインストール
+npm run build           # dist/ に JS を出力
+npm prune --omit=dev    # 開発用パッケージを削除
+NODE_ENV=production node dist/server.js</code></pre>
+    <p><strong>ts-node / tsx を本番で使わない理由</strong> は次の 3 つです。</p>
+    <ul>
+      <li>起動のたびに型チェックや変換が走り、起動が遅く、メモリも余計に使う</li>
+      <li>本番に TypeScript コンパイラなどの開発用依存が必要になる</li>
+      <li>ビルドエラーが「本番起動時」に初めて見つかる。ビルドは CI（自動ビルド・テストの仕組み）で済ませ、失敗したらデプロイしない方が安全</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">2026 年時点の補足：Node.js の型除去（type stripping）</p>
+      <p>Node.js 22.18 以降 / 24 では <code>.ts</code> ファイルの型注釈を取り除いて直接実行できるようになりました。ただし型チェックは行われず、<code>enum</code> など一部の構文は対象外です。本番では引き続き「CI で <code>tsc</code> による型チェック＋ビルド → 生成した JS を実行」が無難です。</p>
+    </div>
+
+    <h3 id="sec-2-2">2.2 NODE_ENV=production</h3>
+    <p><code>NODE_ENV</code> は Node.js 本体ではなく <strong>ライブラリやフレームワークが見る慣習的な環境変数</strong> です。Express では <code>production</code> にするとビューテンプレートのキャッシュが有効になり、エラー時にスタックトレース（エラーが起きた場所の一覧）を返さなくなります。設定し忘れると「遅い」「内部情報が漏れる」原因になります。</p>
+
+    <h3 id="sec-2-3">2.3 npm start より node を直接</h3>
+    <p><code>npm start</code> 経由だと、npm がプロセスの間に挟まり、SIGTERM などの <strong>シグナル</strong>（OS がプロセスに送る「止まって」などの合図）がアプリに正しく届かない場合があります。systemd や Dockerfile では <code>node dist/server.js</code> を直接起動するのが確実です。</p>
+<pre><code># Dockerfile の最後（抜粋）
+ENV NODE_ENV=production
+USER node
+CMD ["node", "dist/server.js"]</code></pre>
+
+    <h2 id="sec-3"><span class="num">3.</span>マルチコアを活用する</h2>
+    <p>1 つの Node.js プロセスは基本的に 1 コアしか使いません。4 コアのサーバーで 1 プロセスだけ動かすと、CPU の 75% を遊ばせることになります。方法は 3 つあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方法</th><th>仕組み</th><th>向いている環境</th></tr></thead>
+      <tbody>
+        <tr><td><code>node:cluster</code></td><td>親プロセスが子プロセスを fork（複製して起動）し、同じポートを共有して振り分け</td><td>ライブラリを足したくない場合。ただし自前で再起動処理を書く必要あり</td></tr>
+        <tr><td><strong>PM2 cluster mode</strong></td><td>PM2 が内部で cluster を使い、監視・再起動・ログも面倒を見る</td><td>VM / VPS に直接置く構成（Shop の 1 台構成）</td></tr>
+        <tr><td><strong>複数コンテナ／複数プロセス</strong></td><td>1 プロセス 1 コンテナにして、コンテナ数で増やす</td><td>Docker / ECS / Kubernetes</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>4コアの VPS（PM2 cluster mode）
+Nginx :443 ──▶ :3000 ─┬─ Node プロセス1 (コア1)
+                       ├─ Node プロセス2 (コア2)
+                       ├─ Node プロセス3 (コア3)
+                       └─ Node プロセス4 (コア4)</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">複数プロセスにするならステートレスに</p>
+      <p>プロセス同士はメモリを共有しません。セッションやキャッシュをメモリに持つと、プロセスごとに内容がバラバラになります（<a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a> の「ステートレス」参照）。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>PM2 の基本</h2>
+    <p><strong>PM2</strong> は Node.js 向けのプロセスマネージャーです。プロセスの起動・自動再起動・cluster 化・ログ管理をまとめて行います。</p>
+
+    <h3 id="sec-4-1">4.1 ecosystem.config.js</h3>
+<pre><code>// /srv/shop-api/ecosystem.config.js
+module.exports = {
+  apps: [
+    {
+      name: "shop-api",
+      script: "dist/server.js",
+      cwd: "/srv/shop-api",
+      instances: "max",          // CPU コア数だけ起動（数値指定も可）
+      exec_mode: "cluster",
+      env_production: {
+        NODE_ENV: "production",
+        PORT: 3000,
+      },
+      node_args: "--max-old-space-size=768", // 1プロセスのヒープ上限（MB）
+      max_memory_restart: "900M",  // これを超えたら再起動（リーク対策の保険）
+      kill_timeout: 10000,         // 停止シグナル後、強制終了までの猶予（ms）
+      wait_ready: true,            // process.send('ready') を待ってから online 扱い
+      listen_timeout: 10000,
+      time: true,                  // ログにタイムスタンプ
+    },
+  ],
+};</code></pre>
+
+    <h3 id="sec-4-2">4.2 よく使うコマンド</h3>
+<pre><code>sudo npm install -g pm2
+pm2 start ecosystem.config.js --env production
+pm2 status                # 一覧
+pm2 logs shop-api         # ログ
+pm2 monit                 # CPU・メモリのリアルタイム表示
+pm2 reload shop-api       # 1プロセスずつ入れ替える（cluster mode なら無停止）
+pm2 save                  # 現在のプロセス一覧を保存
+pm2 startup systemd       # OS 起動時に PM2 を自動起動する設定を出力</code></pre>
+    <p><code>restart</code> は全プロセスを一度に止めて起動し直すのに対し、<code>reload</code> は 1 つずつ入れ替えるので、cluster mode ならリクエストを落とさずに更新できます。</p>
+    <div class="callout tip">
+      <p class="callout-title">PM2 か systemd か</p>
+      <p>PM2 を使わず、systemd で <code>node dist/server.js</code> を直接管理する構成も一般的です（1 台に 1 プロセス、またはポートを分けて複数ユニット）。コンテナで動かすなら PM2 は不要で、<code>node</code> を直接起動します。systemd の書き方は <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> を参照してください。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>グレースフルシャットダウン</h2>
+    <p>デプロイや再起動のたびに、処理中のリクエストを途中で切ってしまうと、注文処理が中途半端に終わるなどの事故につながります。<strong>グレースフルシャットダウン（graceful shutdown）</strong> は「新しい注文は断り、作りかけの料理は仕上げてから閉店する」仕組みです。</p>
+    <p>systemd・Docker・Kubernetes はプロセスを止めるときにまず <strong>SIGTERM</strong> を送り、一定時間待っても終わらなければ <strong>SIGKILL</strong> で強制終了します。なお PM2 は既定で <strong>SIGINT</strong> を送ります。そこで両方を受け取れるようにしておきます。</p>
+<pre><code>// src/server.ts
+import http from "node:http";
+import { app } from "./app";
+import { pool } from "./db";
+
+const server = http.createServer(app);
+server.listen(Number(process.env.PORT ?? 3000), "127.0.0.1", () =&gt; {
+  console.log("shop-api listening");
+  process.send?.("ready"); // PM2 の wait_ready 用（PM2 以外では何もしない）
+});
+
+let shuttingDown = false;
+function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received, shutting down`);
+
+  // 1) 新規接続の受付を止め、処理中のリクエストが終わるのを待つ
+  server.close(async (err) =&gt; {
+    // 2) DB プールなどの資源を閉じる
+    await pool.end();
+    process.exit(err ? 1 : 0);
+  });
+
+  // 3) 保険：一定時間で終わらなければ強制終了
+  setTimeout(() =&gt; process.exit(1), 9_000).unref();
+}
+process.on("SIGTERM", () =&gt; shutdown("SIGTERM"));
+process.on("SIGINT", () =&gt; shutdown("SIGINT"));</code></pre>
+    <p>ポイントは次のとおりです。</p>
+    <ul>
+      <li><code>server.close()</code> は新規接続を受け付けなくなり、処理中のリクエストが終わると完了します（Node.js 19 以降はアイドル中の keep-alive 接続も閉じます）</li>
+      <li>自前のタイムアウト（9 秒）は、PM2 の <code>kill_timeout</code>、systemd の <code>TimeoutStopSec</code>、Kubernetes の <code>terminationGracePeriodSeconds</code> より <strong>短く</strong> しておく</li>
+      <li>ロードバランサー配下では、シャットダウン開始時にヘルスチェックを失敗させて振り分けを止めてもらう工夫も有効です（ゼロダウンタイムデプロイの条件）</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>メモリと未処理例外</h2>
+
+    <h3 id="sec-6-1">6.1 メモリ：--max-old-space-size</h3>
+    <p>V8（Node.js の JavaScript エンジン）の <strong>ヒープ</strong>（オブジェクトを置くメモリ領域）には上限があり、超えると <code>JavaScript heap out of memory</code> でプロセスが落ちます。既定の上限は搭載メモリなどから自動で決まるため、<strong>サーバーやコンテナのメモリ上限と合っていない</strong> ことがあります。</p>
+<pre><code>node --max-old-space-size=768 dist/server.js   # ヒープ上限を 768MB に</code></pre>
+    <p>目安は「プロセスに割り当てたいメモリの 75% 前後」です。ヒープ以外（バッファ、ネイティブモジュール）もメモリを使うため、コンテナのメモリ上限ぴったりにはしません。また、4 プロセス動かすなら「4 × 1 プロセスのメモリ」がサーバーに収まるかを確認します。</p>
+
+    <h3 id="sec-6-2">6.2 未処理例外：落ちたら再起動に任せる</h3>
+    <p><code>await</code> し忘れた Promise の失敗（<strong>unhandled rejection</strong>）や、キャッチされなかった例外（<strong>uncaught exception</strong>）が起きると、Node.js 15 以降は <strong>プロセスが終了</strong> します。これは「壊れた状態で動き続けるよりマシ」という設計です。</p>
+<pre><code>process.on("unhandledRejection", (reason) =&gt; {
+  console.error({ msg: "unhandledRejection", reason });
+  throw reason; // uncaughtException に回す
+});
+process.on("uncaughtException", (err) =&gt; {
+  console.error({ msg: "uncaughtException", err });
+  process.exit(1); // ログを残して終了 → PM2/systemd/コンテナ基盤が再起動
+});</code></pre>
+    <ul>
+      <li><code>uncaughtException</code> で握りつぶして動き続けるのは危険です（状態が壊れている可能性がある）</li>
+      <li><strong>ログを残して終了し、プロセスマネージャーに再起動させる</strong> のが定石。だからこそ PM2 / systemd / コンテナの自動再起動が必須です</li>
+      <li>再起動が頻発していないかは監視で気づけるようにします（サーバー監視とログ管理。<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a> も参照）</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>LTS バージョンの選び方（2026 年時点）</h2>
+    <p>Node.js には <strong>Current</strong>（最新機能）と <strong>LTS（Long Term Support、長期サポート）</strong> があります。本番では LTS（Active LTS か Maintenance LTS）を使います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>バージョン</th><th>状態（2026 年 10 月時点）</th><th>サポート終了</th></tr></thead>
+      <tbody>
+        <tr><td>v26</td><td>Current → <strong>2026-10-28 に Active LTS 入り予定</strong></td><td>2029-04-30</td></tr>
+        <tr><td>v24（Krypton）</td><td>Active LTS（2026-10-20 から Maintenance）</td><td>2028-04-30</td></tr>
+        <tr><td>v22（Jod）</td><td>Maintenance LTS</td><td>2027-04-30</td></tr>
+        <tr><td>v20 以前</td><td>サポート終了（EOL）</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <p>選び方の目安は次のとおりです。</p>
+    <ul>
+      <li><strong>新規構築なら v24</strong>。v26 が LTS になってしばらく経ち、依存ライブラリの対応が確認できたら v26 へ</li>
+      <li>v22 は 2027 年 4 月に終わるので、今のうちにアップグレード計画を立てる</li>
+      <li>サポート終了したバージョンにはセキュリティ修正が出ません。<strong>EOL</strong>（End of Life、サポート終了）の日付を運用カレンダーに入れておく</li>
+      <li>Node.js 27 からはリリースが年 1 回になり、すべてのメジャーバージョンが LTS になる方針が発表されています</li>
+    </ul>
+    <p>Ubuntu 24.04 の標準パッケージ（<code>apt install nodejs</code>）は古いことが多いので、NodeSource のリポジトリや公式バイナリ、Docker の <code>node:24-bookworm-slim</code> などの公式イメージでバージョンを固定します。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>Nginx の後ろに置く構成</h2>
+    <p>Node.js は自分で HTTP を話せますが、本番では Nginx を前に置きます。</p>
+<pre><code># /etc/nginx/sites-available/api.shop.example.com（抜粋）
+upstream shop_api {
+    server 127.0.0.1:3000;
+    keepalive 32;                   # Node との接続を再利用
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name api.shop.example.com;
+    # ssl_certificate ... は 20-4 HTTPSとTLS証明書 を参照
+
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass http://shop_api;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";        # upstream keepalive のため
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}</code></pre>
+    <p>証明書の設定は <a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a> を参照してください。アプリ側では、Express に「手前にプロキシが 1 段ある」ことを教えます。これで <code>req.ip</code> や <code>req.protocol</code> が <code>X-Forwarded-*</code> から正しく取れます。</p>
+<pre><code>app.set("trust proxy", 1); // Nginx 1段だけを信頼</code></pre>
+    <p>WebSocket を使う場合は <code>Upgrade</code> / <code>Connection</code> ヘッダーの転送が別途必要です。詳しくは <a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> を参照してください。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td>本番でも <code>ts-node src/server.ts</code> で動かせば楽</td><td>起動が遅くメモリも食い、開発用依存が本番に必要になります。CI でビルドした JS を <code>node</code> で起動しましょう。</td></tr>
+        <tr><td>Node.js は非同期だから重い処理を入れても大丈夫</td><td>非同期なのは I/O だけ。JavaScript の計算はメインスレッドを止め、全リクエストが待たされます。</td></tr>
+        <tr><td><code>uncaughtException</code> をキャッチしておけば落ちない</td><td>壊れた状態で動き続ける方が危険です。ログを残して終了し、自動再起動させます。</td></tr>
+        <tr><td><code>pm2 restart</code> で無停止更新できる</td><td>無停止にしたいなら cluster mode で <code>pm2 reload</code>。さらにグレースフルシャットダウンの実装が必要です。</td></tr>
+        <tr><td>コンテナの中でも PM2 cluster を使うべき</td><td>コンテナでは 1 コンテナ 1 プロセスにし、台数（レプリカ数）で増やすのが基本です。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>Node.js はイベントループ 1 本で動くので、I/O 待ちには強いが CPU の重い処理には弱い</li>
+      <li>本番は「CI でビルド → <code>NODE_ENV=production node dist/server.js</code>」。ts-node / tsx は開発専用</li>
+      <li>マルチコアは PM2 cluster（VM）か、コンテナを複数（Docker / Kubernetes）で使い切る</li>
+      <li>SIGTERM / SIGINT を受けたら <code>server.close()</code> で処理中のリクエストを終えてから止まる</li>
+      <li>メモリ上限を明示し、未処理例外ではログを残して終了 → 自動再起動に任せる</li>
+      <li>バージョンは LTS（2026 年 10 月時点なら v24 が基本、v26 が LTS 入り直前）を使い、EOL を管理する</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 4 コアの VPS で Shop API を node dist/server.js 1 プロセスだけで動かしています。CPU 使用率が 25% 付近で頭打ちなのに応答が遅いのはなぜでしょう？</summary>
+      <div class="body"><p>1 プロセスの Node.js は基本的に 1 コアしか使えないため、そのコアが飽和しています。PM2 cluster mode で 4 プロセスにするか、複数コンテナで動かしてマルチコアを使い切ります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. デプロイのたびに数件の注文 API が 502 エラーになります。アプリ側で何を実装すべきですか？</summary>
+      <div class="body"><p>グレースフルシャットダウンです。SIGTERM（PM2 なら SIGINT）を受けたら <code>server.close()</code> で新規受付を止め、処理中のリクエストを終えてから DB プールを閉じて終了します。あわせて PM2 cluster の <code>reload</code> などで 1 プロセスずつ入れ替えます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 2026 年 10 月に新しくサービスを立ち上げます。Node.js v22 と v24 のどちらを選ぶべきですか？</summary>
+      <div class="body"><p>v24 です。v22 は 2027 年 4 月にサポートが終わるため、すぐにアップグレードが必要になります。v24 は 2028 年 4 月までサポートされます（v26 も 10 月末に LTS 入りする予定）。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 本番で ts-node や tsx を使わず、ビルド済みの JS を node で起動するのはなぜですか？</summary>
+      <div class="body"><p>起動のたびに変換が走って遅くメモリも食うこと、TypeScript コンパイラなどの開発用依存が本番に必要になること、ビルドエラーが本番起動時に初めて見つかることが理由です。ビルドは CI で済ませ、失敗したらデプロイしないようにします。</p></div>
+    </details>
+    <details>
+      <summary>Q5. NODE_ENV=production を設定し忘れると、Express では何が起きますか？</summary>
+      <div class="body"><p>ビューテンプレートのキャッシュが効かずに遅くなり、エラー時にスタックトレースを返して内部情報が漏れる原因になります。</p></div>
+    </details>
+    <details>
+      <summary>Q6. uncaughtException をキャッチしてそのまま動かし続けるのは、なぜ勧められないのですか？</summary>
+      <div class="body"><p>例外が起きた時点でアプリの状態が壊れている可能性があるからです。ログを残して <code>process.exit(1)</code> で終了し、PM2 / systemd / コンテナ基盤に再起動させるのが定石です。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/30_アプリ実行環境/02_Node.jsアプリを本番で動かす</li>
+      <li>Node.js Releases https://nodejs.org/en/about/previous-releases</li>
+      <li>nodejs/Release - Release schedule https://github.com/nodejs/Release</li>
+      <li>Node.js Docs - Don't Block the Event Loop https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop</li>
+      <li>Node.js Docs - Cluster https://nodejs.org/api/cluster.html</li>
+      <li>Node.js Docs - http.Server.close() https://nodejs.org/api/http.html#serverclosecallback</li>
+      <li>Node.js Docs - Running TypeScript Natively https://nodejs.org/en/learn/typescript/run-natively</li>
+      <li>PM2 - Graceful Stop / Graceful Start https://pm2.keymetrics.io/docs/usage/signals-clean-restart/</li>
+      <li>PM2 - Ecosystem File https://pm2.keymetrics.io/docs/usage/application-declaration/</li>
+      <li>Express - Production Best Practices: Performance and Reliability https://expressjs.com/en/advanced/best-practice-performance.html</li>
+      <li>Express - Behind Proxies https://expressjs.com/en/guide/behind-proxies.html</li>
+      <li>関連ページ：<a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a>、<a href="30-3_Pythonアプリを本番で動かす.html">30-3 Pythonアプリを本番で動かす</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a>、<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-1_アプリケーションサーバーとは.html"><span class="lbl">← 前のページ</span>アプリケーションサーバーとは</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-3_Pythonアプリを本番で動かす.html"><span class="lbl">次のページ →</span>Pythonアプリを本番で動かす</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

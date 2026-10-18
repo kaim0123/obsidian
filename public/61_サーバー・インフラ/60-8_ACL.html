@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACL｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 サーバー・ネットワークセキュリティ › ACL</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 サーバー・ネットワークセキュリティ</span>
+      <h1>ACL（アクセスコントロールリスト）</h1>
+      <p class="lead"><strong>ACL</strong> は、ルータを通るパケットを条件に応じて許可・拒否するための、上から順に並んだルールのリストです。このページでは、<strong>標準 ACL と拡張 ACL の違い</strong>、<strong>評価順序（上から順・最初に一致・暗黙の deny any）</strong>、<strong>ワイルドカードマスクの計算</strong>、拡張 ACL の書き方と置き場所、インターフェースと vty への適用、名前付き ACL の編集、確認とトラブルシューティングまでを例題つきで解説します。</p>
+      <p class="meta">もとにしたノート：60_サーバー・ネットワークセキュリティ/08_ACL（アクセスコントロールリスト）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>ACL は書いた順に上から調べ、最初に一致した行だけを適用し、どれにも一致しなければ暗黙の deny any で捨てます。</strong>標準 ACL（送信元だけ）は宛先の近く、拡張 ACL（宛先・ポートも見る）は送信元の近くに置き、インターフェースには <code>ip access-group</code>、vty には <code>access-class</code> で適用します。</p>
+    </div>
+
+    <p>このページは、IP アドレスとサブネットマスクの考え方（11_コンピューターサイエンスの「05IPアドレスとサブネットとゲートウェイ」のノート）と <a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a> を読んでいると理解しやすいです。サーバー側のファイアウォール（ufw）やクラウドのセキュリティグループ・ネットワーク ACL は 60-3 を参照してください。このページでは、<strong>ルータ</strong>で通信を許可・拒否する ACL を扱います。</p>
+    <p>ACL（Access Control List）の 1 行 1 行を <strong>ACE（Access Control Entry）</strong> と呼びます。ネットワークのセキュリティで特によく出てくるテーマなので、仕組み・書式・計算・適用・確認まで一通り身につけましょう。</p>
+    <div class="callout tip">
+      <p class="callout-title">「ACL」という言葉について</p>
+      <p>アプリの認可モデルとしての ACL（リソースごとに「誰が何をできるか」を並べたリスト）もあります。考え方は似ていますが、ここで扱うのはパケットを通すかどうかを決めるネットワーク機器の ACL です。認可モデルの ACL は <a href="../73_認証認可/40-2_RBAC・ABAC・ACLの使い分け.html">73 RBAC・ABAC・ACLの使い分け</a> を参照してください。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>ACL の種類</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>番号</th><th>条件にできるもの</th><th>推奨される適用場所</th></tr></thead>
+      <tbody>
+        <tr><td>標準 ACL</td><td><strong>1〜99</strong>、1300〜1999</td><td><strong>送信元 IP アドレスだけ</strong></td><td><strong>宛先</strong>に近い場所</td></tr>
+        <tr><td>拡張 ACL</td><td><strong>100〜199</strong>、2000〜2699</td><td>プロトコル、送信元 IP、宛先 IP、送信元/宛先ポート番号など</td><td><strong>送信元</strong>に近い場所</td></tr>
+        <tr><td>名前付き ACL</td><td>番号の代わりに名前</td><td>標準（standard）または拡張（extended）を指定</td><td>標準/拡張それぞれの推奨に従う</td></tr>
+      </tbody>
+    </table></div>
+    <p>標準 ACL（1〜99）で条件にできるのは<strong>送信元 IP アドレスだけ</strong>です。宛先 IP アドレス、宛先ポート番号、プロトコル（TCP/UDP）を条件にするには拡張 ACL を使います。</p>
+<pre><code>標準ACL:  access-list 10  permit 192.168.1.0 0.0.0.255
+                          │      └──── 送信元（＋ワイルドカード）だけ
+拡張ACL:  access-list 100 permit tcp 192.168.1.0 0.0.0.255 host 10.1.1.10 eq 80
+                          │      │   └──── 送信元 ────┘  └── 宛先 ──┘  └ 宛先ポート
+                          │      └ プロトコル
+                          └ 動作</code></pre>
+
+    <h2 id="sec-2"><span class="num">2.</span>ACL の評価順序（上から順・最初に一致・暗黙の deny）</h2>
+    <p>ACL の動作は、次の 3 つのルールですべて説明できます。</p>
+    <ol class="steps">
+      <li><strong>上の行から順に</strong>確認する。</li>
+      <li><strong>最初に一致した行</strong>の動作（permit/deny）だけを適用し、そこで確認を<strong>終了</strong>する（下の行は見ない）。</li>
+      <li>どの行にも一致しなければ、最後にある<strong>暗黙の deny any</strong>（設定にも表示されない）で<strong>破棄</strong>する。</li>
+    </ol>
+<pre><code>パケット到着
+   │
+   v
+[1行目に一致？] ──Yes──&gt; 1行目の動作（permit/deny）を実行して終了
+   │No
+   v
+[2行目に一致？] ──Yes──&gt; 2行目の動作を実行して終了
+   │No
+   v
+  ...
+   │No
+   v
+[暗黙の deny any] ─────&gt; 破棄</code></pre>
+    <p>一言でいうと「上の行から順に確認し、最初に一致した行の動作だけを適用する」です。次のような理解は誤りです。</p>
+    <ul>
+      <li>「すべての行を確認し、<strong>最後に</strong>一致した行を使う」→ 最初に一致した行です。</li>
+      <li>「<strong>deny を先に</strong>確認し、そのあと permit」→ 種類に関係なく<strong>書かれた順</strong>です。</li>
+      <li>「条件が<strong>最も具体的な行</strong>を優先」→ ルーティングの<strong>ロンゲストマッチ</strong>（最も長く一致する経路を選ぶ規則）と混同しています。ACL は書いた順番がすべてです。</li>
+    </ul>
+    <p>このため、ACL は<strong>具体的な条件の行を上に、広い条件の行を下に</strong>書くのが基本です。</p>
+    <span class="code-label bad">✕ 悪い例：permit any が先頭にあるので、2 行目の deny は一度も使われない</span>
+<pre><code>access-list 10 permit any
+access-list 10 deny   host 192.168.1.5</code></pre>
+    <span class="code-label good">◯ 良い例：具体的な deny を先に、広い permit を後に</span>
+<pre><code>access-list 10 deny   host 192.168.1.5
+access-list 10 permit any</code></pre>
+
+    <h3 id="sec-2-1">2.1 暗黙の deny any</h3>
+    <p>ACL の最後には、設定に表示されない「<strong>すべての通信を拒否する（deny any）</strong>」が必ずあります。「permit any」ではありません。「直前のルールを繰り返す」ような動作もなく、「暗黙のルールは存在しない」わけでもありません。</p>
+<pre><code>access-list 10 deny host 192.168.1.5
+(access-list 10 deny any)       ← 表示されないが必ず存在する</code></pre>
+
+    <h3 id="sec-2-2">2.2 例題：deny だけの ACL</h3>
+    <p>問題：192.168.1.5 の PC だけを止めるつもりで <code>access-list 10 deny host 192.168.1.5</code> だけを作り、インターフェースに適用しました。結果はどうなるでしょうか。</p>
+<pre><code>ステップ1: 実際に評価される行を書き出す（暗黙の行も含める）
+    1行目  deny host 192.168.1.5
+    暗黙   deny any
+
+ステップ2: 送信元 192.168.1.5 のパケットを当てはめる
+    1行目に一致 → deny（破棄）
+
+ステップ3: 送信元 192.168.1.20 のパケットを当てはめる
+    1行目に不一致 → 暗黙の deny any に一致 → 破棄
+
+ステップ4: 結論
+    permit の行が1つもないので、すべての送信元からの通信が拒否される</code></pre>
+    <p>よくある勘違いも確認しておきます。</p>
+    <ul>
+      <li>「192.168.1.5 だけ拒否され、他は許可される」→ permit の行がないので、他も拒否されます。</li>
+      <li>「192.168.1.5 だけが許可される」→ deny を指定しているので逆です。</li>
+      <li>「permit がないので ACL は無視される」→ permit がなくても ACL は有効で、すべてを拒否します。</li>
+    </ul>
+    <p>意図どおりにするには 2 行目を追加します。</p>
+<pre><code>R1(config)# access-list 10 permit any</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">実務の注意</p>
+      <p>「deny だけの ACL はすべてを止める」は実務でもよくある事故です。リモート（SSH）から ACL を変更・適用すると、<strong>自分の管理用の接続まで切ってしまう</strong>ことがあります。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>ワイルドカードマスク</h2>
+    <p>ACL でアドレスの範囲を指定するには、サブネットマスクではなく<strong>ワイルドカードマスク</strong>を使います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ビット</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>0</strong></td><td>そのビットは<strong>一致が必要</strong>（チェックする）</td></tr>
+        <tr><td><strong>1</strong></td><td>そのビットは<strong>どの値でもよい</strong>（無視する）</td></tr>
+      </tbody>
+    </table></div>
+    <p>サブネットマスクとは 0 と 1 の意味が<strong>逆</strong>です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指定</th><th>意味</th><th>キーワードでの書き方</th></tr></thead>
+      <tbody>
+        <tr><td><code>192.168.1.5 0.0.0.0</code></td><td>全ビット一致が必要 → <strong>1 台だけ</strong></td><td><code>host 192.168.1.5</code></td></tr>
+        <tr><td><code>0.0.0.0 255.255.255.255</code></td><td>全ビットどの値でもよい → <strong>すべてのアドレス</strong></td><td><code>any</code></td></tr>
+        <tr><td><code>192.168.1.0 0.0.0.255</code></td><td>先頭 3 オクテットが一致すればよい → 192.168.1.0/24</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-1">3.1 計算方法：255.255.255.255 からサブネットマスクを引く</h3>
+<pre><code>  255.255.255.255
+− 255.255.255.0     （/24 のサブネットマスク）
+─────────────────
+    0.  0.  0.255   ← ワイルドカードマスク</code></pre>
+    <p>例題：標準 ACL で 192.168.1.0/24 全体を許可します。<code>access-list 10 permit 192.168.1.0</code> の後に指定するワイルドカードマスクは何でしょうか。</p>
+<pre><code>ステップ1: /24 のサブネットマスクは 255.255.255.0
+ステップ2: 255.255.255.255 − 255.255.255.0 = 0.0.0.255
+ステップ3: 意味の確認
+           0.0.0.255 → 前の3オクテット（192.168.1）は一致が必要、最後のオクテットはどの値でもよい
+           → 192.168.1.0 〜 192.168.1.255
+答え: access-list 10 permit 192.168.1.0 0.0.0.255</code></pre>
+    <p>ほかの値を書いた場合の意味は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>値</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>255.255.255.0</td><td>サブネットマスクそのもの。ワイルドカードでは意味が逆になる</td></tr>
+        <tr><td>0.0.0.0</td><td>192.168.1.0 の 1 つのアドレスだけ（host と同じ）</td></tr>
+        <tr><td>255.255.255.255</td><td>すべてのアドレス（any と同じ）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-2">3.2 速算法：最後のオクテット＝ブロックサイズ − 1</h3>
+    <p><strong>ブロックサイズ</strong>は、そのサブネットに含まれるアドレスの数（256 − サブネットマスクの第 4 オクテット）です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プレフィックス</th><th>サブネットマスク（第4オクテット）</th><th>ブロックサイズ</th><th>ワイルドカード（第4オクテット）</th></tr></thead>
+      <tbody>
+        <tr><td>/24</td><td>0</td><td>256</td><td>255</td></tr>
+        <tr><td>/25</td><td>128</td><td>128</td><td>127</td></tr>
+        <tr><td>/26</td><td>192</td><td>64</td><td><strong>63</strong></td></tr>
+        <tr><td>/27</td><td>224</td><td>32</td><td>31</td></tr>
+        <tr><td>/28</td><td>240</td><td>16</td><td>15</td></tr>
+        <tr><td>/29</td><td>248</td><td>8</td><td>7</td></tr>
+        <tr><td>/30</td><td>252</td><td>4</td><td>3</td></tr>
+        <tr><td>/32</td><td>255</td><td>1</td><td>0（host）</td></tr>
+      </tbody>
+    </table></div>
+    <p>例題：192.168.1.64/26（192.168.1.64〜192.168.1.127）を指定するワイルドカードマスクは何でしょうか。</p>
+<pre><code>ステップ1: /26 のサブネットマスク → 255.255.255.192
+ステップ2: 反転する → 255 − 192 = 63 → 0.0.0.63
+          （速算：/26 のブロックサイズは 256 − 192 = 64 → 64 − 1 = 63）
+ステップ3: 範囲の検算
+          192.168.1.64  = ...0100 0000
+          ワイルドカード63 = ...0011 1111   ← 下位6ビットはどの値でもよい
+          → 192.168.1.64（01 000000）〜 192.168.1.127（01 111111）  ✔
+答え: access-list 10 permit 192.168.1.64 0.0.0.63</code></pre>
+    <p>間違えやすい値は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>値</th><th>なぜ合わないか</th></tr></thead>
+      <tbody>
+        <tr><td>0.0.0.64</td><td>ブロックサイズ 64 をそのまま書いている。ワイルドカードは<strong>ブロックサイズ − 1</strong></td></tr>
+        <tr><td>255.255.255.192</td><td>/26 のサブネットマスク。ワイルドカードではない</td></tr>
+        <tr><td>0.0.0.127</td><td>/25 のワイルドカード。192.168.1.0〜127 になり<strong>広すぎる</strong></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">補足</p>
+      <p>ACL では、指定したアドレスとワイルドカードマスクの組み合わせで「0 のビットだけを比較」します。アドレス部分はネットワークアドレス（ブロックの先頭）で書くのが原則です。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>拡張 ACL の書式</h2>
+<pre><code>access-list 番号 {permit|deny} プロトコル 送信元 ワイルドカード [ポート条件] 宛先 ワイルドカード [ポート条件]</code></pre>
+    <ul>
+      <li>番号：100〜199（および 2000〜2699）</li>
+      <li>プロトコル：<code>ip</code>（すべての IP）、<code>tcp</code>、<code>udp</code>、<code>icmp</code> など</li>
+      <li>アドレス：<code>any</code>、<code>host X.X.X.X</code>、<code>X.X.X.X ワイルドカード</code></li>
+      <li>ポート条件：<code>eq 80</code>（等しい）、<code>neq</code>、<code>lt</code>、<code>gt</code>、<code>range 20 21</code> など。<strong>送信元の後に書けば送信元ポート、宛先の後に書けば宛先ポート</strong></li>
+    </ul>
+    <p>よく使うポート番号は次のとおりです（ポート番号の基礎は 11_コンピューターサイエンスの「06ポート番号とファイアウォール基礎」のノートも参考になります）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>サービス</th><th>プロトコル/ポート</th></tr></thead>
+      <tbody>
+        <tr><td>FTP</td><td>TCP 20/21</td></tr>
+        <tr><td>SSH</td><td><strong>TCP 22</strong></td></tr>
+        <tr><td>Telnet</td><td><strong>TCP 23</strong></td></tr>
+        <tr><td>SMTP</td><td>TCP 25</td></tr>
+        <tr><td>DNS</td><td>UDP 53（TCP 53 も）</td></tr>
+        <tr><td>DHCP</td><td>UDP 67/68</td></tr>
+        <tr><td>TFTP</td><td>UDP 69</td></tr>
+        <tr><td>HTTP</td><td><strong>TCP 80</strong></td></tr>
+        <tr><td>HTTPS</td><td><strong>TCP 443</strong></td></tr>
+        <tr><td>SNMP</td><td>UDP 161/162</td></tr>
+        <tr><td>TACACS+</td><td>TCP 49</td></tr>
+        <tr><td>RADIUS</td><td>UDP 1812/1813</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-1">4.1 例題：拡張 ACL を書く</h3>
+    <p>問題：192.168.1.0/24 の PC から、Web サーバ 10.1.1.10 への <strong>HTTP 通信だけ</strong>を許可する拡張 ACL の行を書きます。</p>
+<pre><code>ステップ1: 必要な要素を書き出す
+          プロトコル … HTTP は TCP
+          送信元     … 192.168.1.0/24 → 192.168.1.0 0.0.0.255
+          宛先       … 10.1.1.10 の1台 → host 10.1.1.10（= 10.1.1.10 0.0.0.0）
+          宛先ポート … HTTP = 80 → eq 80
+          番号       … 拡張なので 100〜199
+ステップ2: 「プロトコル 送信元 宛先 eq ポート」の順に並べる
+答え: access-list 100 permit tcp 192.168.1.0 0.0.0.255 host 10.1.1.10 eq 80</code></pre>
+    <p>次のように書くと意図どおりになりません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>書き方</th><th>なぜ合わないか</th></tr></thead>
+      <tbody>
+        <tr><td><code>... permit udp ... eq 80</code></td><td>HTTP は TCP。UDP を指定すると HTTP 通信に一致しない</td></tr>
+        <tr><td><code>... permit tcp host 10.1.1.10 192.168.1.0 0.0.0.255 eq 80</code></td><td><strong>送信元と宛先が逆</strong>。拡張 ACL では送信元を先に書く</td></tr>
+        <tr><td><code>access-list 10 permit tcp ...</code></td><td>番号 10 は<strong>標準 ACL</strong>（1〜99）なので、宛先やポートを指定できない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-2">4.2 例題：ACL を読み取る</h3>
+<pre><code>access-list 101 deny tcp any host 10.1.1.1 eq 23
+access-list 101 permit ip any any</code></pre>
+<pre><code>ステップ1: 1行目を「プロトコル 送信元 宛先 ポート」に分解
+          deny | tcp | any（送信元：すべて）| host 10.1.1.1（宛先：1台）| eq 23（宛先ポート：Telnet）
+          → 「どこからでも、10.1.1.1 宛ての Telnet を拒否」
+ステップ2: 2行目
+          permit | ip（すべてのIP通信）| any | any → 「残りはすべて許可」
+ステップ3: 暗黙の deny any は、2行目ですべて一致するため実質的に使われない
+結論: 10.1.1.1 へのTelnetだけを拒否し、それ以外の通信はすべて許可する</code></pre>
+    <p>読み間違えやすい点です。</p>
+    <ul>
+      <li>「10.1.1.1 <strong>からの</strong>すべての通信を拒否」ではありません。10.1.1.1 は<strong>宛先</strong>で、拒否しているのは Telnet だけです。</li>
+      <li>「すべての通信を拒否」ではありません。2 行目の <code>permit ip any any</code> で Telnet 以外は許可されます。</li>
+      <li>「10.1.1.1 への SSH を拒否」ではありません。SSH は <strong>TCP 22</strong> で、拒否しているのは 23 番（Telnet）です。</li>
+    </ul>
+    <p>最後の <code>permit ip any any</code> がないと、暗黙の deny any によってすべての通信が止まってしまう点も合わせて押さえましょう。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>ACL の適用場所（標準は宛先の近く、拡張は送信元の近く）</h2>
+    <figure>
+    <svg viewBox="0 0 720 240" role="img" aria-label="PC-A（192.168.1.10）から R1、R2、R3 を通って Server-X（10.3.3.3）と Server-Y（10.3.3.4）へつながる構成。送信元に近い R1 には拡張 ACL を、宛先に近い R3 の Server-X 側には標準 ACL を置く">
+      <defs>
+        <marker id="arw1608a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="70" width="120" height="56" rx="8" class="d-box"/>
+      <text x="70" y="94" text-anchor="middle" class="d-text-bold">PC-A</text>
+      <text x="70" y="114" text-anchor="middle" class="d-text-sub">192.168.1.10</text>
+      <rect x="170" y="74" width="80" height="48" rx="8" class="d-box-good"/>
+      <text x="210" y="104" text-anchor="middle" class="d-text-bold">R1</text>
+      <rect x="310" y="74" width="80" height="48" rx="8" class="d-box"/>
+      <text x="350" y="104" text-anchor="middle" class="d-text-bold">R2</text>
+      <rect x="450" y="74" width="80" height="48" rx="8" class="d-box-warn"/>
+      <text x="490" y="104" text-anchor="middle" class="d-text-bold">R3</text>
+      <rect x="580" y="30" width="130" height="50" rx="8" class="d-box-accent"/>
+      <text x="645" y="52" text-anchor="middle" class="d-text-bold">Server-X</text>
+      <text x="645" y="70" text-anchor="middle" class="d-text-sub">10.3.3.3</text>
+      <rect x="580" y="118" width="130" height="50" rx="8" class="d-box"/>
+      <text x="645" y="140" text-anchor="middle" class="d-text-bold">Server-Y</text>
+      <text x="645" y="158" text-anchor="middle" class="d-text-sub">10.3.3.4</text>
+      <path d="M130,98 L170,98" class="d-line"/>
+      <path d="M250,98 L310,98" class="d-line"/>
+      <path d="M390,98 L450,98" class="d-line"/>
+      <path d="M530,90 L580,60" class="d-line"/>
+      <path d="M530,106 L580,140" class="d-line"/>
+      <path d="M210,180 L210,126" class="d-line" marker-end="url(#arw1608a)"/>
+      <text x="210" y="200" text-anchor="middle" class="d-text">拡張 ACL はここ</text>
+      <text x="210" y="220" text-anchor="middle" class="d-text-sub">送信元の近くで早めに止める</text>
+      <path d="M490,180 L490,126" class="d-line" marker-end="url(#arw1608a)"/>
+      <text x="490" y="200" text-anchor="middle" class="d-text">標準 ACL はここ</text>
+      <text x="490" y="220" text-anchor="middle" class="d-text-sub">Server-X 側のインターフェース</text>
+    </svg>
+    <figcaption>図：送信元しか見ない標準 ACL は宛先の近く、宛先まで指定できる拡張 ACL は送信元の近くに置く</figcaption>
+    </figure>
+    <p><strong>目的：PC-A から Server-X への通信だけを止め、PC-A から Server-Y への通信は通したい</strong>とします。</p>
+    <ul>
+      <li><strong>標準 ACL</strong> は送信元しか見ないので、<code>deny host 192.168.1.10</code> を送信元に近い R1 に置くと、PC-A から <strong>Server-Y への必要な通信まで</strong>止めてしまいます。→ <strong>宛先に近い</strong> R3（Server-X 側のインターフェース）に置くのが基本です。</li>
+      <li><strong>拡張 ACL</strong> は宛先・ポートまで指定できるので、<code>deny ip host 192.168.1.10 host 10.3.3.3</code> を<strong>送信元に近い</strong> R1 に置けば、Server-Y への通信は通しつつ、不要な通信を<strong>早い段階で</strong>止められます。宛先の近くに置くと、最終的に破棄される通信がネットワーク内（R1→R2→R3）を長く流れて<strong>帯域を無駄</strong>にします。</li>
+    </ul>
+    <p>拡張 ACL を置く場所として正しいのは「止めたい通信の<strong>送信元にできるだけ近い場所</strong>」です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>考え方</th><th>判定</th></tr></thead>
+      <tbody>
+        <tr><td>送信元にできるだけ近い場所</td><td>◯（拡張 ACL の推奨）</td></tr>
+        <tr><td>宛先にできるだけ近い場所</td><td>✕（これは<strong>標準 ACL</strong> の推奨）</td></tr>
+        <tr><td>どこに置いても効果は同じ</td><td>✕（止められる範囲や無駄に流れる通信量が変わる）</td></tr>
+        <tr><td>必ずコア層のスイッチ</td><td>✕（コア層は高速転送に専念させ、細かいフィルタは置かないことが多い）</td></tr>
+      </tbody>
+    </table></div>
+    <p>覚え方は「<strong>拡張は送信元の近く、標準は宛先の近く</strong>」です。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>インターフェースへの適用：ip access-group</h2>
+    <p>ACL は<strong>作成しただけでは効果がありません</strong>。インターフェースに<strong>方向を指定して</strong>適用する必要があります。</p>
+<pre><code>R1(config)# access-list 100 permit tcp 192.168.1.0 0.0.0.255 host 10.1.1.10 eq 80
+R1(config)# interface g0/0
+R1(config-if)# ip access-group 100 in       ← 受信方向（インターフェースに入ってくるパケット）</code></pre>
+    <p>方向の考え方は「<strong>ルータから見て</strong>」です。</p>
+<pre><code>             in（ルータに入る）           out（ルータから出る）
+  LAN ─────────────────&gt; [g0/0  R1  g0/1] ─────────────────&gt; WAN</code></pre>
+    <p>ACL 100 をインターフェースの受信方向に適用するコマンドは <code>ip access-group 100 in</code>（インターフェース設定モード）です。似たコマンドとの違いは次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>実際の意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>ip access-group 100 in</code></td><td>◯ インターフェースに受信方向で適用</td></tr>
+        <tr><td><code>access-class 100 in</code></td><td><strong>vty</strong>（Telnet/SSH のライン）に ACL を適用して、機器へのリモートログインを制限するコマンド</td></tr>
+        <tr><td><code>ip access-list 100 in</code></td><td><strong>存在しない</strong>コマンド。<code>ip access-list</code> は名前付き ACL を<strong>作成</strong>するとき（例：<code>ip access-list extended WEB</code>）</td></tr>
+        <tr><td><code>service-policy input 100</code></td><td><strong>QoS</strong>（通信の優先制御）のポリシーをインターフェースに適用するコマンド</td></tr>
+      </tbody>
+    </table></div>
+    <p>ルール：1 つのインターフェースに適用できる ACL は、<strong>1 方向・1 プロトコル（IPv4/IPv6）ごとに 1 つまで</strong>です（例：g0/0 に IPv4 の in 1 つ、IPv4 の out 1 つ、IPv6 の in 1 つ…）。</p>
+    <p>適用状況は <code>show ip interface</code> で確認します。</p>
+<pre><code>R1# show ip interface g0/0
+GigabitEthernet0/0 is up, line protocol is up
+  Internet address is 192.168.1.1/24
+  ...
+  Outgoing access list is not set
+  Inbound  access list is 100
+  ...</code></pre>
+
+    <h2 id="sec-7"><span class="num">7.</span>名前付き ACL とシーケンス番号</h2>
+    <p>名前付き ACL は、用途がわかる名前を付けられ、<strong>シーケンス番号</strong>（各行に付く並び順の番号）で行単位の編集ができます。</p>
+<pre><code>R1(config)# ip access-list extended WEB
+R1(config-ext-nacl)# 10 permit tcp any host 10.1.1.10 eq 80
+R1(config-ext-nacl)# 20 deny   ip any host 10.1.1.10
+R1(config-ext-nacl)# permit ip any any            ← 番号なし → 最後に追加（30）
+R1(config-ext-nacl)# exit
+R1(config)# interface g0/0
+R1(config-if)# ip access-group WEB in</code></pre>
+    <p>例題：10 と 20 の間に行を追加します。</p>
+<pre><code>R1(config)# ip access-list extended WEB
+R1(config-ext-nacl)# 15 permit tcp any host 10.1.1.10 eq 443</code></pre>
+<pre><code>R1# show access-lists WEB
+Extended IP access list WEB
+    10 permit tcp any host 10.1.1.10 eq www
+    15 permit tcp any host 10.1.1.10 eq 443      ← 番号で指定した位置に挿入された
+    20 deny ip any host 10.1.1.10
+    30 permit ip any any</code></pre>
+    <ul>
+      <li>各行にはデフォルトで <strong>10、20、30…</strong> と 10 ずつ間隔を空けたシーケンス番号が付きます。</li>
+      <li>間に行を<strong>挿入</strong>できます（例：15）。</li>
+      <li><code>no 20</code> のように番号を指定して<strong>1 行だけ削除</strong>できます。</li>
+      <li><strong>番号を付けずに入力した行は ACL の最後</strong>に追加されます（自動で 10 と 20 の間には入りません）。</li>
+      <li>「作り直すしかない」のは、番号付き ACL を昔の方法（グローバル設定の <code>access-list</code> コマンド）で編集する場合の話です。</li>
+      <li>「順番は関係ない」は誤りです。ACL は上から順に確認されるので<strong>順番はとても重要</strong>です。</li>
+    </ul>
+<pre><code>R1(config)# ip access-list extended WEB
+R1(config-ext-nacl)# no 20                        ← 20番の行だけ削除
+R1(config-ext-nacl)# exit
+R1(config)# ip access-list resequence WEB 10 10    ← 番号を10から10刻みに振り直す</code></pre>
+    <p>名前付きの標準 ACL は <code>ip access-list standard 名前</code> で作ります。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>確認とトラブルシューティング</h2>
+<pre><code>R1# show access-lists
+Standard IP access list 10
+    10 deny   192.168.1.5 (3 matches)
+    20 permit any (152 matches)
+Extended IP access list 101
+    10 deny tcp any host 10.1.1.1 eq telnet (15 matches)
+    20 permit ip any any (2048 matches)</code></pre>
+    <p>各行（ACE）に何個のパケットが一致したかは <strong><code>show access-lists</code></strong> で確認します（各行末の <code>(15 matches)</code>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>わかること</th></tr></thead>
+      <tbody>
+        <tr><td><code>show access-lists</code>（<code>show ip access-lists</code>）</td><td>ACL の内容と、<strong>各行の一致数</strong></td></tr>
+        <tr><td><code>show ip interface</code></td><td>どのインターフェースに、どの ACL が、<strong>どの方向</strong>で適用されているか（一致数は出ない）</td></tr>
+        <tr><td><code>show running-config</code></td><td>設定全体（適用コマンドも含む）</td></tr>
+        <tr><td><code>show ip route</code></td><td>ルーティングテーブル（ACL とは無関係）</td></tr>
+        <tr><td><code>show ip nat translations</code></td><td>NAT の変換テーブル（ACL とは無関係）</td></tr>
+      </tbody>
+    </table></div>
+    <p>トラブルシューティングの手順は次のとおりです。</p>
+    <ol class="steps">
+      <li><code>show ip interface</code> で「どこに・どの向きで」適用されているかを見る。</li>
+      <li><code>show access-lists</code> で「どの行に一致しているか」（カウンタ）を見る。</li>
+      <li>期待した行のカウンタが増えていない場合は、次を疑う：上の行に先に一致している（順番の問題）／適用したインターフェースや方向（in/out）が間違っている／暗黙の deny any で落ちている（どの行のカウンタも増えない）。</li>
+      <li><code>clear access-list counters</code> でカウンタをリセットして再テストすると分かりやすい。</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>vty への ACL 適用：access-class</h2>
+    <p>機器への SSH/Telnet の接続元を制限するには、ACL を <strong>vty ライン</strong>に <code>access-class</code> で適用します（vty については <a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a>）。</p>
+<pre><code>R1(config)# access-list 10 permit 192.168.100.0 0.0.0.255    ! 管理用PCのネットワーク
+R1(config)# line vty 0 4
+R1(config-line)# access-class 10 in
+R1(config-line)# transport input ssh
+R1(config-line)# login local</code></pre>
+<pre><code>                     ┌──────────── R1 ────────────┐
+管理用PC 192.168.100.5 ─SSH─&gt; │ vty: access-class 10 in → 許可 → ログイン画面 │
+一般PC   192.168.1.20  ─SSH─&gt; │ vty: access-class 10 in → 拒否（接続拒否）     │
+                     └─────────────────────────────┘
+       ※ R1を「通過」するパケットには影響しない（それは ip access-group の役目）</code></pre>
+    <p>vty への接続元を制限するコマンドは <code>access-class 10 in</code>（line vty 0 4 の設定モード）です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>適用先・役割</th></tr></thead>
+      <tbody>
+        <tr><td><code>access-class 10 in</code></td><td><strong>vty</strong> への接続を、ACL で許可した送信元だけに制限</td></tr>
+        <tr><td><code>ip access-group 10 in</code></td><td><strong>インターフェース</strong>を通過するパケットを制御。line vty モードでは使えない</td></tr>
+        <tr><td><code>transport input ssh</code></td><td>vty で使える接続方式を SSH だけにする（Telnet 禁止）。接続元の制限はしない</td></tr>
+        <tr><td><code>login local</code></td><td>ローカルユーザーで認証する。接続元の制限はしない</td></tr>
+      </tbody>
+    </table></div>
+    <p>覚え方は「<strong>インターフェースには ip access-group、vty には access-class</strong>」です。3 つ（access-class・transport input ssh・login local）を組み合わせると、機器への管理アクセスを安全に制限できます。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>よくある誤解</h2>
+    <ul>
+      <li>標準 ACL は<strong>送信元だけ</strong>。宛先・ポート・プロトコルは拡張 ACL です。</li>
+      <li>ACL の最後は<strong>暗黙の deny any</strong>（permit any ではない）。deny だけの ACL は<strong>すべてを止めます</strong>。permit がなくても ACL は無視されません。</li>
+      <li>ACL は<strong>最初に一致した行</strong>で終了します。最後の一致でも、deny 優先でも、最長一致（ロンゲストマッチ）でもありません。</li>
+      <li>ワイルドカードはサブネットマスクと 0/1 が逆。<strong>ブロックサイズ − 1</strong>（64 ではなく 63）。0.0.0.0＝host、255.255.255.255＝any。/25 の 0.0.0.127 は /26 には広すぎます。</li>
+      <li>拡張 ACL は<strong>送信元→宛先</strong>の順。HTTP は <strong>TCP</strong>。番号 10 は標準 ACL なのでポート指定はできません。</li>
+      <li>「host 10.1.1.1」が宛先の位置にあれば「10.1.1.1 <strong>への</strong>」通信です。23 は Telnet、22 は SSH。</li>
+      <li>拡張は<strong>送信元の近く</strong>、標準は<strong>宛先の近く</strong>。コア層に必ず置くわけではありません。</li>
+      <li>インターフェースは <code>ip access-group</code>、vty は <code>access-class</code>。<code>ip access-list 100 in</code> は存在しません。<code>service-policy</code> は QoS です。</li>
+      <li>1 インターフェースに、1 方向・1 プロトコルごとに 1 つの ACL。</li>
+      <li>名前付き ACL で番号なしの行は<strong>末尾</strong>に追加されます。順番は重要です。</li>
+      <li>一致数は <code>show access-lists</code>、適用場所と方向は <code>show ip interface</code> で見ます。</li>
+    </ul>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <ul>
+      <li>標準（1〜99）＝送信元のみ・宛先の近く／拡張（100〜199）＝詳細条件・送信元の近く。</li>
+      <li>評価順序：上から順・最初の一致で終了・最後は暗黙の deny any。具体的な行を上に。</li>
+      <li>ワイルドカード＝255.255.255.255 − サブネットマスク（最後のオクテットはブロックサイズ − 1）。</li>
+      <li>拡張 ACL 書式：<code>access-list 番号 動作 プロトコル 送信元 WC 宛先 WC eq ポート</code>。</li>
+      <li>適用：<code>ip access-group 番号 in|out</code>（インターフェース）、<code>access-class 番号 in</code>（vty）。</li>
+      <li>名前付き ACL はシーケンス番号で挿入（<code>15 ...</code>）・削除（<code>no 20</code>）が可能。</li>
+      <li>確認：<code>show access-lists</code>（matches）と <code>show ip interface</code>（適用状況）。</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 標準 ACL で条件にできるのは何ですか？</summary>
+      <div class="body"><p>送信元 IP アドレスだけです。宛先 IP・ポート番号・プロトコルを条件にするには拡張 ACL（100〜199）を使います。</p></div>
+    </details>
+    <details>
+      <summary>Q2. <code>access-list 10 deny host 192.168.1.5</code> だけを適用すると、192.168.1.20 からの通信はどうなりますか？</summary>
+      <div class="body"><p>拒否されます。1 行目には一致しませんが、最後の暗黙の deny any に一致するためです。他を通したいなら <code>access-list 10 permit any</code> を追加します。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 1 行目が <code>permit any</code>、2 行目が <code>deny host 192.168.1.5</code> の ACL では、192.168.1.5 は止まりますか？</summary>
+      <div class="body"><p>止まりません。ACL は上から順に調べて最初に一致した行で終わるので、すべてが 1 行目の permit any に一致し、2 行目は一度も使われません。具体的な行を上に書きます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 192.168.1.64/26 を指定するワイルドカードマスクは何ですか？</summary>
+      <div class="body"><p>0.0.0.63 です。/26 のマスクは 255.255.255.192 なので 255 − 192 = 63（ブロックサイズ 64 − 1）になります。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 拡張 ACL を送信元の近くに置くのはなぜですか？</summary>
+      <div class="body"><p>宛先やポートまで指定できるので、必要な通信を巻き込まずに不要な通信だけを早い段階で止められ、捨てられる通信がネットワーク内を流れて帯域を無駄にしないためです。標準 ACL は送信元しか見ないので、巻き込みを避けるため宛先の近くに置きます。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 機器への SSH 接続を管理用ネットワークからだけに制限するには、どのコマンドを使いますか？</summary>
+      <div class="body"><p>line vty で <code>access-class 10 in</code> を使います（ACL 10 で管理用ネットワークを permit）。<code>ip access-group</code> はインターフェースを通過するパケット用です。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 名前付き ACL で、10 と 20 の間に行を入れるにはどうしますか？</summary>
+      <div class="body"><p><code>ip access-list extended 名前</code> に入り、<code>15 permit ...</code> のようにシーケンス番号を付けて入力します。番号を付けないと末尾に追加されます。</p></div>
+    </details>
+    <details>
+      <summary>Q8. ACL のどの行に何回一致したかを見るコマンドは何ですか？</summary>
+      <div class="body"><p><code>show access-lists</code> です。どのインターフェースにどの方向で適用されているかは <code>show ip interface</code> で確認します。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/08_ACL（アクセスコントロールリスト）</li>
+      <li>関連ノート（解説ページなし）：11_コンピューターサイエンス/60_ネットワーク・Web/62_IP・ルーティング・中継機器/05IPアドレスとサブネットとゲートウェイ、同/06ポート番号とファイアウォール基礎</li>
+      <li>関連ページ：<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a>、<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>、<a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a></li>
+      <li>他の章：<a href="../73_認証認可/40-2_RBAC・ABAC・ACLの使い分け.html">73 RBAC・ABAC・ACLの使い分け</a>、<a href="../71_セキュリティ基礎/50-1_ネットワークと端末の防御.html">71 ネットワークと端末の防御</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-7_AAA.html"><span class="lbl">← 前のページ</span>AAA</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-9_L2セキュリティ.html"><span class="lbl">次のページ →</span>L2セキュリティ</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

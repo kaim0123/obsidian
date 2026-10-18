@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スケーリングの基本｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 スケーリング・負荷分散 › スケーリングの基本</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 スケーリング・負荷分散</span>
+      <h1>スケーリングの基本</h1>
+      <p class="lead">アクセスが増えてサーバーが苦しくなったとき、取れる手は <strong>1 台を大きくする（スケールアップ）</strong> か <strong>台数を増やす（スケールアウト）</strong> の 2 つです。このページでは、両者の違いとどちらを先に選ぶか、増やす前に「どこが詰まっているか（ボトルネック）」を調べる方法、スケールアウトの前提となる <strong>ステートレス化</strong>、DB のスケールの考え方、Shop が 1 台から複数台へ育っていく段階、キャパシティ計画の入口までを解説します。</p>
+      <p class="meta">もとにしたノート：61_サーバー・インフラ/50_スケーリング・負荷分散/01_スケーリングの基本</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>スケールアップは 1 台を大きく、スケールアウトは台数を増やすことです。<strong>増やす前にまず計測してボトルネックを特定</strong> し、スケールアウトするなら <strong>サーバーに状態を持たせない（ステートレス化）</strong> のが前提です。DB は最後に詰まりやすいので別の手順で手を打ちます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>スケーリングとは：ラーメン屋の例え</h2>
+    <p>ラーメン屋が繁盛して行列ができたとき、取れる手は 2 つあります。1 つは <strong>店主の腕を上げて大きな寸胴鍋に替える</strong>（1 人を強くする）。もう 1 つは <strong>店員を雇い、厨房を増やす</strong>（人数を増やす）。前者は簡単ですが限界があり、店主が倒れたら店は閉まります。後者は限界が遠く、1 人休んでも営業できますが、「誰がどのお客さんの注文を受けたか」をメモで共有する仕組みが必要になります。</p>
+    <p>サーバーの <strong>スケーリング（Scaling：処理能力を増やすこと）</strong> もまったく同じです。</p>
+    <ul>
+      <li><strong>スケールアップ（Scale Up／垂直スケーリング）</strong>：1 台のサーバーを大きくする（CPU・メモリを増やす）</li>
+      <li><strong>スケールアウト（Scale Out／水平スケーリング）</strong>：同じ役割のサーバーを並べて台数を増やす</li>
+      <li>逆方向はそれぞれ <strong>スケールダウン</strong>（小さくする）、<strong>スケールイン</strong>（台数を減らす）</li>
+      <li>スケールアウトの前提は <strong>ステートレス（Stateless：サーバー自身が利用者ごとの状態を持たない）</strong> にすること</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>スケールアップとスケールアウトの比較</h2>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="左はスケールアップ。2 vCPU・4GBのサーバーをインスタンスタイプ変更で8 vCPU・32GBの大きなサーバーにする。右はスケールアウト。ロードバランサーが同じAPIサーバー3台にリクエストを振り分ける">
+      <defs>
+        <marker id="arw1501a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="170" y="28" text-anchor="middle" class="d-text-bold">スケールアップ（垂直）</text>
+      <rect x="20" y="110" width="110" height="60" rx="8" class="d-box"/>
+      <text x="75" y="137" text-anchor="middle" class="d-text">2 vCPU</text>
+      <text x="75" y="156" text-anchor="middle" class="d-text-sub">4GB</text>
+      <path d="M130,140 L200,140" class="d-line" marker-end="url(#arw1501a)"/>
+      <text x="165" y="128" text-anchor="middle" class="d-text-sub">タイプ変更</text>
+      <rect x="205" y="60" width="130" height="160" rx="8" class="d-box-accent"/>
+      <text x="270" y="133" text-anchor="middle" class="d-text-bold">8 vCPU</text>
+      <text x="270" y="155" text-anchor="middle" class="d-text-sub">32GB</text>
+
+      <path d="M370,40 L370,230" class="d-line-dash"/>
+
+      <text x="550" y="28" text-anchor="middle" class="d-text-bold">スケールアウト（水平）</text>
+      <rect x="395" y="110" width="90" height="60" rx="8" class="d-box"/>
+      <text x="440" y="145" text-anchor="middle" class="d-text-bold">LB</text>
+      <rect x="580" y="50" width="120" height="44" rx="8" class="d-box-accent"/>
+      <text x="640" y="77" text-anchor="middle" class="d-text">API #1</text>
+      <rect x="580" y="118" width="120" height="44" rx="8" class="d-box-accent"/>
+      <text x="640" y="145" text-anchor="middle" class="d-text">API #2</text>
+      <rect x="580" y="186" width="120" height="44" rx="8" class="d-box-accent"/>
+      <text x="640" y="213" text-anchor="middle" class="d-text">API #3</text>
+      <path d="M485,130 L578,74" class="d-line" marker-end="url(#arw1501a)"/>
+      <path d="M485,140 L578,140" class="d-line" marker-end="url(#arw1501a)"/>
+      <path d="M485,150 L578,206" class="d-line" marker-end="url(#arw1501a)"/>
+    </svg>
+    <figcaption>図：スケールアップは 1 台を大きくし、スケールアウトは同じサーバーを並べてロードバランサーで振り分ける</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>スケールアップ（垂直）</th><th>スケールアウト（水平）</th></tr></thead>
+      <tbody>
+        <tr><td>やること</td><td>インスタンスタイプを大きくする</td><td>同じサーバーを増やし、<a href="50-2_ロードバランサーの仕組み.html">ロードバランサー</a>で振り分ける</td></tr>
+        <tr><td>アプリの改修</td><td>ほぼ不要</td><td>ステートレス化が必要</td></tr>
+        <tr><td>上限</td><td>1 台の最大サイズで頭打ち</td><td>理論上はかなり遠い（ただし DB など共有部分が先に詰まる）</td></tr>
+        <tr><td>停止</td><td>クラウドでもタイプ変更には再起動が必要なことが多い</td><td>1 台ずつ入れ替えれば無停止</td></tr>
+        <tr><td>障害への強さ</td><td>1 台なので <strong>単一障害点（SPOF）</strong> のまま</td><td>1 台落ちても残りで動く</td></tr>
+        <tr><td>コスト</td><td>大きいサイズほど割高になりやすい</td><td>小さい台を必要な数だけ。自動増減（<a href="50-3_オートスケーリング.html">オートスケーリング</a>）と相性が良い</td></tr>
+        <tr><td>向いているもの</td><td>DB（特に書き込み）、初期のとりあえずの対処</td><td>Web／API サーバー、ワーカー</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>単一障害点（SPOF：Single Point of Failure）</strong> とは、そこが 1 つ壊れたら全体が止まる部品のことです（<a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a> でくわしく扱います）。</p>
+
+    <h3 id="sec-2-1">2.1 実務での順番</h3>
+    <ol class="steps">
+      <li>まずは <strong>計測してボトルネックを特定</strong> する</li>
+      <li>コード・クエリを改善する（インデックス追加など）</li>
+      <li>足りなければ <strong>スケールアップ</strong></li>
+      <li>それでも足りない、または可用性が必要なら <strong>スケールアウト</strong></li>
+    </ol>
+    <p>これが定番の順番です。スケールアップは「時間を買う」手段としてとても有効で、恥ずかしいことではありません。</p>
+
+    <div class="callout tip">
+      <p class="callout-title">スケールアップの再起動</p>
+      <p>AWS EC2 でインスタンスタイプを変えるには、インスタンスを一度 <strong>停止</strong> する必要があります（2026 年時点）。1 台構成ならその間 Shop は止まります。メンテナンス時間を告知するか、先に 2 台構成にしておくのが安全です。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>ボトルネックの見つけ方</h2>
+    <p><strong>ボトルネック（Bottleneck：瓶の首のように一番細くて流れを制限している所）</strong> を直さずに台数を増やしても、効果はありません。例えば DB が詰まっているのに API サーバーを 10 台にすると、DB への接続数が 10 倍になって <strong>むしろ悪化</strong> します。</p>
+    <p>調べる順番の目安と、Ubuntu 24.04 で使える基本コマンドです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>資源</th><th>詰まったときの症状</th><th>確認コマンド</th><th>見る値</th></tr></thead>
+      <tbody>
+        <tr><td>CPU</td><td>応答が全体的に遅い、ロードアベレージが高い</td><td><code>top</code>、<code>mpstat -P ALL 1</code></td><td><code>%us</code>（アプリ）が高い／<code>%wa</code> が高いならディスク待ち</td></tr>
+        <tr><td>メモリ</td><td>突然プロセスが死ぬ（OOM Killer）、スワップ多発</td><td><code>free -h</code>、<code>vmstat 1</code></td><td><code>available</code> が少ない、<code>si/so</code>（スワップ入出力）が 0 でない</td></tr>
+        <tr><td>ディスク I/O</td><td>書き込みやログ出力で固まる</td><td><code>iostat -xz 1</code></td><td><code>%util</code> が 100% 近い、<code>await</code>（待ち時間）が大きい</td></tr>
+        <tr><td>ネットワーク</td><td>大きなファイル配信で遅い、帯域上限</td><td><code>sar -n DEV 1</code>、<code>ss -s</code></td><td>送受信量がインスタンスの帯域上限付近、接続数が異常</td></tr>
+        <tr><td>DB</td><td>API は暇なのに遅い</td><td><code>pg_stat_activity</code>、スロークエリログ</td><td>長時間実行のクエリ、ロック待ち、接続数上限</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>OOM Killer</strong> は、メモリが足りなくなったときに Linux がプロセスを強制終了する仕組みです。</p>
+<pre><code># sysstat（mpstat / iostat / sar）は Ubuntu では別パッケージ
+sudo apt install -y sysstat
+
+# 1 秒ごとに全 CPU コアの使用率
+mpstat -P ALL 1
+
+# ディスクごとの使用率と待ち時間
+iostat -xz 1
+
+# PostgreSQL：いま実行中で長いクエリ
+sudo -u postgres psql -c "
+  SELECT pid, now() - query_start AS duration, state, left(query, 80)
+  FROM pg_stat_activity
+  WHERE state &lt;&gt; 'idle'
+  ORDER BY duration DESC;"</code></pre>
+    <p>コマンドで一時的に見るだけでなく、<strong>監視（メトリクスの継続記録）</strong> があれば「いつから」「何と一緒に」上がったのかが分かります。監視の仕組みは 66_可観測性の「04_サーバー監視とログ管理の基本」のノートと、可観測性体系の MOC を参照してください（観測性の考え方は <a href="../41_アーキテクチャ/50-2_観測性.html">41 観測性</a> にもあります）。</p>
+
+    <div class="callout tip">
+      <p class="callout-title">「アプリは暇なのに遅い」は外部待ち</p>
+      <p>API サーバーの CPU が 10% なのにレスポンスが 2 秒かかるなら、時間は DB や外部 API の <strong>待ち</strong> に使われています。このとき API サーバーを増やしても速くなりません。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>スケールアウトの前提：ステートレス化</h2>
+    <p>1 台のときは何も考えずに済んでいたことが、2 台になると問題になります。</p>
+<pre><code>利用者 A ─ ログイン ─▶ API #1（メモリにセッション保存）
+利用者 A ─ カートを見る ─▶ API #2（「誰？」→ ログイン画面へ）  ← 事故</code></pre>
+    <p>これを防ぐには、<strong>サーバーのメモリやローカルディスクに「状態」を置かない</strong> ことです。どの API サーバーに当たっても同じ結果になれば、自由に台数を増減できます。</p>
+
+    <h3 id="sec-4-1">4.1 何をどこへ出すか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>状態</th><th>1 台時代の置き場所</th><th>スケールアウト後の置き場所</th></tr></thead>
+      <tbody>
+        <tr><td>ログインセッション</td><td>プロセスのメモリ（express-session の MemoryStore など）</td><td>Redis（ElastiCache 等）や DB。または署名付きトークン（JWT）で状態をクライアント側に持たせる</td></tr>
+        <tr><td>アップロードファイル（商品画像）</td><td><code>/var/www/shop/uploads</code></td><td>オブジェクトストレージ（S3 など）。配信は <a href="50-4_CDNによる負荷軽減.html">CDN</a> から</td></tr>
+        <tr><td>アプリ内キャッシュ</td><td>プロセス内の Map</td><td>共有キャッシュ（Redis）。プロセス内キャッシュは「消えても困らない短命なもの」だけ</td></tr>
+        <tr><td>定期実行（cron）</td><td>各サーバーの crontab</td><td>1 か所だけで動く仕組み（専用ワーカー、EventBridge Scheduler 等）。全台で動くと二重実行になる</td></tr>
+        <tr><td>ログ</td><td>ローカルファイル</td><td>ログ集約基盤へ送る（66_可観測性の「04_ログ集約基盤」のノート）</td></tr>
+        <tr><td>設定・シークレット</td><td>サーバー上で手編集</td><td>環境変数・シークレットストア（<a href="30-5_設定と環境変数・シークレット.html">設定と環境変数・シークレット</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Redis</strong> は、メモリ上で動く高速なデータの置き場（キー・バリュー型のデータストア）で、複数のサーバーから共通に使えます。<strong>JWT</strong> は署名付きのトークンで、改ざんされていないことをサーバーが確かめられます（<a href="../74_セッション管理/30-2_JWTの構造と検証.html">74 JWTの構造と検証</a>）。</p>
+
+    <h3 id="sec-4-2">4.2 セッションを Redis に置く例</h3>
+<pre><code>// Shop API（Express）：セッションを Redis に置く例
+import session from "express-session";
+import { RedisStore } from "connect-redis";
+import { createClient } from "redis";
+
+const redisClient = createClient({ url: process.env.REDIS_URL });
+await redisClient.connect();
+
+app.use(
+  session({
+    store: new RedisStore({ client: redisClient, prefix: "shop:sess:" }),
+    secret: process.env.SESSION_SECRET!,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: true, httpOnly: true, sameSite: "lax" },
+  }),
+);</code></pre>
+    <p>セッション管理の詳細は <a href="../74_セッション管理/00-0_目次.html">74 セッション管理</a>（特に <a href="../74_セッション管理/20-2_セッションとCookieによるログイン.html">セッションとCookieによるログイン</a>）を参照してください。「同じ利用者を同じサーバーへ送る」<strong>スティッキーセッション</strong> で回避する方法もありますが、サーバーが落ちたら状態が消えるので、根本対策はあくまでステートレス化です（<a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a>）。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>DB のスケール</h2>
+    <p>Web／API サーバーはステートレスにすれば簡単に増やせますが、<strong>DB は状態そのもの</strong> なので単純には増やせません。多くのシステムで、最後に詰まるのは DB です。手を打つ順番の目安は次のとおりです。</p>
+    <ol class="steps">
+      <li><strong>クエリとインデックスの改善</strong>：遅いクエリを <code>EXPLAIN ANALYZE</code> で調べる。最も安く効果が大きい</li>
+      <li><strong>コネクションプーリング</strong>：API を増やすと DB 接続が増える。PgBouncer や RDS Proxy で束ねる（<a href="30-6_データベースサーバーの運用.html">データベースサーバーの運用</a>）</li>
+      <li><strong>スケールアップ</strong>：DB は垂直スケールが基本。メモリを増やしてキャッシュに載せる</li>
+      <li><strong>キャッシュ</strong>：よく読まれる商品一覧などを Redis に置き、DB に届く読み取りを減らす</li>
+      <li><strong>リードレプリカ（Read Replica：読み取り専用の複製）</strong>：読み取りを複製に分散。ただし複製には少し遅れ（レプリケーションラグ）がある</li>
+      <li><strong>シャーディング（Sharding：データを分割して複数 DB に分ける）</strong>：最終手段。アプリの設計が大きく変わる</li>
+    </ol>
+    <p>5 と 6、および整合性の問題は分散システムの領域なので、詳しくは 68_分散システムと 62_データアーキテクチャのノート（それぞれの MOC）を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>Shop が 1 台から複数台へ育つ段階</h2>
+    <p>このサイトでは、架空の EC サイト「Shop」（Node.js の API、PostgreSQL、Nginx）を例に、構成がどう育つかを追っています。</p>
+    <ol class="steps">
+      <li><strong>段階 1：1 台</strong>　Nginx ＋ Shop API ＋ PostgreSQL（EC2 1 台）<br>→ DB と API が CPU・メモリを奪い合うようになったら次へ</li>
+      <li><strong>段階 2：DB 分離</strong>　EC2（Nginx ＋ API）＋ RDS PostgreSQL<br>→ API 1 台が限界・SPOF になったら次へ</li>
+      <li><strong>段階 3：スケールアウト</strong>　ALB ＋ API ×2 以上 ＋ RDS。セッションは Redis／画像は S3<br>→ 波のあるアクセス・静的ファイルが重くなったら次へ</li>
+      <li><strong>段階 4：自動化と負荷軽減</strong>　Auto Scaling ＋ CloudFront（CDN）＋ リードレプリカ／キャッシュ<br>→ 止まると売上が消える段階になったら次へ</li>
+      <li><strong>段階 5：高可用性</strong>　マルチ AZ・RDS Multi-AZ、SPOF の排除</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>きっかけ</th><th>主な作業</th><th>該当ページ</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>サービス開始</td><td>1 台に全部入り</td><td><a href="40-1_サーバー構築の流れ.html">サーバー構築の流れ</a></td></tr>
+        <tr><td>2</td><td>DB と API がリソースを奪い合う、バックアップが不安</td><td>DB を RDS に移す</td><td><a href="30-6_データベースサーバーの運用.html">データベースサーバーの運用</a></td></tr>
+        <tr><td>3</td><td>API の CPU が常に高い、1 台落ちると全停止</td><td>ステートレス化 → LB の後ろに 2 台</td><td><a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a></td></tr>
+        <tr><td>4</td><td>セール時だけ急増、画像配信が重い</td><td>オートスケーリング、CDN</td><td><a href="50-3_オートスケーリング.html">オートスケーリング</a>、<a href="50-4_CDNによる負荷軽減.html">CDNによる負荷軽減</a></td></tr>
+        <tr><td>5</td><td>停止時間の目標ができた</td><td>マルチ AZ、冗長化</td><td><a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>大事なのは <strong>全部を最初からやらない</strong> ことです。段階 1 で月間数万 PV は十分さばけます。早すぎる分散は、運用の手間と障害点を増やすだけです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>キャパシティ計画の入口</h2>
+    <p><strong>キャパシティ計画（Capacity Planning）</strong> は「いつ・どれだけ増やすか」を事前に決めることです。最低限次の 3 つを押さえます。</p>
+    <ol class="steps">
+      <li><strong>現状の上限を測る</strong>：負荷試験ツール（k6、wrk など）で、API 1 台が何 RPS（1 秒あたりリクエスト数）までレイテンシ（応答までの待ち時間）を保てるかを測る</li>
+      <li><strong>ピークを見積もる</strong>：普段の何倍のアクセスが来るか（セール、テレビ放映、月末）</li>
+      <li><strong>余裕を持つ</strong>：CPU 使用率 100% を上限と考えない。目安として平常時 40〜60% 程度に収めると、急増や 1 台故障に耐えられる</li>
+    </ol>
+<pre><code># k6 での簡単な負荷試験（別マシンから実行する）
+# 50 仮想ユーザーで 2 分間、商品一覧 API を叩く
+k6 run --vus 50 --duration 2m - &lt;&lt;'EOF'
+import http from "k6/http";
+export default function () {
+  http.get("https://api.shop.example.com/products");
+}
+EOF</code></pre>
+    <p>例えば「API 1 台で 200 RPS、ピーク予測 900 RPS、1 台壊れても耐えたい」なら、900 ÷ 200 = 4.5 → 5 台、さらに 1 台故障分で <strong>6 台</strong> が目安です（N+1 の考え方は <a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a>）。詳しい性能計測・計画は 67_パフォーマンスのノート（MOC）を参照してください。</p>
+
+    <div class="callout warn">
+      <p class="callout-title">本番に負荷試験をかけない</p>
+      <p>本番環境に予告なしで負荷試験をすると、それ自体が障害になります。クラウドによっては事前申請や規約上の制限もあります。本番と同じ構成のステージング環境で行いましょう。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>遅くなったら台数を増やせばいい</td><td>ボトルネックが DB なら API を増やすと悪化します。まず計測です。</td></tr>
+        <tr><td>スケールアウトのほうが常に優れている</td><td>アプリ改修と運用の複雑さが増えます。小さいうちはスケールアップで十分なことが多いです。</td></tr>
+        <tr><td>ロードバランサーを置けばそのまま複数台にできる</td><td>セッションやアップロードファイルをサーバー内に持っていると、ログインが切れたり画像が見つからなくなったりします。</td></tr>
+        <tr><td>DB もリードレプリカを足せばどんどんスケールする</td><td>レプリカで増やせるのは読み取りだけです。書き込みは 1 台（プライマリ）に集まります。</td></tr>
+        <tr><td>cron は全台に同じ設定を入れておけばいい</td><td>全台で同時に実行され、メールの二重送信などが起きます。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>スケールアップは 1 台を大きく、スケールアウトは台数を増やす。前者は簡単だが限界と SPOF がある</li>
+      <li>増やす前に CPU・メモリ・ディスク・ネットワーク・DB のどこが詰まっているかを計測する</li>
+      <li>スケールアウトの前提はステートレス化。セッションは Redis、ファイルは S3、ログは集約基盤へ出す</li>
+      <li>DB は最後に詰まりやすい。クエリ改善 → プーリング → スケールアップ → キャッシュ・レプリカ → シャーディングの順</li>
+      <li>Shop は 1 台 → DB 分離 → LB＋複数台 → 自動化と CDN → 高可用性と段階的に育てる</li>
+      <li>キャパシティ計画は「1 台の上限 × ピーク予測 × 余裕」で台数を見積もる</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. API サーバーの CPU 使用率は 15% なのに、レスポンスが遅いです。API サーバーを 2 倍に増やすのは良い対策でしょうか。</summary>
+      <div class="body"><p>良い対策ではない可能性が高いです。CPU が暇なのに遅いのは、DB や外部 API の待ちに時間を使っているからです。まず <code>pg_stat_activity</code> やスロークエリログで DB を調べます。API を増やすと DB 接続が増え、かえって悪化することもあります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. Shop API を 2 台にしたところ、「ログインしたのに次の画面でログアウトされる」と報告がありました。原因と根本対策は何でしょうか。</summary>
+      <div class="body"><p>セッションを各 API サーバーのメモリに保存しているため、2 回目のリクエストが別のサーバーに届くと「知らない人」になります。根本対策はセッションを Redis などの共有ストアに出す（ステートレス化する）ことです。スティッキーセッションは応急処置にすぎません。</p></div>
+    </details>
+    <details>
+      <summary>Q3. API 1 台で 150 RPS さばけ、ピークは 600 RPS の見込みです。1 台故障しても耐えるには何台必要でしょうか。</summary>
+      <div class="body"><p>600 ÷ 150 = 4 台がピークに必要な台数です。1 台故障に備えて +1 で <strong>5 台</strong> です（N+1）。実際には CPU の余裕も考えて、さらに少し多めにすることがあります。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 各 API サーバーの crontab に「毎朝 9 時にお知らせメールを送る」処理を入れて 3 台に増やしました。何が起きますか。</summary>
+      <div class="body"><p>3 台すべてで同時に実行され、メールが 3 通ずつ届く二重（三重）送信が起きます。定期実行は専用ワーカーや EventBridge Scheduler など、1 か所だけで動く仕組みに移します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 読み取りが多く DB が苦しいので、リードレプリカを追加しました。書き込みもこれで分散できますか。</summary>
+      <div class="body"><p>できません。リードレプリカで分散できるのは読み取りだけで、書き込みはプライマリ 1 台に集まります。また複製には少し遅れ（レプリケーションラグ）があります。書き込みまで分けるにはシャーディングが必要ですが、アプリの設計が大きく変わる最終手段です。</p></div>
+    </details>
+    <details>
+      <summary>Q6. スケールアップを選ぶのはどんなときで、注意点は何ですか。</summary>
+      <div class="body"><p>DB（特に書き込み）や、サービス初期にとりあえず時間を買いたいときに向きます。アプリの改修はほぼ不要ですが、1 台の最大サイズで頭打ちになり、1 台なので SPOF のままです。EC2 ではタイプ変更に停止が必要なので、1 台構成なら止まる時間を告知するか、先に 2 台構成にしておきます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/50_スケーリング・負荷分散/01_スケーリングの基本</li>
+      <li>Change the instance type - Amazon EC2 https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-resize.html</li>
+      <li>PostgreSQL Documentation: The Cumulative Statistics System (pg_stat_activity) https://www.postgresql.org/docs/current/monitoring-stats.html</li>
+      <li>sysstat（Ubuntu パッケージ） https://packages.ubuntu.com/noble/sysstat</li>
+      <li>connect-redis（npm） https://www.npmjs.com/package/connect-redis</li>
+      <li>Grafana k6 Documentation https://grafana.com/docs/k6/latest/</li>
+      <li>関連ページ：<a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a>、<a href="50-3_オートスケーリング.html">オートスケーリング</a>、<a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a>、<a href="30-6_データベースサーバーの運用.html">データベースサーバーの運用</a>、<a href="../74_セッション管理/00-0_目次.html">74 セッション管理</a>、<a href="../41_アーキテクチャ/50-2_観測性.html">41 観測性</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-6_ネットワーク自動化とSDN.html"><span class="lbl">← 前のページ</span>ネットワーク自動化とSDN</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-2_ロードバランサーの仕組み.html"><span class="lbl">次のページ →</span>ロードバランサーの仕組み</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

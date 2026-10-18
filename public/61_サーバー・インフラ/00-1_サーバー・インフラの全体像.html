@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サーバー・インフラの全体像｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › サーバー・インフラの全体像</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>サーバー・インフラの全体像</h1>
+      <p class="lead">このページは「61_サーバー・インフラ」全体の地図です。<strong>インフラ</strong> とは何か、10〜60 の 6 つのフォルダが何を扱い、なぜこの順番で並んでいるのか、61〜69 の運用領域の中で 61 がどこに位置するのか、11_コンピューターサイエンスやセキュリティの章（71〜74）とどう分担しているのかを説明します。後半では、現役 SRE による動画「インフラ完全攻略」の内容をまとめ、インフラを学ぶ理由と学び方、5 段階のロードマップを紹介します。</p>
+      <p class="meta">もとにしたノート：61_サーバー・インフラ/00_全体像/MOC_サーバー・インフラ体系、61_サーバー・インフラ/00_全体像/MOC_運用領域マップ、61_サーバー・インフラ/00_全体像/【永久保存版】インフラ完全攻略 - 現役エンジニア向け（動画メモ：りょうま@インフラ攻略、https://www.youtube.com/watch?v=xVHJ-8ZaTyo）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>サーバー・インフラは、<strong>アプリを動かす器（サーバー・Web サーバー・実行環境）と、それを用意し（構築・IaC）、増やし（スケーリング）、守る（セキュリティ）方法</strong> です。このシリーズは EC サイト「Shop」を 1 台構成から冗長構成まで育てながら、10 → 20 → 30 → 40 → 50 → 60 の順に学びます。61 は運用領域（61〜69）の最初の土台で、ここを学んでから 62 データアーキテクチャ、63 AWS へ進みます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>インフラとは何か</h2>
+    <p><strong>インフラ</strong>（インフラストラクチャー、基盤）とは、書いたアプリを <strong>安定して動かすための土台</strong> のことです。家にたとえると、アプリが「家具や部屋の使い方」なら、インフラは「土地・建物・電気・水道・玄関の鍵」にあたります。どんなに良いアプリを書いても、それを置く場所・外から入れる玄関・止まらない仕組み・泥棒よけがなければ、利用者には届きません。</p>
+    <p>61_サーバー・インフラでは、インフラのうち次の部分を扱います。</p>
+    <ul>
+      <li><strong>動かす器</strong>：サーバー（サービスを提供するコンピューター）、Web サーバー（リクエストの玄関）、アプリの実行環境と DB サーバー</li>
+      <li><strong>器を用意・拡張・防御する方法</strong>：手作業とコード（IaC：Infrastructure as Code、インフラの構成をコードで書いて自動で作る方法）での構築、アクセス増や故障に耐えるスケーリング・負荷分散、攻撃から守るセキュリティ</li>
+    </ul>
+    <p>動画「インフラ完全攻略」では、インフラを「AWS・Google Cloud などクラウド上の、アプリを安定稼働させる土台」と説明しています。今日ではその多くがクラウドの上にありますが、クラウドの製品（EC2・ELB・VPC など）を使いこなすには、その下にあるサーバーとネットワークの知識が前提になります。だから AWS（63）の前に、このフォルダで製品に依存しない基礎を学びます。</p>
+    <p>このシリーズで軸にしている資料は、<strong>roadmap.sh DevOps</strong>（OS → ネットワーク → Web サーバー → IaC → スケーリング → セキュリティの流れ）、<strong>The Twelve-Factor App</strong>（クラウドで動くアプリの 12 の原則）、各製品の公式ドキュメント（nginx.org、Ubuntu Server docs、systemd、Terraform、Ansible、AWS）です。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>この領域で答えたい問いと 6 つのフォルダ</h2>
+    <p>10〜60 の全 40 ページは、<strong>初心者が頭から順に読めば、1 台のサーバーに自分でアプリを公開し、本番構成まで育てられるようになる 1 本の教材</strong> として並べています。各ページは「前へ / 次へ」でフォルダをまたいでつながり、共通の題材である EC サイト「Shop」（Ubuntu 24.04 ＋ Nginx ＋ Node.js API ＋ PostgreSQL）を、1 台構成から冗長構成まで育てていきます。各ページの最後には確認クイズ（理解度チェック）があります。</p>
+
+    <h3 id="sec-2-1">2.1 6 つの問い</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問い</th><th>フォルダ</th></tr></thead>
+      <tbody>
+        <tr><td>サーバーとは何で、どこで（物理・VM・クラウド）動いているか</td><td>10 サーバーの基礎</td></tr>
+        <tr><td>リクエストを受けて HTTPS で返す「玄関」をどう作るか</td><td>20 Webサーバー・リバースプロキシ</td></tr>
+        <tr><td>アプリと DB を本番で <strong>落ちずに</strong> 動かし続けるには</td><td>30 アプリ実行環境</td></tr>
+        <tr><td>サーバーを <strong>手作業ではなくコードで</strong> 用意するには</td><td>40 構築・IaC</td></tr>
+        <tr><td>アクセスが増えても、1 台壊れても <strong>止まらない</strong> ようにするには</td><td>50 スケーリング・負荷分散</td></tr>
+        <tr><td>公開した瞬間から来る <strong>攻撃から守る</strong> には</td><td>60 サーバー・ネットワークセキュリティ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-2">2.2 各フォルダで扱うこと</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>10 サーバーの基礎</h4>
+        <ul>
+          <li><a href="10-1_サーバーとは何か.html">10-1</a> クライアント / サーバー、サーバーの中身、物理〜サーバーレスの「形」</li>
+          <li><a href="10-2_サーバーの種類と役割.html">10-2</a> Web / AP / DB / キャッシュなど、3 層構成、Shop の成長</li>
+          <li><a href="10-3_仮想化とクラウド.html">10-3</a> ハイパーバイザ、VM とコンテナ、IaaS〜SaaS、責任共有モデル</li>
+          <li><a href="10-4_Linuxサーバーの基本.html">10-4</a> ディストリ、FHS、権限と sudo、apt、ログ、初期設定</li>
+          <li><a href="10-5_ネットワークの基本.html">10-5</a> IP / CIDR / NAT、ポート、DNS、疎通確認</li>
+          <li><a href="10-6_DHCPとNTP.html">10-6</a> DHCP の DORA とリレー、NTP の階層と時刻同期</li>
+          <li><a href="10-7_非機能要件を支えるサーバー.html">10-7</a> 業務を支える裏方のサーバー（DHCP・DNS・NTP・ログ・監視・バックアップ・認証・プロキシ・メール・ファイル）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>20 Webサーバー・リバースプロキシ</h4>
+        <ul>
+          <li><a href="20-1_Webサーバーとは.html">20-1</a> 静的 / 動的、Web サーバーの役割、処理モデル、製品比較</li>
+          <li><a href="20-2_Nginx入門.html">20-2</a> 設定ファイルの構造、server / location、root と alias</li>
+          <li><a href="20-3_リバースプロキシ.html">20-3</a> proxy_pass、X-Forwarded-*、WebSocket、Shop API の公開設定</li>
+          <li><a href="20-4_HTTPSとTLS証明書.html">20-4</a> TLS の役割、Let's Encrypt、推奨 TLS 設定、HSTS</li>
+          <li><a href="20-5_Apache入門.html">20-5</a> MPM、VirtualHost、.htaccess、Nginx との使い分け</li>
+          <li><a href="20-6_HTTPキャッシュと圧縮.html">20-6</a> Cache-Control、ETag、gzip / brotli、proxy_cache</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>30 アプリ実行環境</h4>
+        <ul>
+          <li><a href="30-1_アプリケーションサーバーとは.html">30-1</a> Web サーバーとの違い、言語別アプリサーバー、コネクションプール</li>
+          <li><a href="30-2_Node.jsアプリを本番で動かす.html">30-2</a> イベントループ、PM2 / cluster、グレースフルシャットダウン</li>
+          <li><a href="30-3_Pythonアプリを本番で動かす.html">30-3</a> WSGI / ASGI、Gunicorn / Uvicorn、uv</li>
+          <li><a href="30-4_プロセス管理とsystemd.html">30-4</a> unit ファイル、自動再起動、journalctl、サンドボックス設定</li>
+          <li><a href="30-5_設定と環境変数・シークレット.html">30-5</a> Twelve-Factor、.env、Secrets Manager / sops、起動時検証</li>
+          <li><a href="30-6_データベースサーバーの運用.html">30-6</a> PostgreSQL の初期設定、権限、PgBouncer、バックアップ、マネージド DB</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>40 構築・IaC</h4>
+        <ul>
+          <li><a href="40-1_サーバー構築の流れ.html">40-1</a> 手作業での 11 ステップ、スノーフレーク、Pets vs Cattle</li>
+          <li><a href="40-2_IaCとは.html">40-2</a> 宣言型と冪等性、ツールの役割分担、OpenTofu</li>
+          <li><a href="40-3_Terraform入門.html">40-3</a> HCL、plan / apply、state とリモート state、モジュール</li>
+          <li><a href="40-4_構成管理とAnsible.html">40-4</a> インベントリ、プレイブック、ロール、ansible-vault</li>
+          <li><a href="40-5_CloudFormationとCDK.html">40-5</a> スタック、変更セット、CDK（TypeScript）</li>
+          <li><a href="40-6_ネットワーク自動化とSDN.html">40-6</a> 3 つのプレーン、SDN とコントローラ、YANG / NETCONF / RESTCONF</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>50 スケーリング・負荷分散</h4>
+        <ul>
+          <li><a href="50-1_スケーリングの基本.html">50-1</a> スケールアップ / アウト、ボトルネック、ステートレス化</li>
+          <li><a href="50-2_ロードバランサーの仕組み.html">50-2</a> L4 / L7、アルゴリズム、ヘルスチェック、ALB</li>
+          <li><a href="50-3_オートスケーリング.html">50-3</a> 指標とポリシー、ウォームアップ、ASG と HPA</li>
+          <li><a href="50-4_CDNによる負荷軽減.html">50-4</a> エッジとオリジン、キャッシュキー、オリジン保護</li>
+          <li><a href="50-5_高可用性と冗長化.html">50-5</a> 可用性の数字、SPOF、マルチ AZ、RTO / RPO</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>60 サーバー・ネットワークセキュリティ</h4>
+        <ul>
+          <li><a href="60-1_サーバーセキュリティの基本.html">60-1</a> 攻撃面の縮小、多層防御、最小権限、脅威マップ</li>
+          <li><a href="60-2_SSHの安全な運用.html">60-2</a> 鍵認証、sshd_config、ProxyJump、Session Manager</li>
+          <li><a href="60-3_ファイアウォールとネットワーク制御.html">60-3</a> ufw、セキュリティグループ、Docker と ufw の罠</li>
+          <li><a href="60-4_OSのハードニングとパッチ管理.html">60-4</a> 自動アップデート、fail2ban、CIS、Lynis</li>
+          <li><a href="60-5_ログ監査と侵入の検知.html">60-5</a> auth.log、auditd、AIDE、初動対応、Shop のチェックリスト</li>
+          <li><a href="60-6_ネットワーク機器への管理アクセス.html">60-6</a> 特権モードとパスワード、VTY と SSH、TFTP / FTP / SCP</li>
+          <li><a href="60-7_AAA.html">60-7</a> 認証・認可・アカウンティング、RADIUS と TACACS+ の違い</li>
+          <li><a href="60-8_ACL.html">60-8</a> 標準 / 拡張 ACL、ワイルドカードマスク、適用方向</li>
+          <li><a href="60-9_L2セキュリティ.html">60-9</a> ポートセキュリティ、DHCP スヌーピング、DAI、L2 攻撃</li>
+          <li><a href="60-10_VPN.html">60-10</a> サイト間 / リモートアクセス VPN、IPsec、GRE</li>
+        </ul>
+      </div>
+    </div>
+    <p>動画メモ（クリップ）は、テーマが重なるページに統合しています：「Cloud Run が強すぎる理由」は 10-1、「仮想化の仕組み」「クラウド vs オンプレ」は 10-3、「MySQL はセキュリティが弱いのか」は 30-6、「Terraform 恐怖症克服マニュアル」は 40-3、「ロードバランサの裏側」は 50-2、「オートスケールの遅れ」は 50-3、「SSH の仕組み」は 60-2 です。</p>
+
+    <h3 id="sec-2-3">2.3 なぜこの順番なのか</h3>
+    <p>順番は roadmap.sh DevOps の「OS → ネットワーク → Web サーバー → IaC → スケーリング → セキュリティ」の流れを軸にしています。Shop を育てる順番に沿っているので、前のフォルダが次のフォルダの前提になります。</p>
+    <ol class="steps">
+      <li><strong>10 サーバーの基礎</strong>：まず「器」そのもの（サーバー・仮想化・Linux・ネットワーク）を知らないと、何を設定しているのか分かりません。</li>
+      <li><strong>20 Webサーバー・リバースプロキシ</strong>：器ができたら、外からのリクエストを受け止める玄関（Nginx と HTTPS）を作ります。利用者から最初に見える部分です。</li>
+      <li><strong>30 アプリ実行環境</strong>：玄関の奥でアプリと DB を動かし、落ちても自動で立ち上がるようにします。ここまでで「1 台に公開」が完成します。</li>
+      <li><strong>40 構築・IaC</strong>：10〜30 の作業を一度手で経験したあとで、それをコードにします。手順を知らないままツールから入ると、何を自動化しているのか分からなくなるためです。</li>
+      <li><strong>50 スケーリング・負荷分散</strong>：コードで同じサーバーを何台でも作れるようになって初めて、台数を増やす・壊れても止まらない構成が現実的になります。</li>
+      <li><strong>60 サーバー・ネットワークセキュリティ</strong>：最後に、ここまで作った構成全体を守ります。60-5 にはシリーズ全体のまとめとして Shop のセキュリティチェックリストがあります。</li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">セキュリティは「最後にやればよい」わけではない</p>
+      <p>60 が最後にあるのは、守る対象（10〜50 で作るもの）を知ってから学ぶほうが分かりやすいからです。実際の作業では、SSH の鍵認証やファイアウォールは公開する前に設定します。そのため、下の「1 台に公開する近道」には 60-2・60-3 が入っています。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>Shop の最終構成</h2>
+    <p>シリーズの最後に Shop は次の構成になります。図中の数字は、その部分を扱うフォルダです。</p>
+    <figure>
+    <svg viewBox="0 0 720 370" role="img" aria-label="Shop の最終構成。ユーザーは DNS（10）で名前を引き、CDN（50）を通り、HTTPS（20）でロードバランサー（50）に届く。ロードバランサーは複数 AZ に冗長化された 2 台の Web サーバー（Nginx から Node.js API へ、systemd 管理、20・30）に振り分け、両方が PostgreSQL（Multi-AZ、30・50）を使う。Terraform と Ansible（40）がこの構成を構築し、ファイアウォール・SSH・パッチ・監査・ACL・VPN（60）が防御する">
+      <defs>
+        <marker id="arw6101a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="135" width="84" height="60" rx="8" class="d-box"/>
+      <text x="52" y="162" text-anchor="middle" class="d-text-bold">ユーザー</text>
+      <text x="52" y="182" text-anchor="middle" class="d-text-sub">DNS（10）</text>
+
+      <rect x="122" y="135" width="84" height="60" rx="8" class="d-box"/>
+      <text x="164" y="162" text-anchor="middle" class="d-text-bold">CDN</text>
+      <text x="164" y="182" text-anchor="middle" class="d-text-sub">（50）</text>
+
+      <rect x="236" y="135" width="112" height="60" rx="8" class="d-box"/>
+      <text x="292" y="158" text-anchor="middle" class="d-text-bold">LB</text>
+      <text x="292" y="174" text-anchor="middle" class="d-text-sub">ロードバランサー</text>
+      <text x="292" y="188" text-anchor="middle" class="d-text-sub">（50）</text>
+
+      <rect x="372" y="30" width="206" height="262" rx="10" class="d-line-dash"/>
+      <text x="475" y="52" text-anchor="middle" class="d-text-sub">複数 AZ に冗長化（50）</text>
+      <rect x="386" y="66" width="178" height="80" rx="8" class="d-box-accent"/>
+      <text x="475" y="96" text-anchor="middle" class="d-text-bold">Nginx → Node.js API</text>
+      <text x="475" y="120" text-anchor="middle" class="d-text-sub">systemd 管理（20・30）</text>
+      <rect x="386" y="190" width="178" height="80" rx="8" class="d-box-accent"/>
+      <text x="475" y="220" text-anchor="middle" class="d-text-bold">Nginx → Node.js API</text>
+      <text x="475" y="244" text-anchor="middle" class="d-text-sub">systemd 管理（20・30）</text>
+
+      <rect x="602" y="130" width="110" height="70" rx="8" class="d-box-good"/>
+      <text x="657" y="154" text-anchor="middle" class="d-text-bold">PostgreSQL</text>
+      <text x="657" y="173" text-anchor="middle" class="d-text-sub">Multi-AZ</text>
+      <text x="657" y="190" text-anchor="middle" class="d-text-sub">（30・50）</text>
+
+      <line x1="94" y1="165" x2="120" y2="165" class="d-line" marker-end="url(#arw6101a)"/>
+      <line x1="206" y1="165" x2="234" y2="165" class="d-line" marker-end="url(#arw6101a)"/>
+      <text x="221" y="125" text-anchor="middle" class="d-text-sub">HTTPS（20）</text>
+      <path d="M348,155 L384,108" class="d-line" marker-end="url(#arw6101a)"/>
+      <path d="M348,175 L384,228" class="d-line" marker-end="url(#arw6101a)"/>
+      <path d="M564,108 L600,152" class="d-line" marker-end="url(#arw6101a)"/>
+      <path d="M564,228 L600,180" class="d-line" marker-end="url(#arw6101a)"/>
+
+      <rect x="60" y="312" width="250" height="44" rx="8" class="d-box-warn"/>
+      <text x="185" y="339" text-anchor="middle" class="d-text">Terraform / Ansible（40）</text>
+      <rect x="352" y="312" width="360" height="44" rx="8" class="d-box-bad"/>
+      <text x="532" y="339" text-anchor="middle" class="d-text">FW・SSH・パッチ・監査・ACL・VPN（60）</text>
+      <path d="M260,312 L390,294" class="d-line-dash" marker-end="url(#arw6101a)"/>
+      <text x="300" y="296" text-anchor="middle" class="d-text-sub">構築</text>
+      <path d="M532,312 L532,294" class="d-line-dash" marker-end="url(#arw6101a)"/>
+      <text x="560" y="306" text-anchor="middle" class="d-text-sub">防御</text>
+    </svg>
+    <figcaption>図：Shop の最終構成。10〜60 の各フォルダが、構成のどの部分を担当しているかを示す</figcaption>
+    </figure>
+    <p>入口から順に見ると、利用者は <strong>DNS</strong>（ドメイン名を IP アドレスに変換する仕組み、10）で行き先を知り、<strong>CDN</strong>（世界中に置かれたキャッシュサーバー、50）を経由して、<strong>HTTPS</strong>（暗号化した HTTP、20）で <strong>ロードバランサー</strong>（複数のサーバーに振り分ける装置、50）に届きます。その先には複数の <strong>AZ</strong>（アベイラビリティゾーン、クラウドの独立したデータセンター群）に分けて置いた Web サーバーがあり、Nginx（20）が Node.js API（30）にリクエストを渡します。アプリは <strong>systemd</strong>（Linux のプロセス管理の仕組み、30）が見張っていて、落ちても自動で再起動します。データは Multi-AZ 構成の PostgreSQL（30・50）に置きます。この全体を Terraform / Ansible（40）でコードから作り、ファイアウォール・SSH・パッチ・監査・ACL・VPN（60）で守ります。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>読み方と困ったときの逆引き</h2>
+    <h3 id="sec-4-1">4.1 読み方</h3>
+    <ul>
+      <li><strong>通読（おすすめ）</strong>：<a href="10-1_サーバーとは何か.html">10-1 サーバーとは何か</a> から「次のページ →」をたどります。1 ページ 20〜40 分程度です。</li>
+      <li><strong>とにかく 1 台に公開したいなら</strong>：<a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a> → <a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a> → <a href="20-2_Nginx入門.html">20-2 Nginx入門</a> → <a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> → <a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a> → <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> → <a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a> → <a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>（全体の手順地図は <a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a>）</li>
+    </ul>
+
+    <h3 id="sec-4-2">4.2 困ったときの逆引き</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>症状</th><th>まず読む</th></tr></thead>
+      <tbody>
+        <tr><td>ドメインでアクセスできない / 名前解決できない</td><td><a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a></td></tr>
+        <tr><td>502 Bad Gateway / 504 Gateway Timeout</td><td><a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> → <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a></td></tr>
+        <tr><td>証明書エラー・HTTPS にならない</td><td><a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a></td></tr>
+        <tr><td>サーバー再起動後にアプリが起動しない</td><td><a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a></td></tr>
+        <tr><td>Node.js が CPU 1 コアしか使わない / メモリで落ちる</td><td><a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a></td></tr>
+        <tr><td>FastAPI / Django をどう本番起動するか</td><td><a href="30-3_Pythonアプリを本番で動かす.html">30-3 Pythonアプリを本番で動かす</a></td></tr>
+        <tr><td><code>.env</code> やパスワードの置き場所</td><td><a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a></td></tr>
+        <tr><td>DB の接続数が足りない（too many connections）</td><td><a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a> → <a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a></td></tr>
+        <tr><td>サーバーごとに設定が微妙に違う</td><td><a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a> → <a href="40-2_IaCとは.html">40-2 IaCとは</a></td></tr>
+        <tr><td>アクセス増で遅い・落ちる</td><td><a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a> → <a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a> → <a href="50-3_オートスケーリング.html">50-3 オートスケーリング</a></td></tr>
+        <tr><td>画像や JS の配信が重い</td><td><a href="20-6_HTTPキャッシュと圧縮.html">20-6 HTTPキャッシュと圧縮</a> → <a href="50-4_CDNによる負荷軽減.html">50-4 CDNによる負荷軽減</a></td></tr>
+        <tr><td>1 台壊れたら全部止まる</td><td><a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a></td></tr>
+        <tr><td>SSH に大量のログイン試行が来ている</td><td><a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a> → <a href="60-4_OSのハードニングとパッチ管理.html">60-4 OSのハードニングとパッチ管理</a></td></tr>
+        <tr><td>乗っ取られたかもしれない</td><td><a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>61〜69 の中での位置</h2>
+    <p>61〜69 は、<strong>書いたコードを動かす土台を理解し、本番に届け、動かし続け、観察して直す</strong> ための「運用領域」です。学ぶ順に 9 つの分野が並んでいて、61_サーバー・インフラはその最初にあります。並びは roadmap.sh DevOps の学習順（OS・ネットワーク・サーバー → クラウド → CI/CD → 監視）、Google SRE 本の「原則 → 実践」の流れ、DDIA（Designing Data-Intensive Applications 第 2 版）の構成を参考にしています。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="61〜69 の学ぶ順。土台・クラウドの段で 61 サーバー・インフラ、62 データアーキテクチャ、63 AWS の順に進み、届ける段で 64 CI/CD、65 リリース・デプロイへ進み、動かし続ける段で 66 可観測性、67 パフォーマンス、68 分散システム、69 SRE・インシデント対応へ進む。61 がいま学んでいるフォルダ">
+      <defs>
+        <marker id="arw6101b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="58" y="58" text-anchor="middle" class="d-text-bold">土台・</text>
+      <text x="58" y="78" text-anchor="middle" class="d-text-bold">クラウド</text>
+      <text x="58" y="168" text-anchor="middle" class="d-text-bold">届ける</text>
+      <text x="58" y="258" text-anchor="middle" class="d-text-bold">動かし</text>
+      <text x="58" y="278" text-anchor="middle" class="d-text-bold">続ける</text>
+
+      <rect x="120" y="30" width="130" height="70" rx="8" class="d-box-accent"/>
+      <text x="185" y="50" text-anchor="middle" class="d-text-bold">61（ここ）</text>
+      <text x="185" y="70" text-anchor="middle" class="d-text-sub">サーバー・インフラ</text>
+      <text x="185" y="88" text-anchor="middle" class="d-text-sub">動かす器</text>
+      <rect x="270" y="30" width="130" height="70" rx="8" class="d-box"/>
+      <text x="335" y="50" text-anchor="middle" class="d-text-bold">62</text>
+      <text x="335" y="70" text-anchor="middle" class="d-text-sub">データアーキテクチャ</text>
+      <text x="335" y="88" text-anchor="middle" class="d-text-sub">データの持ち方</text>
+      <rect x="420" y="30" width="130" height="70" rx="8" class="d-box"/>
+      <text x="485" y="50" text-anchor="middle" class="d-text-bold">63</text>
+      <text x="485" y="70" text-anchor="middle" class="d-text-sub">AWS</text>
+      <text x="485" y="88" text-anchor="middle" class="d-text-sub">クラウドで組む</text>
+      <line x1="250" y1="65" x2="268" y2="65" class="d-line" marker-end="url(#arw6101b)"/>
+      <line x1="400" y1="65" x2="418" y2="65" class="d-line" marker-end="url(#arw6101b)"/>
+
+      <rect x="120" y="125" width="130" height="70" rx="8" class="d-box"/>
+      <text x="185" y="145" text-anchor="middle" class="d-text-bold">64</text>
+      <text x="185" y="165" text-anchor="middle" class="d-text-sub">CI/CD</text>
+      <text x="185" y="183" text-anchor="middle" class="d-text-sub">作る・検証する</text>
+      <rect x="270" y="125" width="130" height="70" rx="8" class="d-box"/>
+      <text x="335" y="145" text-anchor="middle" class="d-text-bold">65</text>
+      <text x="335" y="165" text-anchor="middle" class="d-text-sub">リリース・デプロイ</text>
+      <text x="335" y="183" text-anchor="middle" class="d-text-sub">出す</text>
+      <line x1="250" y1="160" x2="268" y2="160" class="d-line" marker-end="url(#arw6101b)"/>
+      <path d="M485,100 L485,112 L185,112 L185,123" class="d-line" marker-end="url(#arw6101b)"/>
+
+      <rect x="120" y="220" width="130" height="70" rx="8" class="d-box"/>
+      <text x="185" y="240" text-anchor="middle" class="d-text-bold">66</text>
+      <text x="185" y="260" text-anchor="middle" class="d-text-sub">可観測性</text>
+      <text x="185" y="278" text-anchor="middle" class="d-text-sub">見る</text>
+      <rect x="270" y="220" width="130" height="70" rx="8" class="d-box"/>
+      <text x="335" y="240" text-anchor="middle" class="d-text-bold">67</text>
+      <text x="335" y="260" text-anchor="middle" class="d-text-sub">パフォーマンス</text>
+      <text x="335" y="278" text-anchor="middle" class="d-text-sub">速くする</text>
+      <rect x="420" y="220" width="130" height="70" rx="8" class="d-box"/>
+      <text x="485" y="240" text-anchor="middle" class="d-text-bold">68</text>
+      <text x="485" y="260" text-anchor="middle" class="d-text-sub">分散システム</text>
+      <text x="485" y="278" text-anchor="middle" class="d-text-sub">複数ノードの仕組み</text>
+      <rect x="570" y="220" width="130" height="70" rx="8" class="d-box"/>
+      <text x="635" y="240" text-anchor="middle" class="d-text-bold">69</text>
+      <text x="635" y="260" text-anchor="middle" class="d-text-sub">SRE・インシデント</text>
+      <text x="635" y="278" text-anchor="middle" class="d-text-sub">対応／守る・直す</text>
+      <line x1="250" y1="255" x2="268" y2="255" class="d-line" marker-end="url(#arw6101b)"/>
+      <line x1="400" y1="255" x2="418" y2="255" class="d-line" marker-end="url(#arw6101b)"/>
+      <line x1="550" y1="255" x2="568" y2="255" class="d-line" marker-end="url(#arw6101b)"/>
+      <path d="M335,195 L335,207 L185,207 L185,218" class="d-line" marker-end="url(#arw6101b)"/>
+    </svg>
+    <figcaption>図：61〜69 の学ぶ順。61 は最初の土台で、62 データアーキテクチャ、63 AWS へと続く</figcaption>
+    </figure>
+
+    <h3 id="sec-5-1">5.1 学ぶ順番と理由</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>順</th><th>フォルダ</th><th>扱うこと</th><th>なぜこの位置か</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>61_サーバー・インフラ</strong></td><td>サーバーの種類・Web サーバー・実行環境・構築 / IaC・スケーリング・サーバーセキュリティ</td><td>EC2・VPC・ELB はサーバーとネットワークの知識が前提（ネットワークの理論は 11_コンピューターサイエンス/60 で先に学ぶ）</td></tr>
+        <tr><td>2</td><td>62_データアーキテクチャ</td><td>DB 基礎・データモデル・スキーマ・インデックス・トランザクション・マイグレーション</td><td>RDS・DynamoDB・Aurora を選ぶ前に DB の基礎が要る</td></tr>
+        <tr><td>3</td><td>63_AWS</td><td>AWS の各サービスとアプリ開発手順</td><td>61・62 の概念をクラウドの製品に当てはめる</td></tr>
+        <tr><td>4</td><td>64_CI-CD</td><td>ビルド・テスト・パイプライン・DevSecOps・GitOps</td><td>動かす場所が分かってから、そこへ届ける自動化を作る</td></tr>
+        <tr><td>5</td><td>65_リリース・デプロイ</td><td>デプロイ戦略・バージョニング・リリース判定・ロールバック</td><td>パイプラインの先で本番に出す・戻す</td></tr>
+        <tr><td>6</td><td>66_可観測性</td><td>ログ・メトリクス・トレース・OpenTelemetry・SLO / アラート</td><td>本番に出したものの状態を見る</td></tr>
+        <tr><td>7</td><td>67_パフォーマンス</td><td>計測・分析・フロント / バックエンド最適化・キャパシティ</td><td>可観測性で計測できて初めて改善できる</td></tr>
+        <tr><td>8</td><td>68_分散システム</td><td>分散の難しさ・複製 / 分割・一貫性・キュー・分散キャッシュ・障害耐性</td><td>スケールの先で出てくる応用理論。62 の続き</td></tr>
+        <tr><td>9</td><td>69_SRE・インシデント対応</td><td>SRE 原則・オンコール・障害対応・ポストモーテム・カオス / DR</td><td>61〜68 をすべて使う総仕上げ</td></tr>
+      </tbody>
+    </table></div>
+    <p>62〜69 には、まだ解説ページはありません（Obsidian のノートのみです）。</p>
+
+    <h3 id="sec-5-2">5.2 迷ったときの置き場所</h3>
+    <p>ある話題が 61〜69 のどこに属するかは、次の順に問いかけると決まります。</p>
+    <ol class="steps">
+      <li><strong>AWS 製品の使い方か？</strong> → はいなら 63_AWS</li>
+      <li><strong>本番に届けるまでの話か？</strong> → 自動化・パイプラインなら 64_CI-CD、出し方・戻し方なら 65_リリース・デプロイ</li>
+      <li><strong>本番で動いているときの話か？</strong> → 動かす器・構築なら <strong>61_サーバー・インフラ</strong>、状態を観察するなら 66_可観測性、速さ・コストなら 67_パフォーマンス、障害・信頼性の運用なら 69_SRE・インシデント対応</li>
+      <li><strong>データか分散の仕組みか？</strong> → データの持ち方なら 62_データアーキテクチャ、複数ノードの協調なら 68_分散システム</li>
+    </ol>
+
+    <h3 id="sec-5-3">5.3 61〜69 と他の領域との分担</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地</th><th>61〜69 との関係</th></tr></thead>
+      <tbody>
+        <tr><td>AWS 製品の使い方</td><td>63_AWS</td><td>63 以外は製品に依存しない概念。AWS での実装は 63 へリンク</td></tr>
+        <tr><td>Docker・Kubernetes</td><td>53_コンテナ</td><td>61 はサーバーとしての位置づけだけ</td></tr>
+        <tr><td>Git・GitHub Actions 入門</td><td>51_Git</td><td>64 はパイプライン設計、操作手順は 51</td></tr>
+        <tr><td>バックエンドへの組み込み方（キャッシュ・キュー・ORM）</td><td>34_Backend</td><td>68 / 62 は仕組み・理論</td></tr>
+        <tr><td>アーキテクチャスタイル・横断的関心事の設計</td><td><a href="../41_アーキテクチャ/00-0_目次.html">41_アーキテクチャ</a></td><td>66 / 68 はツールと運用</td></tr>
+        <tr><td>テストの書き方・テストツール</td><td>81〜83</td><td>64/40 は CI への組み込み方</td></tr>
+        <tr><td>実際に起きた事故の記録</td><td>91_トラブルシューティング事例集</td><td>69 は対応の型</td></tr>
+        <tr><td>セキュリティ全般</td><td>71〜75</td><td>64/50・61/60 は運用での適用</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-4">5.4 フォルダ番号の経緯</h3>
+    <ul>
+      <li>2026-09-26 に再編しました。旧 67_リリース・サーバー を 63（リリース）と 64（サーバー）に分割、旧 69_分散システム可観測性 を 65（可観測性）と 69（分散システム）に分割し、67 を SRE・インシデント対応として新設しました。</li>
+      <li>2026-10-18 に学習順に並べ替えました。AWS の前にサーバー・インフラと DB の基礎を学べるよう、64→61 サーバー・インフラ、68→62 データアーキテクチャ、61→63 AWS、62→64 CI-CD、63→65 リリース・デプロイ、65→66 可観測性、66→67 パフォーマンス、69→68 分散システム、67→69 SRE・インシデント対応 に変更しました。運用領域マップのノートもこのとき 62 から 61 へ移しました。</li>
+      <li>旧構想は「目次_旧10_Operations」のノートにあり、CI-CD / Release / Incident / Performance の未作成ノート一覧の出典になっています。</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>隣の分野との境界</h2>
+    <h3 id="sec-6-1">6.1 11_コンピューターサイエンス（理論）との関係</h3>
+    <p>61 は「サーバーをどう動かすか」という <strong>実践</strong> を扱い、OS やネットワークの <strong>理論</strong>（カーネル、TCP/IP、DNS の仕組み、ルーティング、L2 スイッチング）は 11_コンピューターサイエンスの「50 OS・並行処理」「60 ネットワーク・Web」のノートで扱います。61 を読んでいて仕組みの奥が気になったら、そちらに戻るとよいでしょう。</p>
+    <ul>
+      <li>ポート番号・DNS・NAT・QoS の詳細：11_コンピューターサイエンス/60 の「ポート番号とファイアウォール基礎」「DNS とドメイン名前解決とレコード」「ルーターとスイッチとハブと NAT」「QoS（帯域制御と優先制御）」のノート（10-5・10-6・60 フォルダの前提）</li>
+      <li>SNMP・Syslog：66_可観測性の「SNMP（ネットワーク機器のメトリクス収集）」「Syslog（ログ転送の標準プロトコル）」のノート（10-7 の監視・ログサーバーと関係）</li>
+    </ul>
+
+    <h3 id="sec-6-2">6.2 セキュリティの章（71〜74）との関係</h3>
+    <p>60 サーバー・ネットワークセキュリティは、セキュリティの考え方を <strong>サーバーやネットワーク機器の運用に当てはめた</strong> ものです。考え方そのものやアプリ側の対策は、次の解説で扱っています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>章</th><th>61 との関係</th></tr></thead>
+      <tbody>
+        <tr><td><a href="../71_セキュリティ基礎/00-0_目次.html">71 セキュリティ基礎</a></td><td>60-1 の攻撃面の縮小・多層防御・最小権限の土台（<a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">最小権限とデータ最小化</a>、<a href="../71_セキュリティ基礎/20-2_深層防御.html">深層防御</a>）。ネットワークの防御や運用・ログは <a href="../71_セキュリティ基礎/50-1_ネットワークと端末の防御.html">ネットワークと端末の防御</a>・<a href="../71_セキュリティ基礎/50-3_セキュアな運用とログ出力.html">セキュアな運用とログ出力</a> と重なります</td></tr>
+        <tr><td><a href="../72_Web脆弱性対策/00-0_目次.html">72 Web脆弱性対策</a></td><td>XSS・SQL インジェクション・CSRF などアプリの脆弱性。20 の Web サーバーで付けるセキュリティヘッダ（<a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">セキュリティヘッダ</a>）とも関係します</td></tr>
+        <tr><td><a href="../73_認証認可/00-0_目次.html">73 認証認可</a></td><td>利用者のログインと権限。61 で扱うのはサーバーや機器への管理者のログイン（SSH・AAA）です</td></tr>
+        <tr><td><a href="../74_セッション管理/00-0_目次.html">74 セッション管理</a></td><td>Cookie・セッション・トークン。サーバーを複数台にする（50）とき、セッションをどこに置くかが問題になります</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-3">6.3 ここでは扱わないもの</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地</th></tr></thead>
+      <tbody>
+        <tr><td>Docker・Kubernetes</td><td>53_コンテナ（「Dockerとは」「Docker」「Kubernetes」のノート）</td></tr>
+        <tr><td>Linux コマンド・シェルの使い方</td><td>52_シェルCLI</td></tr>
+        <tr><td>OS・ネットワークの理論（カーネル、TCP/IP、DNS の仕組み、ルーティング、L2 スイッチング）</td><td>11_コンピューターサイエンス/50・60</td></tr>
+        <tr><td>AWS の個別製品（EC2・ELB・VPC・Route 53 など）</td><td>63_AWS</td></tr>
+        <tr><td>デプロイ戦略・リリース手順</td><td>65_リリース・デプロイ</td></tr>
+        <tr><td>監視・ログ収集・アラート</td><td>66_可観測性（「サーバー監視とログ管理の基本」のノート）</td></tr>
+        <tr><td>性能計測・キャパシティ計画</td><td>67_パフォーマンス</td></tr>
+        <tr><td>DB の設計・SQL・トランザクション</td><td>62_データアーキテクチャ</td></tr>
+        <tr><td>レプリケーション・シャーディング</td><td>68_分散システム</td></tr>
+        <tr><td>アプリの脆弱性対策・認証・セッション</td><td><a href="../72_Web脆弱性対策/00-0_目次.html">72 Web脆弱性対策</a>、<a href="../73_認証認可/00-0_目次.html">73 認証認可</a>、<a href="../74_セッション管理/00-0_目次.html">74 セッション管理</a>（旧サーバー教材の「クッキーとセッション管理」も 74 にあります）</td></tr>
+        <tr><td>アプリ側のスケーラビリティ設計</td><td>34_Backend/80</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>動画で学ぶ：なぜインフラを身につけるのか</h2>
+    <p>ここからは、りょうま@インフラ攻略 さんの動画「【永久保存版】インフラ完全攻略 - 現役エンジニア向け」（2026-07-04 公開）の内容をまとめます。テーマは <strong>バックエンドエンジニアがインフラ力を身につけるべき理由・難しさ・学び方・5 段階ロードマップ</strong> です。</p>
+    <p>7 年のエンジニア経験を持つ SRE（サイト信頼性エンジニア、サービスを止めないことを専門にするエンジニア）の投稿者が、インフラの重要性、バックエンドとインフラを掛け合わせる価値、インフラの実務経験が積みにくい構造的な理由、学習の 5 つのポイント、そして EC2 → ECS → Lambda → Google Cloud → EKS（Kubernetes）の習得ロードマップを語ります。投稿者自身、7 年の中でインフラの技術を身につけることに一番苦労し、1 年目は会社のインフラ構成がまったく分からなかったそうです。結論は、<strong>インフラは「運ガチャ」に頼らず、正しいやり方で再現性高く伸ばせる</strong> ということです。</p>
+
+    <h3 id="sec-7-1">7.1 なぜ今インフラが重要か</h3>
+    <ul>
+      <li>生成 AI でアプリの母数が膨大になりました。ローカル（自分の PC）で動くものは誰でも作れますが、デプロイして公開する部分は難しく、インフラの知識が要ります。</li>
+      <li>リリース後も、セキュリティ、クラウドコストの管理、リクエスト増に応じた増強、障害時の復旧など、やることは膨大に増えます。</li>
+      <li>AI でバックエンドの処理がリッチになり、<strong>非機能要件</strong>（機能そのものではなく、速さ・止まらなさ・安全さなどの品質の要求）の水準も上がっています。それを AI だけで丸ごと解決する未来は、SRE として働く投稿者にはまだ見えないといいます。</li>
+    </ul>
+
+    <h3 id="sec-7-2">7.2 バックエンドエンジニアこそインフラをやるべき理由</h3>
+    <ul>
+      <li>テックリードや CTO は、ほぼ例外なくバックエンドもインフラも強いです。テックリードまで上がるには、インフラを避けて通れません。</li>
+      <li>「技術の難易度（横軸）× 領域（縦軸：インフラ／バックエンド／フロント）」の図で見ると、メンバークラスとテックリードの差は <strong>非機能要件への設計力</strong> と <strong>インシデント対応力</strong>（障害が起きたときに原因を突き止めて直す力）です。どちらもバックエンドとインフラにまたがらないと発揮できません。</li>
+    </ul>
+
+    <h3 id="sec-7-3">7.3 掛け算①：非機能要件への設計力</h3>
+    <ul>
+      <li>非機能要件の例：レスポンス 50ms 以下（99%）の API、エンタープライズ向けの論理ネットワーク分離、100 万件のメールを 1 時間以内に一斉配信、1 万人同時接続のストリーミング、10GB の 3D データを 30 分以内に低コストで変換、など。</li>
+      <li>API の性能を改善する手札は、バックエンド側（クエリのチューニング、N+1 問題の解消、Redis などのアプリケーションキャッシュ）と、インフラ側（DB のリードレプリカ、Web サーバーのオートスケール）の両方にあります。</li>
+      <li>設計ドキュメントにも両方の観点が必要です。API 仕様書・DB スキーマ・シーケンス図・負荷試験に加え、インフラ構成図・監視（例：SQS のメッセージ数やデッドレターキューを監視して Slack に通知）まで書きます。非同期処理（SQS・Kafka・Pub/Sub）や、RDBMS 以外の DB を選ぶ力も要ります。</li>
+      <li>生成 AI の時代はこれが加速します。LLM のストリーミングには長時間の接続を維持する設計、ベクトル検索の本番運用には大規模データを低レイテンシで検索する基盤、AI エージェントの並列実行には非同期処理とキューイングの基盤が必要です。</li>
+      <li>非機能要件は大口顧客が導入するかどうかを左右し、満たせるかどうかは <strong>0 か 100</strong> の世界です。高い水準で満たせるエンジニアは市場価値が高く、AI に置き換えられにくいといえます。</li>
+    </ul>
+
+    <h3 id="sec-7-4">7.4 掛け算②：インシデント対応</h3>
+    <ul>
+      <li>500 エラーを調べるとき、バックエンド側では アプリケーションログ → ソースコード、DB のコネクション数、スロークエリを見ます。インフラ側では ネットワークの異常、CPU・メモリ・ディスクを見ます。</li>
+      <li>両方分かれば多角的に仮説を立てられ、「そこはインフラ側なので分かりません」といった押し付け合いになりません。</li>
+    </ul>
+
+    <h3 id="sec-7-5">7.5 インフラができるメリット 4 つ</h3>
+    <ol class="steps">
+      <li><strong>技術のポータビリティ（持ち運びやすさ）が高い</strong>：A 社で苦労して EC2 → ECS 移行をした経験で、B 社の ECS 新規構築は一瞬で終わったそうです。インフラはドメイン知識（業界や業務の知識）から遠く、OSI 参照モデルの L1〜L6 など標準化された技術を扱う割合が高いためです（バックエンドは主に L7 で、ドメイン知識と密結合）。業界が変わっても、構成は EC2・ECS・Kubernetes・Cloud Run など似たり寄ったりです。</li>
+      <li><strong>技術が陳腐化しにくい</strong>：根底にあるのはネットワーク・DB・SQL・Linux・CS など息の長い技術です。フロントエンド（Next.js・React）や生成 AI のように半年で常識が変わる領域と違い、後から来た人に逆転されにくいです。</li>
+      <li><strong>実績を語りやすい</strong>：「AWS コストを月 25 万円削減」「デプロイを 25 分 → 5 分」「API を 2 秒 → 20ms」のように数字で語れ、他社の人にも大変さがすぐ伝わります。バックエンドの実績は社外秘も多く、「〇〇 API を開発」と抽象化するしかないことが多いです。</li>
+      <li><strong>単価が高い</strong>：ミスの影響範囲が大きく誰もやりたがらない、学習コストが高く参入障壁が高い、という理由でできる人が少ないためです。ハードスキル次第で月単価 100 万円超（高い人で 165 万円）もあるそうです。</li>
+    </ol>
+
+    <h2 id="sec-8"><span class="num">8.</span>動画で学ぶ：経験の積みにくさと学び方</h2>
+    <h3 id="sec-8-1">8.1 なぜインフラの経験は積みにくいのか（4 つの理由）</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. プロダクトの心臓だから</h4>
+        <p>DB や DNS の対応を間違えると大障害になります。1 分の障害で数十万〜数百万円が飛ぶこともあります。フロントの文言修正のような「肩慣らしタスク」がなく、最初の打席に立ちにくいです。</p>
+      </div>
+      <div class="card">
+        <h4>2. レバレッジが効くから</h4>
+        <p>Terraform などの IaC や CI/CD を作れば半永久的に効き、お手本の構成は若手に真似されて広がります。逆に、未熟な人が作った初期構成は負債が雪だるま式に増えます（本番では「動いているものが正義」なので、緩い設定もそのままコピーされます）。だから経験者に任せたい力学が働きます。</p>
+      </div>
+      <div class="card">
+        <h4>3. 不可逆だから</h4>
+        <p>たとえば DB をパブリックサブネット（インターネットから届く区画）に作ると、後からプライベートに移すには作り直しが必要です。リソース名も ID として使われるため、変更には作り直しが要ります。アプリ層のように <code>git revert</code> で戻せません。</p>
+      </div>
+      <div class="card">
+        <h4>4. タスクが少ないから</h4>
+        <p>フロント：バックエンド：インフラのタスク量は、体感で 5：4：1 です。詳しい人が 1 人いれば回ってしまい、できる人がタスクを独占します（本人は任せたいのに、納期や顧客影響を考えてつい自分でやってしまう）。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-8-2">8.2 インフラ力が上がらないジレンマ</h3>
+    <ul>
+      <li><strong>経験豊富な人がいる会社</strong>：収益が安定していてサービスを落とせないので、SRE チームやプラットフォームチームによる分業体制になっています。実績がないと任せてもらえず、打席が回ってきません。</li>
+      <li><strong>未経験でも触り放題の会社</strong>（小規模スタートアップ）：お手本もフィードバックもなく我流になり、頭打ちになります。変な癖がついて、むしろ悪化することもあります。</li>
+    </ul>
+    <div class="callout bad">
+      <p class="callout-title">我流構成のあるある</p>
+      <ul>
+        <li>1 つの AWS アカウントにステージング環境と本番環境が混在（S3 バケットの中をパスで dev / stg / prod に分けるケースも）</li>
+        <li>DB や ECS がパブリックサブネットにむき出し</li>
+        <li>命名規則（prd・prod・production、接頭辞・接尾辞）が揺れまくり</li>
+        <li>全員に AdministratorAccess（何でもできる権限）</li>
+        <li>セキュリティグループを使い回して <code>0.0.0.0/0</code> でフルオープン</li>
+        <li>毎月の AWS コストを誰も知らない</li>
+        <li>インシデントに、ユーザーからの問い合わせで初めて気づく</li>
+      </ul>
+    </div>
+    <p>これらはこのシリーズでも繰り返し扱う問題です。パブリックに置かない・ポートを開けすぎない話は <a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>、権限を絞る話は <a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a> で取り上げます。</p>
+
+    <h3 id="sec-8-3">8.3 インフラ学習で押さえるべき 5 つのポイント</h3>
+    <ol class="steps">
+      <li><strong>クラウド代をケチらない</strong>：ALB で月 2,000 円、NAT Gateway で 7,000 円といった請求が怖くて手を動かせないことが、最大の心理的な壁です。ただし闇雲に作ると高額請求も起こるので、詳しい人に頼るのが確実です（学習時間外の自動停止や、NAT Gateway の代わりに NAT インスタンスを使って月数百円に抑える工夫など）。</li>
+      <li><strong>ベストプラクティスに沿った綺麗な構成を真似する</strong>：これが最も大事です。投稿者はスタートアップで EC2・ECS・API Gateway・Lambda・Step Functions・CloudFront などを触り倒しても一定以上伸びませんでしたが、メガベンチャーで高レベルな構成を見て霧が晴れたそうです。特に、既存の dev・stg・prod に加えて sandbox 環境を Terraform（Google Cloud）と Kubernetes マニフェストで複製したタスクで力が大きく伸びました。眺めるだけでなく、複製するために既存の設定を理解する、というインプットとアウトプットの往復が効きます。</li>
+      <li><strong>最初はコンソールから手動で構築する</strong>：いきなり Terraform・CloudFormation・CDK から入ると、GUI でしか得られない手触り感を捨てることになります。おすすめは「コンソールで構築 → <code>terraform import</code> でコード化 → 別環境を apply で複製」です。たとえば CloudFront のオリジン設定画面では、重要な項目が上にあり追加設定はトグルで隠れている、関数（CloudFront Functions）はディストリビューションと同じ階層なので独立して作って紐付ける、オリジンやビヘイビアはディストリビューションの中に 1 対 N で作る、といった重要度やリソース同士の関係が直感的に分かります。この感覚があったので、初見の Cloudflare もすぐ使えたそうです。このシリーズでも、<a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a> で手作業を経験してから IaC に進みます。</li>
+      <li><strong>点ではなく線（ストーリー）で構築する</strong>：ハンズオンの「いきなり NAT Gateway を作りましょう」は点の学習です。線の例は次のとおりです：API を動かす → 外部パッケージや外部 API に通信できない → ECS をパブリックサブネットに置いてグローバル IP を持たせる → 外からアクセスできてしまうのは危険 → NAT Gateway が必要 → 学習用には月 7,000 円は高い → EC2 で iptables を設定して NAT の代わりにする → 停止忘れを防ぐため EventBridge Scheduler で自動停止。小さな理由付けと意思決定の積み重ねが設計力になり、実務と同じ筋肉を使います（資格教材は点になりがちです）。</li>
+      <li><strong>アプリケーションコードにこだわる</strong>：チュートリアルが「Welcome to nginx」で完結するから実務に効かない、という指摘です。実務では DB マイグレーション、バッチ・非同期処理、外部 API や AWS サービスとの連携、認証情報、環境変数の管理、デプロイパイプラインなどが必要です。教材が nginx だらけなのは、教える側がインフラエンジニアでアプリ側は専門外かつ工数を割きたくないからでは、というのが投稿者の仮説です。理想は実務で本格的な構成を丸ごと作ること、次点はバックエンドエンジニアと組んだ個人開発です。このシリーズが Node.js API と PostgreSQL を持つ「Shop」を題材にしているのも、この考え方に沿っています。</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>動画で学ぶ：インフラスキル習得ロードマップ</h2>
+    <p>多くの会社のインフラ構成は、おおむね次の 5 パターンに集約されます。「うちは ECS」「うちは Kubernetes」と聞くだけで、技術力・プロダクトの特性・組織文化がある程度透けて見えるそうです。下に行くほど学習コストが上がります（業界のレベルマップのようなもの）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>STEP</th><th>サービス</th><th>抽象化した概念</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>EC2</td><td>仮想マシン</td></tr>
+        <tr><td>2</td><td>ECS</td><td>コンテナ</td></tr>
+        <tr><td>3</td><td>Lambda</td><td>イベント駆動</td></tr>
+        <tr><td>4</td><td>Google Cloud</td><td>マルチクラウド</td></tr>
+        <tr><td>5</td><td>EKS</td><td>Kubernetes</td></tr>
+      </tbody>
+    </table></div>
+    <p>仮想マシン・コンテナ・サーバーレスの違いの基礎は <a href="10-1_サーバーとは何か.html">10-1 サーバーとは何か</a> と <a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a> で扱います。</p>
+
+    <h3 id="sec-9-1">9.1 STEP1：EC2（仮想マシン）</h3>
+    <ul>
+      <li><strong>選ぶ動機</strong>：① 自由度が圧倒的に高い（責任共有モデルで OS から上が利用者の管理）② 既存資産との互換性（オンプレの API をそのまま移す。後に Kubernetes へ移る流れも多い）③ 特殊要件（GPU インスタンス、大容量メモリの X 系インスタンスなど）</li>
+      <li>採用企業は「AWS に詳しい人がいない」か「非常に詳しい人がいる（金融・製造・公共・医療・物流などの基幹システム、大手日系企業）」の両極端です。</li>
+      <li><strong>キャリア上の利点</strong>：<strong>インフラの手触り感</strong>。SSH で入ってプロセスを起動・停止する、<code>wget</code> でインストールする、<code>nslookup</code>・<code>dig</code> で疎通確認する、など。コンテナ時代でもビルド時に Linux コマンドで中身を構築するので、すべての原点になります。</li>
+      <li><strong>つらい点</strong>
+        <ul>
+          <li><strong>サーバー管理の負担</strong>：OS のセキュリティパッチ、Apache・nginx などのミドルウェアのバージョン管理、カーネル更新、脆弱性対応を全台分行います。台数が増えると指数関数的に大変になり、メンテナンスのたびにダウンタイムの調整も要ります。</li>
+          <li><strong>リソース割り当てが柔軟でない</strong>：同居するプロセス A（ピーク時に 3GB へスパイク）・B・C のために、平常時も 3GB のインスタンスを払い続けます。プロセスごとに分けると、コストと運用工数が増えます。</li>
+          <li><strong>属人性が高くなる</strong>：EC2 の再起動後にアプリが起動しないインシデントの原因は、最近別の人が入れた Datadog エージェントと、サーバー内で動かしていた別のプロセスが悪さをしていたことでした。中で何でもできるので、誰が何をしたか把握できなくなります（Ansible・Chef で多少改善しますが、緊急時の手作業は残ります）。</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h3 id="sec-9-2">9.2 STEP2：ECS（コンテナ）</h3>
+    <ul>
+      <li><strong>選ぶ動機</strong>：EC2 のつらさを解決します。
+        <ul>
+          <li><strong>Fargate</strong>（サーバーを意識せずにコンテナを動かす ECS の実行方式）なら、ホスト OS のハードニング（不要ポートの閉鎖、SSH・SELinux の設定）、OS の監視、パッチ適用を AWS が管理します。</li>
+          <li><strong>属人性を構造的に排除</strong>：インフラは JSON の <strong>タスク定義</strong>（イメージ、CPU・メモリ、環境変数、ログ出力先、ヘルスチェック）と <strong>Dockerfile</strong> の 2 つで静的に管理します。タスクはデプロイのたびに使い捨てなので、手作業の変更が残りません（ECS Exec でログインはできますが例外的な使い方です）。</li>
+          <li><strong>リソース割り当てが柔軟</strong>：タスク・コンテナ単位で CPU・メモリを割り当てられます。</li>
+        </ul>
+      </li>
+      <li>多くの Web 系企業でメジャーです。キャリア上の利点は <strong>コンテナ時代のお作法</strong>（プロセスをコンテナで包む、Dockerfile の書き方、SSH せず構成を静的に定義する、サーバーを使い捨てる）が身につくことです。Kubernetes や Azure Container Apps などにも横展開でき、Lambda もコンテナで動かせます。</li>
+      <li><strong>弱点</strong>：常駐課金でコストが高くつきやすい（社内ツールや初期プロダクトには割高）、オートスケールは自動だが即時ではない（タスクの起動・安定まで 30〜60 秒かかり、急なスパイクに間に合わないことも）、CPU・メモリ・ネットワークセキュリティ・スケーリングなどの管理負担は残る。オートスケールの遅れは <a href="50-3_オートスケーリング.html">50-3 オートスケーリング</a> でくわしく扱います。</li>
+    </ul>
+
+    <h3 id="sec-9-3">9.3 STEP3：Lambda（イベント駆動）</h3>
+    <ul>
+      <li>イベントが起きたときに一時的に起動し、処理が終わると停止します。</li>
+      <li><strong>選ぶ動機</strong>：① 従量課金で圧倒的に安い ② スケーラビリティ（設定不要で 1,000 並列まで自動スケール、数十ミリ秒単位で立ち上がる）③ デプロイが速い（ECS は 5〜20 分かかることもあるが、Lambda はものの 5 分ほど）</li>
+      <li><strong>デメリット</strong>：コールドスタート（しばらく使われていない関数の初回起動）で数秒かかる、リクエスト・レスポンスのサイズ上限 6MB、タイムアウト 15 分などの制約があります。ECS の完全な上位互換ではありません。</li>
+      <li><strong>キャリア上の利点</strong>：<strong>イベント駆動アーキテクチャ</strong> という設計の手札が増えます。例：DynamoDB へのレコードの put を検知して別の場所へ同期する、S3 へのアップロードを検知して圧縮や動画変換をする。EC2・ECS は AWS のイベントから直接起動できず、EventBridge・SQS・Lambda を挟む必要があるので、Lambda はイベント駆動の入口として活躍します。あわせて EventBridge、Step Functions、SQS、SNS、Kinesis Data Streams、Firehose にも詳しくなると世界が広がります。</li>
+      <li>EC2・ECS・Lambda の 3 つで、1 つのクラウドにおける仮想マシン・コンテナ・イベント駆動を一通りカバーできます。</li>
+    </ul>
+
+    <h3 id="sec-9-4">9.4 STEP4：Google Cloud（マルチクラウド）</h3>
+    <ul>
+      <li><strong>前提</strong>：AWS の次は、自分の業界でシェアが高いクラウドを選びます（Web 系やスタートアップなら Google Cloud、大手 SIer や金融系の顧客なら Azure）。</li>
+      <li><strong>理由① AWS の理解が深まる</strong>（海外に行くと日本が分かるのと同じ）：Cloud Run を触って、ECS は VPC・サブネット・セキュリティグループ・タスク定義・タスク実行ロール／タスクロールなど設定項目が多いと気づいたそうです。裏返せば、細かいセキュリティ要件に柔軟に対応できる良さでもあります。Cloud Run はゼロスケール（使われていないときは 0 台まで減らす）できるが ECS はできない、似たことは Lambda でできるがサイズやタイムアウトの制約がある、などを俯瞰して見られるようになります。</li>
+      <li><strong>理由② いいとこ取りの設計</strong>：API はゼロスケールできる Cloud Run、データ基盤は BigQuery、メール配信は Amazon SES、ビデオ通話は Amazon Chime、他社とのファイル連携は権限設計が柔軟な S3、フロントのホスティングは Amplify、Kubernetes のマイクロサービス基盤は GKE、などです。</li>
+      <li>生成 AI で「SaaS のソフトそのものより保有データに価値がある」という風潮が強まり、データ基盤を整える流れから「データ基盤は BigQuery、API は AWS の ECS」というマルチクラウド構成の会社が増えています。</li>
+      <li><strong>2 倍の労力にはならない</strong>：仮想マシン・コンテナ・イベント駆動の概念があればすぐキャッチアップでき、サービスはほぼ 1 対 1 で対応します（EC2 ↔ GCE、ECS ↔ Cloud Run、S3 ↔ GCS、RDS ↔ Cloud SQL、Lambda ↔ Cloud Functions）。考え方が大きく違う IAM・ネットワーク・Cloud Load Balancing を重点的に押さえればよいです。</li>
+    </ul>
+
+    <h3 id="sec-9-5">9.5 STEP5：EKS / Kubernetes</h3>
+    <ul>
+      <li>Kubernetes は、Google が社内で培ったコンテナ運用のノウハウを OSS 化した <strong>コンテナオーケストレーションツール</strong>（たくさんのコンテナの配置・起動・増減をまとめて管理する道具）です。</li>
+      <li><strong>導入の動機</strong>：ECS でマイクロサービスが増えると、機能ごとに AWS サービスを継ぎはぎする意思決定・キャッチアップのコストが積み上がります（サービス間通信は Cloud Map・Service Connect、デプロイは CodePipeline・CodeBuild・CodeDeploy、監視は CloudWatch、オートスケールは ECS Service Auto Scaling、バッチは EventBridge Scheduler・AWS Batch など）。Kubernetes ならマニフェスト（YAML）で統一的に表現でき（Service・Istio、Argo CD、Prometheus・Grafana、HPA、CronJob・Argo Workflows、マイグレーションは Job）、規模が大きいほど差が効きます。</li>
+      <li><strong>キャリア上の利点① 技術力がブーストする</strong>：Kubernetes が必要なプロダクトは限られ、ほとんどは ECS で十分です。それでも習得すると、コンテナ・ネットワーク・クラウドの理解が大きく上がります。投稿者は EC2 → ECS で挫折 → Cloud Run → GKE → ECS と経験し、GKE の後は ECS が非常に簡単に感じ、コンテナ本を 1 冊読むだけでベストプラクティスに沿った設計・構築ができたそうです。</li>
+      <li><strong>キャリア上の利点② Kubernetes を扱う会社は技術レベルが高い</strong>：金銭・学習・運用のコストが高いので、売上があり組織に投資できる会社でないと導入しません。採用力が強く、勉強熱心なエンジニアが集まります。投稿者も GKE の案件で優秀なメンバーから刺激を受け、技術力が爆発的に伸びたそうです。</li>
+    </ul>
+
+    <h3 id="sec-9-6">9.6 ロードマップのまとめ</h3>
+    <ul>
+      <li>5 段階を一通り経験すれば、Web 系の会社のどれかの技術でキャッチアップに困りません。</li>
+      <li>「EC2 なら ECS に変えたら？」「ECS なら Lambda や Kubernetes を入れたら？」「AWS なら Google Cloud を取り入れたら？」と多角的に考えられ、奥深い設計力がつきます。</li>
+      <li>インフラは広く深く、一朝一夕では身につきませんが、だからこそ逆転されにくいです。最初から全部やろうと気負わず、実務をこなしながら少しずつ守備範囲を広げればよい、と締めくくっています。</li>
+    </ul>
+
+    <h3 id="sec-9-7">9.7 動画全体のまとめ</h3>
+    <ul>
+      <li>バックエンド × インフラの掛け算が、テックリード級の非機能要件の設計とインシデント対応を可能にし、市場価値を高めます。</li>
+      <li>インフラは「心臓・レバレッジ・不可逆・タスクが少ない」ために経験を積みにくく、強い人がいる会社でも我流の会社でも伸び悩むジレンマがあります。</li>
+      <li>学び方の鍵は、クラウド代をケチらない、綺麗な構成を真似して複製する、まずコンソールで手動構築する、ストーリーで線として学ぶ、本格的なアプリコードで構築する、の 5 点です。</li>
+      <li>習得順は EC2（仮想マシン）→ ECS（コンテナ）→ Lambda（イベント駆動）→ Google Cloud（マルチクラウド）→ EKS（Kubernetes）です。</li>
+    </ul>
+    <p>動画の目次（タイムスタンプ）：0:00 オープニング｜チャンネル開設の背景、3:38 そもそも「インフラ」とは？、4:04 なぜ今インフラの重要性が高まっているのか、5:18 なぜバックエンドエンジニアこそインフラをやるべきか、7:34 掛け算①：非機能要件への設計力、11:04 掛け算②：インシデント対応、12:19 インフラができるメリット 4 選、19:12 なぜインフラの経験を積むのは難しいのか、23:01 インフラ力が上がらないジレンマ、27:32 絶対に押さえるべきインフラ学習 5 つのポイント、38:52 インフラスキル習得ロードマップ、40:51 STEP1：EC2、47:43 STEP2：ECS、52:29 STEP3：Lambda、56:22 STEP4：Google Cloud、1:01:56 STEP5：EKS / Kubernetes、1:06:25 ロードマップまとめ、1:07:49 まとめ。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>サーバー・インフラは、<strong>アプリを動かす器と、それを用意・拡張・防御する方法</strong> です。</li>
+      <li>10 サーバーの基礎 → 20 Web サーバー → 30 アプリ実行環境 → 40 構築・IaC → 50 スケーリング → 60 セキュリティ の順に、Shop を 1 台構成から冗長構成まで育てながら学びます。手作業を知ってからコード化し、コード化できてから台数を増やし、最後に全体を守る、という流れです。</li>
+      <li>61 は運用領域 61〜69 の最初の土台です。61 → 62 データアーキテクチャ → 63 AWS → 64 CI-CD → 65 リリース・デプロイ → 66 可観測性 → 67 パフォーマンス → 68 分散システム → 69 SRE・インシデント対応 と進みます。</li>
+      <li>OS・ネットワークの理論は 11_コンピューターサイエンス、セキュリティの考え方とアプリ側の対策は 71〜74 にあり、61 はそれをサーバーの運用に当てはめます。</li>
+      <li>動画「インフラ完全攻略」によれば、インフラは経験を積みにくい領域ですが、綺麗な構成を真似る・手で作ってからコード化する・ストーリーで学ぶ・本物のアプリで作る、といった正しいやり方で再現性高く伸ばせます。</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 61_サーバー・インフラで扱う「インフラ」とは何ですか。</summary>
+      <div class="body"><p>アプリを安定して動かすための土台です。具体的には、アプリを動かす器（サーバー・Web サーバー・実行環境・DB サーバー）と、それを用意する（構築・IaC）、増やす（スケーリング・負荷分散）、守る（サーバー・ネットワークセキュリティ）方法を扱います。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 40 構築・IaC が 10〜30 の後にあるのはなぜですか。</summary>
+      <div class="body"><p>手作業でサーバーを構築する手順を一度経験してからでないと、IaC ツールが何を自動化しているのか分からないからです。動画でも「最初はコンソールから手動で構築し、その後 <code>terraform import</code> でコード化する」学び方が勧められています。また、コードで同じサーバーを何台でも作れるようになって初めて、50 のスケーリングが現実的になります。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 60 セキュリティが最後にあるなら、公開前にセキュリティ設定をしなくてよいのですか。</summary>
+      <div class="body"><p>いいえ。60 が最後にあるのは、守る対象を知ってから学ぶほうが分かりやすいからです。実際には SSH の鍵認証やファイアウォールは公開前に設定します。そのため「1 台に公開する近道」にも 60-2・60-3 が含まれています。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 61〜69 の中で、なぜ 61 は 63 AWS より先なのですか。</summary>
+      <div class="body"><p>EC2・VPC・ELB といった AWS の製品は、サーバーとネットワークの知識が前提だからです。61 で製品に依存しない概念を学び、62 で DB の基礎を学んでから、63 でそれらをクラウドの製品に当てはめます。</p></div>
+    </details>
+    <details>
+      <summary>Q5. TCP/IP や DNS の仕組みそのものを詳しく知りたいときは、どこを見ますか。</summary>
+      <div class="body"><p>11_コンピューターサイエンスの「60 ネットワーク・Web」（OS なら「50 OS・並行処理」）のノートです。61 はそれらの理論をサーバーの運用に使う実践側を扱います。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 「502 Bad Gateway」が出たとき、まず読むページはどれですか。</summary>
+      <div class="body"><p>20-3 リバースプロキシ、続いて 30-4 プロセス管理とsystemd です。502 は Nginx（リバースプロキシ）が後ろのアプリから正しい応答を受け取れないときに出るので、転送設定とアプリのプロセスが動いているかを確認します。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 動画で挙げられた「インフラの経験が積みにくい 4 つの理由」は何ですか。</summary>
+      <div class="body"><p>① プロダクトの心臓で、間違えると大障害になる ② レバレッジが効くので、経験者に任せたい力学が働く ③ 不可逆で、git revert のように戻せない ④ タスクが少なく、できる人が独占しがち、の 4 つです。</p></div>
+    </details>
+    <details>
+      <summary>Q8. 動画のロードマップで、EC2 → ECS と進む理由を説明してください。</summary>
+      <div class="body"><p>EC2（仮想マシン）でインフラの手触り感を得たあと、そのつらさ（全台分のサーバー管理、リソース割り当ての硬さ、属人性）を ECS（コンテナ）が解決するからです。ECS ではタスク定義と Dockerfile で構成を静的に管理し、タスクを使い捨てにするので属人性が構造的に排除され、コンテナ時代のお作法が身につきます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/00_全体像/MOC_サーバー・インフラ体系</li>
+      <li>ノート：61_サーバー・インフラ/00_全体像/MOC_運用領域マップ</li>
+      <li>ノート：61_サーバー・インフラ/00_全体像/【永久保存版】インフラ完全攻略 - 現役エンジニア向け（動画メモ）</li>
+      <li>動画：【永久保存版】インフラ完全攻略 - 現役エンジニア向け（りょうま@インフラ攻略、2026-07-04） https://www.youtube.com/watch?v=xVHJ-8ZaTyo</li>
+      <li>roadmap.sh DevOps https://roadmap.sh/devops</li>
+      <li>The Twelve-Factor App https://12factor.net/ja/</li>
+      <li>関連ページ：<a href="10-1_サーバーとは何か.html">10-1 サーバーとは何か</a>、<a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a>、<a href="../71_セキュリティ基礎/00-0_目次.html">71 セキュリティ基礎</a>、<a href="../72_Web脆弱性対策/00-0_目次.html">72 Web脆弱性対策</a>、<a href="../73_認証認可/00-0_目次.html">73 認証認可</a>、<a href="../74_セッション管理/00-0_目次.html">74 セッション管理</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-1_サーバーとは何か.html"><span class="lbl">次のページ →</span>サーバーとは何か</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nginx入門｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 Webサーバー・リバースプロキシ › Nginx入門</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 Webサーバー・リバースプロキシ</span>
+      <h1>Nginx入門</h1>
+      <p class="lead"><strong>Nginx</strong>（エンジンエックス）は、いま最もよく使われる Web サーバーの 1 つです。このページでは、Ubuntu へのインストールと <strong>master / worker プロセス</strong> の役割、<code>/etc/nginx</code> 以下の設定ファイルの構成と <code>http</code> / <code>server</code> / <code>location</code> ブロックの関係、<strong>location のマッチ順</strong>、<code>nginx -t</code> → <code>reload</code> という安全な反映手順、ログの読み方、<code>root</code> と <code>alias</code> の取り違えの罠を解説します。</p>
+      <p class="meta">もとにしたノート：20_Webサーバー・リバースプロキシ/02_Nginx入門</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>Nginx の設定ファイルは <strong>「ビルの案内板」</strong> です。建物全体のルール（<code>http</code>）の中に、会社（ドメイン）ごとのフロア（<code>server</code>）があり、各フロアに「この部署（URL パス）宛ての荷物はこの棚へ」という仕分けルール（<code>location</code>）が並びます。運用は <strong>書く → <code>nginx -t</code> で文法チェック → <code>reload</code></strong> の繰り返しです。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>Nginx の設定の考え方</h2>
+    <p>荷物（リクエスト）が届くと、Nginx は案内板を見て、行き先を 1 つに決めます。</p>
+    <ul>
+      <li>Nginx は <strong>設定ファイルを書いて、文法チェックして、リロードする</strong> の繰り返しで運用します</li>
+      <li>迷いどころは「どの <code>server</code> に入るか」と「どの <code>location</code> に入るか」の 2 点だけです</li>
+      <li>設定を変えても <code>reload</code> するまで反映されません。<code>reload</code> 前には必ず <code>nginx -t</code> を実行します</li>
+    </ul>
+    <p>前提として <a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a>、<a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a> を読んでいると理解しやすくなります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>インストールとプロセス構成</h2>
+
+    <h3 id="sec-2-1">2.1 apt でインストール</h3>
+<pre><code>sudo apt update
+sudo apt install -y nginx
+
+# 自動起動が有効で、起動していることを確認
+systemctl status nginx
+nginx -v              # 例: nginx version: nginx/1.24.0 (Ubuntu)
+
+# 動作確認（Welcome to nginx! の HTML が返る）
+curl -I http://localhost/</code></pre>
+    <p>Ubuntu の <code>nginx</code> パッケージは、インストールと同時に <strong>systemd</strong>（Linux でサービスを起動・管理する仕組み）のサービスとして起動・自動起動設定まで行います（詳細は <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>）。外部から見られない場合は、ファイアウォールで 80/443 番が開いているか確認します（<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>）。</p>
+    <div class="callout tip">
+      <p class="callout-title">バージョンについて（2026 年時点）</p>
+      <p>Ubuntu 24.04 の公式リポジトリの Nginx は <strong>1.24 系</strong>（セキュリティ修正のみバックポート）です。HTTP/3 や新しいディレクティブが必要なら、nginx.org が提供する公式 apt リポジトリ（stable / mainline）を使います。ただし公式リポジトリ版は <code>sites-available</code> を使わず <code>conf.d</code> だけの構成で、実行ユーザーも <code>nginx</code> になるなど、Ubuntu 版とレイアウトが少し異なります。このシリーズは Ubuntu 版を基準にします。</p>
+    </div>
+
+    <h3 id="sec-2-2">2.2 master プロセスと worker プロセス</h3>
+<pre><code>ps -ef --forest | grep [n]ginx</code></pre>
+<pre><code>root       1201     1  nginx: master process /usr/sbin/nginx -g daemon on; master_process on;
+www-data   1202  1201  nginx: worker process
+www-data   1203  1201  nginx: worker process</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロセス</th><th>実行ユーザー</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>master</strong></td><td>root</td><td>設定ファイルを読む、80/443 番ポートを開く（1024 未満のポートは root 権限が必要）、worker の起動・監視・入れ替え</td></tr>
+        <tr><td><strong>worker</strong></td><td>www-data</td><td>実際にリクエストを処理する。各 worker がイベント駆動で数千の接続を同時に扱う</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>worker_processes auto;</code> にすると CPU コア数と同じ数の worker が起動します。権限の強い master は通信を直接扱わず、リクエスト処理は権限の弱い <code>www-data</code> が行うので、仮に worker が乗っ取られても被害を限定できます（<a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">71 最小権限</a> の考え方です）。</p>
+    <p><strong>reload の仕組み</strong>：<code>systemctl reload nginx</code> を実行すると、master が新しい設定を読み込み、新しい worker を起動し、古い worker には「今処理中のリクエストを終えたら終了して」と伝えます。そのため <strong>接続を切らずに設定を入れ替えられます</strong>。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>設定ファイルの構成</h2>
+
+    <h3 id="sec-3-1">3.1 ディレクトリ構成（Ubuntu）</h3>
+<pre><code>/etc/nginx/
+├── nginx.conf              ← 大元の設定。ここから他のファイルを include する
+├── mime.types              ← 拡張子 → Content-Type の対応表
+├── conf.d/                 ← *.conf が自動で読み込まれる（共通設定向き）
+├── sites-available/        ← サイト設定の「置き場」（ここに置いただけでは無効）
+│   ├── default
+│   └── shop                ← 自分で作る
+├── sites-enabled/          ← ここにあるものだけ読み込まれる（実体はシンボリックリンク）
+│   ├── default -&gt; /etc/nginx/sites-available/default
+│   └── shop    -&gt; /etc/nginx/sites-available/shop
+├── snippets/               ← 使い回す設定の断片（例: TLS 設定）
+└── modules-enabled/        ← 動的モジュールの読み込み設定
+/var/log/nginx/             ← access.log / error.log
+/var/www/html/              ← デフォルトサイトの公開ディレクトリ</code></pre>
+    <p><code>sites-available</code> と <code>sites-enabled</code> に分かれているのは、<strong>設定を消さずに有効 / 無効を切り替えるため</strong> です。有効化は <strong>シンボリックリンク</strong>（別の場所にあるファイルを指すショートカット）を作るだけ、無効化はリンクを消すだけです。</p>
+    <div class="callout tip">
+      <p class="callout-title">sites-enabled と conf.d、どちらを使う？</p>
+      <p>どちらも <code>nginx.conf</code> の <code>http</code> ブロックから include（読み込み）されるので、動作上の違いはありません。Ubuntu では「サイトごとの <code>server</code> ブロックは <code>sites-available</code> → <code>sites-enabled</code>、全サイト共通の設定（ログ形式、gzip など）は <code>conf.d</code>」と使い分けるのが分かりやすいです。チームで 1 つに統一することが一番大切です。</p>
+    </div>
+
+    <h3 id="sec-3-2">3.2 nginx.conf の中身（Ubuntu 24.04 の既定を抜粋）</h3>
+<pre><code>user www-data;                    # worker の実行ユーザー
+worker_processes auto;            # worker 数 = CPU コア数
+pid /run/nginx.pid;
+error_log /var/log/nginx/error.log;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    worker_connections 768;       # 1 worker あたりの最大同時接続数
+}
+
+http {
+    sendfile on;                  # カーネル内でファイルを直接ソケットへ送る
+    tcp_nopush on;
+    types_hash_max_size 2048;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    access_log /var/log/nginx/access.log;
+    gzip on;
+
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}</code></pre>
+
+    <h3 id="sec-3-3">3.3 ブロックの入れ子と継承</h3>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="最上位のmain（user、worker_processes）の下にeventsブロック（worker_connections）とhttpブロック（全サイト共通のログ、gzip、mime）がある。httpの下にshop.example.com用とapi.shop.example.com用の2つのserverブロックがあり、shopのserverにはlocation /とlocation /assets/、apiのserverにはlocation /が入っている">
+      <defs>
+        <marker id="arw202a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="250" y="10" width="220" height="50" rx="8" class="d-box-accent"/>
+      <text x="360" y="32" text-anchor="middle" class="d-text-bold">main（最上位）</text>
+      <text x="360" y="50" text-anchor="middle" class="d-text-sub">user, worker_processes</text>
+      <rect x="60" y="90" width="200" height="50" rx="8" class="d-box"/>
+      <text x="160" y="112" text-anchor="middle" class="d-text-bold">events</text>
+      <text x="160" y="130" text-anchor="middle" class="d-text-sub">worker_connections</text>
+      <rect x="400" y="90" width="260" height="50" rx="8" class="d-box"/>
+      <text x="530" y="112" text-anchor="middle" class="d-text-bold">http</text>
+      <text x="530" y="130" text-anchor="middle" class="d-text-sub">全サイト共通：ログ, gzip, mime</text>
+      <path d="M330,60 L190,88" class="d-line" marker-end="url(#arw202a)"/>
+      <path d="M390,60 L500,88" class="d-line" marker-end="url(#arw202a)"/>
+      <rect x="250" y="170" width="220" height="50" rx="8" class="d-box"/>
+      <text x="360" y="192" text-anchor="middle" class="d-text-bold">server</text>
+      <text x="360" y="210" text-anchor="middle" class="d-text-sub">shop.example.com</text>
+      <rect x="490" y="170" width="220" height="50" rx="8" class="d-box"/>
+      <text x="600" y="192" text-anchor="middle" class="d-text-bold">server</text>
+      <text x="600" y="210" text-anchor="middle" class="d-text-sub">api.shop.example.com</text>
+      <path d="M500,140 L380,168" class="d-line" marker-end="url(#arw202a)"/>
+      <path d="M550,140 L590,168" class="d-line" marker-end="url(#arw202a)"/>
+      <rect x="180" y="250" width="150" height="40" rx="8" class="d-box-good"/>
+      <text x="255" y="275" text-anchor="middle" class="d-text">location /</text>
+      <rect x="350" y="250" width="150" height="40" rx="8" class="d-box-good"/>
+      <text x="425" y="275" text-anchor="middle" class="d-text">location /assets/</text>
+      <rect x="525" y="250" width="150" height="40" rx="8" class="d-box-good"/>
+      <text x="600" y="275" text-anchor="middle" class="d-text">location /</text>
+      <path d="M330,220 L270,248" class="d-line" marker-end="url(#arw202a)"/>
+      <path d="M390,220 L415,248" class="d-line" marker-end="url(#arw202a)"/>
+      <path d="M600,220 L600,248" class="d-line" marker-end="url(#arw202a)"/>
+    </svg>
+    <figcaption>図：http の中に server、server の中に location が入れ子になる</figcaption>
+    </figure>
+    <ul>
+      <li><strong>ディレクティブ</strong>（<code>root /var/www;</code> のような 1 行の命令）は、外側のブロックで書くと内側に <strong>継承</strong> されます</li>
+      <li>内側で同じディレクティブを書くと上書きされます</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">複数書ける系のディレクティブは継承が切れる</p>
+      <p><code>add_header</code> や <code>proxy_set_header</code> のような <strong>複数書ける系のディレクティブは、内側で 1 つでも書くと外側の分がすべて消えます</strong>（継承されなくなる）。セキュリティヘッダーが一部の location で消える典型的な原因です。セキュリティヘッダーの中身は <a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">72 セキュリティヘッダ</a> を参照してください。</p>
+    </div>
+
+    <h3 id="sec-3-4">3.4 どの server ブロックが選ばれるか</h3>
+    <p>リクエストが来ると、Nginx はまず <code>listen</code>（IP:ポート）で候補を絞り、次に <code>Host</code> ヘッダーと <code>server_name</code> を照合します。どれにも一致しなければ、そのポートの <strong>default_server</strong>（指定がなければ最初に読み込まれた server）が使われます。</p>
+<pre><code># どのドメインにも一致しないアクセス（IP 直打ちなど）は接続を閉じる
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;    # Nginx 独自: 何も返さず接続を切る
+}</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>location のマッチ優先順位</h2>
+    <p><code>location</code> は URL のパス部分（クエリ文字列 <code>?q=...</code> は含まない）と照合されます。<strong>書いた順番ではなく</strong>、次の規則で 1 つに決まります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>修飾子</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><code>=</code></td><td>完全一致。一致したら即決定</td><td><code>location = /favicon.ico</code></td></tr>
+        <tr><td><code>^~</code></td><td>前方一致。最長一致がこれなら正規表現を調べない</td><td><code>location ^~ /assets/</code></td></tr>
+        <tr><td><code>~</code></td><td>正規表現（大文字小文字を区別）</td><td><code>location ~ \.php$</code></td></tr>
+        <tr><td><code>~*</code></td><td>正規表現（区別しない）</td><td><code>location ~* \.(png|jpg)$</code></td></tr>
+        <tr><td>なし</td><td>前方一致</td><td><code>location /api/</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="リクエストのパスについて、まずイコールの完全一致があればそれを使う。なければ前方一致のlocationから最も長く一致するものを記憶する。その最長一致に^~が付いていればそれを使う。付いていなければ正規表現を書かれた順に試し、最初に一致したものを使う。どれにも一致しなければ記憶しておいた最長前方一致を使う">
+      <defs>
+        <marker id="arw202b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="20" width="260" height="46" rx="8" class="d-box-accent"/>
+      <text x="150" y="48" text-anchor="middle" class="d-text-bold">① = の完全一致がある？</text>
+      <path d="M280,43 L478,43" class="d-line" marker-end="url(#arw202b)"/>
+      <text x="380" y="35" text-anchor="middle" class="d-text-sub">はい</text>
+      <rect x="480" y="20" width="220" height="46" rx="8" class="d-box-good"/>
+      <text x="590" y="48" text-anchor="middle" class="d-text">それを使う</text>
+      <path d="M150,66 L150,98" class="d-line" marker-end="url(#arw202b)"/>
+      <text x="170" y="88" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="100" width="260" height="46" rx="8" class="d-box"/>
+      <text x="150" y="121" text-anchor="middle" class="d-text">② 前方一致のうち</text>
+      <text x="150" y="139" text-anchor="middle" class="d-text">最長一致を記憶</text>
+      <path d="M150,146 L150,178" class="d-line" marker-end="url(#arw202b)"/>
+
+      <rect x="20" y="180" width="260" height="46" rx="8" class="d-box-accent"/>
+      <text x="150" y="208" text-anchor="middle" class="d-text-bold">③ 最長一致に ^~ がある？</text>
+      <path d="M280,203 L478,203" class="d-line" marker-end="url(#arw202b)"/>
+      <text x="380" y="195" text-anchor="middle" class="d-text-sub">はい</text>
+      <rect x="480" y="180" width="220" height="46" rx="8" class="d-box-good"/>
+      <text x="590" y="208" text-anchor="middle" class="d-text">それを使う</text>
+      <path d="M150,226 L150,258" class="d-line" marker-end="url(#arw202b)"/>
+      <text x="170" y="248" class="d-text-sub">いいえ</text>
+
+      <rect x="20" y="260" width="260" height="56" rx="8" class="d-box-accent"/>
+      <text x="150" y="283" text-anchor="middle" class="d-text-bold">④ 正規表現 ~ / ~* を</text>
+      <text x="150" y="302" text-anchor="middle" class="d-text-bold">書いた順に試す</text>
+      <path d="M280,276 L478,262" class="d-line" marker-end="url(#arw202b)"/>
+      <text x="380" y="258" text-anchor="middle" class="d-text-sub">最初に一致</text>
+      <rect x="480" y="240" width="220" height="40" rx="8" class="d-box-good"/>
+      <text x="590" y="265" text-anchor="middle" class="d-text">その正規表現を使う</text>
+      <path d="M280,302 L478,306" class="d-line" marker-end="url(#arw202b)"/>
+      <text x="380" y="322" text-anchor="middle" class="d-text-sub">一致なし</text>
+      <rect x="480" y="288" width="220" height="40" rx="8" class="d-box-good"/>
+      <text x="590" y="313" text-anchor="middle" class="d-text">記憶した最長一致を使う</text>
+    </svg>
+    <figcaption>図：location は「= → 最長前方一致（^~）→ 正規表現 → 最長前方一致」の順に決まる</figcaption>
+    </figure>
+
+    <p>具体例で確認しましょう。</p>
+<pre><code>location = / { ... }                       # A
+location / { ... }                         # B
+location /assets/ { ... }                  # C
+location ^~ /images/ { ... }               # D
+location ~* \.(gif|jpg|png)$ { ... }       # E</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>リクエスト</th><th>選ばれる</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><code>/</code></td><td>A</td><td>完全一致</td></tr>
+        <tr><td><code>/about.html</code></td><td>B</td><td>前方一致 <code>/</code> のみ。正規表現にも当たらない</td></tr>
+        <tr><td><code>/assets/app.js</code></td><td>C</td><td>最長前方一致 C、正規表現に当たらない</td></tr>
+        <tr><td><code>/assets/logo.png</code></td><td><strong>E</strong></td><td>最長前方一致は C だが <code>^~</code> がないので正規表現を試し、E が当たる</td></tr>
+        <tr><td><code>/images/logo.png</code></td><td>D</td><td>最長前方一致 D に <code>^~</code> があるので正規表現を調べない</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">つまずきポイント</p>
+      <p>「<code>/assets/</code> の location にキャッシュ設定を書いたのに、画像だけ効かない」というとき、たいてい別の正規表現 location が画像を横取りしています。静的ファイル用ディレクトリには <code>^~</code> を付けておくと予想どおりに動きます。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>静的サイト配信の最小設定と反映手順</h2>
+
+    <h3 id="sec-5-1">5.1 Shop のフロントエンドを配信する</h3>
+    <p>ビルド済みの Shop フロントエンド（<strong>SPA</strong>：1 枚の HTML の上で JavaScript が画面を切り替えるアプリ）を <code>/var/www/shop</code> に置き、<code>shop.example.com</code> で公開します。</p>
+<pre><code>sudo mkdir -p /var/www/shop
+sudo cp -r ./dist/* /var/www/shop/
+sudo chown -R www-data:www-data /var/www/shop   # worker が読めるように</code></pre>
+<pre><code># /etc/nginx/sites-available/shop
+server {
+    listen 80;
+    listen [::]:80;
+    server_name shop.example.com;
+
+    root  /var/www/shop;          # 公開ディレクトリ
+    index index.html;             # ディレクトリにアクセスされたときに返すファイル
+
+    access_log /var/log/nginx/shop.access.log;
+    error_log  /var/log/nginx/shop.error.log;
+
+    # ① ビルド成果物（ファイル名にハッシュ付き）
+    location ^~ /assets/ {
+        try_files $uri =404;
+    }
+
+    # ② それ以外は SPA のルーティングに任せる
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # ③ .git や .env などの隠しファイルは返さない
+    location ~ /\. {
+        deny all;
+    }
+}</code></pre>
+    <p><code>try_files $uri $uri/ /index.html;</code> は「パスに対応するファイルがあればそれ、ディレクトリがあればその中の index、どちらもなければ <code>/index.html</code> を返す」という意味です。SPA では <code>/products/42</code> のような URL も実ファイルがないので、<code>index.html</code> を返してフロントエンドの JavaScript にルーティングを任せます。</p>
+
+    <h3 id="sec-5-2">5.2 有効化して反映する</h3>
+<pre><code># 有効化（シンボリックリンク）。不要ならデフォルトサイトを無効化
+sudo ln -s /etc/nginx/sites-available/shop /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
+
+# ① 文法チェック（必須）
+sudo nginx -t
+# nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+# nginx: configuration file /etc/nginx/nginx.conf test is successful
+
+# ② 接続を切らずに反映
+sudo systemctl reload nginx
+
+# ③ 確認
+curl -I -H 'Host: shop.example.com' http://127.0.0.1/</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>コマンド</th><th>使いどころ</th></tr></thead>
+      <tbody>
+        <tr><td>文法チェック</td><td><code>sudo nginx -t</code></td><td>設定変更のたびに必ず</td></tr>
+        <tr><td>反映（無停止）</td><td><code>sudo systemctl reload nginx</code></td><td>通常の設定変更</td></tr>
+        <tr><td>再起動</td><td><code>sudo systemctl restart nginx</code></td><td>バイナリ更新・モジュール追加時など（接続が切れる）</td></tr>
+        <tr><td>全設定の展開表示</td><td><code>sudo nginx -T</code></td><td>include 先も含めて実際に読まれている設定を確認</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title"><code>nginx -t &amp;&amp; systemctl reload nginx</code> を習慣に</p>
+      <p><code>nginx -t</code> を飛ばして <code>restart</code> すると、文法エラーがあった場合に Nginx が起動できず <strong>全サイトが停止</strong> します。<code>reload</code> なら失敗しても古い設定のまま動き続けますが、エラーに気付きにくくなります。<code>sudo nginx -t &amp;&amp; sudo systemctl reload nginx</code> と 1 行で打つ癖をつけましょう。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>アクセスログとエラーログ</h2>
+
+    <h3 id="sec-6-1">6.1 アクセスログ</h3>
+    <p>既定の <code>combined</code> 形式では 1 リクエスト 1 行で次のように記録されます。</p>
+<pre><code>203.0.113.50 - - [12/Oct/2026:10:15:32 +0900] "GET /assets/app.3f9a1c.js HTTP/1.1" 200 48213 "https://shop.example.com/" "Mozilla/5.0 ..."
+  クライアントIP        日時                       リクエスト行                    ステータス サイズ  リファラ                   User-Agent</code></pre>
+    <p>実務では処理時間を追加したログ形式を定義しておくと、遅いリクエストの調査に役立ちます。</p>
+<pre><code># /etc/nginx/conf.d/log_format.conf
+log_format timed '$remote_addr - $remote_user [$time_local] "$request" '
+                 '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+                 'rt=$request_time urt=$upstream_response_time';</code></pre>
+<pre><code># サイト側で使う
+access_log /var/log/nginx/shop.access.log timed;</code></pre>
+    <p><code>$request_time</code> は Nginx がリクエストを受けてから返し終えるまでの時間、<code>$upstream_response_time</code> は裏のアプリが応答するまでの時間です。両者の差が大きければ「クライアントへの転送が遅い」、<code>upstream</code> 側が大きければ「アプリが遅い」と切り分けられます。</p>
+
+    <h3 id="sec-6-2">6.2 よく使うログ調査コマンド</h3>
+<pre><code># リアルタイムで流れを見る
+sudo tail -f /var/log/nginx/shop.access.log
+
+# ステータスコード別の件数
+sudo awk '{print $9}' /var/log/nginx/shop.access.log | sort | uniq -c | sort -rn
+
+# 5xx だけ抜き出す
+sudo awk '$9 ~ /^5/' /var/log/nginx/shop.access.log | tail -20
+
+# エラーログ（403/404 の原因やアプリ接続失敗が書かれる）
+sudo tail -50 /var/log/nginx/shop.error.log</code></pre>
+    <p>エラーログには「なぜ失敗したか」が書かれます。例えば <code>open() "/var/www/shop/foo" failed (2: No such file or directory)</code> なら Nginx が探したパスがそのまま分かるので、<code>root</code> の設定ミスにすぐ気付けます。ログは <code>logrotate</code> で日次ローテーション（古いログを切り分けて圧縮・削除すること）されます（<code>/etc/logrotate.d/nginx</code>）。ログの監査や侵入の検知は <a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a> を参照してください。ログの集約や監視は 62 章以降の運用系ノート（サーバー監視とログ管理の基本、ログ集約基盤）で扱います。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>よく使うディレクティブと root / alias の罠</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ディレクティブ</th><th>役割</th><th>書ける場所</th></tr></thead>
+      <tbody>
+        <tr><td><code>root</code></td><td><strong>URI をそのまま後ろに連結</strong> してファイルパスを作る</td><td>http / server / location</td></tr>
+        <tr><td><code>alias</code></td><td>location に一致した部分を <strong>置き換えて</strong> ファイルパスを作る</td><td>location のみ</td></tr>
+        <tr><td><code>index</code></td><td>ディレクトリへのアクセス時に返すファイル名</td><td>http / server / location</td></tr>
+        <tr><td><code>try_files</code></td><td>候補を順に確認し、最初に存在したものを返す。最後の引数はフォールバック（URI か <code>=404</code> などのコード）</td><td>server / location</td></tr>
+        <tr><td><code>client_max_body_size</code></td><td>リクエスト本文の上限（既定 1m）。画像アップロードで 413 が出たらこれ</td><td>http / server / location</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-7-1">7.1 root と alias の違い</h3>
+<pre><code>location /images/ {
+    root /var/www/shop;
+}
+# /images/logo.png → /var/www/shop + /images/logo.png = /var/www/shop/images/logo.png
+
+location /images/ {
+    alias /var/www/media/;
+}
+# /images/logo.png → /images/ を /var/www/media/ に置き換え = /var/www/media/logo.png</code></pre>
+
+    <h3 id="sec-7-2">7.2 罠 1：root にパスを重ねてしまう</h3>
+    <span class="code-label bad">✕ 危険な例：URL と同じディレクトリ名まで root に書く</span>
+<pre><code>location /images/ {
+    root /var/www/shop/images;    # /var/www/shop/images/images/logo.png を探して 404
+}</code></pre>
+    <p>URL のパスとディレクトリ名が同じなら、<code>root</code> は親ディレクトリを指定します。</p>
+
+    <h3 id="sec-7-3">7.3 罠 2：alias の末尾スラッシュの不一致</h3>
+    <span class="code-label bad">✕ 危険な例：location だけ末尾スラッシュがない</span>
+<pre><code>location /images {                # 末尾スラッシュなし
+    alias /var/www/media/;
+}
+# /images../secret.txt → /var/www/media/../secret.txt となり、上の階層が読めてしまう（パストラバーサル）</code></pre>
+    <span class="code-label good">◯ 安全な例：両方 / で終える</span>
+<pre><code>location /images/ {
+    alias /var/www/media/;
+}</code></pre>
+    <p><code>alias</code> を使うときは <strong>location と alias の末尾スラッシュを揃える</strong>（両方 <code>/</code> で終える）のが鉄則です。そもそも公式ドキュメントも「location のパスが alias の末尾と一致するなら <code>root</code> を使うほうがよい」としています。迷ったら <code>root</code> を使い、ディレクトリ名を変えたいときだけ <code>alias</code> を使いましょう。パストラバーサル（<code>../</code> で上の階層をたどる攻撃）そのものは <a href="../72_Web脆弱性対策/40-1_ファイルアクセスとディレクトリトラバーサル.html">72 ファイルアクセスとディレクトリトラバーサル</a> で扱っています。</p>
+
+    <h3 id="sec-7-4">7.4 罠 3：パーミッション</h3>
+    <p>403 Forbidden が出て設定が正しく見えるときは、<code>www-data</code> がファイルだけでなく <strong>途中のすべてのディレクトリに実行（x）権限を持っているか</strong> を確認します。</p>
+<pre><code>namei -l /var/www/shop/index.html   # 経路上の各ディレクトリの権限を一覧表示</code></pre>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li>✕「設定ファイルを保存すれば反映される」<br>◯ <code>sudo nginx -t</code> で文法確認し、<code>sudo systemctl reload nginx</code> するまで反映されません。</li>
+        <li>✕「location は上に書いたものが優先される」<br>◯ 前方一致は <strong>最長一致</strong>、正規表現は <strong>書いた順</strong> で、<code>=</code> と <code>^~</code> が優先度を変えます。順番を入れ替えても前方一致の結果は変わりません。</li>
+        <li>✕「<code>sites-available</code> に置けば有効になる」<br>◯ <code>sites-enabled</code> にシンボリックリンクを作って初めて読み込まれます。逆にデフォルトサイトが残っていると、意図しない server が応答することがあります。</li>
+        <li>✕「子の location で <code>add_header</code> を 1 つ足しても、親の <code>add_header</code> は残る」<br>◯ 子で 1 つでも <code>add_header</code> を書くと親の分はすべて継承されなくなります。共通ヘッダーは snippet にして各所で include するのが安全です。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>Ubuntu では <code>apt install nginx</code> で導入でき、root の master と <code>www-data</code> の worker で動く</li>
+      <li>設定は <code>nginx.conf</code> → <code>conf.d</code> / <code>sites-enabled</code> の順に include され、<code>http</code> &gt; <code>server</code> &gt; <code>location</code> の入れ子で書く</li>
+      <li><code>server</code> は <code>listen</code> と <code>server_name</code>、<code>location</code> は <code>=</code> → 最長前方一致（<code>^~</code>）→ 正規表現 → 最長前方一致 の順で決まる</li>
+      <li>変更したら <code>nginx -t &amp;&amp; systemctl reload nginx</code>。reload なら接続を切らずに反映できる</li>
+      <li>調査はアクセスログ（何が起きたか）とエラーログ（なぜ失敗したか）。<code>$request_time</code> を記録しておく</li>
+      <li><code>root</code> は URI を連結、<code>alias</code> は置き換え。迷ったら <code>root</code>、<code>alias</code> は末尾スラッシュを揃える</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. <code>location /static/ { root /srv/shop/static; }</code> のとき、/static/css/app.css で Nginx はどのファイルを探しますか。</summary>
+      <div class="body"><p><code>root</code> は URI をそのまま連結するので <code>/srv/shop/static/static/css/app.css</code> を探し、おそらく 404 になります。<code>root /srv/shop;</code> にするか、<code>alias /srv/shop/static/;</code> にします。</p></div>
+    </details>
+    <details>
+      <summary>Q2. <code>location /assets/</code> と <code>location ~* \.(png|jpg)$</code> があるとき、/assets/logo.png はどちらで処理されますか。</summary>
+      <div class="body"><p>正規表現のほうで処理されます（前方一致の最長一致を記憶したあと、正規表現が一致したため）。<code>location ^~ /assets/</code> とすれば、最長一致が <code>^~</code> 付きなので正規表現は調べられず、<code>/assets/</code> 側で処理されます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 設定変更を反映するとき、<code>restart</code> ではなく <code>nginx -t</code> のあと <code>reload</code> を使うのはなぜですか。</summary>
+      <div class="body"><p><code>reload</code> は master が新しい worker を起動し、古い worker は処理中のリクエストを終えてから終了するので、接続を切らずに反映できます。また事前に <code>nginx -t</code> で文法を確認しておけば、エラーで Nginx が起動しなくなり全サイトが止まる事故を防げます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. master プロセスは root、worker プロセスは www-data で動くのはなぜですか。</summary>
+      <div class="body"><p>1024 未満のポート（80/443）を開くには root 権限が必要なので master が root で動きます。一方、外部からのリクエストを直接処理する worker は権限の弱い <code>www-data</code> で動かすことで、仮に乗っ取られても被害を限定できます。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 設定が正しく見えるのに 403 Forbidden が返ります。何を確認しますか。</summary>
+      <div class="body"><p><code>www-data</code> がファイル自体だけでなく、経路上のすべてのディレクトリに実行（x）権限を持っているかを <code>namei -l</code> で確認します。エラーログにも原因が書かれます。</p></div>
+    </details>
+    <details>
+      <summary>Q6. ある location に <code>add_header</code> を 1 つ追加したら、その location だけセキュリティヘッダーが消えました。なぜですか。</summary>
+      <div class="body"><p><code>add_header</code> のような複数書ける系のディレクティブは、内側で 1 つでも書くと外側の分が継承されなくなるためです。共通ヘッダーは snippet にまとめ、各 location で include します。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/20_Webサーバー・リバースプロキシ/02_Nginx入門</li>
+      <li>nginx: Beginner's Guide https://nginx.org/en/docs/beginners_guide.html</li>
+      <li>nginx: ngx_http_core_module（location / root / alias / try_files） https://nginx.org/en/docs/http/ngx_http_core_module.html</li>
+      <li>nginx: How nginx processes a request https://nginx.org/en/docs/http/request_processing.html</li>
+      <li>nginx: Controlling nginx（reload の仕組み） https://nginx.org/en/docs/control.html</li>
+      <li>nginx: ngx_http_log_module https://nginx.org/en/docs/http/ngx_http_log_module.html</li>
+      <li>Ubuntu Server docs: Nginx https://documentation.ubuntu.com/server/how-to/web-services/</li>
+      <li>Launchpad: nginx package in Ubuntu Noble https://launchpad.net/ubuntu/noble/+source/nginx</li>
+      <li>関連ページ：<a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a>、<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>、<a href="20-6_HTTPキャッシュと圧縮.html">20-6 HTTPキャッシュと圧縮</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>、<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-1_Webサーバーとは.html"><span class="lbl">← 前のページ</span>Webサーバーとは</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-3_リバースプロキシ.html"><span class="lbl">次のページ →</span>リバースプロキシ</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

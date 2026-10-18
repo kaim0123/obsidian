@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L2セキュリティ｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 サーバー・ネットワークセキュリティ › L2セキュリティ</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 サーバー・ネットワークセキュリティ</span>
+      <h1>L2セキュリティ（ポートセキュリティ・DHCPスヌーピング・DAI）</h1>
+      <p class="lead">スイッチ（レイヤー2）は、社内の端末が直接つながる場所です。社内に入り込んだ攻撃者や不正な機器は、まず L2 の仕組みを悪用します。このページでは、<strong>MAC フラッディング・DHCP スタベーション／スプーフィング・ARP スプーフィング・VLAN ホッピング</strong>などの攻撃と、<strong>ポートセキュリティ・DHCP スヌーピング・DAI・BPDU ガード</strong>などの対策機能を対応させて学びます。</p>
+      <p class="meta">もとにしたノート：60_サーバー・ネットワークセキュリティ/09_L2セキュリティ（ポートセキュリティ・DHCPスヌーピング・DAI）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>攻撃ごとに効く機能が決まっています。</strong>MAC をあふれさせる攻撃には<strong>ポートセキュリティ</strong>、偽 DHCP サーバには <strong>DHCP スヌーピング</strong>（正規サーバ側だけ trusted）、偽 ARP には <strong>DAI</strong>（DHCP スヌーピングの表と照合）、VLAN ホッピングには<strong>アクセス固定・DTP 無効・ネイティブ VLAN 変更</strong>、不正スイッチには <strong>BPDU ガード</strong>を使います。</p>
+    </div>
+
+    <p>このページは、スイッチと MAC アドレステーブルの基本（11_コンピューターサイエンスの「16ルーターとスイッチとハブとNAT」のノート）と <a href="10-6_DHCPとNTP.html">10-6 DHCPとNTP</a> を読んでいると理解しやすいです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>L2 攻撃と対策の対応表</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>攻撃</th><th>手口</th><th>被害</th><th>主な対策</th></tr></thead>
+      <tbody>
+        <tr><td>MAC フラッディング</td><td>送信元 MAC を次々に変えた大量のフレームで MAC アドレステーブルをあふれさせる</td><td>スイッチがハブのようにフラッディング → 盗聴</td><td><strong>ポートセキュリティ</strong>（学習できる MAC 数の制限）</td></tr>
+        <tr><td>DHCP スタベーション</td><td>偽の MAC で大量の DHCPDISCOVER → アドレスを使い切らせる</td><td>正規の端末が IP をもらえない（DoS）</td><td><strong>DHCP スヌーピング</strong>（レート制限）、ポートセキュリティ</td></tr>
+        <tr><td>DHCP スプーフィング</td><td>偽の DHCP サーバとして応答し、偽のゲートウェイ/DNS を配る</td><td>通信を攻撃者経由にされる（中間者攻撃）</td><td><strong>DHCP スヌーピング</strong>（untrusted ポートのサーバ応答を破棄）</td></tr>
+        <tr><td>ARP スプーフィング</td><td>「ゲートウェイの IP は自分の MAC だ」という偽 ARP を送る</td><td>通信を攻撃者に引き寄せる（中間者攻撃）</td><td><strong>DAI</strong>（ダイナミック ARP インスペクション）</td></tr>
+        <tr><td>VLAN ホッピング（スイッチスプーフィング）</td><td>DTP で交渉してトランクを作る</td><td>全 VLAN にアクセス</td><td>アクセスポートに固定・<strong>DTP 無効</strong>（<code>switchport nonegotiate</code>）</td></tr>
+        <tr><td>VLAN ホッピング（ダブルタギング）</td><td>外側にネイティブ VLAN、内側に標的 VLAN のタグを付ける</td><td>別の VLAN へフレームを送り込む</td><td><strong>ネイティブ VLAN を未使用 VLAN に変更</strong></td></tr>
+        <tr><td>不正なスイッチの接続（STP 操作）</td><td>PortFast のポートで BPDU を送る</td><td>ルートブリッジの乗っ取りなど</td><td><strong>BPDU ガード</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>中間者攻撃</strong>とは、通信の間に割り込んで、内容を盗み見たり書き換えたりする攻撃です。<strong>DTP</strong> はスイッチ同士がトランク（複数 VLAN を運ぶ回線）を自動で作るための交渉プロトコル、<strong>STP</strong> はループを防ぐプロトコルで、<strong>BPDU</strong> はその制御フレームです。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>MAC フラッディングとポートセキュリティ</h2>
+
+    <h3 id="sec-2-1">2.1 MAC フラッディング</h3>
+    <p>スイッチは MAC アドレステーブルを使って、宛先 MAC のあるポートだけにフレームを転送します。テーブルの容量には上限があります。</p>
+<pre><code>攻撃者がランダムな送信元MACのフレームを大量に送る
+  aa:01 → ... aa:02 → ... aa:03 → ... （数万個）
+           │
+           v
+  MACアドレステーブルが満杯 → 新しい宛先を学習できない
+           │
+           v
+  宛先不明のフレーム（ユニキャストフラッディング）を全ポートへ送る ＝ ハブ状態
+           │
+           v
+  攻撃者のポートにも他人の通信が届く → 盗聴できる</code></pre>
+    <p>「送信元 MAC アドレスを次々に変えた大量のフレームで、MAC アドレステーブルをあふれさせる」のが <strong>MAC フラッディング</strong>です。対策は<strong>ポートセキュリティ</strong>で、1 つのポートで学習できる MAC アドレスの数を制限します。</p>
+
+    <h3 id="sec-2-2">2.2 ポートセキュリティの基本</h3>
+    <p><strong>ポートセキュリティ</strong>は、スイッチのポートに接続できる端末を <strong>MAC アドレスで制限</strong>する機能です。許可する MAC アドレスや、その数を制限します。許可していない MAC アドレスの端末がつながると<strong>違反</strong>として扱います。</p>
+<pre><code>SW(config)# interface g0/1
+SW(config-if)# switchport mode access                          ! ① アクセスポートにする（必須）
+SW(config-if)# switchport port-security                        ! ② 機能を有効化（必須）
+SW(config-if)# switchport port-security maximum 2              ! 許可するMACの数（デフォルト1）
+SW(config-if)# switchport port-security mac-address sticky     ! 学習したMACを設定に自動追加
+SW(config-if)# switchport port-security violation restrict     ! 違反時の動作（デフォルト shutdown）</code></pre>
+    <ul>
+      <li>ポートセキュリティを使うには、ポートを<strong>アクセスポート</strong>（<code>switchport mode access</code>）にして、<code>switchport port-security</code> で<strong>機能を有効</strong>にする必要があります（DTP の dynamic モードのままではコマンドが拒否されます）。</li>
+      <li>許可する数は <code>switchport port-security maximum</code> で指定します。<strong>デフォルトは 1</strong> です。</li>
+      <li>静的に登録するなら <code>switchport port-security mac-address 0011.2233.4455</code> とします。</li>
+    </ul>
+
+    <h3 id="sec-2-3">2.3 sticky</h3>
+    <p><code>switchport port-security mac-address sticky</code> は、ポートで<strong>学習した MAC アドレスを、許可するアドレスとして running-config に自動で追加</strong>します。1 台ずつ手動で登録する手間が省けます。</p>
+<pre><code>SW# show running-config interface g0/1
+interface GigabitEthernet0/1
+ switchport mode access
+ switchport port-security
+ switchport port-security mac-address sticky
+ switchport port-security mac-address sticky 0011.2233.4455    ← 自動で追加された</code></pre>
+    <ul>
+      <li>running-config に書き込まれるので、<code>copy running-config startup-config</code> で保存すれば<strong>再起動後も維持</strong>されます（保存しなければ再起動で消えます）。</li>
+      <li>許可する<strong>数</strong>とは無関係です（数は <code>maximum</code>）。</li>
+      <li>err-disabled からの<strong>自動復旧</strong>とは無関係です（それは <code>errdisable recovery</code>）。</li>
+      <li>MAC アドレステーブルの<strong>エージング（保持時間）</strong>とは無関係です。</li>
+    </ul>
+
+    <h3 id="sec-2-4">2.4 違反時の動作（violation モード）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モード</th><th>ポート</th><th>フレーム</th><th>ログ（syslog/SNMP）</th><th>違反カウンタ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>shutdown</strong>（デフォルト）</td><td><strong>停止（err-disabled）</strong></td><td>破棄</td><td>出す</td><td>増える</td></tr>
+        <tr><td>restrict</td><td>止めない</td><td>破棄</td><td>出す</td><td>増える</td></tr>
+        <tr><td>protect</td><td>止めない</td><td>破棄</td><td><strong>出さない</strong></td><td>増えない</td></tr>
+      </tbody>
+    </table></div>
+    <p>覚え方は「ポートを止めるか」「ログを出すか」の 2 軸です。</p>
+<pre><code>            ポートを止める   ログを出す
+shutdown         ◯              ◯
+restrict         ✕              ◯
+protect          ✕              ✕</code></pre>
+    <p>なお、<code>sticky</code> は違反時の動作ではなく、学習した MAC を設定に保存する機能です。</p>
+
+    <h3 id="sec-2-5">2.5 状態の確認</h3>
+<pre><code>SW# show port-security interface g0/1
+Port Security              : Enabled
+Port Status                : Secure-shutdown
+Violation Mode             : Shutdown
+Aging Time                 : 0 mins
+Aging Type                 : Absolute
+SecureStatic Address Aging : Disabled
+Maximum MAC Addresses      : 1
+Total MAC Addresses        : 1
+Configured MAC Addresses   : 0
+Sticky MAC Addresses       : 1
+Last Source Address:Vlan   : 00aa.bbcc.ddee:10
+Security Violation Count   : 1
+
+SW# show interfaces status
+Port      Name   Status       Vlan  Duplex  Speed Type
+Gi0/1            err-disabled 10    auto    auto  10/100/1000BaseTX</code></pre>
+
+    <h3 id="sec-2-6">2.6 err-disabled からの復旧</h3>
+    <p>shutdown モードで違反すると、ポートは <strong>err-disabled</strong>（エラーで自動停止した状態）になります。</p>
+<pre><code>%PM-4-ERR_DISABLE: psecure-violation error detected on Gi0/1, putting Gi0/1 in err-disable state
+%PORT_SECURITY-2-PSECURE_VIOLATION: Security violation occurred, caused by MAC address 00aa.bbcc.ddee on port GigabitEthernet0/1.</code></pre>
+    <p>手動での復旧手順は次のとおりです。</p>
+<pre><code>① 原因を取り除く（許可していない端末を外す、または許可設定を見直す）
+② SW(config)# interface g0/1
+   SW(config-if)# shutdown          ← いったん管理的に無効にする
+   SW(config-if)# no shutdown       ← 有効にすると err-disabled が解除される</code></pre>
+    <ul>
+      <li><strong>no shutdown だけでは復旧しません</strong>。先に shutdown が必要です。</li>
+      <li><code>clear mac address-table</code> は MAC アドレステーブルを消すだけで、err-disabled は解除されません。</li>
+      <li>自動復旧（<code>errdisable recovery</code>）を設定していなければ、<strong>自動では復旧しません</strong>。</li>
+      <li><strong>原因を取り除かずに復旧させると、すぐにまた違反</strong>になります。</li>
+    </ul>
+    <p>自動復旧の設定は次のとおりです。</p>
+<pre><code>SW(config)# errdisable recovery cause psecure-violation
+SW(config)# errdisable recovery interval 300         ! 300秒後に自動復旧（デフォルトも300秒）</code></pre>
+
+    <h2 id="sec-3"><span class="num">3.</span>DHCP スタベーションと DHCP スプーフィング</h2>
+    <p>DHCP は、端末に IP アドレスやゲートウェイ・DNS を自動で配る仕組みです（<a href="10-6_DHCPとNTP.html">10-6 DHCPとNTP</a>）。この仕組みを悪用した 2 段構えの攻撃があります。</p>
+<pre><code>【ステップ1：DHCPスタベーション（枯渇攻撃）】
+ 攻撃者 ── DHCPDISCOVER（偽MAC #1）──&gt; 正規DHCPサーバ  → 10.0.0.10 を貸し出す
+        ── DHCPDISCOVER（偽MAC #2）──&gt;                → 10.0.0.11 を貸し出す
+        ── ...（数百〜数千回）       ──&gt;                → アドレスプールが空に
+ → 正規の端末がアドレスをもらえない（DoS）
+
+【ステップ2：DHCPスプーフィング（偽DHCPサーバ）】
+ 新しいPC ── DHCPDISCOVER ──&gt; （正規サーバは枯渇して応答できない）
+ 攻撃者   ── DHCPOFFER：IP=10.0.0.50, GW=攻撃者のIP, DNS=攻撃者のIP ──&gt; 新しいPC
+ → PCの通信はすべて攻撃者を経由する（中間者攻撃）</code></pre>
+    <p>「偽の MAC アドレスで大量の DHCPDISCOVER を送り、アドレスを使い切らせる」のが <strong>DHCP スタベーション</strong>です。偽の DHCP サーバとして応答するのは <strong>DHCP スプーフィング</strong>で、スタベーションはその準備にもなります。</p>
+    <p>対策は <strong>DHCP スヌーピング</strong>（偽サーバの遮断、DHCP メッセージのレート制限）と<strong>ポートセキュリティ</strong>（1 ポートの偽 MAC の数を制限）です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>DHCP スヌーピング</h2>
+
+    <h3 id="sec-4-1">4.1 仕組み</h3>
+    <p>DHCP スヌーピングは、スイッチのポートを <strong>trusted（信頼）</strong> と <strong>untrusted（非信頼）</strong> に分け、<strong>untrusted ポートから届いた DHCP サーバの応答（OFFER/ACK など）を破棄</strong>します。</p>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="DHCP スヌーピングを有効にしたスイッチ。正規 DHCP サーバがつながる Gi0/24 は trusted で OFFER と ACK を受け付ける。PC-A がつながる Gi0/1 は untrusted で DISCOVER と REQUEST は通す。攻撃者の偽サーバがつながる Gi0/2 も untrusted で、そこから OFFER や ACK が来たら破棄する">
+      <defs>
+        <marker id="arw1609a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw1609b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="250" y="20" width="220" height="220" rx="10" class="d-box-accent"/>
+      <text x="360" y="46" text-anchor="middle" class="d-text-bold">スイッチ</text>
+      <text x="360" y="66" text-anchor="middle" class="d-text-sub">DHCP スヌーピング有効</text>
+
+      <rect x="530" y="40" width="170" height="56" rx="8" class="d-box-good"/>
+      <text x="615" y="64" text-anchor="middle" class="d-text-bold">正規 DHCP サーバ</text>
+      <text x="615" y="84" text-anchor="middle" class="d-text-sub">Gi0/24 [trusted]</text>
+      <path d="M530,68 L472,98" class="d-line" marker-end="url(#arw1609a)"/>
+      <text x="360" y="110" text-anchor="middle" class="d-text-sub">OFFER/ACK を受け付ける</text>
+
+      <rect x="20" y="100" width="170" height="56" rx="8" class="d-box"/>
+      <text x="105" y="124" text-anchor="middle" class="d-text-bold">PC-A</text>
+      <text x="105" y="144" text-anchor="middle" class="d-text-sub">Gi0/1 [untrusted]</text>
+      <path d="M190,128 L248,140" class="d-line" marker-end="url(#arw1609a)"/>
+      <text x="360" y="150" text-anchor="middle" class="d-text-sub">DISCOVER/REQUEST は通す</text>
+
+      <rect x="20" y="180" width="170" height="56" rx="8" class="d-box-bad"/>
+      <text x="105" y="204" text-anchor="middle" class="d-text-bold">攻撃者（偽サーバ）</text>
+      <text x="105" y="224" text-anchor="middle" class="d-text-sub">Gi0/2 [untrusted]</text>
+      <path d="M190,208 L248,200" class="d-line-bad" marker-end="url(#arw1609b)"/>
+      <text x="360" y="200" text-anchor="middle" class="d-text-sub">OFFER/ACK が来たら</text>
+      <text x="360" y="220" text-anchor="middle" class="d-text-bold">破棄 ✕</text>
+    </svg>
+    <figcaption>図：サーバの応答を受け付けるのは trusted ポートだけ。端末側の untrusted ポートから来たサーバ応答は捨てる</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ポート</th><th>設定</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>正規の DHCP サーバにつながるポート（アップリンクなど）</td><td><strong>trusted</strong></td><td>サーバの応答を受け付けるため</td></tr>
+        <tr><td>一般ユーザーの PC がつながるポート</td><td>untrusted（デフォルトのまま）</td><td>不正な DHCP サーバがつながっても、その応答を破棄できる</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>すべて trusted</strong> にすると、不正な DHCP サーバを防げません。</li>
+      <li>DHCP スヌーピングを有効にすると、デフォルトで<strong>すべて untrusted</strong> になります。どのポートも trusted にしないと、<strong>正規のサーバの応答も届かなくなります</strong>。</li>
+    </ul>
+    <p>さらに、DHCP スヌーピングは「どのポートの、どの MAC アドレスに、どの IP アドレスが割り当てられたか」を記録した<strong>バインディングテーブル</strong>を作ります。これが DAI などで使われます。</p>
+<pre><code>SW# show ip dhcp snooping binding
+MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface
+------------------  ---------------  ----------  -------------  ----  --------------------
+00:11:22:33:44:55   10.0.10.21       86250       dhcp-snooping   10    GigabitEthernet0/1
+00:11:22:33:44:66   10.0.10.22       86100       dhcp-snooping   10    GigabitEthernet0/3
+Total number of bindings: 2</code></pre>
+
+    <h3 id="sec-4-2">4.2 設定</h3>
+<pre><code>SW(config)# ip dhcp snooping                         ! ① 機能の有効化（グローバル）
+SW(config)# ip dhcp snooping vlan 10                 ! ② 対象のVLANを指定（これがないとどのVLANでも動かない）
+SW(config)# interface g0/24
+SW(config-if)# ip dhcp snooping trust                ! ③ 正規のDHCPサーバの方向のポートだけ trusted
+SW(config)# interface range g0/1 - 23
+SW(config-if-range)# ip dhcp snooping limit rate 10  ! （任意）untrustedポートのDHCPメッセージを毎秒10個に制限＝スタベーション対策</code></pre>
+<pre><code>SW# show ip dhcp snooping
+Switch DHCP snooping is enabled
+DHCP snooping is configured on following VLANs:
+10
+...
+Interface                  Trusted    Allow option    Rate limit (pps)
+-----------------------    -------    ------------    ----------------
+GigabitEthernet0/24        yes        yes             unlimited
+GigabitEthernet0/1         no         no              10</code></pre>
+    <p>DHCP スヌーピングを動かすには、<code>ip dhcp snooping</code> に加えて「<code>ip dhcp snooping vlan 10</code> のように対象の VLAN を指定する」ことが必要です。次の設定では代わりになりません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>設定</th><th>なぜ代わりにならないか</th></tr></thead>
+      <tbody>
+        <tr><td>すべてのポートで <code>ip dhcp snooping trust</code></td><td>不正な DHCP サーバを防げない。trust は正規サーバ側のポートだけ</td></tr>
+        <tr><td><code>ip arp inspection vlan 10</code></td><td>DAI の設定。DHCP スヌーピングを働かせるものではない</td></tr>
+        <tr><td><code>switchport port-security</code></td><td>ポートセキュリティの設定。別の機能</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">補足</p>
+      <p>レート制限を超えたポートは err-disabled になります（<code>errdisable recovery cause dhcp-rate-limit</code> で自動復旧可能）。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>ダイナミック ARP インスペクション（DAI）</h2>
+
+    <h3 id="sec-5-1">5.1 ARP スプーフィング（ARP ポイズニング）</h3>
+    <p><strong>ARP</strong> は、IP アドレスから MAC アドレスを調べる仕組みです。端末は結果を ARP キャッシュに覚えておきますが、偽の応答で書き換えられてしまうことがあります。</p>
+<pre><code>正常:   PC-A の ARPキャッシュ   10.0.10.1（GW） → GWのMAC（00:aa:...:01）
+
+攻撃:   攻撃者 ── 偽のARP応答「10.0.10.1 は 00:bb:...:99（攻撃者のMAC）です」──&gt; PC-A
+        PC-A の ARPキャッシュ   10.0.10.1（GW） → 攻撃者のMAC   ← 書き換えられた
+        → PC-A がゲートウェイに送るつもりのフレームは攻撃者に届く（中間者攻撃）</code></pre>
+
+    <h3 id="sec-5-2">5.2 DAI の仕組み</h3>
+    <p>DAI は、untrusted ポートで受信した ARP に書かれた「<strong>IP アドレスと MAC アドレスの組み合わせ</strong>」を、<strong>DHCP スヌーピングのバインディングテーブル</strong>と照合し、一致しなければ破棄します。</p>
+<pre><code>受信したARP： 送信元IP 10.0.10.1 / 送信元MAC 00:bb:...:99（Gi0/2）
+バインディングテーブル： 10.0.10.1 と 00:bb:...:99 の組み合わせは存在しない
+→ 破棄＋ログ</code></pre>
+    <p>DAI が照合に使えるのはバインディングテーブルだけで、ほかの表では代わりになりません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>表</th><th>DAI の参照先になるか</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DHCP スヌーピングのバインディングテーブル</strong></td><td>◯ IP と MAC の対応が記録されている</td></tr>
+        <tr><td>MAC アドレステーブル</td><td>✕ スイッチの転送用の表。MAC とポートの対応で、<strong>IP アドレスとの対応は記録されていない</strong></td></tr>
+        <tr><td>ルーティングテーブル</td><td>✕ ルータが宛先ネットワークへの経路を決める表</td></tr>
+        <tr><td>NAT テーブル</td><td>✕ アドレス変換の対応表</td></tr>
+      </tbody>
+    </table></div>
+    <p>そのため、<strong>DAI を使うには先に DHCP スヌーピングを有効にしておく必要</strong>があります（静的 IP の機器は ARP ACL で許可します）。</p>
+<pre><code>SW(config)# ip dhcp snooping
+SW(config)# ip dhcp snooping vlan 10
+SW(config)# ip arp inspection vlan 10                ! DAIを有効化
+SW(config)# interface g0/24
+SW(config-if)# ip dhcp snooping trust
+SW(config-if)# ip arp inspection trust               ! アップリンクは DAI でも trusted</code></pre>
+<pre><code>SW# show ip arp inspection vlan 10
+ Vlan     Configuration    Operation   ACL Match          Static ACL
+ ----     -------------    ---------   ---------          ----------
+   10     Enabled          Active</code></pre>
+
+    <h2 id="sec-6"><span class="num">6.</span>VLAN ホッピングとその対策</h2>
+    <p>VLAN ホッピングは、本来アクセスできない別の VLAN の通信に入り込む攻撃で、2 つの手口があります。</p>
+
+    <h3 id="sec-6-1">6.1 スイッチスプーフィング</h3>
+<pre><code>攻撃者PC ── DTP「トランクにしよう」──&gt; スイッチのポート（dynamic auto/desirable のまま）
+         &lt;── トランク成立 ──
+→ 攻撃者PCがすべてのVLANのフレームを送受信できる</code></pre>
+    <p>対策は、端末用のポートを<strong>アクセスポートに固定</strong>し、<strong>DTP を無効</strong>にすることです。</p>
+<pre><code>SW(config)# interface range g0/1 - 23
+SW(config-if-range)# switchport mode access
+SW(config-if-range)# switchport nonegotiate     ! DTPフレームを送らない</code></pre>
+
+    <h3 id="sec-6-2">6.2 ダブルタギング（二重タグ）</h3>
+    <p><strong>ネイティブ VLAN</strong> は、トランク上でタグを付けずに送る VLAN です。この性質を悪用します。</p>
+<pre><code>攻撃者（VLAN 1 = ネイティブVLANのアクセスポート）
+  送信フレーム: [外側タグ VLAN1][内側タグ VLAN20][データ]
+      │
+  SW1: 外側タグ＝ネイティブVLAN(1) → トランクではネイティブVLANはタグなしで送るので「外側タグを外す」
+      │  トランク上: [内側タグ VLAN20][データ]
+      v
+  SW2: VLAN20 のタグ付きフレームとして受信 → VLAN20 の被害者へ転送
+  ※ 一方向の攻撃（応答は返ってこない）</code></pre>
+    <p>対策は、トランクの<strong>ネイティブ VLAN を、どの端末も使っていない未使用の VLAN に変更</strong>することです。</p>
+<pre><code>SW(config)# vlan 999
+SW(config-vlan)# name UNUSED_NATIVE
+SW(config)# interface g0/24
+SW(config-if)# switchport mode trunk
+SW(config-if)# switchport trunk native vlan 999
+SW(config-if)# switchport nonegotiate</code></pre>
+    <p>対策として有効なもの・逆効果なものを整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>判定</th></tr></thead>
+      <tbody>
+        <tr><td>端末用ポートをアクセスに固定し DTP を無効</td><td>◯</td></tr>
+        <tr><td>ネイティブ VLAN を未使用の VLAN に変更</td><td>◯</td></tr>
+        <tr><td>ネイティブ VLAN をデフォルトの VLAN 1 のまま</td><td>✕ VLAN 1 は初期状態で全ポートが所属しており、攻撃に利用されやすい</td></tr>
+        <tr><td>すべてのポートをトランクにする</td><td>✕ 端末が複数 VLAN の通信にアクセスできてしまう</td></tr>
+      </tbody>
+    </table></div>
+    <p>その他のベストプラクティスとして、未使用のポートは shutdown して未使用 VLAN に割り当てる、VLAN 1 を業務に使わない、といった運用もあります。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>BPDU ガード</h2>
+    <p><strong>BPDU ガード</strong>は、PortFast（端末用ポートをすぐ使える状態にする設定）を設定したポートで BPDU（STP の制御フレーム）を受信したら、ポートを err-disabled にして停止する機能です。不正なスイッチの接続や STP の乗っ取りを防ぎます。</p>
+<pre><code>SW(config-if)# spanning-tree portfast
+SW(config-if)# spanning-tree bpduguard enable</code></pre>
+
+    <h2 id="sec-8"><span class="num">8.</span>機能の比較まとめ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>機能</th><th>何を防ぐか</th><th>見るもの</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ポートセキュリティ</strong></td><td>許可されていない端末の接続、MAC フラッディング</td><td>送信元 MAC アドレス・MAC の数</td></tr>
+        <tr><td>DHCP スヌーピング</td><td>不正な DHCP サーバ、DHCP スタベーション</td><td>DHCP メッセージの種類と受信ポート（trusted/untrusted）</td></tr>
+        <tr><td>BPDU ガード</td><td>PortFast ポートへのスイッチ接続</td><td>BPDU の受信</td></tr>
+        <tr><td>ダイナミック ARP インスペクション</td><td>ARP のなりすまし</td><td>ARP の IP/MAC の組とバインディングテーブル</td></tr>
+      </tbody>
+    </table></div>
+    <p>ポートそのものを「認証に成功した端末にだけ開く」なら、<a href="60-7_AAA.html">60-7 AAA</a> の 802.1X と組み合わせます。L3 での通信制御は <a href="60-8_ACL.html">60-8 ACL</a> で扱いました。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある誤解</h2>
+    <ul>
+      <li>MAC で端末を制限するのは<strong>ポートセキュリティ</strong>です。DHCP スヌーピング・BPDU ガード・DAI と機能を混同しないようにしましょう。</li>
+      <li>違反時のデフォルトは <strong>shutdown</strong>（err-disabled）。restrict＝止めない・ログあり、protect＝止めない・ログなし。<strong>sticky は違反モードではありません</strong>。</li>
+      <li>sticky は「学習した MAC を running-config に追加」する機能です。数の制限（maximum、デフォルト 1）、自動復旧（errdisable recovery）、エージングとは無関係で、保存しないと再起動で消えます。</li>
+      <li>err-disabled は <strong>shutdown → no shutdown</strong> で戻します。no shutdown だけ、clear mac address-table では戻りません。自動復旧は設定しない限り行われません。</li>
+      <li>DHCP スヌーピングの trusted は<strong>正規の DHCP サーバ側だけ</strong>。全部 trusted は無意味で、どこも trusted にしないと正規の応答も届きません。</li>
+      <li>DHCP スヌーピングは <code>ip dhcp snooping</code> だけでは動きません。<strong><code>ip dhcp snooping vlan</code></strong> が必要です。<code>ip arp inspection vlan</code> は DAI の設定です。</li>
+      <li>DAI の参照先は <strong>DHCP スヌーピングのバインディングテーブル</strong>です（MAC アドレステーブルには IP の情報がありません）。</li>
+      <li>MAC フラッディング（テーブルをあふれさせる）、ARP スプーフィング（IP のなりすまし）、DHCP スタベーション（アドレス枯渇）、DHCP スプーフィング（偽サーバ）、VLAN ホッピング（別 VLAN への侵入）を区別しましょう。</li>
+      <li>VLAN ホッピング対策は「アクセス固定＋DTP 無効」「ネイティブ VLAN を未使用 VLAN に」。VLAN 1 のまま・全ポートトランクは逆効果です。</li>
+    </ul>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>ポートセキュリティ：<code>switchport mode access</code> → <code>switchport port-security</code> → <code>maximum</code>（既定 1）／<code>mac-address sticky</code>／<code>violation {shutdown|restrict|protect}</code>（既定 shutdown）。</li>
+      <li>err-disabled の復旧：原因除去 → <code>shutdown</code> → <code>no shutdown</code>。自動は <code>errdisable recovery cause psecure-violation</code>。確認は <code>show port-security interface</code>、<code>show interfaces status</code>。</li>
+      <li>DHCP スヌーピング：<code>ip dhcp snooping</code> → <code>ip dhcp snooping vlan X</code> → 正規サーバ側に <code>ip dhcp snooping trust</code>。<code>limit rate</code> でスタベーション対策。バインディングテーブルを作る。</li>
+      <li>DAI はバインディングテーブルを参照 → DHCP スヌーピングが前提。</li>
+      <li>VLAN ホッピング：スイッチスプーフィング（DTP）とダブルタギング（ネイティブ VLAN）。</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 送信元 MAC を次々に変えた大量のフレームでスイッチを「ハブ状態」にする攻撃と、その対策は？</summary>
+      <div class="body"><p>MAC フラッディングです。MAC アドレステーブルがあふれると宛先不明のフレームが全ポートに流れ、盗聴できるようになります。対策はポートセキュリティで、1 ポートで学習できる MAC の数を制限します。</p></div>
+    </details>
+    <details>
+      <summary>Q2. ポートセキュリティの違反モードで、ポートは止めないがログは出すのはどれですか？</summary>
+      <div class="body"><p>restrict です。shutdown（デフォルト）はポートを止めてログも出し、protect は止めずログも出しません。sticky は違反モードではありません。</p></div>
+    </details>
+    <details>
+      <summary>Q3. err-disabled になったポートを手動で戻す手順は？</summary>
+      <div class="body"><p>まず原因（許可していない端末など）を取り除き、インターフェースで <code>shutdown</code> → <code>no shutdown</code> を実行します。no shutdown だけや clear mac address-table では戻りません。</p></div>
+    </details>
+    <details>
+      <summary>Q4. DHCP スヌーピングで trusted にすべきポートはどこですか？</summary>
+      <div class="body"><p>正規の DHCP サーバにつながるポート（アップリンクなど）だけです。全部 trusted にすると偽サーバを防げず、どこも trusted にしないと正規サーバの応答も届きません。</p></div>
+    </details>
+    <details>
+      <summary>Q5. <code>ip dhcp snooping</code> を設定したのに動きません。何が足りない可能性が高いですか？</summary>
+      <div class="body"><p>対象 VLAN の指定（<code>ip dhcp snooping vlan 10</code> など）です。これがないとどの VLAN でも動きません。</p></div>
+    </details>
+    <details>
+      <summary>Q6. DAI が ARP の正しさを判断するときに参照する表は何ですか？</summary>
+      <div class="body"><p>DHCP スヌーピングのバインディングテーブルです。IP と MAC の対応が記録されているのはこの表だけで、MAC アドレステーブルには IP の情報がありません。そのため DAI には DHCP スヌーピングが前提になります。</p></div>
+    </details>
+    <details>
+      <summary>Q7. ダブルタギングによる VLAN ホッピングを防ぐ対策は？</summary>
+      <div class="body"><p>トランクのネイティブ VLAN を、どの端末も使っていない未使用の VLAN（例：999）に変えることです。VLAN 1 のままにしておくと攻撃に使われやすくなります。</p></div>
+    </details>
+    <details>
+      <summary>Q8. 端末用（PortFast）のポートに勝手にスイッチをつながれるのを防ぐ機能は？</summary>
+      <div class="body"><p>BPDU ガードです。PortFast ポートで BPDU を受信したらポートを err-disabled にして止めます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/09_L2セキュリティ（ポートセキュリティ・DHCPスヌーピング・DAI）</li>
+      <li>関連ノート（解説ページなし）：11_コンピューターサイエンス/60_ネットワーク・Web/62_IP・ルーティング・中継機器/16ルーターとスイッチとハブとNAT</li>
+      <li>関連ページ：<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a>、<a href="10-6_DHCPとNTP.html">10-6 DHCPとNTP</a>、<a href="60-7_AAA.html">60-7 AAA</a>、<a href="60-8_ACL.html">60-8 ACL</a></li>
+      <li>他の章：<a href="../71_セキュリティ基礎/50-1_ネットワークと端末の防御.html">71 ネットワークと端末の防御</a>、<a href="../71_セキュリティ基礎/20-2_深層防御.html">71 深層防御</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-8_ACL.html"><span class="lbl">← 前のページ</span>ACL</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-10_VPN.html"><span class="lbl">次のページ →</span>VPN</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

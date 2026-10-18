@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>リバースプロキシ｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 Webサーバー・リバースプロキシ › リバースプロキシ</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 Webサーバー・リバースプロキシ</span>
+      <h1>リバースプロキシ</h1>
+      <p class="lead"><strong>リバースプロキシ</strong> は、アプリの前に立ってリクエストを受け取り、裏のアプリへ中継するサーバーです。このページでは、フォワードプロキシとの違いとアプリの前に Nginx を置く理由、<code>proxy_pass</code> の <strong>末尾スラッシュの罠</strong>、<code>X-Forwarded-For</code> などの転送ヘッダーとアプリ側の <strong>trust proxy</strong> 設定、タイムアウト・バッファリング・WebSocket・<code>upstream</code> の基本を説明し、最後に Shop API を <code>api.shop.example.com</code> で公開する完全な設定例を示します。</p>
+      <p class="meta">もとにしたノート：20_Webサーバー・リバースプロキシ/03_リバースプロキシ</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>リバースプロキシは <strong>「会社の代表電話の受付係」</strong> です。お客さんは代表番号（<code>api.shop.example.com</code>）にしか電話をかけず、受付係が担当者（裏のアプリ）の内線（<code>127.0.0.1:3000</code>）につなぎます。アプリは外にさらさず、Nginx が付け足すヘッダーを <strong>アプリが正しく信頼する設定</strong> が必要です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>受付係としてのリバースプロキシ</h2>
+    <p>お客さんは担当者の内線番号を知る必要がなく、担当者が休んでいても受付が「少々お待ちください」と応対でき、担当者が増えれば受付が振り分けます。</p>
+    <ul>
+      <li>クライアントから見ると、Nginx が「サーバーそのもの」に見えます</li>
+      <li>アプリは外部に直接さらさず、<code>127.0.0.1</code>（そのマシンの中からだけ届くアドレス）だけで待ち受けます</li>
+      <li>Nginx が付け足すヘッダーを、アプリが正しく信頼する設定が必要です</li>
+    </ul>
+    <p>前提として <a href="20-2_Nginx入門.html">20-2 Nginx入門</a> を読んでいると理解しやすくなります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>フォワードプロキシとリバースプロキシ</h2>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="上段のフォワードプロキシは、複数の社員PCが社内プロキシを経由してインターネット上の各サイトへアクセスする、クライアント側の代理人。下段のリバースプロキシは、インターネットの利用者が443番のNginxにアクセスし、NginxがShop API（127.0.0.1:3000）、管理画面FastAPI（127.0.0.1:8000）、静的ファイル（/var/www/shop）に振り分ける、サーバー側の代理人">
+      <defs>
+        <marker id="arw203a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">フォワードプロキシ（クライアント側の代理人）</text>
+      <rect x="20" y="40" width="110" height="28" rx="6" class="d-box"/>
+      <text x="75" y="59" text-anchor="middle" class="d-text-sub">社員PC</text>
+      <rect x="20" y="76" width="110" height="28" rx="6" class="d-box"/>
+      <text x="75" y="95" text-anchor="middle" class="d-text-sub">社員PC</text>
+      <rect x="20" y="112" width="110" height="28" rx="6" class="d-box"/>
+      <text x="75" y="131" text-anchor="middle" class="d-text-sub">社員PC</text>
+      <rect x="250" y="60" width="180" height="60" rx="8" class="d-box-accent"/>
+      <text x="340" y="84" text-anchor="middle" class="d-text-bold">社内プロキシ</text>
+      <text x="340" y="104" text-anchor="middle" class="d-text-sub">制限・ログ・キャッシュ</text>
+      <path d="M130,54 L248,82" class="d-line" marker-end="url(#arw203a)"/>
+      <path d="M130,90 L248,90" class="d-line" marker-end="url(#arw203a)"/>
+      <path d="M130,126 L248,98" class="d-line" marker-end="url(#arw203a)"/>
+      <rect x="530" y="60" width="170" height="60" rx="8" class="d-box"/>
+      <text x="615" y="86" text-anchor="middle" class="d-text">インターネット</text>
+      <text x="615" y="106" text-anchor="middle" class="d-text-sub">上の各サイト</text>
+      <path d="M430,90 L528,90" class="d-line" marker-end="url(#arw203a)"/>
+
+      <text x="20" y="184" class="d-text-bold">リバースプロキシ（サーバー側の代理人）</text>
+      <rect x="20" y="230" width="140" height="60" rx="8" class="d-box"/>
+      <text x="90" y="256" text-anchor="middle" class="d-text">インターネット</text>
+      <text x="90" y="276" text-anchor="middle" class="d-text-sub">の利用者</text>
+      <rect x="230" y="230" width="140" height="60" rx="8" class="d-box-accent"/>
+      <text x="300" y="256" text-anchor="middle" class="d-text-bold">Nginx</text>
+      <text x="300" y="276" text-anchor="middle" class="d-text-sub">443 番</text>
+      <path d="M160,260 L228,260" class="d-line" marker-end="url(#arw203a)"/>
+      <rect x="440" y="196" width="260" height="34" rx="6" class="d-box"/>
+      <text x="570" y="218" text-anchor="middle" class="d-text-sub">Shop API（127.0.0.1:3000）</text>
+      <rect x="440" y="243" width="260" height="34" rx="6" class="d-box"/>
+      <text x="570" y="265" text-anchor="middle" class="d-text-sub">管理画面 FastAPI（127.0.0.1:8000）</text>
+      <rect x="440" y="290" width="260" height="34" rx="6" class="d-box"/>
+      <text x="570" y="312" text-anchor="middle" class="d-text-sub">静的ファイル（/var/www/shop）</text>
+      <path d="M370,250 L438,214" class="d-line" marker-end="url(#arw203a)"/>
+      <path d="M370,260 L438,260" class="d-line" marker-end="url(#arw203a)"/>
+      <path d="M370,270 L438,306" class="d-line" marker-end="url(#arw203a)"/>
+    </svg>
+    <figcaption>図：フォワードプロキシは利用者側の出口、リバースプロキシはサービス側の入口に立つ</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>フォワードプロキシ</th><th>リバースプロキシ</th></tr></thead>
+      <tbody>
+        <tr><td>誰の代理か</td><td>クライアント（利用者）</td><td>サーバー（提供者）</td></tr>
+        <tr><td>置く場所</td><td>利用者の組織のネットワーク出口</td><td>サービス提供側の入口</td></tr>
+        <tr><td>主な目的</td><td>社外アクセスの制限・監視、キャッシュ</td><td>TLS 終端、振り分け、保護、静的配信</td></tr>
+        <tr><td>相手が知っていること</td><td>サイト側はプロキシしか見えない</td><td>利用者はプロキシしか見えない</td></tr>
+        <tr><td>例</td><td>Squid、企業の Web フィルタ</td><td>Nginx、HAProxy、AWS ALB、Cloudflare</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-1">2.1 なぜアプリの前に Nginx を置くのか</h3>
+    <ol class="steps">
+      <li><strong>TLS 終端</strong>：証明書の管理と暗号化処理を Nginx に集約できます（<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>）</li>
+      <li><strong>遅いクライアントの吸収</strong>：Nginx がリクエスト全体を受け取ってからアプリに渡し、レスポンスも Nginx がバッファして返します。アプリの貴重な処理能力が遅い回線に縛られません</li>
+      <li><strong>アプリを外にさらさない</strong>：アプリは <code>127.0.0.1</code> で待ち受け、80/443 番を開けるのは Nginx だけです。アプリに root 権限も不要です</li>
+      <li><strong>1 つの入口で複数アプリ</strong>：ドメインやパスで Shop API / 管理画面 / 静的ファイルに振り分けます</li>
+      <li><strong>無停止の切り替え・負荷分散</strong>：裏のアプリを複数台にしても、クライアントから見た入口は変わりません（<a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a>）</li>
+      <li><strong>共通処理</strong>：アクセスログ、圧縮、リクエストサイズ制限、レート制限、IP 制限</li>
+    </ol>
+
+    <h2 id="sec-3"><span class="num">3.</span>proxy_pass と末尾スラッシュ</h2>
+
+    <h3 id="sec-3-1">3.1 最小の設定</h3>
+<pre><code>server {
+    listen 80;
+    server_name api.shop.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+    }
+}</code></pre>
+    <p>これで <code>http://api.shop.example.com/products</code> へのリクエストが <code>http://127.0.0.1:3000/products</code> に中継されます。</p>
+    <div class="callout tip">
+      <p class="callout-title"><code>localhost</code> より <code>127.0.0.1</code> を書く</p>
+      <p><code>localhost</code> と書くと IPv6 の <code>::1</code> に解決されて、IPv4 だけで待ち受けているアプリに接続できず 502 になることがあります。アプリの待ち受けアドレスと揃えて明示しましょう。</p>
+    </div>
+
+    <h3 id="sec-3-2">3.2 末尾スラッシュの挙動（最重要の罠）</h3>
+    <p><code>proxy_pass</code> の URL に <strong>パス部分（<code>/</code> 1 文字でも）があるかどうか</strong> で、転送先のパスが変わります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>設定</th><th>リクエスト</th><th>アプリに届くパス</th></tr></thead>
+      <tbody>
+        <tr><td><code>location /api/ { proxy_pass http://127.0.0.1:3000; }</code></td><td><code>/api/products</code></td><td><code>/api/products</code>（<strong>そのまま</strong>）</td></tr>
+        <tr><td><code>location /api/ { proxy_pass http://127.0.0.1:3000/; }</code></td><td><code>/api/products</code></td><td><code>/products</code>（<code>/api/</code> が <code>/</code> に <strong>置き換わる</strong>）</td></tr>
+        <tr><td><code>location /api/ { proxy_pass http://127.0.0.1:3000/v1/; }</code></td><td><code>/api/products</code></td><td><code>/v1/products</code></td></tr>
+        <tr><td><code>location /api { proxy_pass http://127.0.0.1:3000/; }</code></td><td><code>/api/products</code></td><td><code>//products</code>（✕ スラッシュが二重に）</td></tr>
+      </tbody>
+    </table></div>
+    <p>ルールは 1 つだけです。</p>
+    <ul>
+      <li><code>proxy_pass</code> に <strong>パスがない</strong> → 元の URI をそのまま渡す</li>
+      <li><code>proxy_pass</code> に <strong>パスがある</strong> → location に一致した部分をそのパスに <strong>置き換える</strong></li>
+    </ul>
+    <p><a href="20-2_Nginx入門.html">20-2 Nginx入門</a> の <code>root</code>（連結）と <code>alias</code>（置き換え）の関係とそっくりです。<code>location</code> と <code>proxy_pass</code> の末尾スラッシュは揃えておくのが安全です。</p>
+    <div class="callout warn">
+      <p class="callout-title">正規表現 location では URI 付き proxy_pass は書けない</p>
+      <p><code>location ~ ^/api/</code> の中で <code>proxy_pass http://127.0.0.1:3000/;</code> と書くと、<code>nginx -t</code> でエラーになります。パスを書き換えたいときは前方一致 location を使うか、<code>rewrite</code> を併用します。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>転送ヘッダーとアプリ側の trust proxy</h2>
+
+    <h3 id="sec-4-1">4.1 何も設定しないとどうなるか</h3>
+    <p>リバースプロキシを挟むと、アプリから見た「接続相手」は常に Nginx（127.0.0.1）になります。何もしないと、アプリは次のように誤解します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アプリが知りたいこと</th><th>何も設定しないと</th><th>起きる問題</th></tr></thead>
+      <tbody>
+        <tr><td>利用者の IP</td><td>すべて <code>127.0.0.1</code></td><td>IP ごとのレート制限が全員共通になる、監査ログが無意味</td></tr>
+        <tr><td>元のプロトコル</td><td>すべて <code>http</code></td><td>HTTPS なのに <code>http://</code> のリダイレクト URL を生成、<code>Secure</code> Cookie が付かない</td></tr>
+        <tr><td>元のホスト名</td><td><code>127.0.0.1:3000</code>（Nginx 既定は <code>$proxy_host</code>）</td><td>絶対 URL・OAuth のコールバック URL が壊れる</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>Secure</code> 属性（HTTPS のときだけ Cookie を送る指定）については <a href="../74_セッション管理/10-1_Cookieの仕組み.html">74 Cookieの仕組み</a> を参照してください。</p>
+
+    <h3 id="sec-4-2">4.2 ヘッダーで伝える</h3>
+<pre><code>proxy_set_header Host              $host;                       # 元のホスト名
+proxy_set_header X-Real-IP         $remote_addr;                # 直前の接続元 IP
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;  # 経由したIPの履歴に追記
+proxy_set_header X-Forwarded-Proto $scheme;                     # http か https か
+proxy_set_header X-Forwarded-Host  $host;</code></pre>
+    <p><code>X-Forwarded-For</code> は、プロキシを通るたびに右側へ IP が追記されていくリストです。</p>
+<pre><code>利用者 198.51.100.7 ─▶ CDN 203.0.113.20 ─▶ Nginx ─▶ Shop API
+X-Forwarded-For: 198.51.100.7, 203.0.113.20
+                 ↑本当の利用者    ↑Nginx の直前（$remote_addr）</code></pre>
+    <div class="callout bad">
+      <p class="callout-title">X-Forwarded-For は偽装できる</p>
+      <p>クライアントは最初から <code>X-Forwarded-For: 1.2.3.4</code> を付けて送れます。だから「左端の値を信じる」のは危険です。信頼してよいのは <strong>自分が管理するプロキシが追記した部分だけ</strong> で、「右から数えて、信頼するプロキシの数だけさかのぼった値」が本当のクライアント IP です。これをアプリやフレームワークに教えるのが <strong>trust proxy</strong> 設定です。</p>
+    </div>
+
+    <h3 id="sec-4-3">4.3 アプリ側：trust proxy の設定</h3>
+    <p><strong>Shop API（Express）</strong></p>
+<pre><code>import express from "express";
+const app = express();
+
+// Nginx が同じマシン（127.0.0.1）にいる場合: ループバックからのプロキシだけを信頼
+app.set("trust proxy", "loopback");
+// 手前に ALB など 1 段のプロキシがあるだけなら: app.set("trust proxy", 1);
+
+app.get("/whoami", (req, res) =&gt; {
+  res.json({ ip: req.ip, protocol: req.protocol, secure: req.secure, host: req.hostname });
+});</code></pre>
+    <p><code>trust proxy</code> を設定すると、<code>req.ip</code> が <code>X-Forwarded-For</code> から、<code>req.protocol</code> / <code>req.secure</code> が <code>X-Forwarded-Proto</code> から計算されます。<code>express-session</code> の <code>cookie.secure: true</code> が HTTPS 下で動かない、という定番トラブルの多くはこの設定漏れが原因です。</p>
+    <span class="code-label bad">✕ 危険な例：すべてのプロキシを信頼する</span>
+<pre><code>app.set("trust proxy", true);</code></pre>
+    <span class="code-label good">◯ 安全な例：信頼するプロキシを具体的に指定する</span>
+<pre><code>app.set("trust proxy", "loopback");   // または段数 1 や IP 範囲</code></pre>
+    <div class="callout bad">
+      <p class="callout-title"><code>trust proxy</code> を <code>true</code> にしない</p>
+      <p><code>true</code> は「すべてのプロキシを信頼する」＝利用者が送った偽の <code>X-Forwarded-For</code> 左端を <code>req.ip</code> として採用します。IP 制限やレート制限を簡単にすり抜けられるので、プロキシの段数か IP 範囲で具体的に指定します。</p>
+    </div>
+    <p><strong>管理画面（FastAPI + Uvicorn）</strong></p>
+<pre><code># Uvicorn は --proxy-headers が既定で有効。信頼するプロキシの IP を指定する（既定は 127.0.0.1）
+uvicorn admin.main:app --host 127.0.0.1 --port 8000 --forwarded-allow-ips 127.0.0.1</code></pre>
+    <p>アプリを本番で動かす詳細は <a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a>、<a href="30-3_Pythonアプリを本番で動かす.html">30-3 Pythonアプリを本番で動かす</a> で扱います。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>タイムアウト・バッファリング・WebSocket</h2>
+
+    <h3 id="sec-5-1">5.1 タイムアウト</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ディレクティブ</th><th>意味</th><th>既定値</th></tr></thead>
+      <tbody>
+        <tr><td><code>proxy_connect_timeout</code></td><td>アプリへの TCP 接続が確立するまで</td><td>60s（通常 75 秒を超えられない）</td></tr>
+        <tr><td><code>proxy_send_timeout</code></td><td>アプリへ送信する際、<strong>2 回の書き込みの間隔</strong></td><td>60s</td></tr>
+        <tr><td><code>proxy_read_timeout</code></td><td>アプリから受信する際、<strong>2 回の読み込みの間隔</strong></td><td>60s</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>proxy_read_timeout</code> は「レスポンス全体にかかる時間」ではなく「アプリが何も送ってこない時間」の上限です。CSV エクスポートのように 2 分かかる処理が途中で 504 になるなら、その location だけ延ばします。</p>
+<pre><code>location /admin/export {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_read_timeout 300s;   # 全体を長くするのではなく、必要な場所だけ
+}</code></pre>
+    <p>本当は長い処理はジョブキューに回して非同期にするのが筋です。タイムアウトを全体で長くすると、アプリが固まったときに接続がたまり続けて障害が広がります。</p>
+
+    <h3 id="sec-5-2">5.2 バッファリング</h3>
+    <p><code>proxy_buffering on;</code>（既定）では、Nginx がアプリのレスポンスをメモリ（足りなければ一時ファイル）に受け取りきってからクライアントへ送ります。アプリはすぐ次のリクエストに移れるので、通常はオンのままにします。</p>
+    <p>例外は <strong>少しずつ送り続けるレスポンス</strong>（Server-Sent Events、ストリーミング応答、LLM のトークン逐次表示など）です。バッファされると利用者に何も届かなくなるので、その location だけオフにします。</p>
+<pre><code>location /events {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+}</code></pre>
+    <p>アプリ側からレスポンスヘッダー <code>X-Accel-Buffering: no</code> を返して、そのレスポンスだけバッファを止めることもできます。リクエスト側の <code>proxy_request_buffering</code>（既定 on）は、アップロードを Nginx が受け取りきってからアプリに渡すかどうかで、<code>client_max_body_size</code>（既定 1m）と合わせて設定します。</p>
+
+    <h3 id="sec-5-3">5.3 WebSocket</h3>
+    <p><strong>WebSocket</strong>（ブラウザとサーバーが接続を開いたまま双方向に送り合う仕組み）は、HTTP の <code>Upgrade</code> ヘッダーで別プロトコルに切り替えます。<code>Upgrade</code> と <code>Connection</code> は <strong>隣の相手との間だけで有効なヘッダー（hop-by-hop）</strong> なので、Nginx は既定では転送しません。明示的に引き継ぎます。</p>
+<pre><code># http ブロック（conf.d/ などに置く）
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# server ブロック内
+location /ws/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;                       # Upgrade は HTTP/1.1 の機能
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 1h;                        # 無通信 60 秒で切られないように
+}</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">proxy_http_version の既定値（2026 年時点）</p>
+      <p>nginx 1.29.7 以降は <code>proxy_http_version</code> の既定が 1.1 になりましたが、それより前（Ubuntu 24.04 標準の 1.24 系を含む）は 1.0 です。どちらの環境でも動くよう、明示的に <code>proxy_http_version 1.1;</code> を書いておきます。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>upstream で複数台に振り分ける</h2>
+    <p><code>upstream</code> ブロックで転送先のグループを定義すると、Nginx がロードバランサーとして振り分けます。</p>
+<pre><code>upstream shop_api {
+    server 10.0.1.11:3000 max_fails=3 fail_timeout=30s;
+    server 10.0.1.12:3000 max_fails=3 fail_timeout=30s;
+    keepalive 32;      # アプリとの接続を使い回す（毎回 TCP 接続しない）
+}
+
+server {
+    location / {
+        proxy_pass http://shop_api;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";   # keepalive のため "close" を送らない
+        proxy_next_upstream error timeout http_502 http_503;  # 失敗時に別サーバーで再試行
+    }
+}</code></pre>
+    <p>既定はラウンドロビン（順番に配る方式）で、<code>least_conn</code>（接続数が最少のサーバーへ）、<code>ip_hash</code>（同じ IP は同じサーバーへ）なども選べます。<code>max_fails</code> / <code>fail_timeout</code> による <strong>受動的ヘルスチェック</strong> で、失敗が続いたサーバーを一時的に外します。アルゴリズムの選び方、能動的ヘルスチェック、AWS ALB との使い分けは <a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a> で詳しく扱います。</p>
+    <div class="callout warn">
+      <p class="callout-title">POST の再試行に注意</p>
+      <p><code>proxy_next_upstream</code> は既定で、POST のような <strong>非冪等</strong>（2 回実行すると結果が変わる）リクエストを別サーバーで再試行しません。<code>non_idempotent</code> を付けると注文が二重に作られる恐れがあるので、付けないのが基本です。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>完全な設定例：Shop API を api.shop.example.com で公開</h2>
+    <p>前提：Shop API が同じサーバーの <code>127.0.0.1:3000</code> で待ち受けており、証明書は <a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a> の手順で取得済みとします（まだなら 443 の server ブロックを外し、80 番の <code>location /</code> に proxy 設定を書けば HTTP で動作確認できます）。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 240" role="img" aria-label="利用者がHTTP 80番でアクセスするとNginxは301でHTTPSへリダイレクトする。HTTPS 443番でアクセスするとNginx（api.shop.example.com）がX-Forwarded系ヘッダーを付けてHTTPで127.0.0.1:3000のShop API（Node.js）へ中継し、Shop APIはPostgreSQLを使う">
+      <defs>
+        <marker id="arw203b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="90" width="110" height="56" rx="8" class="d-box"/>
+      <text x="75" y="123" text-anchor="middle" class="d-text-bold">利用者</text>
+      <rect x="240" y="80" width="180" height="76" rx="8" class="d-box-accent"/>
+      <text x="330" y="112" text-anchor="middle" class="d-text-bold">Nginx</text>
+      <text x="330" y="134" text-anchor="middle" class="d-text-sub">api.shop.example.com</text>
+      <path d="M130,104 L238,104" class="d-line" marker-end="url(#arw203b)"/>
+      <text x="184" y="96" text-anchor="middle" class="d-text-sub">HTTPS 443</text>
+      <path d="M75,90 L75,40 L330,40 L330,78" class="d-line-dash" marker-end="url(#arw203b)"/>
+      <text x="230" y="32" text-anchor="middle" class="d-text-sub">HTTP 80</text>
+      <path d="M240,140 L132,140" class="d-line-dash" marker-end="url(#arw203b)"/>
+      <text x="184" y="164" text-anchor="middle" class="d-text-sub">301 で https へ</text>
+      <rect x="520" y="80" width="180" height="76" rx="8" class="d-box-warn"/>
+      <text x="610" y="112" text-anchor="middle" class="d-text-bold">Shop API</text>
+      <text x="610" y="134" text-anchor="middle" class="d-text-sub">Node.js</text>
+      <path d="M420,118 L518,118" class="d-line" marker-end="url(#arw203b)"/>
+      <text x="470" y="100" text-anchor="middle" class="d-text-sub">HTTP :3000</text>
+      <text x="470" y="140" text-anchor="middle" class="d-text-sub">X-Forwarded-*</text>
+      <rect x="540" y="186" width="140" height="40" rx="8" class="d-box"/>
+      <text x="610" y="211" text-anchor="middle" class="d-text">PostgreSQL</text>
+      <path d="M610,156 L610,184" class="d-line" marker-end="url(#arw203b)"/>
+    </svg>
+    <figcaption>図：外側は HTTPS、Nginx から先は 127.0.0.1 の HTTP で中継する</figcaption>
+    </figure>
+
+<pre><code># /etc/nginx/conf.d/00-proxy-common.conf  （http ブロックに読み込まれる共通設定）
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      "";          # Upgrade でないときは Connection を空に → upstream の keepalive が効く
+}
+
+log_format proxy '$remote_addr - [$time_local] "$request" $status $body_bytes_sent '
+                 '"$http_user_agent" rt=$request_time urt=$upstream_response_time '
+                 'ua=$upstream_addr us=$upstream_status';</code></pre>
+<pre><code># /etc/nginx/sites-available/api.shop.example.com
+upstream shop_api {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+# HTTP → HTTPS（Let's Encrypt の HTTP-01 認証用パスは certbot が処理）
+server {
+    listen 80;
+    listen [::]:80;
+    server_name api.shop.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;                       # Ubuntu 24.04 標準の nginx 1.24 の書き方
+    listen [::]:443 ssl http2;
+    server_name api.shop.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/api.shop.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.shop.example.com/privkey.pem;
+    include /etc/nginx/snippets/tls-intermediate.conf;   # 次回作成する TLS 共通設定
+
+    access_log /var/log/nginx/api.access.log proxy;
+    error_log  /var/log/nginx/api.error.log;
+
+    client_max_body_size 10m;                   # 商品画像アップロードを想定
+
+    # 共通のプロキシ設定
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade           $http_upgrade;
+    proxy_set_header Connection        $connection_upgrade;
+    proxy_connect_timeout 5s;                   # 同一マシンなので短くてよい
+    proxy_read_timeout    60s;
+
+    location / {
+        proxy_pass http://shop_api;
+    }
+
+    # 注文状況のリアルタイム通知（WebSocket）
+    location /ws/ {
+        proxy_pass http://shop_api;
+        proxy_read_timeout 1h;
+    }
+
+    # ヘルスチェックはログを汚さない
+    location = /health {
+        proxy_pass http://shop_api;
+        access_log off;
+    }
+}</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">nginx.org 公式リポジトリの新しい版（1.25.1 以降）を使う場合</p>
+      <p><code>listen</code> の <code>http2</code> パラメータは非推奨になり、<code>listen 443 ssl;</code> ＋ 別行の <code>http2 on;</code> と書きます（古い書き方は警告が出ますが動きます）。</p>
+    </div>
+<pre><code>sudo ln -s /etc/nginx/sites-available/api.shop.example.com /etc/nginx/sites-enabled/
+sudo nginx -t &amp;&amp; sudo systemctl reload nginx
+
+# 確認：アプリ側に正しい IP とプロトコルが届いているか
+curl -s https://api.shop.example.com/whoami
+# {"ip":"198.51.100.7","protocol":"https","secure":true,"host":"api.shop.example.com"}</code></pre>
+    <p>ここで <code>proxy_set_header</code> を <code>server</code> レベルに書いたのは、各 location に繰り返さないためです。ただし <a href="20-2_Nginx入門.html">20-2 Nginx入門</a> で説明したとおり、<strong>ある location で <code>proxy_set_header</code> を 1 つでも書くと server レベルの分はすべて継承されなくなる</strong> ので、location ごとに足したいヘッダーがある場合は全部書き直すか snippet を include します。プロキシの後ろでアプリを無停止で入れ替える話は、ゼロダウンタイムデプロイのノート（別章）で扱っています。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li>✕「<code>proxy_pass</code> の末尾スラッシュは好みの問題」<br>◯ パスの有無で「そのまま渡す」か「置き換える」かが変わります。アプリで 404 が出たら、まずアクセスログでアプリに届いたパスを確認します。</li>
+        <li>✕「<code>X-Forwarded-For</code> の左端が利用者の本当の IP」<br>◯ 左端は利用者が自由に書き換えられます。信頼するプロキシの段数をアプリに教え、右から数えて特定します。</li>
+        <li>✕「502 / 504 はタイムアウトを延ばせば直る」<br>◯ 502 は「アプリにつながらない・不正な応答」、504 は「時間内に返事がない」です。まずアプリが動いているか、なぜ遅いかを調べ、延長は特定 location に限ります。</li>
+        <li>✕「アプリも 0.0.0.0 で待ち受けておけば便利」<br>◯ Nginx をすり抜けてポート 3000 に直接アクセスでき、TLS もログも制限も効きません。同一マシンなら <code>127.0.0.1</code> で待ち受けます。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>リバースプロキシはサーバー側の代理人。TLS 終端・遅いクライアントの吸収・振り分け・保護を担う</li>
+      <li><code>proxy_pass</code> にパスがなければそのまま、あれば location 一致部分を置き換える</li>
+      <li><code>Host</code> / <code>X-Forwarded-For</code> / <code>X-Forwarded-Proto</code> を付け、アプリ側で trust proxy を <strong>具体的に</strong> 設定する</li>
+      <li><code>proxy_read_timeout</code> は無通信時間の上限。延ばすのは必要な location だけ</li>
+      <li>SSE やストリーミングはバッファリングをオフ、WebSocket は <code>Upgrade</code> / <code>Connection</code> を引き継ぐ</li>
+      <li>複数台は <code>upstream</code> で振り分け。詳細は <a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a></li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. <code>location /api/ { proxy_pass http://127.0.0.1:3000/; }</code> のとき、/api/orders/5 はアプリにどのパスで届きますか。</summary>
+      <div class="body"><p><code>/orders/5</code> です。<code>proxy_pass</code> にパス（<code>/</code>）があるので、location に一致した <code>/api/</code> が <code>/</code> に置き換えられます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. HTTPS で公開しているのに、Express アプリのログイン後リダイレクトが http:// になってしまいます。原因と対策は？</summary>
+      <div class="body"><p>Nginx から <code>X-Forwarded-Proto</code> が渡されていないか、Express で <code>trust proxy</code> が設定されていないため、アプリが自分を HTTP だと思っています。Nginx に <code>proxy_set_header X-Forwarded-Proto $scheme;</code> を書き、Express で <code>app.set("trust proxy", "loopback")</code> のように信頼するプロキシを指定します。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 管理画面の「売上 CSV 出力」だけが 60 秒ちょうどで 504 になります。どう対処しますか。</summary>
+      <div class="body"><p><code>proxy_read_timeout</code> の既定 60 秒に達しています。その location だけ <code>proxy_read_timeout 300s;</code> などに延ばすのが応急処置です。根本的には処理をジョブキューで非同期にし、完了後にダウンロードさせる設計にします。</p></div>
+    </details>
+    <details>
+      <summary>Q4. Express で <code>app.set("trust proxy", true)</code> にしてはいけないのはなぜですか。</summary>
+      <div class="body"><p>すべてのプロキシを信頼するため、利用者が自分で付けた偽の <code>X-Forwarded-For</code> の左端が <code>req.ip</code> になります。IP 制限やレート制限を簡単にすり抜けられるので、<code>"loopback"</code> や段数・IP 範囲で具体的に指定します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. LLM の回答を少しずつ表示する API を Nginx 経由にしたら、最後まで何も表示されなくなりました。なぜですか。</summary>
+      <div class="body"><p>既定の <code>proxy_buffering on</code> で、Nginx がレスポンスを受け取りきるまでクライアントに送らないためです。その location だけ <code>proxy_buffering off;</code> にするか、アプリから <code>X-Accel-Buffering: no</code> を返します。</p></div>
+    </details>
+    <details>
+      <summary>Q6. WebSocket を中継するのに <code>Upgrade</code> と <code>Connection</code> を明示的に設定する必要があるのはなぜですか。</summary>
+      <div class="body"><p>この 2 つは隣の相手との間だけで有効な hop-by-hop ヘッダーで、Nginx は既定では転送しないからです。<code>proxy_http_version 1.1;</code> とあわせて <code>proxy_set_header</code> で引き継ぎます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/20_Webサーバー・リバースプロキシ/03_リバースプロキシ</li>
+      <li>nginx: ngx_http_proxy_module https://nginx.org/en/docs/http/ngx_http_proxy_module.html</li>
+      <li>nginx: WebSocket proxying https://nginx.org/en/docs/http/websocket.html</li>
+      <li>nginx: ngx_http_upstream_module https://nginx.org/en/docs/http/ngx_http_upstream_module.html</li>
+      <li>Express: Express behind proxies https://expressjs.com/en/guide/behind-proxies.html</li>
+      <li>Uvicorn: Settings（proxy-headers / forwarded-allow-ips） https://www.uvicorn.org/settings/</li>
+      <li>MDN: X-Forwarded-For https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/X-Forwarded-For</li>
+      <li>関連ページ：<a href="20-2_Nginx入門.html">20-2 Nginx入門</a>、<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>、<a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a>、<a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a>、<a href="30-3_Pythonアプリを本番で動かす.html">30-3 Pythonアプリを本番で動かす</a>、<a href="../74_セッション管理/10-1_Cookieの仕組み.html">74 Cookieの仕組み</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-2_Nginx入門.html"><span class="lbl">← 前のページ</span>Nginx入門</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-4_HTTPSとTLS証明書.html"><span class="lbl">次のページ →</span>HTTPSとTLS証明書</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

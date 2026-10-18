@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pythonアプリを本番で動かす｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 アプリ実行環境 › Pythonアプリを本番で動かす</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 アプリ実行環境</span>
+      <h1>Pythonアプリを本番で動かす</h1>
+      <p class="lead">Python の Web アプリは、<strong>Gunicorn</strong> や <strong>Uvicorn</strong> といったアプリサーバーとセットで動かします。このページでは、<strong>WSGI と ASGI</strong> の違いと対応するアプリサーバー、<code>flask run</code> や <code>uvicorn --reload</code> を本番で使ってはいけない理由、Gunicorn のワーカー数の目安とワーカーの種類、Uvicorn 単体と Gunicorn＋Uvicorn ワーカーの使い分け（2026 年時点の公式の考え方）、venv / uv による環境の分離と依存パッケージの固定、Shop 管理画面（FastAPI）の起動例を解説します。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/30_アプリ実行環境/03_Pythonアプリを本番で動かす</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>Python の Web フレームワーク（Flask、Django、FastAPI）は「<strong>レシピ集</strong>」で、それだけでは料理は出てきません。レシピを読んで実際に料理を作る「<strong>厨房のスタッフ</strong>」が Gunicorn や Uvicorn といったアプリサーバーです。両者は <strong>WSGI / ASGI</strong> という「レシピの書式」で約束しているので、どのレシピ集でも対応するスタッフなら作れます。</p>
+    </div>
+
+    <p>この記事は <a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a> を読んでいると理解しやすいです。押さえておきたい前提は次の 3 つです。</p>
+    <ul>
+      <li>Node.js と違い、Python のアプリは <strong>アプリサーバーとセットで動かす</strong> のが前提</li>
+      <li><code>flask run</code> などの開発用サーバーは「試食用の簡易キッチン」。本番では使わない</li>
+      <li>マルチコアは <strong>ワーカープロセスを複数</strong> 起動して使い切る（Python は <strong>GIL</strong>（同時に 1 スレッドしか Python コードを実行させない仕組み）があるため、1 プロセスでは基本的に 1 コア分しか Python コードを実行できない）</li>
+    </ul>
+
+    <h2 id="sec-1"><span class="num">1.</span>WSGI と ASGI</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>WSGI</th><th>ASGI</th></tr></thead>
+      <tbody>
+        <tr><td>読み方・正式名</td><td>Web Server Gateway Interface（PEP 3333）</td><td>Asynchronous Server Gateway Interface</td></tr>
+        <tr><td>処理モデル</td><td>同期。1 リクエストを 1 ワーカー（スレッド）が最後まで担当</td><td>非同期（async/await）。1 プロセスで多数の接続を並行処理</td></tr>
+        <tr><td>得意なこと</td><td>一般的な CRUD、管理画面</td><td>外部 API 待ちが多い処理、WebSocket、SSE（Server-Sent Events）</td></tr>
+        <tr><td>フレームワーク</td><td>Flask、Django（従来の構成）</td><td>FastAPI、Starlette、Django（ASGI モード）</td></tr>
+        <tr><td>アプリサーバー</td><td>Gunicorn、uWSGI</td><td>Uvicorn、Hypercorn、Gunicorn＋ASGI ワーカー</td></tr>
+      </tbody>
+    </table></div>
+    <p>中身はとてもシンプルで、WSGI は「関数を 1 つ渡す」約束、ASGI はそれを非同期にした約束です。</p>
+<pre><code># WSGI アプリの最小形：環境変数の辞書を受け取り、レスポンスを返す関数
+def app(environ, start_response):
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [b"Hello WSGI"]
+
+# ASGI アプリの最小形：async 関数で、送受信も await する
+async def app(scope, receive, send):
+    await send({"type": "http.response.start", "status": 200,
+                "headers": [(b"content-type", b"text/plain")]})
+    await send({"type": "http.response.body", "body": b"Hello ASGI"})</code></pre>
+    <p>Flask の <code>app = Flask(__name__)</code> や FastAPI の <code>app = FastAPI()</code> は、この約束を満たした「呼び出せるオブジェクト」です。だから <code>gunicorn main:app</code>（main.py の中の app を動かせ）と指定できるのです。</p>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="Nginx の 443 番から HTTP でアプリサーバーへ転送する。アプリサーバーは WSGI で Flask や Django を、ASGI で FastAPI や Starlette を呼ぶ。アプリサーバーの例は sync や gthread の Gunicorn と、イベントループの Uvicorn">
+      <defs>
+        <marker id="arrow-30-3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="85" width="130" height="56" rx="8" class="d-box"/>
+      <text x="85" y="118" text-anchor="middle" class="d-text-bold">Nginx :443</text>
+      <rect x="230" y="20" width="220" height="190" rx="8" class="d-box-accent"/>
+      <text x="340" y="48" text-anchor="middle" class="d-text-bold">アプリサーバー</text>
+      <rect x="250" y="66" width="180" height="56" rx="8" class="d-box"/>
+      <text x="340" y="90" text-anchor="middle" class="d-text-bold">Gunicorn</text>
+      <text x="340" y="110" text-anchor="middle" class="d-text-sub">sync / gthread</text>
+      <rect x="250" y="136" width="180" height="56" rx="8" class="d-box"/>
+      <text x="340" y="160" text-anchor="middle" class="d-text-bold">Uvicorn</text>
+      <text x="340" y="180" text-anchor="middle" class="d-text-sub">イベントループ</text>
+      <rect x="530" y="40" width="170" height="56" rx="8" class="d-box-good"/>
+      <text x="615" y="73" text-anchor="middle" class="d-text-bold">Flask / Django</text>
+      <rect x="530" y="136" width="170" height="56" rx="8" class="d-box-good"/>
+      <text x="615" y="169" text-anchor="middle" class="d-text-bold">FastAPI / Starlette</text>
+      <path d="M150,113 L228,113" class="d-line" marker-end="url(#arrow-30-3a)"/>
+      <text x="189" y="103" text-anchor="middle" class="d-text-sub">HTTP</text>
+      <path d="M430,90 L528,70" class="d-line" marker-end="url(#arrow-30-3a)"/>
+      <text x="480" y="68" text-anchor="middle" class="d-text-sub">WSGI</text>
+      <path d="M430,164 L528,164" class="d-line" marker-end="url(#arrow-30-3a)"/>
+      <text x="480" y="154" text-anchor="middle" class="d-text-sub">ASGI</text>
+    </svg>
+    <figcaption>図：アプリサーバーとフレームワークは WSGI / ASGI という約束事でつながる</figcaption>
+    </figure>
+
+    <h2 id="sec-2"><span class="num">2.</span>開発サーバーを本番で使わない理由</h2>
+    <span class="code-label bad">✕ 本番で使わない：開発用のサーバー</span>
+<pre><code>flask run --debug            # Flask の開発サーバー（Werkzeug）
+uvicorn main:app --reload    # ファイル変更を監視して自動再起動
+python manage.py runserver   # Django の開発サーバー</code></pre>
+    <p>これらは開発をラクにするための道具で、本番には向きません。</p>
+    <ul>
+      <li><strong>Flask / Django の開発サーバー</strong> は公式ドキュメントで「本番では使わないこと」と明記されています。性能・安定性・セキュリティが本番を想定していません</li>
+      <li><strong>デバッグモード</strong> では、エラー画面からブラウザ上で任意の Python コードを実行できる機能（Werkzeug デバッガ）が有効になり、外部に公開すると <strong>サーバーを乗っ取られる</strong> 危険があります</li>
+      <li><code>--reload</code> はファイル監視のために余計な CPU を使い、ワーカーを複数持てません（Uvicorn では <code>--reload</code> と <code>--workers</code> は同時に指定できません）</li>
+      <li>落ちたときの再起動、ワーカーの監視、タイムアウトといった運用機能がありません</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>Gunicorn</h2>
+    <p><strong>Gunicorn</strong>（Green Unicorn）は、Python で最も広く使われているアプリサーバーです。<strong>マスタープロセス</strong> が複数の <strong>ワーカープロセス</strong> を起動・監視し、ワーカーが落ちたり応答しなくなったりしたら作り直します（<strong>pre-fork モデル</strong>：先にワーカーを用意しておく方式）。</p>
+<pre><code>gunicorn（マスター：受付・監視のみ）
+ ├─ ワーカー1  ← リクエストを処理
+ ├─ ワーカー2
+ ├─ ワーカー3
+ └─ ...        ← 落ちたら自動で作り直す</code></pre>
+
+    <h3 id="sec-3-1">3.1 ワーカー数の目安</h3>
+    <p>公式ドキュメントは <strong>出発点として <code>(2 × CPU コア数) + 1</code></strong> を挙げ、「多くの場合 4〜12 ワーカーで大量のトラフィックをさばける」としています。2 コアなら 5、4 コアなら 9 から始め、負荷試験とメモリ使用量を見ながら調整します。</p>
+    <ul>
+      <li>増やしすぎるとメモリ不足やコンテキストスイッチ（CPU が処理対象を切り替える手間）で逆に遅くなる</li>
+      <li>「ワーカー数 × 1 ワーカーのメモリ」がサーバーに収まるか確認する</li>
+      <li>DB の接続数（ワーカー数 × プールサイズ）にも跳ね返る（<a href="30-1_アプリケーションサーバーとは.html">30-1</a> のコネクションプール参照）</li>
+      <li>コンテナでは「1 コンテナあたりのワーカーは少なめ、コンテナ数で増やす」方が管理しやすい</li>
+    </ul>
+
+    <h3 id="sec-3-2">3.2 ワーカーの種類（worker class）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>指定</th><th>特徴</th><th>向いているアプリ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>sync</strong>（既定）</td><td><code>-k sync</code></td><td>1 ワーカー＝同時 1 リクエスト。keep-alive 非対応なので Nginx などバッファするプロキシの後ろ必須</td><td>処理が速い WSGI アプリ</td></tr>
+        <tr><td><strong>gthread</strong></td><td><code>-k gthread --threads 4</code></td><td>1 ワーカーに複数スレッド。I/O 待ちの間に別スレッドが動く</td><td>DB 待ちが多い Flask / Django</td></tr>
+        <tr><td><strong>Uvicorn ワーカー</strong></td><td><code>-k uvicorn_worker.UvicornWorker</code></td><td>各ワーカーがイベントループで ASGI アプリを動かす</td><td>FastAPI などの ASGI アプリ</td></tr>
+        <tr><td>gevent</td><td><code>-k gevent</code></td><td>グリーンスレッド（軽量な疑似スレッド）で大量接続。ライブラリの相性に注意</td><td>長時間接続の多い WSGI アプリ</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">2026 年時点の補足</p>
+      <ul>
+        <li>以前よく使われた <code>uvicorn.workers.UvicornWorker</code> は Uvicorn 側で <strong>非推奨</strong> になり、別パッケージ <code>uvicorn-worker</code>（<code>uvicorn_worker.UvicornWorker</code>）への移行が案内されています。</li>
+        <li>Gunicorn の新しいバージョンには、Uvicorn なしで ASGI アプリを動かせるネイティブの <code>asgi</code> ワーカーも登場しています。採用する場合はバージョンと公式ドキュメントを確認してください。</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-3-3">3.3 設定ファイルの例（Flask / Django 向け・gthread）</h3>
+<pre><code># /srv/shop-admin/gunicorn.conf.py
+import multiprocessing
+
+bind = "127.0.0.1:8000"            # 外部には出さず Nginx からのみ
+workers = multiprocessing.cpu_count() * 2 + 1
+worker_class = "gthread"
+threads = 4
+timeout = 30                        # 30 秒応答しないワーカーは作り直す（既定値）
+graceful_timeout = 30               # SIGTERM 後、処理中リクエストを待つ時間
+max_requests = 1000                 # 1000 リクエストごとにワーカーを作り直す（メモリリーク対策）
+max_requests_jitter = 100           # 全ワーカーが同時に作り直されないようにずらす
+accesslog = "-"                     # 標準出力へ（journald / コンテナのログに乗る）
+errorlog = "-"</code></pre>
+    <p>Gunicorn は <strong>SIGTERM を受けるとグレースフルシャットダウン</strong>（新規受付を止め、<code>graceful_timeout</code> まで処理中のリクエストを待つ）を行います。<code>kill -HUP &lt;マスターのPID&gt;</code> で設定を読み直してワーカーを入れ替えることもできます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>Uvicorn 単体か Gunicorn＋Uvicorn ワーカーか</h2>
+    <p>FastAPI のような ASGI アプリを動かす方法は 2 つあります。</p>
+<pre><code># A) Uvicorn 単体（--workers で複数プロセス）
+uvicorn main:app --host 127.0.0.1 --port 8000 --workers 4
+
+# FastAPI CLI でも同じことができる（内部で Uvicorn を使う）
+fastapi run main.py --host 127.0.0.1 --port 8000 --workers 4
+
+# B) Gunicorn をプロセスマネージャーにして Uvicorn ワーカーを動かす
+gunicorn main:app -k uvicorn_worker.UvicornWorker -w 4 -b 127.0.0.1:8000</code></pre>
+    <p><strong>2026 年時点の FastAPI 公式ドキュメント</strong> は、複数ワーカーを使う方法として <code>fastapi run --workers</code> / <code>uvicorn --workers</code> を紹介しており、Gunicorn との組み合わせは必須ではなくなっています。Uvicorn の <code>--workers</code> も、落ちた子プロセスを自動で再起動する程度のプロセス管理機能を持つようになりました。一方 Uvicorn のドキュメントは、Gunicorn を「本番で Uvicorn を動かし管理する最も簡単な方法の 1 つ」としており、どちらも現役の選択肢です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>構成</th><th>向いている場面</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コンテナ 1 つに Uvicorn 1 プロセス</strong>（<code>--workers</code> なし）</td><td>Kubernetes / ECS。複製と再起動は基盤に任せる（FastAPI 公式もこれを推す）</td></tr>
+        <tr><td><strong>Uvicorn <code>--workers N</code></strong></td><td>VM / VPS で手軽に複数プロセス。依存が少ない</td></tr>
+        <tr><td><strong>Gunicorn＋Uvicorn ワーカー</strong></td><td>VM / VPS で、<code>timeout</code>・<code>max_requests</code>・HUP による入れ替えなど Gunicorn の成熟した管理機能を使いたい</td></tr>
+      </tbody>
+    </table></div>
+    <p>Nginx の後ろで動かす場合は、クライアントの IP やスキーム（https）を正しく扱うため、プロキシヘッダーを信頼する設定も入れます。</p>
+<pre><code>uvicorn main:app --host 127.0.0.1 --port 8000 --workers 4 \
+  --proxy-headers --forwarded-allow-ips 127.0.0.1</code></pre>
+
+    <h2 id="sec-5"><span class="num">5.</span>仮想環境とパッケージの固定</h2>
+
+    <h3 id="sec-5-1">5.1 なぜ必要か</h3>
+    <p>Ubuntu 24.04 のシステムの Python（3.12）は OS のツールも使っています。そこに <code>sudo pip install</code> でパッケージを入れると OS を壊す恐れがあるため、Ubuntu 24.04 では <strong>システムの Python に直接 pip でインストールしようとするとエラー</strong> になります（PEP 668 の <code>externally-managed-environment</code>）。アプリごとに <strong>仮想環境（venv）</strong>（アプリ専用に分けた Python の環境）を作り、その中にインストールします。</p>
+    <p>さらに、「開発機では動いたのに本番で動かない」を防ぐため、<strong>依存パッケージのバージョンを完全に固定（ロック）</strong> します。</p>
+
+    <h3 id="sec-5-2">5.2 方法 1：venv ＋ pip ＋ requirements.txt</h3>
+<pre><code>sudo apt install -y python3-venv
+cd /srv/shop-admin
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt</code></pre>
+    <p><code>requirements.txt</code> には <code>fastapi==0.x.y</code> のように <strong>バージョンを <code>==</code> で固定</strong> します。間接的な依存まで固定したい場合は <code>pip-tools</code> の <code>pip-compile</code> で生成するとよいでしょう。</p>
+
+    <h3 id="sec-5-3">5.3 方法 2：uv（2026 年時点で広く使われている）</h3>
+    <p><strong>uv</strong> は Rust 製の高速なパッケージ・プロジェクト管理ツールです。<code>pyproject.toml</code> に依存を書き、<code>uv.lock</code> に全依存の正確なバージョンとハッシュを記録します。Python 本体のバージョン管理もできます。</p>
+<pre><code># 開発機
+uv add fastapi uvicorn sqlalchemy psycopg[binary]
+uv add --dev pytest
+git add pyproject.toml uv.lock
+
+# 本番サーバー / CI / Dockerfile
+uv sync --locked --no-dev   # uv.lock どおりに .venv を作る。lock と食い違えばエラー
+.venv/bin/uvicorn shop_admin.main:app --host 127.0.0.1 --port 8000 --workers 2</code></pre>
+    <p><code>--locked</code> を付けると、<code>pyproject.toml</code> と <code>uv.lock</code> がずれている場合に失敗するので、「知らないうちに別バージョンが入る」事故を防げます。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>静的ファイルは Nginx から配る</h2>
+    <p>管理画面の CSS・JS・画像を Python のワーカーに配らせると、貴重なワーカーが単純なファイル転送で埋まります。静的ファイルは Nginx から直接返します。</p>
+    <ul>
+      <li><strong>Django</strong>：<code>python manage.py collectstatic</code> で <code>STATIC_ROOT</code>（例：<code>/srv/shop-admin/static</code>）に集め、Nginx の <code>location /static/</code> で配信。<code>DEBUG = False</code>、<code>ALLOWED_HOSTS</code> の設定も忘れずに</li>
+      <li><strong>Flask / FastAPI</strong>：<code>static/</code> ディレクトリを Nginx の <code>alias</code> で配信する</li>
+      <li>コンテナで Nginx を置かない構成では、WhiteNoise（Django）を使うか、CDN / S3 から配信する（<a href="50-4_CDNによる負荷軽減.html">50-4 CDNによる負荷軽減</a>）</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>実例：Shop 管理画面（FastAPI）を起動する</h2>
+    <p>Shop の管理画面（<code>admin.shop.example.com</code>）を、同じ VPS 上で FastAPI として動かす例です。</p>
+<pre><code>/srv/shop-admin/
+├── pyproject.toml
+├── uv.lock
+├── .venv/                 ← uv sync で作成
+├── static/                ← CSS / JS（Nginx が直接配信）
+└── shop_admin/
+    ├── __init__.py
+    └── main.py            ← app = FastAPI()</code></pre>
+<pre><code># shop_admin/main.py（抜粋）
+from fastapi import FastAPI
+
+app = FastAPI(title="Shop Admin", docs_url=None, redoc_url=None)  # 本番では API ドキュメントを隠す
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}</code></pre>
+
+    <h3 id="sec-7-1">7.1 起動コマンド</h3>
+    <p>2 コアの VPS で Shop API と同居させるので、控えめに 2 ワーカーにします。</p>
+<pre><code>cd /srv/shop-admin
+uv sync --locked --no-dev
+.venv/bin/gunicorn shop_admin.main:app \
+  -k uvicorn_worker.UvicornWorker -w 2 -b 127.0.0.1:8000 \
+  --timeout 30 --graceful-timeout 30 --max-requests 1000 --max-requests-jitter 100 \
+  --access-logfile -</code></pre>
+    <p>Gunicorn を使わず <code>uvicorn --workers 2</code> でも構いません。どちらにしても、実際には systemd のユニットにして自動起動・自動再起動させます（<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>）。<code>DATABASE_URL</code> などの設定値の渡し方は <a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a> で扱います。</p>
+
+    <h3 id="sec-7-2">7.2 Nginx 側</h3>
+<pre><code># /etc/nginx/sites-available/admin.shop.example.com（抜粋）
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name admin.shop.example.com;
+
+    location /static/ {
+        alias /srv/shop-admin/static/;    # Python を通さず直接返す
+        expires 7d;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}</code></pre>
+    <p>管理画面は社内向けなので、IP 制限や認証を Nginx で追加するのが一般的です（<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>）。</p>
+    <div class="callout tip">
+      <p class="callout-title">Django / Flask の場合</p>
+      <ul>
+        <li><strong>Flask</strong>：<code>gunicorn -w 5 -k gthread --threads 4 -b 127.0.0.1:8000 "shop_admin:create_app()"</code> のように、アプリファクトリ（アプリを組み立てて返す関数）も指定できます。</li>
+        <li><strong>Django</strong>：<code>gunicorn mysite.wsgi:application</code>（WSGI）、非同期機能を使うなら <code>mysite.asgi:application</code> を Uvicorn で動かします。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td><code>app.run(debug=True)</code> のまま本番に出しても少しなら平気</td><td>デバッガ経由で任意コード実行される危険があります。開発サーバーとデバッグモードは本番で絶対に使いません。</td></tr>
+        <tr><td>async で書けば何でも速くなる</td><td><code>async def</code> の中で同期の DB ドライバや <code>time.sleep</code> を呼ぶと、イベントループ全体が止まります。同期ライブラリを使うなら普通の <code>def</code> にする（FastAPI はスレッドプールで実行してくれる）か、非同期対応のライブラリを使います。</td></tr>
+        <tr><td>ワーカー数は多いほどよい</td><td><code>(2 × コア数) + 1</code> は出発点。メモリと DB 接続数の上限を超えない範囲で、負荷試験しながら決めます。</td></tr>
+        <tr><td><code>sudo pip install</code> でサーバーに入れればよい</td><td>Ubuntu 24.04 ではエラーになり、無理に入れると OS を壊す恐れがあります。venv / uv で環境を分け、lock ファイルで固定します。</td></tr>
+        <tr><td>Gunicorn は Windows でも動く</td><td>Gunicorn は Unix 専用です。Windows の開発機では Uvicorn を使い、本番の Linux で Gunicorn を使う、といった差に注意します。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>同期の Flask / Django は WSGI、非同期の FastAPI は ASGI でアプリサーバーとつながる</li>
+      <li><code>flask run</code> / <code>runserver</code> / <code>uvicorn --reload</code> は開発専用。本番は Gunicorn や Uvicorn を使う</li>
+      <li>Gunicorn のワーカー数は <code>(2 × コア数) + 1</code> から始め、sync / gthread / Uvicorn ワーカーを用途で選ぶ</li>
+      <li>ASGI は「コンテナ 1 つに Uvicorn 1 プロセス」「Uvicorn <code>--workers</code>」「Gunicorn＋<code>uvicorn-worker</code>」のいずれか。FastAPI 公式（2026 年時点）は前 2 つを紹介</li>
+      <li>venv / uv で環境を分け、<code>requirements.txt</code>（<code>==</code> 固定）や <code>uv.lock</code> で依存を固定する</li>
+      <li>静的ファイルは Nginx から配り、Python のワーカーは動的な処理に専念させる</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 4 コアのサーバーで Gunicorn を使う場合、ワーカー数の出発点はいくつですか？ また、それを決めるときに他に確認すべきことは？</summary>
+      <div class="body"><p><code>(2 × 4) + 1 = 9</code> です。ただしこれは出発点で、9 ワーカー分のメモリがサーバーに収まるか、DB の接続数（ワーカー数 × プールサイズ）が上限を超えないかを確認し、負荷試験で調整します。</p></div>
+    </details>
+    <details>
+      <summary>Q2. FastAPI の管理画面を Kubernetes にデプロイします。各コンテナで --workers 4 を指定すべきですか？</summary>
+      <div class="body"><p>通常は指定しません。Kubernetes では複製（レプリカ数）や再起動を基盤が担うため、1 コンテナに Uvicorn 1 プロセスとし、Pod の数で増やすのが FastAPI 公式でも推奨される形です。</p></div>
+    </details>
+    <details>
+      <summary>Q3. FastAPI のエンドポイントを async def で書き、中で同期版の requests.get() で外部 API を呼んでいます。何が問題ですか？</summary>
+      <div class="body"><p>同期の <code>requests.get()</code> が応答を待つ間、イベントループがブロックされ、そのワーカーの他のリクエストがすべて止まります。<code>httpx.AsyncClient</code> などの非同期クライアントを使うか、関数を普通の <code>def</code> にしてスレッドプールで実行させます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. Flask のデバッグモードを本番で有効にしてはいけない一番の理由は何ですか？</summary>
+      <div class="body"><p>エラー画面からブラウザ上で任意の Python コードを実行できる Werkzeug デバッガが有効になり、外部に公開するとサーバーを乗っ取られる危険があるからです。</p></div>
+    </details>
+    <details>
+      <summary>Q5. Ubuntu 24.04 で sudo pip install を実行するとエラーになるのはなぜですか？ どうすればよいですか？</summary>
+      <div class="body"><p>システムの Python は OS のツールも使っているため、PEP 668 によって <code>externally-managed-environment</code> として保護されているからです。アプリごとに venv や uv で仮想環境を作り、その中にインストールします。</p></div>
+    </details>
+    <details>
+      <summary>Q6. uv sync に --locked を付けると、どんな事故を防げますか？</summary>
+      <div class="body"><p><code>pyproject.toml</code> と <code>uv.lock</code> がずれているときに失敗するので、「知らないうちに別バージョンのパッケージが入る」事故を防げます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/30_アプリ実行環境/03_Pythonアプリを本番で動かす</li>
+      <li>PEP 3333 – Python Web Server Gateway Interface v1.0.1 https://peps.python.org/pep-3333/</li>
+      <li>ASGI Documentation https://asgi.readthedocs.io/</li>
+      <li>Gunicorn - Design（How Many Workers? / Worker Types） https://gunicorn.org/design/</li>
+      <li>Gunicorn - ASGI https://gunicorn.org/asgi/</li>
+      <li>Uvicorn - Deployment https://uvicorn.dev/deployment/</li>
+      <li>FastAPI - Server Workers https://fastapi.tiangolo.com/deployment/server-workers/</li>
+      <li>FastAPI - FastAPI in Containers https://fastapi.tiangolo.com/deployment/docker/</li>
+      <li>Flask - Deploying to Production https://flask.palletsprojects.com/en/stable/deploying/</li>
+      <li>Django - How to deploy with WSGI https://docs.djangoproject.com/en/stable/howto/deployment/wsgi/</li>
+      <li>uv - Locking and syncing https://docs.astral.sh/uv/concepts/projects/sync/</li>
+      <li>PEP 668 – Marking Python base environments as “externally managed” https://peps.python.org/pep-0668/</li>
+      <li>関連ページ：<a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a>、<a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>、<a href="50-4_CDNによる負荷軽減.html">50-4 CDNによる負荷軽減</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-2_Node.jsアプリを本番で動かす.html"><span class="lbl">← 前のページ</span>Node.jsアプリを本番で動かす</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-4_プロセス管理とsystemd.html"><span class="lbl">次のページ →</span>プロセス管理とsystemd</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

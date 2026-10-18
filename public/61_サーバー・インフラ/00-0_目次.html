@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>目次｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb">目次</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>サーバー・インフラ解説 — 目次</h1>
+      <p class="lead">Obsidian の「61_サーバー・インフラ」ノートをもとにした、初心者向け解説ページの入口です。書いたアプリを動かす <strong>器</strong>（サーバー・Web サーバー・実行環境）と、それを <strong>用意する</strong>（構築・IaC）、<strong>増やす</strong>（スケーリング・負荷分散）、<strong>守る</strong>（サーバー・ネットワークセキュリティ）方法を、EC サイト「Shop」を 1 台構成から冗長構成まで育てる流れで順に解説します。</p>
+      <p class="meta">もとにしたノート：00_全体像/MOC_サーバー・インフラ体系、00_全体像/MOC_運用領域マップ と、10〜60 の各フォルダのノート</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>このサイトの読み方</h2>
+    <p>ページは下の順番に並んでいて、各ページ下部の「前のページ／次のページ」で順に読み進められます。上部の「サーバー・インフラ解説」からいつでもこの目次に戻れます。各ページの最後には「まとめ」と「理解度チェック」があります。</p>
+    <p>頭から順に読むと、<strong>1 台のサーバーに自分でアプリを公開し、本番構成まで育てられる</strong> ように並べています。共通の題材は EC サイト「Shop」（Ubuntu 24.04 ＋ Nginx ＋ Node.js API ＋ PostgreSQL）です。ネットワークや OS の理論そのものは 11_コンピューターサイエンスのノート（50 OS・並行処理、60 ネットワーク・Web）で扱っています。サーバーを守る考え方の土台は <a href="../71_セキュリティ基礎/00-0_目次.html">セキュリティ基礎解説</a>（71）、アプリの脆弱性は <a href="../72_Web脆弱性対策/00-0_目次.html">Web脆弱性対策解説</a>（72）、ログインの仕組みは <a href="../73_認証認可/00-0_目次.html">認証認可解説</a>（73）と <a href="../74_セッション管理/00-0_目次.html">セッション管理解説</a>（74）にあります。</p>
+    <h3 id="sec-1-1">おすすめの読む順</h3>
+    <ol class="steps">
+      <li><strong>00 全体像</strong> — <a href="00-1_サーバー・インフラの全体像.html">サーバー・インフラの全体像</a> で地図を手に入れます。61〜69 の中での位置づけもここで確認します。</li>
+      <li><strong>10 サーバーの基礎</strong> — サーバーとは何か、どこで動いているか（物理・仮想化・クラウド）、Linux とネットワークの基本を押さえます。すべての土台です。</li>
+      <li><strong>20 Webサーバー・リバースプロキシ</strong> — リクエストを受けて HTTPS で返す「玄関」を Nginx で作ります。</li>
+      <li><strong>30 アプリ実行環境</strong> — アプリと DB を本番で落ちずに動かし続ける方法（Node.js・Python・systemd・設定とシークレット・DB 運用）を学びます。</li>
+      <li><strong>40 構築・IaC</strong> — 手作業の構築手順を知ったうえで、Terraform・Ansible・CDK などでサーバーをコードで用意する方法を学びます。</li>
+      <li><strong>50 スケーリング・負荷分散</strong> — アクセスが増えても、1 台壊れても止まらない構成（ロードバランサー・オートスケーリング・CDN・冗長化）を学びます。</li>
+      <li><strong>60 サーバー・ネットワークセキュリティ</strong> — 公開した瞬間から来る攻撃からサーバーとネットワーク機器を守る方法を学びます。</li>
+    </ol>
+    <p>とにかく 1 台に公開したいときは、<a href="10-4_Linuxサーバーの基本.html">10-4</a> → <a href="10-5_ネットワークの基本.html">10-5</a> → <a href="20-2_Nginx入門.html">20-2</a> → <a href="20-3_リバースプロキシ.html">20-3</a> → <a href="20-4_HTTPSとTLS証明書.html">20-4</a> → <a href="30-4_プロセス管理とsystemd.html">30-4</a> → <a href="60-2_SSHの安全な運用.html">60-2</a> → <a href="60-3_ファイアウォールとネットワーク制御.html">60-3</a> の近道もあります（手順全体の地図は <a href="40-1_サーバー構築の流れ.html">40-1</a>）。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>00 全体像</h2>
+    <p>サーバー・インフラの地図。最初にここを読むと、残りのページの位置づけがわかります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="00-1_サーバー・インフラの全体像.html">00-1 サーバー・インフラの全体像</a></td><td>インフラとは何か、6 つのフォルダとこの順番の理由、Shop の最終構成図、困ったときの逆引き、61〜69 の学ぶ順と 61 の位置、11_コンピューターサイエンスやセキュリティ（71〜74）との分担、動画「インフラ完全攻略」の要約（バックエンド×インフラ、経験を積みにくい理由、学習の 5 つのポイント、EC2→ECS→Lambda→Google Cloud→EKS のロードマップ）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>10 サーバーの基礎</h2>
+    <p>サーバーとは何で、どこで（物理・VM・クラウド）動いているか。Linux とネットワークの基本、裏方のネットワークサービスまで。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="10-1_サーバーとは何か.html">10-1 サーバーとは何か</a></td><td>クライアント／サーバーモデル、リクエストとレスポンス、サーバーの中身（CPU・メモリ・ストレージ・NIC）と PC との違い、物理・VPS・クラウド VM・コンテナ・サーバーレスという「形」、URL を開いてから表示されるまで、サーバーの種類と設置場所、動画「Cloud Run が強すぎる理由」（Lambda と ECS の強み・弱み）</td></tr>
+        <tr><td><a href="10-2_サーバーの種類と役割.html">10-2 サーバーの種類と役割</a></td><td>Web・AP・DB・キャッシュなど主なサーバーの種類、3 層アーキテクチャ（Web - AP - DB）の役割とメリット・デメリット、同居構成と分離構成の比較、Shop の構成の成長</td></tr>
+        <tr><td><a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a></td><td>仮想化とハイパーバイザ（Type 1 / Type 2）、VM とコンテナの違い、IaaS・PaaS・SaaS・FaaS と責任共有モデル、オンプレミスとクラウド、主要クラウドの対応サービス、リージョンと AZ、VPS、VRF、データセンター、動画「仮想化の仕組み」「クラウド vs オンプレ」</td></tr>
+        <tr><td><a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a></td><td>Linux が選ばれる理由とディストリビューション、ディレクトリ構成（FHS）、ユーザー・グループ・パーミッション・sudo、apt、プロセスとサービス（systemd）、ログとリソース確認、初日の初期設定、Linux のアーキテクチャ</td></tr>
+        <tr><td><a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a></td><td>IPv4 と IPv6、グローバル IP とプライベート IP、CIDR、NAT、ポート番号と TCP / UDP、<code>0.0.0.0</code> と <code>127.0.0.1</code> の違い、DNS レコードと名前解決の流れ、ドメインをサーバーに向ける手順、疎通確認コマンド</td></tr>
+        <tr><td><a href="10-6_DHCPとNTP.html">10-6 DHCPとNTP</a></td><td>DHCP の DORA、ポート番号、DHCP リレー、リース期間（T1 / T2）、APIPA とトラブルシューティング、NTP のストラタムと設定・確認、ログのタイムスタンプ</td></tr>
+        <tr><td><a href="10-7_非機能要件を支えるサーバー.html">10-7 非機能要件を支えるサーバー</a></td><td>業務を支える裏方のサーバー：DHCP・DNS・NTP・ログ・監視・バックアップ・セキュリティ・プロキシ・メール・ファイルサーバーの役割・種類・設定例</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>20 Webサーバー・リバースプロキシ</h2>
+    <p>リクエストを受けて HTTPS で返す「玄関」をどう作るか。Nginx を中心に、Apache やキャッシュ・圧縮まで。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a></td><td>HTTP リクエストとレスポンスの流れ、静的コンテンツと動的コンテンツ、Web サーバーの 6 つの役割、処理モデル（プロセス・スレッド・イベント駆動）と C10K 問題、主要製品、<code>curl -v</code> でやり取りを見る</td></tr>
+        <tr><td><a href="20-2_Nginx入門.html">20-2 Nginx入門</a></td><td>インストールと master / worker プロセス、設定ファイルの構成とブロックの継承、server ブロックの選ばれ方、location のマッチ優先順位、静的サイト配信と反映手順、アクセスログとエラーログ、root と alias の罠</td></tr>
+        <tr><td><a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a></td><td>フォワードプロキシとリバースプロキシ、<code>proxy_pass</code> と末尾スラッシュ、X-Forwarded-* と trust proxy、タイムアウト・バッファリング・WebSocket、upstream で振り分け、Shop API の公開設定例</td></tr>
+        <tr><td><a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a></td><td>TLS が守るもの、TLS 1.3 のハンドシェイクと証明書・認証局、Let's Encrypt と certbot（ACME・自動更新）、Nginx の推奨 TLS 設定、HTTP→HTTPS リダイレクトと HSTS、HTTP/2・HTTP/3、TLS 終端の位置</td></tr>
+        <tr><td><a href="20-5_Apache入門.html">20-5 Apache入門</a></td><td>歴史と位置づけ、MPM、設定ファイルと VirtualHost、.htaccess と mod_rewrite、mod_proxy によるリバースプロキシ、Nginx との比較と使い分け</td></tr>
+        <tr><td><a href="20-6_HTTPキャッシュと圧縮.html">20-6 HTTPキャッシュと圧縮</a></td><td>Cache-Control、<code>no-cache</code> と <code>no-store</code>、ETag / Last-Modified と 304、ファイル名ハッシュ、gzip と brotli、proxy_cache（マイクロキャッシュ）とキャッシュしてはいけないもの</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>30 アプリ実行環境</h2>
+    <p>アプリと DB を本番で落ちずに動かし続けるには。言語ごとの起動方法、プロセス管理、設定とシークレット、DB サーバーの運用。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a></td><td>Web サーバーとアプリサーバーの境界、言語ごとのアプリサーバー（Node.js・Python・Ruby・Java・PHP）、同時処理モデル、ステートレスにする理由、コネクションプール、選び方、プログラミング言語と DB の役割</td></tr>
+        <tr><td><a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a></td><td>イベントループとシングルスレッド、本番での起動方法と <code>NODE_ENV</code>、マルチコア活用、PM2、グレースフルシャットダウン、メモリと未処理例外、LTS の選び方、Nginx の後ろに置く構成</td></tr>
+        <tr><td><a href="30-3_Pythonアプリを本番で動かす.html">30-3 Pythonアプリを本番で動かす</a></td><td>WSGI と ASGI、開発サーバーを本番で使わない理由、Gunicorn のワーカー数と種類、Uvicorn との組み合わせ、venv・pip・uv によるパッケージ固定、静的ファイルの配り方、FastAPI の起動例</td></tr>
+        <tr><td><a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a></td><td>プロセスマネージャが必要な理由、unit ファイルの構造、Shop API の unit ファイル例とセキュリティ系オプション、systemctl と journalctl、PM2 / supervisor との比較、コンテナ環境での担い手</td></tr>
+        <tr><td><a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a></td><td>Twelve-Factor App の Config 原則、EnvironmentFile・.env・コンテナでの渡し方、Parameter Store と sops によるシークレット管理、起動時バリデーション、ローテーションとログへの漏えい防止</td></tr>
+        <tr><td><a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a></td><td>DB サーバーを分ける理由、PostgreSQL の初期設定（listen_addresses・pg_hba.conf・最小権限のロール）、メモリ設定と接続数、PgBouncer、バックアップ・レプリカ・監視、マネージド DB、MySQL との違い、動画「MySQL はセキュリティが弱いのか」</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>40 構築・IaC</h2>
+    <p>サーバーを手作業ではなくコードで用意するには。手作業の流れと限界から、Terraform・Ansible・CloudFormation / CDK、ネットワーク自動化まで。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a></td><td>Shop を 1 台構築する 11 ステップと確認方法、手順書（ランブック）、スノーフレークサーバーと構成ドリフト、Pets vs Cattle、イミュータブルインフラ</td></tr>
+        <tr><td><a href="40-2_IaCとは.html">40-2 IaCとは</a></td><td>IaC の 4 つの利点、宣言型と命令型、冪等性、ツールの役割分担と比較、GitOps、Terraform のライセンス変更と OpenTofu、ネットワーク機器での構成ドリフトとバージョン管理</td></tr>
+        <tr><td><a href="40-3_Terraform入門.html">40-3 Terraform入門</a></td><td>インストールと HCL、plan / apply のワークフロー、state ファイルとリモート state、EC2 とセキュリティグループの例、モジュール、import と drift、動画「Terraform 恐怖症克服マニュアル」（ステートと実体の関係、import で学ぶ）</td></tr>
+        <tr><td><a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a></td><td>エージェントレスと SSH、インベントリ・プレイブック・モジュール、冪等性と changed、変数・テンプレート・ロール・ansible-vault、Shop のプレイブック例、Terraform との分担、Puppet・Chef との比較</td></tr>
+        <tr><td><a href="40-5_CloudFormationとCDK.html">40-5 CloudFormationとCDK</a></td><td>テンプレートとスタック、変更セット・ロールバック・ドリフト検出、AWS CDK（TypeScript）とコンストラクトの L1 / L2 / L3、Pulumi との比較、Terraform との選び方</td></tr>
+        <tr><td><a href="40-6_ネットワーク自動化とSDN.html">40-6 ネットワーク自動化とSDN</a></td><td>従来型ネットワークと自動化の意義、3 つのプレーン、SDN とノースバウンド／サウスバウンド API、Catalyst Center・IBN・SD-Access、YANG・NETCONF・RESTCONF</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>50 スケーリング・負荷分散</h2>
+    <p>アクセスが増えても、1 台壊れても止まらないようにするには。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a></td><td>スケールアップとスケールアウト、ボトルネックの見つけ方、ステートレス化、DB のスケール、Shop が 1 台から複数台へ育つ段階、キャパシティ計画の入口</td></tr>
+        <tr><td><a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a></td><td>L4 と L7、振り分けアルゴリズム、ヘルスチェックと切り離し、スティッキーセッション・TLS 終端・コネクションドレイニング、Nginx upstream と AWS ALB、DNS ラウンドロビンとの違い、動画「ロードバランサの裏側」</td></tr>
+        <tr><td><a href="50-3_オートスケーリング.html">50-3 オートスケーリング</a></td><td>増減の指標とポリシー、起動時間・ウォームアップ・クールダウン、最小・最大台数とスケールイン、Auto Scaling Group と Kubernetes HPA、コストと防げない障害、動画「オートスケールの遅れ」（増えるまでの 4 つの時間と備え）</td></tr>
+        <tr><td><a href="50-4_CDNによる負荷軽減.html">50-4 CDNによる負荷軽減</a></td><td>エッジとオリジン、何をキャッシュするか、キャッシュキーとパージ、オリジン保護と DDoS 対策、主要 CDN と Shop の構成</td></tr>
+        <tr><td><a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a></td><td>可用性の数字、SPOF の洗い出し、冗長化パターン、マルチ AZ・マルチリージョンと DB の冗長化、RTO / RPO とバックアップ、Shop の最終構成、FHRP（HSRP / VRRP / GLBP）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-8"><span class="num">8.</span>60 サーバー・ネットワークセキュリティ</h2>
+    <p>公開した瞬間から来る攻撃から守るには。サーバー（SSH・ファイアウォール・ハードニング・ログ監査）とネットワーク機器（管理アクセス・AAA・ACL・L2・VPN）の両面。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ページ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a></td><td>公開した瞬間から始まる自動スキャン、攻撃面の縮小・多層防御・最小権限、クラウドの責任共有モデル、Shop の脅威と対策マップ、「設定」より「運用」</td></tr>
+        <tr><td><a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a></td><td>公開鍵認証の仕組み、ed25519 鍵の作成と配置、sshd_config の推奨設定と締め出し対策、~/.ssh/config と ProxyJump、ポート変更の限界、SSM Session Manager、鍵の管理と失効、動画「SSH の仕組み」（暗号化トンネル・ポートフォワーディング）</td></tr>
+        <tr><td><a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a></td><td>クラウドとサーバーの 2 段構え、ufw・iptables・nftables、セキュリティグループとネットワーク ACL（ステートフル／ステートレス）、DB ポートを外に出さない、Docker が ufw を迂回する問題、ss と nmap での確認</td></tr>
+        <tr><td><a href="60-4_OSのハードニングとパッチ管理.html">60-4 OSのハードニングとパッチ管理</a></td><td>不要なサービスを削る、ユーザーと sudo、unattended-upgrades と再起動・EOL、fail2ban、ファイルパーミッションと sysctl、CIS Benchmarks と自動チェック、イミュータブルインフラでのパッチ</td></tr>
+        <tr><td><a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a></td><td>auth.log・sudo・Nginx のログ、ログを別サーバーへ送る理由、auditd と AIDE、侵入の兆候と初動、CloudTrail と GuardDuty、Shop セキュリティチェックリスト</td></tr>
+        <tr><td><a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a></td><td>管理方法の種類、IOS のモード、password と secret、最小文字数・login block-for・exec-timeout、特権レベル、SSH の設定と Telnet、TFTP / FTP / SCP の比較、機器のアクセス保護チェックリスト</td></tr>
+        <tr><td><a href="60-7_AAA.html">60-7 AAA</a></td><td>認証・認可・アカウンティング、TACACS+ と RADIUS の違い、IOS での AAA 設定と方法リスト、802.1X（ポートベース認証）</td></tr>
+        <tr><td><a href="60-8_ACL.html">60-8 ACL</a></td><td>標準 ACL と拡張 ACL、評価順序と暗黙の deny、ワイルドカードマスクの計算、適用場所と方向、名前付き ACL、確認コマンド、vty への access-class</td></tr>
+        <tr><td><a href="60-9_L2セキュリティ.html">60-9 L2セキュリティ</a></td><td>L2 攻撃と対策の対応表、ポートセキュリティ（sticky・違反モード・err-disabled）、DHCP スヌーピング、ダイナミック ARP インスペクション、VLAN ホッピング、BPDU ガード</td></tr>
+        <tr><td><a href="60-10_VPN.html">60-10 VPN</a></td><td>サイト間 VPN とリモートアクセス VPN、IPsec のセキュリティ機能、トンネルモードとトランスポートモード、GRE と GRE over IPsec</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>関連するフォルダ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><a href="../71_セキュリティ基礎/00-0_目次.html">71_セキュリティ基礎</a></td><td>CIA三原則・最小権限・深層防御・ゼロトラスト・ネットワークと端末の防御・セキュアな運用など、60 で使う考え方の土台</td></tr>
+        <tr><td><a href="../72_Web脆弱性対策/00-0_目次.html">72_Web脆弱性対策</a></td><td>XSS・SQL インジェクション・CSRF・SSRF・セキュリティヘッダなど、アプリ側の脆弱性と対策</td></tr>
+        <tr><td><a href="../73_認証認可/00-0_目次.html">73_認証認可</a></td><td>ログイン（認証）の方法、パスワード・MFA、OAuth 2.0 / OIDC、権限（認可）の設計</td></tr>
+        <tr><td><a href="../74_セッション管理/00-0_目次.html">74_セッション管理</a></td><td>Cookie・セッション・トークンによるログイン状態の保持（複数台構成でのセッションの置き場所にも関係）</td></tr>
+        <tr><td><a href="../41_アーキテクチャ/00-0_目次.html">41_アーキテクチャ</a></td><td>ソフトウェアをどう組み立てるかという大きな構造（アーキテクチャスタイルなど）。サーバー構成を決める前提になる設計の話</td></tr>
+      </tbody>
+    </table></div>
+
+    <nav class="pager">
+      <span class="empty"></span>
+      <span class="idx">目次</span>
+      <a class="next" href="00-1_サーバー・インフラの全体像.html"><span class="lbl">次のページ →</span>サーバー・インフラの全体像</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

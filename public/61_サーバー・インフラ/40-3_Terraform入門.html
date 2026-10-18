@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terraform入門｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 構築・IaC › Terraform入門</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 構築・IaC</span>
+      <h1>Terraform入門</h1>
+      <p class="lead"><strong>Terraform</strong> は、インフラの「あるべき姿」を HCL という言語で書き、<code>plan</code> で差分を確かめてから <code>apply</code> で作る・変えるプロビジョニングツールです。このページでは、インストールと HCL の基本要素、<code>init → plan → apply → destroy</code> のワークフローと plan の読み方、<strong>state ファイル</strong> の役割と危険性、S3 リモート state とロック、Shop の EC2 + セキュリティグループを作る完全な例、モジュール、<code>import</code> とドリフト検出を解説します。さらに動画「Terraform 恐怖症克服マニュアル」をもとに、<strong>plan と apply の内部の仕組み</strong>、state と実体の変化を追う実験、本番で怖がらずに Terraform を扱うための練習法も紹介します。</p>
+      <p class="meta">もとにしたノート：40_構築・IaC/03_Terraform入門、40_構築・IaC/【効果抜群】Terraform 恐怖症克服マニュアル（りょうま@インフラ攻略、YouTube https://www.youtube.com/watch?v=viGoSsrW-oE）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>Terraform は <strong>「インフラの設計図を渡すと、現場との差を見積もって（plan）、その通りに工事してくれる（apply）建築会社」</strong> です。工事記録台帳（<strong>state ファイル</strong>）で「どの設計図の部品が、現実のどの建物に当たるか」を覚えています。<strong>plan を読まずに apply しない</strong> こと、そして <strong>コード・state・実体の 3 つの関係</strong> を理解することが、本番で怖がらずに扱うための鍵です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>Terraform とは</h2>
+    <ul>
+      <li>HashiCorp 製の <strong>プロビジョニングツール</strong>（クラウドの API を呼んでリソースを作るツール）。AWS / GCP / Azure / Cloudflare / GitHub など数千の <strong>プロバイダー</strong>（各サービスの API につなぐプラグイン）に対応</li>
+      <li>設定は <strong>HCL（HashiCorp Configuration Language）</strong> という宣言型の言語で書く</li>
+      <li>「書く → plan で差分確認 → apply で適用」の繰り返し。<strong>plan を読まずに apply しない</strong> のが鉄則</li>
+    </ul>
+    <p>宣言型と冪等性の考え方は <a href="40-2_IaCとは.html">40-2 IaCとは</a>、クラウドの基本は <a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a> で扱っています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>インストールと HCL の基本</h2>
+
+    <h3 id="sec-2-1">2.1 インストール（Ubuntu 24.04）</h3>
+    <p>HashiCorp 公式の apt リポジトリから入れます。</p>
+<pre><code>wget -O - https://apt.releases.hashicorp.com/gpg | \
+  sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+  sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update &amp;&amp; sudo apt install -y terraform
+terraform version</code></pre>
+    <p>macOS なら <code>brew tap hashicorp/tap &amp;&amp; brew install hashicorp/tap/terraform</code>。複数バージョンを使い分けるなら <code>tfenv</code> などのバージョンマネージャーも便利です。AWS の認証情報は <code>aws configure</code> や SSO（<code>aws sso login</code>）で設定しておきます。</p>
+    <div class="callout bad">
+      <p class="callout-title">アクセスキーをコードに書いてはいけない</p>
+      <p>AWS のアクセスキーを <code>.tf</code> ファイルに書くと、Git の履歴に残って漏れます。認証情報は <code>aws configure</code> や SSO で手元に設定し、コードには書きません。</p>
+    </div>
+
+    <h3 id="sec-2-2">2.2 HCL の 6 つの要素</h3>
+<pre><code># provider: どのクラウドの API を使うか
+provider "aws" {
+  region = var.region
+}
+
+# variable: 外から渡せる入力値（関数の引数）
+variable "region" {
+  type    = string
+  default = "ap-northeast-1"
+}
+
+# locals: ファイル内で使う計算済みの値（ローカル変数）
+locals {
+  name = "shop-${var.env}"
+  tags = { Project = "shop", Env = var.env }
+}
+
+# data: 既存の情報を読み取る（作らない）
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  }
+}
+
+# resource: 作る・管理するもの（本体）
+resource "aws_instance" "api" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.small"
+  tags          = merge(local.tags, { Name = "${local.name}-api" })
+}
+
+# output: 適用後に表示・他から参照する値（関数の戻り値）
+output "api_public_ip" {
+  value = aws_instance.api.public_ip
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>役割</th><th>参照の書き方</th></tr></thead>
+      <tbody>
+        <tr><td><code>provider</code></td><td>API の接続先と認証</td><td>—</td></tr>
+        <tr><td><code>resource "型" "名前"</code></td><td>作成・管理するリソース</td><td><code>aws_instance.api.id</code></td></tr>
+        <tr><td><code>data "型" "名前"</code></td><td>既存情報の読み取り</td><td><code>data.aws_ami.ubuntu.id</code></td></tr>
+        <tr><td><code>variable</code></td><td>入力値</td><td><code>var.region</code></td></tr>
+        <tr><td><code>locals</code></td><td>内部の計算値</td><td><code>local.name</code></td></tr>
+        <tr><td><code>output</code></td><td>出力値</td><td><code>terraform output api_public_ip</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>参照（<code>aws_instance.api.id</code> など）を書くと、Terraform は <strong>依存関係を自動で判断</strong> し、作る順番を決めます。セキュリティグループを参照する EC2 は、セキュリティグループの後に作られます。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>基本ワークフロー</h2>
+
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="コード（.tf）を書き、terraform initでプロバイダー取得とbackend初期化、terraform planで差分を表示する。レビューOKならterraform applyで適用してstateを更新し、また次のコードを書く。planが想定外ならコードを書き直す。不要になったらterraform destroyで削除する">
+      <defs>
+        <marker id="arw403a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="70" width="130" height="60" rx="8" class="d-box"/>
+      <text x="75" y="96" text-anchor="middle" class="d-text-bold">コードを書く</text>
+      <text x="75" y="116" text-anchor="middle" class="d-text-sub">.tf</text>
+      <rect x="180" y="70" width="150" height="60" rx="8" class="d-box"/>
+      <text x="255" y="96" text-anchor="middle" class="d-text-bold">init</text>
+      <text x="255" y="116" text-anchor="middle" class="d-text-sub">プロバイダー・backend</text>
+      <rect x="370" y="70" width="140" height="60" rx="8" class="d-box-warn"/>
+      <text x="440" y="96" text-anchor="middle" class="d-text-bold">plan</text>
+      <text x="440" y="116" text-anchor="middle" class="d-text-sub">差分を表示</text>
+      <rect x="560" y="70" width="150" height="60" rx="8" class="d-box-accent"/>
+      <text x="635" y="96" text-anchor="middle" class="d-text-bold">apply</text>
+      <text x="635" y="116" text-anchor="middle" class="d-text-sub">適用・state 更新</text>
+      <path d="M140,100 L178,100" class="d-line" marker-end="url(#arw403a)"/>
+      <path d="M330,100 L368,100" class="d-line" marker-end="url(#arw403a)"/>
+      <path d="M510,100 L558,100" class="d-line" marker-end="url(#arw403a)"/>
+      <text x="534" y="88" text-anchor="middle" class="d-text-sub">OK</text>
+      <path d="M440,70 L440,40 L75,40 L75,68" class="d-line-dash" marker-end="url(#arw403a)"/>
+      <text x="258" y="32" text-anchor="middle" class="d-text-sub">想定外なら書き直す</text>
+      <path d="M635,130 L635,160 L75,160 L75,132" class="d-line" marker-end="url(#arw403a)"/>
+      <text x="350" y="178" text-anchor="middle" class="d-text-sub">次の変更へ</text>
+      <rect x="560" y="186" width="150" height="38" rx="8" class="d-box-bad"/>
+      <text x="635" y="210" text-anchor="middle" class="d-text-bold">destroy</text>
+      <text x="548" y="210" text-anchor="end" class="d-text-sub">不要になったら</text>
+    </svg>
+    <figcaption>図：書く → init → plan（必ず読む）→ apply を繰り返す。片付けるときだけ destroy</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>何をするか</th><th>いつ</th></tr></thead>
+      <tbody>
+        <tr><td><code>terraform init</code></td><td>プロバイダーのダウンロード、backend（state の置き場）の初期化</td><td>最初、プロバイダーや backend を変えたとき</td></tr>
+        <tr><td><code>terraform fmt</code> / <code>validate</code></td><td>整形・文法チェック</td><td>コミット前（CI でも）</td></tr>
+        <tr><td><code>terraform plan</code></td><td>現実と state とコードを比べ、何が起きるかを表示</td><td>apply の前に毎回</td></tr>
+        <tr><td><code>terraform apply</code></td><td>plan の内容を適用（確認プロンプトあり）</td><td>レビュー後</td></tr>
+        <tr><td><code>terraform destroy</code></td><td>管理している全リソースを削除</td><td>検証環境の後片付け</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>init</code> で作られる <code>.terraform.lock.hcl</code>（プロバイダーのバージョン固定）は <strong>Git にコミット</strong> します。<code>.terraform/</code> ディレクトリはコミットしません。</p>
+
+    <h3 id="sec-3-1">3.1 plan をレビューする習慣</h3>
+    <p>plan は、手元のコードを実際の環境に適用する前に「これからどんな変更をかけようとしているか」を教えてくれる、いわば <strong>ドライラン（予行演習）</strong> です。出力は記号で読みます。</p>
+<pre><code>  # aws_security_group.web will be updated in-place
+  ~ resource "aws_security_group" "web" { ... }
+
+  # aws_instance.api must be replaced
+-/+ resource "aws_instance" "api" {
+      ~ ami = "ami-0aaa" -&gt; "ami-0bbb" # forces replacement
+    }
+
+Plan: 1 to add, 1 to change, 1 to destroy.</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>記号</th><th>意味</th><th>危険度</th></tr></thead>
+      <tbody>
+        <tr><td><code>+</code></td><td>作成</td><td>低</td></tr>
+        <tr><td><code>~</code></td><td>その場で変更（in-place）</td><td>中</td></tr>
+        <tr><td><code>-/+</code></td><td><strong>削除して作り直し</strong>（replace）</td><td>高：IP やディスクの中身が変わる</td></tr>
+        <tr><td><code>-</code></td><td>削除</td><td>高</td></tr>
+      </tbody>
+    </table></div>
+    <p>特に <strong><code>forces replacement</code></strong> と <strong><code>destroy</code> の数</strong> を必ず確認します。「AMI を新しくしたつもりが、本番の API サーバーが作り直される」は典型的な事故です。実務では次のように <strong>plan を保存して、その plan だけを apply</strong> します。</p>
+<pre><code>terraform plan -out=tfplan      # 計画をファイルに保存
+terraform show tfplan           # レビュー（PR に貼る・CI で表示）
+terraform apply tfplan          # 保存した計画だけを適用（確認プロンプトなし）</code></pre>
+    <p>消されては困るリソースには <code>lifecycle { prevent_destroy = true }</code> を付けておくと、削除を含む plan がエラーになります。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>state ファイル</h2>
+
+    <h3 id="sec-4-1">4.1 役割</h3>
+    <p><code>terraform.tfstate</code> は JSON ファイルで、<strong>コード上の名前（<code>aws_instance.api</code>）と現実のリソース ID（<code>i-0abc...</code>）の対応表</strong> です。Terraform は plan のたびに state を見て「このコードの部品はどれか」を知り、実機の現在値を読み直して差分を出します。</p>
+<pre><code>コード (.tf)            state (.tfstate)              AWS 上の実体
+aws_instance.api  ←→  "aws_instance.api": i-0abc  ←→  EC2 i-0abc</code></pre>
+    <p>state がないと、Terraform は既存のサーバーを「知らないもの」とみなし、<strong>もう 1 台作ろうとします</strong>。</p>
+
+    <h3 id="sec-4-2">4.2 plan と apply の内部の仕組み</h3>
+    <p>動画「Terraform 恐怖症克服マニュアル」では、plan の差分は次の 3 つの関係で決まると説明しています。ソースコードと AWS の実体は普段から目にしますが、state ファイルは S3 などに置かれていて中身を見たことがある人は少なく、<strong>影が薄い</strong> のがやっかいな点です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>置き場所</th><th>呼び方</th></tr></thead>
+      <tbody>
+        <tr><td>ステートファイル（<code>.tfstate</code>）</td><td>S3 や HCP Terraform（旧 Terraform Cloud）など</td><td><strong>Current</strong>（現在の状態）</td></tr>
+        <tr><td>ソースコード（<code>.tf</code>）</td><td>手元</td><td><strong>Desire</strong>（こうしたいという意思）</td></tr>
+        <tr><td>AWS リソース</td><td>AWS</td><td><strong>Real</strong>（実体）</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 280" role="img" aria-label="planでは、①S3からstateファイルをダウンロードしてメモリに保持し、②state内のIDをもとにAWS APIで実体を参照してメモリ上のstateを最新にリフレッシュし、③.tfのコードと比較して差分を出す。applyでは④差分をAWSに反映し、⑤最新の状態をstateに書いてS3にアップロードする。stateに無いリソースはAPIで問い合わせすらされない">
+      <defs>
+        <marker id="arw403b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="20" width="200" height="60" rx="8" class="d-box"/>
+      <text x="110" y="45" text-anchor="middle" class="d-text-bold">state（S3）</text>
+      <text x="110" y="66" text-anchor="middle" class="d-text-sub">Current：現在の状態</text>
+      <rect x="260" y="110" width="200" height="70" rx="8" class="d-box-accent"/>
+      <text x="360" y="138" text-anchor="middle" class="d-text-bold">Terraform（手元）</text>
+      <text x="360" y="160" text-anchor="middle" class="d-text-sub">メモリ上の最新 state</text>
+      <rect x="510" y="20" width="200" height="60" rx="8" class="d-box"/>
+      <text x="610" y="45" text-anchor="middle" class="d-text-bold">AWS の実体</text>
+      <text x="610" y="66" text-anchor="middle" class="d-text-sub">Real：実体</text>
+      <rect x="10" y="200" width="200" height="60" rx="8" class="d-box"/>
+      <text x="110" y="225" text-anchor="middle" class="d-text-bold">コード（.tf）</text>
+      <text x="110" y="246" text-anchor="middle" class="d-text-sub">Desire：こうしたい</text>
+      <rect x="510" y="200" width="200" height="60" rx="8" class="d-box-warn"/>
+      <text x="610" y="225" text-anchor="middle" class="d-text-bold">plan 結果（差分）</text>
+      <text x="610" y="246" text-anchor="middle" class="d-text-sub">apply ならこれを反映</text>
+
+      <path d="M150,80 L290,108" class="d-line" marker-end="url(#arw403b)"/>
+      <text x="20" y="100" class="d-text-sub">① ダウンロード</text>
+      <path d="M430,108 L560,82" class="d-line" marker-end="url(#arw403b)"/>
+      <text x="300" y="66" class="d-text-sub">② ID で実体を参照 → リフレッシュ</text>
+      <path d="M210,230 L320,182" class="d-line" marker-end="url(#arw403b)"/>
+      <text x="240" y="244" class="d-text-sub">③ 比較</text>
+      <path d="M420,180 L540,198" class="d-line" marker-end="url(#arw403b)"/>
+      <path d="M260,120 L212,60" class="d-line-dash" marker-end="url(#arw403b)"/>
+      <text x="236" y="40" class="d-text-sub">⑤ apply 後にアップロード</text>
+      <path d="M660,198 L660,82" class="d-line-dash" marker-end="url(#arw403b)"/>
+      <text x="668" y="146" class="d-text-sub">④ 反映</text>
+    </svg>
+    <figcaption>図：plan は「state を読み込む → 実体でリフレッシュ → コードと比較」、apply は「差分を反映して state を更新」する</figcaption>
+    </figure>
+
+    <ul>
+      <li><strong>plan</strong>：S3 から state をダウンロードしてメモリに保持 → state 内の ID をもとに AWS API で実体を参照し、メモリ上の state を最新に <strong>リフレッシュ</strong> → <code>.tf</code> と比較して差分を出力します。
+        <ul>
+          <li>state を鵜呑みにせず <strong>実体を見に行く</strong> 点が重要です。</li>
+          <li>もう 1 つ重要なのは、<strong>state にないリソースは API で問い合わせすらされず、存在しないものとして扱われる</strong> 点です。</li>
+        </ul>
+      </li>
+      <li><strong>apply</strong>：plan 結果を反映（例：ECR を作成）し、最新の状態をメモリ上の state に展開して S3 にアップロードします。Current・Real・Desire の 3 つがそろうので、再度 plan すると <strong>No changes</strong> になります。</li>
+    </ul>
+
+    <h3 id="sec-4-3">4.3 実験：state と実体の変化を追う</h3>
+    <p>動画では、ECR リポジトリ（AWS のコンテナイメージ置き場）を 1 つ作るだけの簡単なコードで、実体や state をわざと変えて plan の結果を確かめています。結果を予想してから試すのがポイントです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>予想と結果</th></tr></thead>
+      <tbody>
+        <tr><td>初回 plan → apply</td><td>create 差分 → ECR と state（JSON）ができる</td></tr>
+        <tr><td>コンソールで実体を削除して plan</td><td>state にはまだあるが、実体を見に行くので「ない」とリフレッシュされ、create 差分が出る</td></tr>
+        <tr><td>コンソールで MUTABLE → IMMUTABLE に変更して plan</td><td>コードは MUTABLE なので、IMMUTABLE → MUTABLE に戻す差分が出る（「一時的にコンソールから手で変えた」は実務でもよくあるパターン）</td></tr>
+        <tr><td>実体を削除し、コードもコメントアウトして plan</td><td>どちらもないので No changes</td></tr>
+        <tr><td>state ファイルだけ削除して plan</td><td>state にないので実体を認知できず create 差分 → apply すると同じ名前で作ろうとして <strong>AlreadyExists エラー</strong></td></tr>
+        <tr><td><code>terraform import</code></td><td>既存の実体を state に取り込み、Terraform で管理できるようになる（plan の出力からリソースアドレスをコピーすると楽）</td></tr>
+        <tr><td><code>terraform state rm</code></td><td>state からは消えるが実体は残る（本番のインフラには何も変更をかけない）。例：Route 53 のレコードが事故で消えたので Terraform 管理外にしたいとき。<code>terraform state list</code> で管理対象を確認できる</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>terraform state list                     # state が管理しているリソースの一覧
+terraform import &lt;リソースアドレス&gt; &lt;実体の ID&gt;   # 既存の実体を state に取り込む
+terraform state rm &lt;リソースアドレス&gt;           # state から外す（実体は消えない）</code></pre>
+    <p>仮説を立てて plan の結果が当たるようになると、Terraform の解像度が上がります。</p>
+
+    <h3 id="sec-4-4">4.4 state の危険</h3>
+    <ul>
+      <li><strong>機密情報が平文で入る</strong>：RDS のパスワードなど、リソースの属性はそのまま state に保存されます。<strong>state を Git にコミットしてはいけません</strong>（<code>.gitignore</code> に <code>*.tfstate*</code> を入れる）。</li>
+      <li><strong>同時実行で壊れる</strong>：2 人が同時に <code>apply</code> すると、後から書いた方が state を上書きし、対応表が壊れます。</li>
+      <li><strong>ローカルに置くと失われる</strong>：PC が壊れたら対応表も消えます。チームで共有もできません。</li>
+    </ul>
+
+    <h3 id="sec-4-5">4.5 リモート state（S3 + ロック）</h3>
+    <p>そこで state は <strong>リモート backend</strong> に置き、<strong>ロック</strong> で同時実行を防ぎます。AWS では S3 が定番です。</p>
+<pre><code>terraform {
+  backend "s3" {
+    bucket       = "shop-terraform-state-123456789012"
+    key          = "prod/web/terraform.tfstate"
+    region       = "ap-northeast-1"
+    encrypt      = true
+    use_lockfile = true   # S3 ネイティブのロック
+  }
+}</code></pre>
+    <p><strong>2026 年時点の状況</strong>：</p>
+    <ul>
+      <li>以前は S3 にロック機能がなく、<strong>DynamoDB テーブル</strong>（<code>dynamodb_table</code>）をロックに使っていました。</li>
+      <li>Terraform 1.10 で S3 の条件付き書き込みを使った <strong><code>use_lockfile</code></strong> が実験的に導入され、<strong>1.11 で正式機能（GA）</strong> になりました。state と同じ場所に <code>.tflock</code> ファイルを作ってロックします。</li>
+      <li>これに伴い <strong>DynamoDB によるロックは非推奨（deprecated）</strong> となり、将来のマイナーバージョンで削除予定です。移行期間中は両方を同時に指定することもできます。新規構築では <code>use_lockfile = true</code> だけで十分です。</li>
+    </ul>
+    <p>state 用バケットには <strong>バージョニング</strong>（壊れたときに戻せる）、<strong>暗号化</strong>、<strong>パブリックアクセスのブロック</strong> を必ず設定し、アクセスできる IAM を絞ります。バケット自体は「鶏と卵」問題（state を置くバケットを Terraform で作るには state の置き場が要る）があるため、手作業か別の小さな Terraform 構成で先に作っておきます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>Shop の EC2 + セキュリティグループを作る完全な例</h2>
+    <p>Shop の Web/API サーバー 1 台を作る構成です。ファイルを役割ごとに分けます。</p>
+<pre><code>infra/
+├── versions.tf      # Terraform とプロバイダーのバージョン、backend
+├── variables.tf
+├── main.tf
+├── outputs.tf
+└── prod.tfvars      # 環境ごとの値</code></pre>
+
+    <h3 id="sec-5-1">5.1 versions.tf</h3>
+<pre><code># versions.tf
+terraform {
+  required_version = "&gt;= 1.11"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~&gt; 6.0"
+    }
+  }
+  backend "s3" {
+    bucket       = "shop-terraform-state-123456789012"
+    key          = "prod/web/terraform.tfstate"
+    region       = "ap-northeast-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}
+
+provider "aws" {
+  region = var.region
+  default_tags {
+    tags = { Project = "shop", Env = var.env, ManagedBy = "terraform" }
+  }
+}</code></pre>
+
+    <h3 id="sec-5-2">5.2 variables.tf</h3>
+<pre><code># variables.tf
+variable "region" {
+  type    = string
+  default = "ap-northeast-1"
+}
+variable "env" {
+  type = string
+}
+variable "instance_type" {
+  type    = string
+  default = "t3.small"
+}
+variable "admin_cidr" {
+  description = "SSH を許可する管理者の IP（/32）"
+  type        = string
+}
+variable "ssh_public_key" {
+  type = string
+}</code></pre>
+
+    <h3 id="sec-5-3">5.3 main.tf</h3>
+<pre><code># main.tf
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  }
+}
+
+resource "aws_key_pair" "deploy" {
+  key_name   = "shop-${var.env}-deploy"
+  public_key = var.ssh_public_key
+}
+
+resource "aws_security_group" "web" {
+  name        = "shop-${var.env}-web"
+  description = "Shop web/api server"
+  vpc_id      = data.aws_vpc.default.id
+}
+
+# ルールは 1 つずつ別リソースにする（AWS プロバイダー推奨の書き方）
+resource "aws_vpc_security_group_ingress_rule" "http" {
+  security_group_id = aws_security_group.web.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+}
+
+resource "aws_vpc_security_group_ingress_rule" "https" {
+  security_group_id = aws_security_group.web.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+}
+
+resource "aws_vpc_security_group_ingress_rule" "ssh_admin" {
+  security_group_id = aws_security_group.web.id
+  cidr_ipv4         = var.admin_cidr   # SSH は管理者の IP だけ
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
+}
+
+resource "aws_vpc_security_group_egress_rule" "all" {
+  security_group_id = aws_security_group.web.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+resource "aws_instance" "web" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  key_name               = aws_key_pair.deploy.key_name
+  vpc_security_group_ids = [aws_security_group.web.id]
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+    encrypted   = true
+  }
+
+  metadata_options {
+    http_tokens = "required"   # IMDSv2 を強制
+  }
+
+  tags = { Name = "shop-${var.env}-web-01" }
+
+  lifecycle {
+    ignore_changes = [ami]     # 新 AMI が出ても勝手に作り直さない
+  }
+}
+
+resource "aws_eip" "web" {
+  instance = aws_instance.web.id
+  domain   = "vpc"
+}</code></pre>
+    <p><code>http_tokens = "required"</code> は、EC2 の中からインスタンス情報を取る仕組み（IMDS）を、より安全な v2 だけに限る設定です。<code>aws_eip</code> は固定のパブリック IP（Elastic IP）です。</p>
+
+    <h3 id="sec-5-4">5.4 outputs.tf・prod.tfvars と実行</h3>
+<pre><code># outputs.tf
+output "public_ip" {
+  value = aws_eip.web.public_ip
+}</code></pre>
+<pre><code># prod.tfvars
+env            = "prod"
+admin_cidr     = "203.0.113.10/32"
+ssh_public_key = "ssh-ed25519 AAAA... deploy@shop"</code></pre>
+<pre><code>terraform init
+terraform plan -var-file=prod.tfvars -out=tfplan
+terraform apply tfplan
+terraform output public_ip     # → Ansible のインベントリや DNS に使う</code></pre>
+    <p>出力した IP を使って中身を整える方法は <a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a> で扱います。セキュリティグループの設計は <a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a> も見てください。</p>
+    <div class="callout tip">
+      <p class="callout-title">学習用の簡略化</p>
+      <p>ここでは分かりやすさのためデフォルト VPC を使っています。本番では VPC・パブリック/プライベートサブネットも Terraform で作り、DB は RDS としてプライベートサブネットに置きます。また 5432 番（PostgreSQL）や 3000 番（Node.js）を <strong>インターネットに開けていない</strong> ことを確認してください。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>モジュール</h2>
+    <p>同じ構成を本番・ステージングで使い回すには <strong>モジュール（Module）</strong> にします。モジュールは「variable を受け取り、resource を作り、output を返す <strong>関数</strong>」のようなもので、ディレクトリ 1 つがモジュール 1 つです。</p>
+<pre><code># environments/prod/main.tf
+module "web" {
+  source        = "../../modules/web-server"
+  env           = "prod"
+  instance_type = "t3.medium"
+  admin_cidr    = "203.0.113.10/32"
+}
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"   # 公開 Registry のモジュール
+  version = "~&gt; 6.0"
+  name    = "shop-prod"
+  cidr    = "10.0.0.0/16"
+  # ...
+}
+
+output "web_ip" {
+  value = module.web.public_ip
+}</code></pre>
+    <ul>
+      <li>自作モジュール：<code>modules/</code> に置き、環境ごとのディレクトリから呼ぶ</li>
+      <li>公開モジュール：Terraform Registry の <code>terraform-aws-modules</code> などは品質が高い。<strong><code>version</code> を必ず固定</strong> する</li>
+      <li>環境（prod/stg）ごとに <strong>state を分ける</strong>（backend の <code>key</code> を変える）。1 つの state に全環境を入れると、ステージングの作業で本番を壊すリスクがあります</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>import と drift</h2>
+
+    <h3 id="sec-7-1">7.1 既存リソースの import</h3>
+    <p>手作業で作った既存の EC2 を Terraform 管理下に入れるには <strong>import</strong> を使います。Terraform 1.5 以降は <code>import</code> ブロックで宣言的に書けます。</p>
+<pre><code>import {
+  to = aws_instance.web
+  id = "i-0abc1234def567890"
+}</code></pre>
+<pre><code># 対応する resource ブロックの雛形を自動生成
+terraform plan -generate-config-out=generated.tf</code></pre>
+    <p>生成されたコードを整えて、<code>plan</code> が "No changes" になるまで調整してから <code>apply</code> します。これで「ペット」だったサーバー（<a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a>）を段階的にコード化できます。</p>
+
+    <h3 id="sec-7-2">7.2 ドリフトの検出</h3>
+    <p>誰かがコンソールからセキュリティグループに手でルールを足した場合、次の <code>plan</code> で「コードに戻すための変更」として表示されます。</p>
+<pre><code>terraform plan                  # ドリフトがあれば差分として出る
+terraform plan -refresh-only    # 実機の変化だけを確認（state を実機に合わせる用途）</code></pre>
+    <p>対処は 2 通りです。</p>
+    <ol class="steps">
+      <li><strong>手動変更が間違い</strong> → <code>terraform apply</code> でコードの状態に戻す</li>
+      <li><strong>手動変更が正しい（緊急対応など）</strong> → コードを同じ内容に直し、<code>plan</code> が "No changes" になることを確認</li>
+    </ol>
+    <p>CI で毎日 <code>terraform plan -detailed-exitcode</code>（差分ありで終了コード 2）を実行し、ドリフトを通知する運用もよく使われます。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>Terraform 恐怖症を克服する</h2>
+    <p>ここからは動画「Terraform 恐怖症克服マニュアル」の内容です。テーマは <strong>「state ファイルの理解と terraform import の反復で、本番で Terraform を触る怖さを克服する」</strong> ことです。</p>
+
+    <h3 id="sec-8-1">8.1 なぜ Terraform が怖いのか</h3>
+    <p>本番で Terraform を触るのが怖い根本原因は、コマンドを実行した後に「世界」、つまり <strong>ソースコード・AWS リソースの実体・state ファイル</strong> の 3 つがどう変わるかをイメージできていないことです。既存コードをコピーして似たリソースを増やしたり、新規に作ったりはできても、本番で意図しない差分が出ると手も足も出なくなります。</p>
+    <ul>
+      <li>実務では <code>plan</code> と <code>apply</code> 以外のコマンド（<code>state rm</code>、<code>state mv</code>、<code>import</code> など）はチームの state を書き換え、他の人が実行したときに大量の destroy &amp; create（作り直し）差分を生むため、基本的に禁止されています。</li>
+      <li>そのため plan と apply だけを繰り返すことになり、state ファイルを理解する機会がなく、恐怖心が消えません。</li>
+    </ul>
+    <p>state を理解すべき理由は 2 つです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>理由①：plan の差分の元になる</h4>
+        <p>差分は「ソースコード・実体・state ファイル」の 3 つの関係で決まります。コードと実体は普段から見ているので、あとは state を理解すれば差分の原因が分かります。</p>
+      </div>
+      <div class="card">
+        <h4>理由②：予期せぬ差分に落ち着いて対応できる</h4>
+        <p>チームで長く運用していると、大量の destroy &amp; create や replace が出ることがあります。そのとき apply してよいかの判断と、ダメな場合の回避方法が分かります。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-8-2">8.2 実体験：深夜の本番リリース</h3>
+    <p>動画の投稿者は、AWS WAF（Web アプリケーションファイアウォール）を適用する深夜リリースで、plan に予期しない大量の destroy &amp; create が出た経験を紹介しています。このまま apply すると既存リソースが削除される状態でした。朝 6 時までに終える必要があり、依存関係が複雑で中止もできず、Terraform に詳しいのは実質本人だけでした。</p>
+    <ol class="steps">
+      <li><code>state rm</code>・<code>import</code>・<code>state mv</code> で、state と実体のつじつまを合わせた</li>
+      <li>どうしても消えない差分は <code>lifecycle</code> の <code>ignore_changes</code> で一時的に無視した</li>
+      <li>最後に本当に必要な create だけが残り、安全に apply できた</li>
+    </ol>
+    <p>この経験から、本質的な Terraform 力とは <strong>「どんな予期しない差分が出ても、手触り感をもって元の状態に戻せる力」</strong> だと述べています。映画の時限爆弾で、絶対に切ってはいけない線を見極めながら他の線を切っていくようなイメージです。</p>
+
+    <h3 id="sec-8-3">8.3 実力がつかないアンチパターン</h3>
+    <div class="callout warn">
+      <p class="callout-title">新規作成を繰り返すだけでは伸びない</p>
+      <p>入門書によくある「コードをコピー → plan → apply で新規リソースを作成」をひたすら繰り返す学び方は、楽しいものの state ファイルを意識しないので、本番への恐怖心は消えません。新規作成の工程には難しい要素がほとんど入っていないからです。実務ではゼロから作ることはほぼなく、<strong>既存の大量のコードとリソースに変更をかけたときに出る予期せぬ差分を、地道に解きほぐして本番を壊さないように直す力</strong> が求められます。</p>
+    </div>
+
+    <h3 id="sec-8-4">8.4 正しい学習法：terraform import をやりまくる</h3>
+    <p><code>import</code> は既存の AWS リソースを Terraform の管理下に置くコマンドです。「これから Terraform を導入する会社でしか使わない」と思われがちですが、実務でもよく使います。初めての構成はまずコンソールで手動構築して一通りつなぎ込み、動作確認し、構成が固まってから import でコード化する流れが多いのです。慣れていないリソースをいきなり Terraform で作ると手触り感がなく、かえって効率が悪くなります。</p>
+    <p>投稿者自身、5 年ほど前は既存環境の Terraform 化プロジェクトで先輩 SRE のコードを見て学んでいましたが、差分が出ると周りに泣きつく状態でした。副業で Google Cloud 環境を一人で Terraform 化したとき、import ではきれいな差分が出ず、あらゆるケースを踏み抜きました。その中で次のような判断ができるようになったそうです。</p>
+    <ul>
+      <li>モジュールに切り出してリファクタリングしたら <code>state mv</code> が必要</li>
+      <li>Terraform と相性の悪いリソースは <code>state rm</code> で管理から外す</li>
+      <li>ひどい差分は一度 <code>state rm</code> して import し直した方が早い</li>
+    </ul>
+    <p>同じ年に別案件で 2 つ、既存リソースの全面 Terraform 化を担当し、力が大きく伸びたといいます。誰かが作ったきれいな基盤の上で plan と apply を繰り返すだけでは得られない視点です。</p>
+
+    <h3 id="sec-8-5">8.5 Terraform はインフラ版の Git</h3>
+    <p>Git に慣れた人は、<code>reset</code>・<code>rebase</code>・<code>cherry-pick</code>・<code>revert</code> などで、どの状態からどの状態になるかを体で分かっています（動画では、新人がぐちゃぐちゃにした履歴を CTO があらゆるコマンドで元に戻した例が紹介されています）。Terraform も同じで、<code>state mv</code>・<code>state rm</code>・<code>import</code>・<code>refresh</code> を駆使して、<strong>本番を絶対に壊さないという確信をもって操作できる</strong> 状態が「自由自在に扱える」状態です。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li><strong>✕ <code>terraform.tfstate</code> は生成物だから Git に入れておけば安全</strong><br>◯ state には秘密情報が平文で入り、同時実行の制御もできません。S3 などのリモート backend に暗号化して置き、ロックを有効にします。</li>
+        <li><strong>✕ plan で <code>~</code>（変更）と出ていれば作り直しはされない</strong><br>◯ <code>-/+</code> や <code>forces replacement</code> が付いていれば削除→再作成です。EC2 なら IP やローカルディスクの中身が失われます。plan の最終行の <code>to destroy</code> の数を必ず見ます。</li>
+        <li><strong>✕ コンソールで少し直すくらいなら問題ない</strong><br>◯ 次の <code>apply</code> で手動変更が消されるか、逆に手動変更を前提にした plan が誰かを混乱させます。直したら必ずコードに反映します。</li>
+        <li><strong>✕ リモート state のロックには DynamoDB が必須</strong><br>◯ Terraform 1.11 以降は S3 の <code>use_lockfile = true</code> だけでロックでき、DynamoDB 方式は非推奨になっています。</li>
+        <li><strong>✕ <code>terraform destroy</code> は検証環境でしか動かないから安心</strong><br>◯ どの backend・どの AWS アカウントに向いているかで決まります。本番の認証情報を持ったまま実行すれば本番が消えます。重要リソースには <code>prevent_destroy</code> を。</li>
+        <li><strong>✕ plan は state ファイルの中身だけを見て差分を出す</strong><br>◯ state 内の ID をもとに実体を見に行き、最新の状態にリフレッシュしてからコードと比べます。ただし state に無いリソースは問い合わせすらされません。</li>
+        <li><strong>✕ <code>terraform state rm</code> を実行すると実体も消える</strong><br>◯ state から外れるだけで、実体（本番のリソース）には何も影響しません。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>Terraform は HCL で「あるべき姿」を書き、<code>init → plan → apply</code> で適用する</li>
+      <li>HCL の要素は provider / resource / data / variable / locals / output</li>
+      <li>plan は必ずレビューし、<code>-/+</code>（作り直し）と <code>destroy</code> に注意。<code>plan -out</code> → <code>apply tfplan</code> で計画通りに適用</li>
+      <li>state はコードと実体の対応表。機密を含むので S3 などに暗号化して置き、<code>use_lockfile</code> でロックする（1.11 で GA、DynamoDB ロックは非推奨）</li>
+      <li>plan は「state を読み込み → 実体でリフレッシュ → コードと比較」、apply は「反映して state を更新」。state にないものは認知されない</li>
+      <li>モジュールで再利用し、環境ごとに state を分ける</li>
+      <li>既存リソースは <code>import</code> で取り込み、ドリフトは <code>plan</code> で検出する</li>
+      <li>恐怖心の原因は、コード・state・実体の 3 者の関係をイメージできていないこと。新規作成の繰り返しではなく、<strong>import で既存リソースを取り込む練習</strong> を重ねるのが克服の近道</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. state ファイルを失うと、次の <code>terraform apply</code> で何が起きる可能性がありますか。</summary>
+      <div class="body"><p>Terraform はコード上のリソースと既存の実体の対応を失うため、既存リソースを「存在しない」とみなして同じリソースをもう一式作ろうとします（名前の重複でエラーになるか、重複したリソースができる）。動画の ECR の実験では <code>AlreadyExists</code> エラーになりました。<code>import</code> で対応付けを復元する必要があります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. plan に <code>-/+ resource "aws_instance" "web"</code> と出ました。何を確認すべきですか。</summary>
+      <div class="body"><p>EC2 が削除→再作成されることを意味するので、どの属性が <code>forces replacement</code> の原因か、再作成で IP・ディスクの中身・稼働中のサービスにどんな影響が出るかを確認します。意図しないなら原因の変更を取り消すか、<code>lifecycle</code> の <code>ignore_changes</code> などで抑止します。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 本番とステージングで同じ構成を使いたいとき、どう構成するのがよいですか。</summary>
+      <div class="body"><p>共通部分をモジュールにまとめ、環境ごとのディレクトリからモジュールを呼び出して、入力値（インスタンスタイプなど）を変えます。state は環境ごとに別の key（別ファイル）に分けます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. Terraform で作った ECR をコンソールから手で削除し、コードはそのままで plan すると、どうなりますか。</summary>
+      <div class="body"><p>create 差分が出ます。plan は state 内の ID をもとに実体を見に行き、「もう無い」と分かるのでメモリ上の state をリフレッシュし、コード（あるべき姿）と比べて「作る必要がある」と判断するからです。</p></div>
+    </details>
+    <details>
+      <summary>Q5. <code>terraform state rm</code> と <code>terraform import</code> は、それぞれ state と実体に何をしますか。</summary>
+      <div class="body"><p><code>state rm</code> は state からリソースを外すだけで、実体は残します（Terraform の管理外になる）。<code>import</code> は既存の実体を state に取り込み、Terraform で管理できるようにします。どちらも実体そのものは変更しません。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 複数人で同じ state に対して同時に apply すると何が起きますか。どう防ぎますか。</summary>
+      <div class="body"><p>後から書いた方が state を上書きし、コードと実体の対応表が壊れます。state を S3 などのリモート backend に置き、<code>use_lockfile = true</code> でロックして同時実行を防ぎます。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 動画で「Terraform の実力がつかないアンチパターン」とされた学び方と、代わりに勧められた練習は何ですか。</summary>
+      <div class="body"><p>コードをコピーして plan → apply で新規リソースを作るのを繰り返すことがアンチパターンです。state を意識しないため、本番の予期せぬ差分に対応する力がつきません。代わりに、既存リソースを <code>terraform import</code> で取り込む練習を繰り返すことが勧められています。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/40_構築・IaC/03_Terraform入門</li>
+      <li>ノート：61_サーバー・インフラ/40_構築・IaC/【効果抜群】Terraform 恐怖症克服マニュアル</li>
+      <li>動画：【効果抜群】Terraform 恐怖症克服マニュアル（りょうま@インフラ攻略） https://www.youtube.com/watch?v=viGoSsrW-oE</li>
+      <li>Install Terraform https://developer.hashicorp.com/terraform/install</li>
+      <li>Terraform Language Documentation https://developer.hashicorp.com/terraform/language</li>
+      <li>Backend Type: s3 https://developer.hashicorp.com/terraform/language/backend/s3</li>
+      <li>Upgrading to Terraform v1.11 https://developer.hashicorp.com/terraform/language/v1.11.x/upgrade-guides</li>
+      <li>Import - Terraform https://developer.hashicorp.com/terraform/language/import</li>
+      <li>AWS Provider - aws_vpc_security_group_ingress_rule https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_ingress_rule</li>
+      <li>Ubuntu Amazon EC2 AMI Locator https://documentation.ubuntu.com/aws/</li>
+      <li>関連ページ：<a href="40-2_IaCとは.html">40-2 IaCとは</a>、<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>、<a href="40-5_CloudFormationとCDK.html">40-5 CloudFormationとCDK</a>、<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>、<a href="50-3_オートスケーリング.html">50-3 オートスケーリング</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-2_IaCとは.html"><span class="lbl">← 前のページ</span>IaCとは</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-4_構成管理とAnsible.html"><span class="lbl">次のページ →</span>構成管理とAnsible</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

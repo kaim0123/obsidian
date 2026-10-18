@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTPSとTLS証明書｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 Webサーバー・リバースプロキシ › HTTPSとTLS証明書</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 Webサーバー・リバースプロキシ</span>
+      <h1>HTTPSとTLS証明書</h1>
+      <p class="lead">本番サイトは <strong>HTTPS</strong> が前提です。このページでは、<strong>TLS</strong> が守る 3 つのことと TLS 1.3 のハンドシェイク、証明書と <strong>認証局（CA）</strong> の関係、DV / OV / EV の違い、<strong>Let's Encrypt と certbot</strong> による証明書の取得・自動更新と有効期間短縮の動向（2026 年時点）、推奨構成に沿った Nginx の TLS 設定、HTTP→HTTPS リダイレクト、<strong>HSTS</strong>、HTTP/2・HTTP/3、SSL Labs での確認、TLS をどこで終端するかを解説します。</p>
+      <p class="meta">もとにしたノート：20_Webサーバー・リバースプロキシ/04_HTTPSとTLS証明書</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>HTTPS は <strong>「本人確認付きの書留郵便」</strong> です。HTTP がハガキ（途中の誰でも読めて書き換えられる）だとすると、HTTPS は鍵付きの封筒に入れ、受け取る前に「本当に shop.example.com 社の窓口か」を公的な身分証（証明書）で確認してから渡します。証明書は Let's Encrypt で無料・自動化でき、<strong>人手で更新する運用はもう成り立ちません</strong>。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>HTTPS と TLS の関係</h2>
+    <p>身分証を発行するのが <strong>認証局（CA: Certificate Authority）</strong>、封筒と確認手続きのルールが <strong>TLS（Transport Layer Security）</strong> です。</p>
+    <ul>
+      <li>HTTPS = HTTP over TLS。HTTP の中身はそのままで、下に TLS の層が入ります</li>
+      <li>2026 年時点でブラウザは HTTP のページに「保護されていない通信」と表示します。本番サイトは HTTPS が前提です</li>
+      <li>証明書は Let's Encrypt で無料・自動化できます。<strong>人手で更新する運用はもう成り立ちません</strong></li>
+    </ul>
+    <p>前提として <a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> を読んでいると理解しやすくなります。共通鍵暗号・公開鍵暗号・デジタル署名・PKI の基礎は <a href="../73_認証認可/10-3_パスワード・MFA・暗号化の基礎.html">73 パスワード・MFA・暗号化の基礎</a> で扱っています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>TLS が守るもの</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>守るもの</th><th>脅威</th><th>TLS の仕組み</th></tr></thead>
+      <tbody>
+        <tr><td><strong>機密性</strong>（暗号化）</td><td>公衆 Wi-Fi でパスワードやカード番号を盗み見られる</td><td>共通鍵暗号（AES-GCM、ChaCha20-Poly1305）で中身を暗号化</td></tr>
+        <tr><td><strong>完全性</strong>（改ざん検知）</td><td>通信経路で広告やマルウェアを差し込まれる</td><td>認証付き暗号（AEAD）で 1 ビットでも変われば検知</td></tr>
+        <tr><td><strong>真正性</strong>（なりすまし防止）</td><td>偽の shop.example.com に誘導される（中間者攻撃）</td><td>証明書と CA の署名で「このドメインの正当な持ち主」を確認</td></tr>
+      </tbody>
+    </table></div>
+    <p>機密性・完全性という考え方は <a href="../71_セキュリティ基礎/10-1_CIA三原則と脅威・脆弱性・リスク.html">71 CIA三原則</a> の一部です。</p>
+    <div class="callout tip">
+      <p class="callout-title">「SSL」と「TLS」</p>
+      <p>SSL は TLS の前身で、SSL 2.0 / 3.0 も TLS 1.0 / 1.1 もすでに危険として廃止されています。いまは <strong>TLS 1.2 と TLS 1.3</strong> だけを使います。「SSL 証明書」「SSL Labs」のように名前に SSL が残っているのは歴史的な呼び名です。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>ハンドシェイクと証明書の仕組み</h2>
+
+    <h3 id="sec-3-1">3.1 TLS 1.3 のハンドシェイク（概要）</h3>
+    <p>通信を始める前に、ブラウザとサーバーは「どの暗号を使うか」「共通鍵をどう作るか」「相手は本物か」を決めます。これが <strong>ハンドシェイク</strong> です。</p>
+    <figure>
+    <svg viewBox="0 0 720 400" role="img" aria-label="ブラウザがClientHelloで対応する暗号方式・鍵交換用の公開値・SNIを送り、NginxがServerHelloで暗号方式と鍵交換用の公開値を返す。ここで双方が同じ共通鍵を計算し、以降は暗号化される。Nginxは証明書と署名とFinishedを送り、ブラウザは証明書チェーンを信頼済みルートCAまで検証してドメイン名と有効期限を確認し、Finishedを返す。その後、暗号化されたHTTPのGETを送る">
+      <defs>
+        <marker id="arw204a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="40" y="14" width="160" height="44" rx="8" class="d-box"/>
+      <text x="120" y="42" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <rect x="500" y="14" width="200" height="44" rx="8" class="d-box-accent"/>
+      <text x="600" y="34" text-anchor="middle" class="d-text-bold">Nginx</text>
+      <text x="600" y="50" text-anchor="middle" class="d-text-sub">shop.example.com</text>
+      <path d="M120,58 L120,392" class="d-line-dash"/>
+      <path d="M600,58 L600,392" class="d-line-dash"/>
+
+      <text x="360" y="84" text-anchor="middle" class="d-text">① ClientHello</text>
+      <text x="360" y="100" text-anchor="middle" class="d-text-sub">対応する暗号方式・鍵交換用の公開値・SNI（接続先ドメイン名）</text>
+      <path d="M120,110 L598,110" class="d-line" marker-end="url(#arw204a)"/>
+
+      <text x="360" y="138" text-anchor="middle" class="d-text">② ServerHello（暗号方式を決定・鍵交換用の公開値）</text>
+      <path d="M600,148 L122,148" class="d-line" marker-end="url(#arw204a)"/>
+
+      <rect x="150" y="160" width="420" height="32" rx="6" class="d-box-good"/>
+      <text x="360" y="181" text-anchor="middle" class="d-text-sub">双方が同じ共通鍵を計算（ECDHE 鍵交換）。以降は暗号化</text>
+
+      <text x="360" y="216" text-anchor="middle" class="d-text">③ 証明書 ＋ 署名（秘密鍵を持っている証明）＋ Finished</text>
+      <path d="M600,226 L122,226" class="d-line" marker-end="url(#arw204a)"/>
+
+      <rect x="20" y="240" width="300" height="50" rx="6" class="d-box-accent"/>
+      <text x="170" y="261" text-anchor="middle" class="d-text-sub">証明書チェーンを信頼済みルート CA まで検証</text>
+      <text x="170" y="279" text-anchor="middle" class="d-text-sub">ドメイン名・有効期限を確認</text>
+
+      <text x="360" y="318" text-anchor="middle" class="d-text">④ Finished</text>
+      <path d="M120,328 L598,328" class="d-line" marker-end="url(#arw204a)"/>
+      <text x="360" y="360" text-anchor="middle" class="d-text">⑤ GET /（暗号化された HTTP）</text>
+      <path d="M120,370 L598,370" class="d-line" marker-end="url(#arw204a)"/>
+    </svg>
+    <figcaption>図：TLS 1.3 は 1 往復で鍵を決め、証明書で相手を確かめてから HTTP を送る</figcaption>
+    </figure>
+    <ul>
+      <li>TLS 1.3 は 1 往復（1-RTT）で暗号化通信を始められ、TLS 1.2（2 往復）より速い</li>
+      <li><strong>SNI（Server Name Indication）</strong> で接続先ドメインを最初に伝えるので、1 つの IP で複数ドメインの証明書を使い分けられる</li>
+      <li>鍵交換に ECDHE を使うので、仮に後でサーバーの秘密鍵が漏れても過去の通信は解読できない（<strong>前方秘匿性</strong>）</li>
+    </ul>
+
+    <h3 id="sec-3-2">3.2 証明書と認証局</h3>
+    <p><strong>証明書（サーバー証明書）</strong> は「このドメインの公開鍵はこれです」という内容に CA が電子署名したものです。ブラウザや OS には信頼できるルート CA の一覧が最初から入っていて、次のように <strong>信頼の連鎖（証明書チェーン）</strong> をたどって検証します。</p>
+<pre><code>ルート CA（OS/ブラウザに組み込み済み・オフラインで厳重管理）
+  └─ 署名 ─▶ 中間 CA 証明書（日常の発行に使う）
+                └─ 署名 ─▶ サーバー証明書 (shop.example.com)</code></pre>
+    <p>サーバーは <strong>サーバー証明書と中間 CA 証明書をセット（fullchain）で送る</strong> 必要があります。中間証明書を付け忘れると、PC のブラウザでは動くのにスマホアプリや <code>curl</code> でだけエラーになる、というトラブルが起きます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>確認する内容</th><th>取得の手間</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DV</strong>（Domain Validation）</td><td>そのドメインを管理していること</td><td>自動・数分・無料もある</td><td>ほとんどの Web サイト・API</td></tr>
+        <tr><td><strong>OV</strong>（Organization Validation）</td><td>＋組織が実在すること</td><td>書類審査・数日</td><td>企業サイト（社内規程で求められる場合）</td></tr>
+        <tr><td><strong>EV</strong>（Extended Validation）</td><td>＋厳格な組織審査</td><td>厳格・高額</td><td>金融など。ただし現在のブラウザはアドレスバーで EV を特別表示しない</td></tr>
+      </tbody>
+    </table></div>
+    <p>暗号の強さは DV でも EV でも同じです。現在は「DV 証明書を自動更新する」が標準的な選択です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>Let's Encrypt と certbot</h2>
+
+    <h3 id="sec-4-1">4.1 仕組み：ACME プロトコル</h3>
+    <p><strong>Let's Encrypt</strong> は無料で DV 証明書を発行する非営利の CA で、<strong>ACME（Automatic Certificate Management Environment）</strong> というプロトコルで取得から更新まで自動化されています。ドメインの管理者であることは、次のどちらかの「チャレンジ」で証明します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>チャレンジ</th><th>方法</th><th>向いている場面</th></tr></thead>
+      <tbody>
+        <tr><td>HTTP-01</td><td><code>http://&lt;ドメイン&gt;/.well-known/acme-challenge/&lt;トークン&gt;</code> に指定の値を置く</td><td>普通の Web サーバー（80 番が外から届く必要あり）</td></tr>
+        <tr><td>DNS-01</td><td>DNS に <code>_acme-challenge.&lt;ドメイン&gt;</code> の TXT レコードを置く</td><td>ワイルドカード証明書（<code>*.shop.example.com</code>）、80 番を開けられない環境</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-2">4.2 certbot で取得する</h3>
+    <p><strong>certbot</strong> は EFF が開発する ACME クライアントです。公式手順は snap 版を推奨していますが、Ubuntu の apt 版でも動きます。</p>
+<pre><code># 公式推奨: snap 版（apt 版の certbot が入っていたら先に削除）
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/local/bin/certbot
+
+# （apt 版を使う場合）
+# sudo apt install -y certbot python3-certbot-nginx</code></pre>
+    <p>前提：DNS で <code>api.shop.example.com</code> の A / AAAA レコードがこのサーバーを向いていて、80 / 443 番が開いていること。</p>
+<pre><code># 証明書を取得し、Nginx の設定も自動で書き換える
+sudo certbot --nginx -d api.shop.example.com
+
+# 証明書の取得だけ行い、Nginx の設定は自分で書く（設定をコード管理している場合はこちら）
+sudo certbot certonly --nginx -d api.shop.example.com</code></pre>
+    <p>取得したファイルは次の場所に置かれます。</p>
+<pre><code>/etc/letsencrypt/live/api.shop.example.com/
+├── fullchain.pem   ← サーバー証明書 + 中間証明書 → ssl_certificate に指定
+├── privkey.pem     ← 秘密鍵（絶対に外に出さない） → ssl_certificate_key に指定
+├── cert.pem        ← サーバー証明書のみ（Nginx では使わない）
+└── chain.pem       ← 中間証明書のみ</code></pre>
+
+    <h3 id="sec-4-3">4.3 自動更新</h3>
+    <p>certbot はインストール時に自動更新の仕組み（systemd タイマー）を登録します。1 日 2 回起動し、期限が近い証明書だけを更新します。<code>--nginx</code> で取得した場合は更新後に Nginx の reload まで行われます。</p>
+<pre><code>systemctl list-timers | grep certbot   # snap 版: snap.certbot.renew.timer / apt 版: certbot.timer
+sudo certbot renew --dry-run           # 更新処理のリハーサル（本番の発行はしない）
+sudo certbot certificates              # 管理している証明書と有効期限の一覧</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">有効期間はどんどん短くなる（2026 年時点の動向）</p>
+      <ul>
+        <li>業界ルールを決める CA/Browser Forum の決定（Ballot SC-081）により、公開 TLS 証明書の最大有効期間は <strong>2026 年 3 月 15 日以降 200 日 → 2027 年 3 月 100 日 → 2029 年 3 月 47 日</strong> と段階的に短縮されます。</li>
+        <li>Let's Encrypt はもともと 90 日ですが、45 日への短縮を発表しています。2026 年 5 月からオプトイン（<code>tlsserver</code> プロファイル）で 45 日証明書の発行を始め、既定プロファイルは 2027 年 2 月に 64 日、2028 年 2 月に 45 日へ移行する計画です（日程は変更される可能性があるので公式発表を確認してください）。</li>
+      </ul>
+      <p>つまり「cron に固定日数で更新を書く」「手作業で年 1 回更新する」運用は破綻します。certbot のタイマーに任せ、期限切れを監視でアラートするのが現実的です。Let's Encrypt は更新時期をサーバー側から知らせる <strong>ARI（ACME Renewal Information）</strong> を推奨しており、新しい certbot は対応しています。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>Nginx の TLS 設定</h2>
+
+    <h3 id="sec-5-1">5.1 推奨設定をそのまま使う</h3>
+    <p>暗号方式の選定は専門的で、自分で考えると必ず古い・弱い設定が混ざります。<strong>Mozilla SSL Configuration Generator</strong>（2026 年時点では後継の TLSRef Configurator <code>configurator.tlsref.org</code> に移行）の <strong>Intermediate</strong>（ほぼすべてのクライアントに対応する推奨プロファイル）を使いましょう。以下はガイドライン 6.0 の Intermediate を Ubuntu 24.04（OpenSSL 3.0）向けにしたものです。</p>
+<pre><code># /etc/nginx/snippets/tls-intermediate.conf
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ecdh_curve X25519:prime256v1:secp384r1;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+ssl_prefer_server_ciphers off;   # 安全な暗号しか並べていないので、端末に合う方式をクライアントに選ばせる
+
+ssl_session_timeout 1d;
+ssl_session_cache shared:MozSSL:10m;   # 再接続時のハンドシェイクを省略（約 4 万セッション分）
+ssl_session_tickets off;
+
+# HSTS（後述。最初は短い max-age で試す）
+add_header Strict-Transport-Security "max-age=63072000" always;</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">設定のポイント</p>
+      <ul>
+        <li><code>ssl_ciphers</code> は TLS 1.2 用の一覧です。TLS 1.3 の暗号は OpenSSL 側で安全なものに固定されています。</li>
+        <li>ガイドライン 6.0 では鍵交換に耐量子暗号を組み込んだ <code>X25519MLKEM768</code> も推奨されていますが、OpenSSL 3.5 以降が必要なため Ubuntu 24.04 標準では外しています。</li>
+        <li>OCSP Stapling（<code>ssl_stapling</code>）は以前の定番設定でしたが、Let's Encrypt は 2025 年に OCSP の提供を終了したため不要です。</li>
+        <li><code>certbot --nginx</code> を使うと <code>include /etc/letsencrypt/options-ssl-nginx.conf;</code> が自動で追加されます。自前の snippet と両方 include すると <code>ssl_session_cache</code> などが重複してエラーになるので、どちらか一方にします。</li>
+      </ul>
+    </div>
+    <p>弱い暗号や古いプロトコルを使うことの危険は <a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">71 インジェクションと暗号化の不備</a> の「暗号化の不備」で扱っています。</p>
+
+    <h3 id="sec-5-2">5.2 HTTP→HTTPS リダイレクトと HSTS</h3>
+<pre><code>server {
+    listen 80;
+    listen [::]:80;
+    server_name shop.example.com api.shop.example.com;
+    return 301 https://$host$request_uri;    # 恒久リダイレクト
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name shop.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;
+    include /etc/nginx/snippets/tls-intermediate.conf;
+
+    root /var/www/shop;
+    # ...（20-2 Nginx入門 の静的配信設定）
+}</code></pre>
+    <p>リダイレクトだけでは、利用者が最初に <code>http://</code> で入力したときの 1 回目の通信は平文です。そこを狙って HTTPS への誘導を妨害する攻撃（<strong>SSL ストリッピング</strong>）を防ぐのが <strong>HSTS（HTTP Strict Transport Security）</strong> です。<code>Strict-Transport-Security</code> ヘッダーを受け取ったブラウザは、<code>max-age</code> 秒の間そのドメインに <strong>最初から HTTPS でしか接続しなくなります</strong>。HSTS をセキュリティヘッダーの 1 つとして見た解説は <a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">72 セキュリティヘッダ</a> にあります。</p>
+    <div class="callout bad">
+      <p class="callout-title">HSTS は「取り消しにくい」</p>
+      <p>一度ブラウザに記憶されると、<code>max-age</code> が切れるまでは HTTP に戻せません。<code>includeSubDomains</code> を付けると、HTTPS 化していない社内用サブドメインまで見られなくなります。最初は <code>max-age=300</code>（5 分）で試し、問題がなければ 1 週間 → 1 年以上と段階的に伸ばします。ブラウザ組み込みリストに登録する <code>preload</code> は、全サブドメインが恒久的に HTTPS 対応できると確信してから使います。</p>
+    </div>
+
+    <h3 id="sec-5-3">5.3 HTTP/2 と HTTP/3</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>HTTP/1.1</th><th>HTTP/2</th><th>HTTP/3</th></tr></thead>
+      <tbody>
+        <tr><td>下の層</td><td>TCP (+TLS)</td><td>TCP + TLS（ブラウザは HTTPS 必須）</td><td><strong>QUIC（UDP）</strong> + TLS 1.3</td></tr>
+        <tr><td>同時リクエスト</td><td>1 接続 1 つずつ（ブラウザは 6 接続ほど張る）</td><td>1 接続で多重化</td><td>1 接続で多重化、パケット損失が他のストリームに波及しない</td></tr>
+        <tr><td>Nginx での有効化</td><td>既定</td><td><code>listen 443 ssl http2;</code>（1.25.1 以降は <code>http2 on;</code>）</td><td>1.25.0 以降で <code>listen 443 quic reuseport;</code> など</td></tr>
+      </tbody>
+    </table></div>
+    <p>HTTP/2 は今すぐ有効にしてよい、ほぼ副作用のない改善です。HTTP/3 はモバイル回線で効果がありますが、Ubuntu 24.04 標準の nginx 1.24 では使えず、UDP 443 番の開放も必要です。HTTP/3 は CDN（<a href="50-4_CDNによる負荷軽減.html">50-4 CDNによる負荷軽減</a>）側で有効にするのが手軽です。</p>
+<pre><code>curl -sI --http2 https://shop.example.com/ | head -1    # HTTP/2 200 と出れば OK</code></pre>
+
+    <h2 id="sec-6"><span class="num">6.</span>確認と TLS 終端の位置</h2>
+
+    <h3 id="sec-6-1">6.1 動作確認</h3>
+<pre><code># 証明書の発行者・有効期限・ドメインを確認
+echo | openssl s_client -connect api.shop.example.com:443 -servername api.shop.example.com 2&gt;/dev/null \
+  | openssl x509 -noout -issuer -subject -dates
+
+# 古いプロトコルが拒否されることを確認（handshake failure になれば OK）
+openssl s_client -connect api.shop.example.com:443 -tls1_1 &lt;/dev/null</code></pre>
+    <p>外部からの総合診断には <strong>Qualys SSL Labs の SSL Server Test</strong>（<code>https://www.ssllabs.com/ssltest/</code>）を使います。プロトコル・暗号・証明書チェーン・HSTS などを評価して A+〜F で採点してくれます。Intermediate 設定 + HSTS なら A+ を狙えます。公開前の環境やコマンドラインで確認したい場合は <code>testssl.sh</code> も便利です。</p>
+
+    <h3 id="sec-6-2">6.2 TLS をどこで終端するか</h3>
+    <p><strong>TLS 終端（TLS termination）</strong> とは、暗号を解いて平文の HTTP に戻す場所のことです。構成が大きくなると終端の位置が変わります。</p>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="1台構成では利用者からHTTPSでNginx（証明書はLet's Encrypt）に届き、NginxからShop APIへはHTTP。LB構成では利用者からHTTPSでAWS ALB（証明書はACM）に届き、ALBからNginxやAPIの2台へはVPC内のHTTP。CDN構成では利用者からHTTPSでCloudFrontなどのCDNに届き、CDNからALBやNginxへもHTTPSで送る">
+      <defs>
+        <marker id="arw204b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="24" class="d-text-bold">① 1 台構成（今の Shop）</text>
+      <rect x="20" y="36" width="110" height="44" rx="8" class="d-box"/>
+      <text x="75" y="63" text-anchor="middle" class="d-text">利用者</text>
+      <rect x="250" y="36" width="190" height="44" rx="8" class="d-box-accent"/>
+      <text x="345" y="55" text-anchor="middle" class="d-text-bold">Nginx</text>
+      <text x="345" y="72" text-anchor="middle" class="d-text-sub">証明書：Let's Encrypt</text>
+      <rect x="560" y="36" width="140" height="44" rx="8" class="d-box"/>
+      <text x="630" y="63" text-anchor="middle" class="d-text">Shop API</text>
+      <path d="M130,58 L248,58" class="d-line" marker-end="url(#arw204b)"/>
+      <text x="189" y="50" text-anchor="middle" class="d-text-sub">HTTPS</text>
+      <path d="M440,58 L558,58" class="d-line" marker-end="url(#arw204b)"/>
+      <text x="499" y="50" text-anchor="middle" class="d-text-sub">HTTP</text>
+
+      <text x="20" y="122" class="d-text-bold">② LB 構成（スケール後）</text>
+      <rect x="20" y="134" width="110" height="44" rx="8" class="d-box"/>
+      <text x="75" y="161" text-anchor="middle" class="d-text">利用者</text>
+      <rect x="250" y="134" width="190" height="44" rx="8" class="d-box-accent"/>
+      <text x="345" y="153" text-anchor="middle" class="d-text-bold">AWS ALB</text>
+      <text x="345" y="170" text-anchor="middle" class="d-text-sub">証明書：ACM</text>
+      <rect x="560" y="134" width="140" height="44" rx="8" class="d-box"/>
+      <text x="630" y="161" text-anchor="middle" class="d-text">Nginx/API ×2</text>
+      <path d="M130,156 L248,156" class="d-line" marker-end="url(#arw204b)"/>
+      <text x="189" y="148" text-anchor="middle" class="d-text-sub">HTTPS</text>
+      <path d="M440,156 L558,156" class="d-line" marker-end="url(#arw204b)"/>
+      <text x="499" y="148" text-anchor="middle" class="d-text-sub">HTTP（VPC 内）</text>
+
+      <text x="20" y="220" class="d-text-bold">③ CDN 構成</text>
+      <rect x="20" y="232" width="110" height="44" rx="8" class="d-box"/>
+      <text x="75" y="259" text-anchor="middle" class="d-text">利用者</text>
+      <rect x="250" y="232" width="190" height="44" rx="8" class="d-box-accent"/>
+      <text x="345" y="251" text-anchor="middle" class="d-text-bold">CDN</text>
+      <text x="345" y="268" text-anchor="middle" class="d-text-sub">CloudFront 等</text>
+      <rect x="560" y="232" width="140" height="44" rx="8" class="d-box"/>
+      <text x="630" y="259" text-anchor="middle" class="d-text">ALB / Nginx</text>
+      <path d="M130,254 L248,254" class="d-line" marker-end="url(#arw204b)"/>
+      <text x="189" y="246" text-anchor="middle" class="d-text-sub">HTTPS</text>
+      <path d="M440,254 L558,254" class="d-line" marker-end="url(#arw204b)"/>
+      <text x="499" y="246" text-anchor="middle" class="d-text-sub">HTTPS</text>
+    </svg>
+    <figcaption>図：色付きの箱が TLS を終端する場所。構成が大きくなると手前に移る</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>終端位置</th><th>証明書管理</th><th>注意</th></tr></thead>
+      <tbody>
+        <tr><td>Nginx（1 台）</td><td>certbot で自動更新</td><td>サーバーごとに証明書が必要。台数が増えると管理が散らばる</td></tr>
+        <tr><td>ロードバランサー</td><td>AWS ACM などで自動更新・無料</td><td>LB→サーバー間は平文になるので、閉じたネットワーク（VPC）内に限る。要件次第で再暗号化</td></tr>
+        <tr><td>CDN</td><td>CDN 側で自動</td><td>CDN→オリジン間も HTTPS にする（「Flexible」のような CDN〜オリジン間を平文にする設定は避ける）</td></tr>
+      </tbody>
+    </table></div>
+    <p>LB や CDN で終端すると、アプリに届く接続は HTTP になります。だから <a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> で説明した <code>X-Forwarded-Proto</code> と trust proxy の設定がここでも必須です。Cookie の <code>Secure</code> 属性と HTTPS の関係は <a href="../74_セッション管理/10-1_Cookieの仕組み.html">74 Cookieの仕組み</a>、LB の詳細は <a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a> で扱います。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li>✕「EV 証明書のほうが暗号が強い」<br>◯ 暗号強度は DV / OV / EV で同じです。違いは「誰が持ち主かをどこまで確認したか」だけです。</li>
+        <li>✕「ブラウザで鍵マークが出たから証明書の設定は完璧」<br>◯ 中間証明書が欠けていても、ブラウザはキャッシュで補って表示できることがあります。<code>ssl_certificate</code> には必ず <code>fullchain.pem</code> を指定し、SSL Labs や <code>curl</code> で確認します。</li>
+        <li>✕「証明書の更新は年に 1 回カレンダーに入れておけばよい」<br>◯ 有効期間は 200 日 → 100 日 → 47 日、Let's Encrypt は 45 日へと短くなります。自動更新と期限監視が前提です。</li>
+        <li>✕「HSTS は付ければ付けるほど安全」<br>◯ 長い <code>max-age</code> や <code>includeSubDomains</code> / <code>preload</code> は取り消しが難しく、HTTPS 化していないサブドメインを道連れにします。短い値から段階的に伸ばします。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>TLS は暗号化・改ざん検知・なりすまし防止の 3 つを提供し、使うのは TLS 1.2 / 1.3 だけ</li>
+      <li>証明書は CA の署名による「ドメインと公開鍵の対応表」。サーバーは fullchain を送る</li>
+      <li>Let's Encrypt + certbot で DV 証明書を無料・自動で取得・更新。有効期間は短縮が続くので自動化が必須</li>
+      <li>TLS 設定は Mozilla 系ガイドライン（TLSRef Configurator）の Intermediate を snippet にして使う</li>
+      <li>HTTP は 301 で HTTPS へ、HSTS は短い <code>max-age</code> から。HTTP/2 は有効化、HTTP/3 は CDN で</li>
+      <li>終端位置が LB / CDN に移っても、<code>X-Forwarded-Proto</code> でアプリに元のプロトコルを伝える</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. TLS が守る 3 つの性質と、それぞれが防ぐ脅威を答えてください。</summary>
+      <div class="body"><p>機密性（暗号化）は盗聴、完全性（改ざん検知）は通信経路での書き換え、真正性（証明書による認証）は偽サイトへのなりすまし・中間者攻撃を防ぎます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. <code>ssl_certificate</code> に cert.pem を指定したら、PC のブラウザでは表示できるのにスマホアプリの API 通信が証明書エラーになりました。原因は？</summary>
+      <div class="body"><p>中間 CA 証明書が送られていないため、証明書チェーンをルート CA までたどれません。<code>fullchain.pem</code>（サーバー証明書 + 中間証明書）を指定します。PC ブラウザは中間証明書をキャッシュや自動取得で補えることがあるため、問題が見えにくくなります。</p></div>
+    </details>
+    <details>
+      <summary>Q3. HSTS を最初から <code>max-age=63072000; includeSubDomains; preload</code> にしないほうがよいのはなぜですか。</summary>
+      <div class="body"><p>ブラウザが記憶すると <code>max-age</code> の間は HTTP に戻せず、<code>includeSubDomains</code> で HTTPS 未対応のサブドメインまで見られなくなり、<code>preload</code> はブラウザ組み込みリストに載るため取り消しに長い時間がかかります。短い <code>max-age</code> で問題がないことを確認してから段階的に伸ばします。</p></div>
+    </details>
+    <details>
+      <summary>Q4. ワイルドカード証明書（*.shop.example.com）を Let's Encrypt で取るには、どのチャレンジを使いますか。</summary>
+      <div class="body"><p>DNS-01 チャレンジです。DNS に <code>_acme-challenge.&lt;ドメイン&gt;</code> の TXT レコードを置いて管理者であることを証明します。80 番を外に開けられない環境でも使えます。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 証明書の更新を「cron で 80 日ごと」に書く運用がこれから破綻するのはなぜですか。</summary>
+      <div class="body"><p>公開証明書の最大有効期間が 200 日 → 100 日 → 47 日と短縮され、Let's Encrypt も 45 日へ移行するため、固定日数の更新はすぐに合わなくなります。certbot のタイマー（ARI 対応）に任せ、期限切れを監視でアラートします。</p></div>
+    </details>
+    <details>
+      <summary>Q6. AWS ALB で TLS を終端する構成で、アプリ側に必要な設定は何ですか。</summary>
+      <div class="body"><p>アプリには HTTP で届くので、ALB が付ける <code>X-Forwarded-Proto</code> を信頼する trust proxy 設定が必要です。これがないと、アプリは自分を HTTP だと思い、<code>http://</code> のリダイレクトを作ったり <code>Secure</code> Cookie を付けなかったりします。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/20_Webサーバー・リバースプロキシ/04_HTTPSとTLS証明書</li>
+      <li>Certbot Instructions（Nginx / snap） https://certbot.eff.org/instructions?ws=nginx&amp;os=snap</li>
+      <li>Let's Encrypt: Profiles https://letsencrypt.org/docs/profiles/</li>
+      <li>Let's Encrypt: Decreasing Certificate Lifetimes to 45 Days https://letsencrypt.org/2025/12/02/from-90-to-45/</li>
+      <li>CA/Browser Forum Ballot SC-081v3 https://cabforum.org/2025/04/11/ballot-sc081v3-introduce-schedule-of-reducing-validity-and-data-reuse-periods/</li>
+      <li>TLSRef Configurator（旧 Mozilla SSL Configuration Generator） https://configurator.tlsref.org/</li>
+      <li>TLSRef: Server Side TLS ガイドライン https://docs.tlsref.org/server-side-tls.html</li>
+      <li>nginx: Configuring HTTPS servers https://nginx.org/en/docs/http/configuring_https_servers.html</li>
+      <li>nginx: Support for QUIC and HTTP/3 https://nginx.org/en/docs/quic.html</li>
+      <li>Qualys SSL Labs: SSL Server Test https://www.ssllabs.com/ssltest/</li>
+      <li>MDN: Strict-Transport-Security https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Strict-Transport-Security</li>
+      <li>関連ページ：<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>、<a href="20-5_Apache入門.html">20-5 Apache入門</a>、<a href="50-2_ロードバランサーの仕組み.html">50-2 ロードバランサーの仕組み</a>、<a href="50-4_CDNによる負荷軽減.html">50-4 CDNによる負荷軽減</a>、<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a>、<a href="../73_認証認可/10-3_パスワード・MFA・暗号化の基礎.html">73 パスワード・MFA・暗号化の基礎</a>、<a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">72 セキュリティヘッダ</a>、<a href="../74_セッション管理/10-1_Cookieの仕組み.html">74 Cookieの仕組み</a>、<a href="../71_セキュリティ基礎/40-3_インジェクションと暗号化の不備.html">71 インジェクションと暗号化の不備</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-3_リバースプロキシ.html"><span class="lbl">← 前のページ</span>リバースプロキシ</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-5_Apache入門.html"><span class="lbl">次のページ →</span>Apache入門</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

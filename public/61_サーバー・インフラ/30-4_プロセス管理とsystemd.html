@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>プロセス管理とsystemd｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 アプリ実行環境 › プロセス管理とsystemd</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 アプリ実行環境</span>
+      <h1>プロセス管理とsystemd</h1>
+      <p class="lead"><code>node dist/server.js</code> を SSH で手打ちするだけでは、本番運用にはなりません。このページでは、<strong>プロセスマネージャ</strong> が必要な理由、systemd の <strong>unit ファイル</strong>（<code>[Unit]</code> / <code>[Service]</code> / <code>[Install]</code>）の読み書き、<code>systemctl</code> と <code>journalctl</code> による起動・停止・ログ確認、Shop API にそのまま使える unit ファイルの完全例（セキュリティ設定込み）、PM2 / supervisor との違い、コンテナ環境では誰がこの役割を担うかを解説します。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/30_アプリ実行環境/04_プロセス管理とsystemd</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>プロセスマネージャ（process manager）は、アプリにとっての <strong>「住み込みの管理人」</strong> です。建物（サーバー）の電気が復旧したら真っ先にお店（アプリ）のシャッターを開け、お店が急に閉まったら（クラッシュ）すぐ開け直し、営業日誌（ログ）を付けてくれます。Linux の VM / VPS 上でアプリを動かすなら、<strong>まず systemd を使う</strong> のが 2026 年時点の定番です。</p>
+    </div>
+
+    <p>この記事は <a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a> と <a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a> を読んでいると理解しやすいです。</p>
+    <p>Ubuntu をはじめとする現在の主要な Linux ディストリビューションでは、OS の起動時に最初に動くプロセス（<strong>PID 1</strong>）である <strong>systemd</strong> がこの管理人役を担います。追加ソフトをインストールしなくても使えるのが強みです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>なぜプロセスマネージャが必要か</h2>
+    <p>SSH でログインして <code>node dist/server.js</code> を実行すると、Shop API は確かに動きます。しかし、この状態には次の問題があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>何が起きるか</th><th>プロセスマネージャがやること</th></tr></thead>
+      <tbody>
+        <tr><td>SSH を切ると止まる</td><td>ターミナルと一緒にプロセスが終了する</td><td>ターミナルと無関係にバックグラウンドで動かす</td></tr>
+        <tr><td>サーバー再起動で消える</td><td>OS アップデート後の再起動でアプリが起動しないまま</td><td><strong>起動時に自動起動</strong></td></tr>
+        <tr><td>クラッシュしたら終わり</td><td>未処理例外 1 つで、誰かが気づくまで停止</td><td><strong>異常終了時に自動再起動</strong></td></tr>
+        <tr><td>ログがどこにもない</td><td>画面に出たログは流れて消える</td><td><strong>標準出力・標準エラーを収集・保存</strong></td></tr>
+        <tr><td>root で動いてしまう</td><td>脆弱性があるとサーバー全体を乗っ取られる</td><td><strong>専用ユーザーで実行</strong>、権限を絞る</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>nohup</code> や <code>screen</code> / <code>tmux</code> で「とりあえず」動かすこともできますが、自動起動・自動再起動・ログ管理がないため本番運用には向きません。</p>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="OS が起動すると PID 1 の systemd が shop-api.service（node dist/server.js）を起動する。アプリの標準出力と標準エラーは journald のログに集まる。アプリが異常終了すると systemd に伝わり、5 秒後に再起動される">
+      <defs>
+        <marker id="arrow-30-4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arrow-30-4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="10" y="40" width="110" height="56" rx="8" class="d-box"/>
+      <text x="65" y="73" text-anchor="middle" class="d-text-bold">OS 起動</text>
+      <rect x="170" y="40" width="150" height="56" rx="8" class="d-box-accent"/>
+      <text x="245" y="65" text-anchor="middle" class="d-text-bold">systemd</text>
+      <text x="245" y="84" text-anchor="middle" class="d-text-sub">PID 1</text>
+      <rect x="400" y="40" width="190" height="56" rx="8" class="d-box-good"/>
+      <text x="495" y="65" text-anchor="middle" class="d-text-bold">shop-api.service</text>
+      <text x="495" y="84" text-anchor="middle" class="d-text-sub">node dist/server.js</text>
+      <rect x="400" y="160" width="190" height="56" rx="8" class="d-box"/>
+      <text x="495" y="185" text-anchor="middle" class="d-text-bold">journald</text>
+      <text x="495" y="204" text-anchor="middle" class="d-text-sub">ログ</text>
+      <path d="M120,68 L168,68" class="d-line" marker-end="url(#arrow-30-4a)"/>
+      <path d="M320,58 L398,58" class="d-line" marker-end="url(#arrow-30-4a)"/>
+      <text x="359" y="50" text-anchor="middle" class="d-text-sub">起動</text>
+      <path d="M495,96 L495,158" class="d-line" marker-end="url(#arrow-30-4a)"/>
+      <text x="505" y="132" class="d-text-sub">stdout / stderr</text>
+      <path d="M400,86 C360,140 300,140 260,98" class="d-line-bad" marker-end="url(#arrow-30-4b)"/>
+      <text x="300" y="150" text-anchor="middle" class="d-text-sub">異常終了</text>
+      <path d="M200,96 C200,200 380,200 410,98" class="d-line-dash" marker-end="url(#arrow-30-4a)"/>
+      <text x="230" y="196" text-anchor="middle" class="d-text-sub">5 秒後に再起動</text>
+    </svg>
+    <figcaption>図：systemd が起動・再起動・ログ収集をまとめて引き受ける</figcaption>
+    </figure>
+
+    <h2 id="sec-2"><span class="num">2.</span>unit ファイルの構造</h2>
+    <p>systemd が管理する対象を <strong>unit（ユニット）</strong> と呼び、その設定ファイルが <strong>unit ファイル</strong> です。サービス（常駐プロセス）は拡張子 <code>.service</code> で、自作のものは <code>/etc/systemd/system/</code> に置きます（パッケージが入れるものは <code>/usr/lib/systemd/system/</code>。同名なら <code>/etc</code> 側が優先）。</p>
+    <p>INI 形式で、3 つのセクションから成ります。</p>
+<pre><code>[Unit]        # このユニットの説明と、他のユニットとの関係（順序・依存）
+Description=...
+After=...
+
+[Service]     # どう起動し、どう監視するか（本体）
+ExecStart=...
+Restart=...
+
+[Install]     # 「systemctl enable」したとき、どのタイミングで起動対象に入るか
+WantedBy=multi-user.target</code></pre>
+
+    <h3 id="sec-2-1">2.1 [Unit] セクション</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>Description=</code></td><td>人間向けの説明。<code>systemctl status</code> に表示される</td></tr>
+        <tr><td><code>After=</code></td><td>指定したユニットの <strong>後に</strong> 起動する（順序だけ。依存はしない）</td></tr>
+        <tr><td><code>Wants=</code></td><td>指定したユニットも一緒に起動しようとする（失敗しても自分は起動する、弱い依存）</td></tr>
+        <tr><td><code>Requires=</code></td><td>強い依存。相手が起動に失敗したら自分も起動しない</td></tr>
+      </tbody>
+    </table></div>
+    <p>ネットワークが使える状態になってから起動したいので、Web アプリでは <code>After=network-online.target</code> と <code>Wants=network-online.target</code> をセットで書くのが一般的です。DB が同じサーバーにあるなら <code>After=postgresql.service</code> も加えます。</p>
+
+    <h3 id="sec-2-2">2.2 [Service] セクション：Type=（起動完了の判定方法）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>値</th><th>起動完了とみなすタイミング</th><th>向いているもの</th></tr></thead>
+      <tbody>
+        <tr><td><code>simple</code></td><td>プロセスを fork した直後（<code>ExecStart=</code> 指定時の既定値）</td><td>フォアグラウンドで動き続けるアプリ</td></tr>
+        <tr><td><code>exec</code></td><td>実行ファイルの <code>execve()</code> が成功した後</td><td><code>simple</code> とほぼ同じだが、<strong>実行ファイルが無い・ユーザーが無い等の失敗を <code>systemctl start</code> がエラーとして返してくれる</strong></td></tr>
+        <tr><td><code>notify</code></td><td>アプリが <code>sd_notify("READY=1")</code> で通知した後</td><td>通知に対応したデーモン（PostgreSQL など）</td></tr>
+        <tr><td><code>forking</code></td><td>親プロセスが終了した後（自分で裏に回るタイプ）</td><td>古いデーモン。新規アプリでは使わない</td></tr>
+        <tr><td><code>oneshot</code></td><td>プロセスが終了した後</td><td>一度だけ実行するバッチ・初期化処理</td></tr>
+      </tbody>
+    </table></div>
+    <p>Node.js / Python のアプリはフォアグラウンドで動き続けるので、<strong><code>Type=exec</code>（または <code>simple</code>）</strong> を選びます。アプリ側で「デーモン化（自分で裏に回る）」をする必要はありません。</p>
+
+    <h3 id="sec-2-3">2.3 [Service] セクション：主な項目</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>意味・注意</th></tr></thead>
+      <tbody>
+        <tr><td><code>ExecStart=</code></td><td>起動コマンド。<strong>絶対パスで書く</strong>（<code>node</code> ではなく <code>/usr/bin/node</code>）。シェルを経由しないので <code>&amp;&amp;</code> やリダイレクトは使えない</td></tr>
+        <tr><td><code>User=</code> / <code>Group=</code></td><td>実行ユーザー。省略すると <strong>root で動く</strong> ので必ず指定</td></tr>
+        <tr><td><code>WorkingDirectory=</code></td><td>カレントディレクトリ。相対パスでファイルを読むアプリで必須</td></tr>
+        <tr><td><code>Environment=</code> / <code>EnvironmentFile=</code></td><td>環境変数を渡す。詳しくは <a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a></td></tr>
+        <tr><td><code>Restart=</code></td><td>いつ再起動するか。既定値は <code>no</code>（再起動しない）</td></tr>
+        <tr><td><code>RestartSec=</code></td><td>再起動までの待ち時間。既定値は 100ms</td></tr>
+        <tr><td><code>TimeoutStopSec=</code></td><td>停止時に SIGTERM を送ってから SIGKILL するまでの猶予（既定 90 秒）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-4">2.4 Restart= の選び方</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>値</th><th>正常終了（exit 0）</th><th>異常終了（exit ≠ 0、シグナルによる強制終了、タイムアウト）</th></tr></thead>
+      <tbody>
+        <tr><td><code>no</code></td><td>再起動しない</td><td>再起動しない</td></tr>
+        <tr><td><code>on-failure</code></td><td>再起動しない</td><td><strong>再起動する</strong></td></tr>
+        <tr><td><code>always</code></td><td>再起動する</td><td>再起動する</td></tr>
+      </tbody>
+    </table></div>
+    <p>Web アプリでは <strong><code>Restart=on-failure</code></strong> が基本です。「意図して正常終了したのに勝手に再起動される」ことがなく、クラッシュ時だけ立ち上げ直してくれます。</p>
+    <p>ただし、設定ミスで起動直後に毎回落ちるアプリを延々と再起動し続けないよう、systemd には <strong>起動回数制限</strong> があります。既定では「10 秒間に 5 回」起動すると諦めて <code>failed</code> 状態になります（<code>[Unit]</code> の <code>StartLimitIntervalSec=</code> / <code>StartLimitBurst=</code> で変更可）。<code>RestartSec=5</code> のように少し待たせると、DB の一時的な不調などからも回復しやすくなります。</p>
+
+    <h3 id="sec-2-5">2.5 [Install] セクション</h3>
+    <p><code>WantedBy=multi-user.target</code> と書くと、<code>systemctl enable</code> したときに「通常のマルチユーザー起動（サーバーの普段の状態）」の一部として <strong>OS 起動時に自動起動</strong> されるようになります。サーバー用のサービスはほぼこれ一択です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>Shop API の unit ファイル完全例</h2>
+    <p>前提は次のとおりです。</p>
+    <ul>
+      <li>アプリは <code>/opt/shop-api</code> に配置（<code>dist/server.js</code> がビルド成果物）</li>
+      <li>実行ユーザー <code>shop</code>（ログイン不可のシステムユーザー）</li>
+      <li>環境変数は <code>/etc/shop-api/env</code> に置く（root 所有、<code>shop</code> だけ読める）</li>
+    </ul>
+    <p>まず実行ユーザーとディレクトリを用意します。</p>
+<pre><code># ログインできないシステムユーザーを作成
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin shop
+
+# アプリ本体は root 所有（アプリ自身が自分のコードを書き換えられないように）
+sudo chown -R root:root /opt/shop-api
+
+# 環境変数ファイル：root 所有、shop グループだけ読める
+sudo mkdir -p /etc/shop-api
+sudo install -m 640 -o root -g shop /dev/null /etc/shop-api/env</code></pre>
+    <p><code>/etc/systemd/system/shop-api.service</code> は次のようになります。</p>
+<pre><code>[Unit]
+Description=Shop API (Node.js)
+Documentation=https://github.com/example/shop-api
+After=network-online.target
+Wants=network-online.target
+# DB が同じサーバーにある構成なら次の行も追加
+# After=postgresql.service
+
+# 60 秒間に 5 回より多く落ちたら再起動を諦めて failed にする
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=shop
+Group=shop
+WorkingDirectory=/opt/shop-api
+EnvironmentFile=/etc/shop-api/env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/server.js
+
+# クラッシュ時だけ 5 秒待って再起動
+Restart=on-failure
+RestartSec=5
+
+# 停止時は SIGTERM → 30 秒待っても終わらなければ SIGKILL
+# （アプリ側で SIGTERM を受けて処理中のリクエストを終えてから終了する）
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# ---- セキュリティ（サンドボックス） ----
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# 書き込みが必要な場所だけ許可（/var/lib/shop-api を自動作成し shop 所有にする）
+StateDirectory=shop-api
+# 万一のメモリリークでサーバー全体を道連れにしない
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+    <h3 id="sec-3-1">3.1 セキュリティ系オプションの意味</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>効果</th></tr></thead>
+      <tbody>
+        <tr><td><code>NoNewPrivileges=true</code></td><td>このプロセスと子プロセスが setuid バイナリ（<code>sudo</code> など）経由で <strong>権限を昇格できなくなる</strong></td></tr>
+        <tr><td><code>ProtectSystem=strict</code></td><td>ファイルシステム全体を <strong>読み取り専用</strong> にする（<code>/dev</code> <code>/proc</code> <code>/sys</code> を除く）。<code>true</code> は <code>/usr</code> と <code>/boot</code> のみ、<code>full</code> はそれに <code>/etc</code> を加えたもの</td></tr>
+        <tr><td><code>ProtectHome=true</code></td><td><code>/home</code> <code>/root</code> <code>/run/user</code> を見えなくする</td></tr>
+        <tr><td><code>PrivateTmp=true</code></td><td>このサービス専用の <code>/tmp</code> を用意し、他プロセスの一時ファイルと分離</td></tr>
+        <tr><td><code>StateDirectory=shop-api</code></td><td><code>/var/lib/shop-api</code> を作って書き込み可能にする。任意の場所なら <code>ReadWritePaths=</code> で指定</td></tr>
+      </tbody>
+    </table></div>
+    <p>これらは「アプリに脆弱性があって攻撃者にコードを実行されても、被害をこのサービスの中に閉じ込める」ための仕組みです。<code>systemd-analyze security shop-api</code> を実行すると、どの項目が未設定かをスコア付きで一覧できます。最小権限の考え方は <a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a> も参照してください。</p>
+    <div class="callout warn">
+      <p class="callout-title">strict にしたら動かなくなった</p>
+      <p><code>ProtectSystem=strict</code> にすると、アプリがログファイルやアップロード画像を <code>/opt/shop-api/uploads</code> に書こうとして <code>EROFS: read-only file system</code> で落ちることがあります。ログは標準出力へ（journald が集める）、データは <code>StateDirectory=</code> か <code>ReadWritePaths=</code> で許可した場所へ書くように直します。</p>
+    </div>
+
+    <h3 id="sec-3-2">3.2 反映と起動</h3>
+<pre><code>sudo systemctl daemon-reload          # unit ファイルを書き換えたら必ず実行
+sudo systemctl enable --now shop-api  # 自動起動を有効化 + 今すぐ起動
+systemctl status shop-api             # 状態確認</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>systemctl と journalctl の使い方</h2>
+
+    <h3 id="sec-4-1">4.1 systemctl（サービスの操作）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>systemctl start / stop / restart shop-api</code></td><td>起動 / 停止 / 再起動</td></tr>
+        <tr><td><code>systemctl reload shop-api</code></td><td>設定の再読み込み（<code>ExecReload=</code> がある場合のみ）</td></tr>
+        <tr><td><code>systemctl enable / disable shop-api</code></td><td>OS 起動時の自動起動を ON / OFF</td></tr>
+        <tr><td><code>systemctl status shop-api</code></td><td>状態・PID・メモリ・直近のログを表示</td></tr>
+        <tr><td><code>systemctl is-active shop-api</code></td><td><code>active</code> などを 1 語で返す（スクリプト向き）</td></tr>
+        <tr><td><code>systemctl --failed</code></td><td>失敗しているユニットの一覧</td></tr>
+        <tr><td><code>systemctl cat shop-api</code></td><td>実際に読み込まれている unit ファイルを表示</td></tr>
+        <tr><td><code>sudo systemctl edit shop-api</code></td><td>元ファイルを変えずに一部を上書き（drop-in、<code>/etc/systemd/system/shop-api.service.d/override.conf</code>）</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>status</code> の出力例です。</p>
+<pre><code>● shop-api.service - Shop API (Node.js)
+     Loaded: loaded (/etc/systemd/system/shop-api.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-10-12 10:00:00 JST; 2h ago
+   Main PID: 1234 (node)
+     Memory: 85.3M (max: 1.0G)</code></pre>
+    <p><code>enabled</code> が自動起動 ON、<code>active (running)</code> が稼働中という意味です。</p>
+
+    <h3 id="sec-4-2">4.2 journalctl（ログの確認）</h3>
+    <p>systemd で動かしたプロセスの標準出力・標準エラーは、既定で <strong>journald</strong> に集められます。アプリは <code>console.log</code> で JSON などを出力するだけでよく、ログファイルの <strong>ローテーション</strong>（古いログを切り替えて容量を抑えること）を自分で書く必要がありません。</p>
+<pre><code>journalctl -u shop-api                 # shop-api のログ全部
+journalctl -u shop-api -f              # tail -f のように流し見
+journalctl -u shop-api -n 100          # 直近 100 行
+journalctl -u shop-api --since "1 hour ago"
+journalctl -u shop-api -p err          # エラー以上だけ
+journalctl -u shop-api -b              # 今回の OS 起動以降だけ
+journalctl --disk-usage                # ジャーナルの容量</code></pre>
+    <p>Ubuntu 24.04 では journald のログは <code>/var/log/journal/</code> に永続化されます。保存量は <code>/etc/systemd/journald.conf</code> の <code>SystemMaxUse=</code> で上限を決められます。複数台のログを横断して検索したくなったら、ログ集約基盤へ転送します（<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a> も参照）。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>PM2 / supervisor との比較</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>systemd</th><th>PM2</th><th>supervisor</th></tr></thead>
+      <tbody>
+        <tr><td>対象</td><td>何でも（OS 標準）</td><td>主に Node.js</td><td>何でも（Python 製）</td></tr>
+        <tr><td>導入</td><td>不要（OS に内蔵）</td><td><code>npm i -g pm2</code></td><td><code>apt install supervisor</code></td></tr>
+        <tr><td>OS 起動時の自動起動</td><td>標準</td><td><code>pm2 startup</code>（内部で systemd 等に登録）</td><td>supervisor 自体を systemd で起動</td></tr>
+        <tr><td>クラスタ（複数プロセス）</td><td>テンプレート unit（<code>shop-api@.service</code>）で実現</td><td><code>-i max</code> で簡単</td><td><code>numprocs</code></td></tr>
+        <tr><td>ログ</td><td>journald</td><td>独自ファイル（<code>pm2-logrotate</code> 等が必要）</td><td>独自ファイル</td></tr>
+        <tr><td>セキュリティ制限</td><td>豊富（上記サンドボックス）</td><td>なし</td><td>ほぼなし</td></tr>
+        <tr><td>ゼロダウンタイム再起動</td><td>自前で工夫（LB 側で切り替え）</td><td><code>pm2 reload</code></td><td>なし</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>選び方の目安</strong>：VM 上の本番では <strong>systemd を第一候補</strong> にします。PM2 は開発機や「Node.js だけを手早く複数プロセスで動かしたい」場面では便利ですが、PM2 自体も結局 systemd から起動されるので、管理の層が 1 つ増えます。supervisor は systemd が普及する前からある仕組みで、既存環境で見かける程度と考えてよいでしょう。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>コンテナ環境では誰がこの役割を担うか</h2>
+    <p>コンテナで動かす場合、<strong>コンテナの中で systemd や PM2 を動かさない</strong> のが原則です。コンテナは「1 コンテナ 1 プロセス」で、プロセス管理はコンテナの外側が担います。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>VM で動かす場合</h4>
+        <p><strong>systemd</strong> → Shop API</p>
+      </div>
+      <div class="card">
+        <h4>Docker 単体</h4>
+        <p><strong>Docker Engine</strong>（<code>--restart on-failure</code>）→ コンテナ：Shop API</p>
+      </div>
+      <div class="card">
+        <h4>Kubernetes</h4>
+        <p><strong>Deployment</strong>（<code>replicas: 3</code>）→ <strong>kubelet</strong>（restartPolicy / livenessProbe）→ Pod：Shop API</p>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>VM + systemd</th><th>Docker</th><th>Kubernetes</th></tr></thead>
+      <tbody>
+        <tr><td>起動時の自動起動</td><td><code>systemctl enable</code></td><td><code>--restart unless-stopped</code>（Docker Engine 自体は systemd が起動）</td><td>ノード起動時に kubelet が Pod を復元</td></tr>
+        <tr><td>クラッシュ時の再起動</td><td><code>Restart=on-failure</code></td><td><code>--restart on-failure[:回数]</code></td><td><code>restartPolicy: Always</code> ＋ livenessProbe</td></tr>
+        <tr><td>台数の維持</td><td>（自前）</td><td>（自前、Compose で一部）</td><td>Deployment の <code>replicas</code></td></tr>
+        <tr><td>ログ</td><td>journald</td><td><code>docker logs</code>（ログドライバ）</td><td><code>kubectl logs</code>、ノードのログ収集</td></tr>
+      </tbody>
+    </table></div>
+    <p>Docker の再起動ポリシーは <code>no</code>（既定）/ <code>on-failure</code> / <code>always</code> / <code>unless-stopped</code> の 4 種類で、起動後 10 秒以上動いてから初めて有効になります（起動直後に落ち続けるループを防ぐため）。くわしくは Docker・Kubernetes のノードや、コンテナの本番向けベストプラクティスのノードを参照してください。</p>
+    <div class="callout tip">
+      <p class="callout-title">PID 1 問題</p>
+      <p>コンテナ内でアプリが PID 1 になると、SIGTERM の扱いやゾンビプロセス（終了したのに回収されずに残るプロセス）の回収で問題が出ることがあります。<code>docker run --init</code> や <code>tini</code> を使う、<code>CMD ["node", "dist/server.js"]</code> のように exec 形式で書く（<code>npm start</code> を挟まない）、といった対策が定番です。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td><code>ExecStart=node dist/server.js</code> で動く</td><td>古い systemd では絶対パスが必須で、新しい版でも PATH は最小限です。nvm でインストールした Node は <code>/home/...</code> にあり、<code>ProtectHome=true</code> だと見えません。本番では apt（NodeSource 等）で <code>/usr/bin/node</code> に入れるのが無難です。</td></tr>
+        <tr><td>unit ファイルを書き換えたら <code>restart</code> だけで反映される</td><td>先に <code>sudo systemctl daemon-reload</code> が必要です。忘れると「変更したのに効かない」状態になります。</td></tr>
+        <tr><td><code>Restart=always</code> にしておけば安心</td><td>起動直後に落ち続ける場合、起動回数制限で結局 <code>failed</code> になります。原因は <code>journalctl -u</code> で確認し、監視で <code>failed</code> を検知できるようにしておきます。</td></tr>
+        <tr><td>アプリ内でログファイルを開いて書くべき</td><td>systemd 配下では標準出力に出すだけで journald が保存・ローテーションしてくれます（The Twelve-Factor App の「ログはイベントストリーム」の考え方）。</td></tr>
+        <tr><td><code>systemctl stop</code> で即座に止まる</td><td>まず SIGTERM が送られ、<code>TimeoutStopSec</code> 経過後に SIGKILL です。アプリが SIGTERM を受けて処理中のリクエストを終えてから終了する（graceful shutdown）ように作ると、デプロイ時のエラーを減らせます（<a href="30-2_Node.jsアプリを本番で動かす.html">30-2</a> のグレースフルシャットダウン参照）。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>本番のアプリには「自動起動・自動再起動・ログ収集・権限分離」を担うプロセスマネージャが必要で、Linux VM では systemd が標準</li>
+      <li>unit ファイルは <code>[Unit]</code>（順序・依存）、<code>[Service]</code>（起動方法・再起動・実行ユーザー）、<code>[Install]</code>（自動起動のタイミング）の 3 部構成</li>
+      <li>Web アプリは <code>Type=exec</code>、<code>Restart=on-failure</code>、専用 <code>User=</code>、<code>WorkingDirectory=</code>、<code>EnvironmentFile=</code> が基本形</li>
+      <li><code>NoNewPrivileges</code> や <code>ProtectSystem=strict</code> などのサンドボックスで、侵入されたときの被害を小さくできる</li>
+      <li>操作は <code>systemctl</code>、ログは <code>journalctl -u</code>。変更後は <code>daemon-reload</code> を忘れない</li>
+      <li>コンテナでは Docker の restart policy や Kubernetes が同じ役割を担い、コンテナ内に systemd は入れない</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Shop API が未処理例外で exit code 1 で終了しました。Restart=on-failure のとき systemd は再起動しますか？ また、systemctl stop で止めた場合はどうですか？</summary>
+      <div class="body"><p>異常終了（exit ≠ 0）なので再起動します。<code>systemctl stop</code> は管理者の意図的な停止なので、<code>Restart=</code> の設定にかかわらず再起動しません。</p></div>
+    </details>
+    <details>
+      <summary>Q2. ProtectSystem=strict を付けたらアプリが画像アップロード時に落ちるようになりました。どう直しますか？</summary>
+      <div class="body"><p>strict ではファイルシステム全体が読み取り専用になるため、書き込み先を <code>StateDirectory=shop-api</code>（<code>/var/lib/shop-api</code>）や <code>ReadWritePaths=/var/lib/shop-api/uploads</code> で明示的に許可し、アプリの保存先をそこに変えます。本格的にはオブジェクトストレージ（S3 等）に置くのが、サーバーを複数台にしたときにも困りません。</p></div>
+    </details>
+    <details>
+      <summary>Q3. Kubernetes で動かす Shop API のコンテナイメージに PM2 を入れて pm2-runtime で起動しようとしています。何が問題になりやすいですか？</summary>
+      <div class="body"><p>再起動や台数維持は Kubernetes が担うため役割が重複します。PM2 がコンテナ内でアプリを再起動してしまうと、Kubernetes 側から見たクラッシュや再起動回数が分かりにくくなります。コンテナでは 1 プロセスを直接起動し、再起動は restartPolicy と livenessProbe に任せるのが原則です。</p></div>
+    </details>
+    <details>
+      <summary>Q4. unit ファイルを書き換えて systemctl restart したのに、変更が効きません。何を忘れていますか？</summary>
+      <div class="body"><p><code>sudo systemctl daemon-reload</code> です。unit ファイルを書き換えたら、まず systemd に読み直させてから再起動します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. unit ファイルで User= を省略すると、どんな危険がありますか？</summary>
+      <div class="body"><p>サービスが root で動きます。アプリに脆弱性があった場合、サーバー全体を乗っ取られる恐れがあるので、ログイン不可の専用ユーザーを作って必ず指定します。</p></div>
+    </details>
+    <details>
+      <summary>Q6. Node.js や Python の Web アプリに Type=forking ではなく Type=exec を選ぶのはなぜですか？</summary>
+      <div class="body"><p>これらのアプリはフォアグラウンドで動き続けるので、自分で裏に回る古いデーモン向けの <code>forking</code> は合いません。<code>exec</code> なら実行ファイルが無い・ユーザーが無いといった失敗も <code>systemctl start</code> がエラーとして返してくれます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/30_アプリ実行環境/04_プロセス管理とsystemd</li>
+      <li>systemd.service（systemd 公式 man） https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html</li>
+      <li>systemd.exec（systemd 公式 man） https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html</li>
+      <li>systemd.unit（systemd 公式 man） https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html</li>
+      <li>journalctl（systemd 公式 man） https://www.freedesktop.org/software/systemd/man/latest/journalctl.html</li>
+      <li>Start containers automatically（Docker Docs） https://docs.docker.com/engine/containers/start-containers-automatically/</li>
+      <li>PM2 Documentation https://pm2.keymetrics.io/docs/usage/quick-start/</li>
+      <li>The Twelve-Factor App — XI. Logs https://12factor.net/logs</li>
+      <li>関連ページ：<a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a>、<a href="30-3_Pythonアプリを本番で動かす.html">30-3 Pythonアプリを本番で動かす</a>、<a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a>、<a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a>、<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-3_Pythonアプリを本番で動かす.html"><span class="lbl">← 前のページ</span>Pythonアプリを本番で動かす</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-5_設定と環境変数・シークレット.html"><span class="lbl">次のページ →</span>設定と環境変数・シークレット</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

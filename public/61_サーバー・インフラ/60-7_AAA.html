@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AAA｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 サーバー・ネットワークセキュリティ › AAA</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 サーバー・ネットワークセキュリティ</span>
+      <h1>AAA（RADIUS・TACACS+・802.1X）</h1>
+      <p class="lead">機器が 100 台あると、管理者アカウントを 1 台ずつ作ったり消したりするのは大変です。<strong>AAA</strong> は「誰か（認証）」「何をしてよいか（認可）」「何をしたか（アカウンティング）」をまとめて管理する考え方で、AAA サーバに任せれば 1 か所で一元管理できます。このページでは、AAA の 3 つの機能、<strong>TACACS+ と RADIUS の違い</strong>、IOS での設定と<strong>方法リストの評価の仕方</strong>、そして LAN のポートを認証で守る <strong>802.1X</strong> を解説します。</p>
+      <p class="meta">もとにしたノート：60_サーバー・ネットワークセキュリティ/07_AAA（RADIUS・TACACS+・802.1X）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>AAA＝認証（誰か）→認可（何をしてよいか）→アカウンティング（何をしたか）</strong>。機器の管理者には <strong>TACACS+</strong>（TCP 49・本文全体を暗号化・コマンド単位の認可）、ネットワークの利用者には <strong>RADIUS</strong>（UDP 1812/1813・パスワードだけ暗号化・802.1X や VPN）を使います。方法リストの最後には、サーバに届かないときの予備として <code>local</code> を入れます。</p>
+    </div>
+
+    <p>このページは、<a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a> と <a href="../73_認証認可/10-1_認証と認可の違い.html">73 認証と認可の違い</a> を読んでいると理解しやすいです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>AAA の 3 つの機能</h2>
+    <p><strong>AAA</strong> は、アクセスを管理する 3 つの機能の頭文字です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>機能</th><th>問い</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td>認証（Authentication）</td><td><strong>あなたは誰か</strong></td><td>ユーザー名とパスワードで本人確認</td></tr>
+        <tr><td>認可（Authorization）</td><td><strong>何をしてよいか</strong></td><td>このユーザーは <code>show</code> だけ、あのユーザーは <code>configure</code> も可</td></tr>
+        <tr><td>アカウンティング（Accounting）</td><td><strong>何をしたか</strong></td><td>誰が、いつログインし、どのコマンドを実行したかを記録</td></tr>
+      </tbody>
+    </table></div>
+<pre><code> ユーザー ──①ログイン──&gt; [ルータ] ──②「この人は本物？」──────&gt; [AAAサーバ]
+                                 &lt;──③認証OK───────────────────
+          ──④コマンド──&gt; [ルータ] ──⑤「このコマンドを許可する？」─&gt; （認可）
+                                 &lt;──⑥許可/拒否─────────────────
+                         [ルータ] ──⑦「誰が何をしたか」の記録──&gt; （アカウンティング）</code></pre>
+    <p>「ログインしたユーザーが、どのコマンドを実行できるかを制御する」のは<strong>認可（Authorization）</strong>です。なお、暗号化は AAA の要素ではありません。認証と認可の違いそのものは <a href="../73_認証認可/10-1_認証と認可の違い.html">73 認証と認可の違い</a> でくわしく扱っています。アカウンティングで残した記録は、<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a> のような監査にも使えます。</p>
+
+    <div class="callout tip">
+      <p class="callout-title">なぜ AAA サーバを使うのか</p>
+      <p>機器が 100 台あると、ローカルユーザーを 100 台それぞれで作成・変更・削除しなければなりません。AAA サーバ（例：<strong>Cisco ISE</strong>）を使えば、ユーザーを一元管理でき、退職者のアカウントの無効化も 1 か所で確実に行えます。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>TACACS+ と RADIUS</h2>
+    <p>機器（ルータ、スイッチ、WLC など）と AAA サーバの間の通信には、TACACS+ か RADIUS を使います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>TACACS+</th><th>RADIUS</th></tr></thead>
+      <tbody>
+        <tr><td>開発・標準</td><td><strong>Cisco</strong> が開発</td><td><strong>IETF</strong> の標準（オープン）</td></tr>
+        <tr><td>トランスポート</td><td><strong>TCP 49</strong></td><td><strong>UDP 1812（認証/認可）、1813（アカウンティング）</strong>（古い実装では 1645/1646）</td></tr>
+        <tr><td>暗号化の範囲</td><td>パケットの<strong>本文全体</strong>を暗号化</td><td><strong>パスワードだけ</strong>を暗号化</td></tr>
+        <tr><td>AAA の扱い</td><td>認証・認可・アカウンティングを<strong>個別</strong>に扱える</td><td>認証と認可を<strong>まとめて</strong>扱う</td></tr>
+        <tr><td>コマンドごとの認可</td><td>できる</td><td>基本的にできない</td></tr>
+        <tr><td>主な用途</td><td><strong>ネットワーク機器にログインする管理者</strong>の認証とコマンド制御</td><td><strong>ネットワークを利用するユーザー</strong>の認証（無線 LAN の 802.1X、有線 802.1X、VPN 接続）</td></tr>
+      </tbody>
+    </table></div>
+    <p>覚え方は次のとおりです。</p>
+<pre><code>TACACS+ … TCP / 全体暗号化 / Cisco / 機器の管理者（デバイス管理）
+RADIUS  … UDP / パスワードだけ / IETF標準 / ネットワーク利用者（ネットワークアクセス）</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">取り違えやすいポイント</p>
+      <p>TACACS+ の特徴は「TCP（49 番）を使い、パケットの本文全体を暗号化する」ことです。「UDP でパスワードだけ暗号化」は RADIUS の特徴です。また、どちらも「IEEE が定めたオープンな標準」ではありません（TACACS+ は Cisco 開発、RADIUS は IETF 標準）。TACACS+ や RADIUS は「無線 LAN の暗号化方式」でもありません。それは WPA2/WPA3 のことです。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>IOS での AAA 設定と方法リスト</h2>
+<pre><code>R1(config)# username admin secret Local!Backup1          ! サーバ障害時の予備のローカルユーザー
+R1(config)# aaa new-model                                 ! ① AAAを有効化（すべての始まり）
+R1(config)# tacacs server TAC1                            ! ② TACACS+サーバの定義
+R1(config-server-tacacs)# address ipv4 192.168.100.10
+R1(config-server-tacacs)# key T@cacsKey
+R1(config-server-tacacs)# exit
+R1(config)# aaa authentication login default group tacacs+ local    ! ③ 認証の方法リスト
+R1(config)# aaa authorization exec default group tacacs+ local      ! （認可）
+R1(config)# aaa accounting commands 15 default start-stop group tacacs+   ! （アカウンティング）</code></pre>
+    <p><strong>方法リスト</strong>は「どの方法で、どの順番で認証するか」を並べたリストです。</p>
+
+    <h3 id="sec-3-1">3.1 方法リストの評価</h3>
+    <p><code>aaa authentication login default group tacacs+ local</code> は、認証方法を<strong>左から順に</strong>試します。ただし「次へ進む」のは<strong>前の方法が使えない（エラー・無応答）ときだけ</strong>です。</p>
+<pre><code>ログイン要求
+   │
+   v
+[TACACS+サーバに問い合わせ]
+   │
+   ├─ 応答あり：認証成功 ──────&gt; ログイン許可
+   ├─ 応答あり：認証失敗（PASS/FAIL の FAIL）──&gt; ログイン拒否（ここで終了。local は試さない）
+   └─ 応答なし（サーバ停止・到達不能＝ERROR）
+          │
+          v
+     [ローカルユーザー（local）で認証]
+          ├─ 成功 ─&gt; ログイン許可
+          └─ 失敗 ─&gt; ログイン拒否</code></pre>
+    <p>この設定の読み方として、正しいもの・誤ったものを並べると次のようになります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>解釈</th><th>正誤</th></tr></thead>
+      <tbody>
+        <tr><td>TACACS+ サーバに<strong>到達できない場合に</strong>ローカルユーザーで認証する</td><td>◯</td></tr>
+        <tr><td>TACACS+ とローカルの<strong>両方</strong>で成功する必要がある</td><td>✕（予備であって二重認証ではない）</td></tr>
+        <tr><td>TACACS+ で<strong>パスワードが間違っていた</strong>場合にローカルで再認証</td><td>✕（サーバが「失敗」を返したらそこで終了）</td></tr>
+        <tr><td>ローカルを優先し、ないユーザーだけ TACACS+</td><td>✕（書いた順＝TACACS+ が優先）</td></tr>
+      </tbody>
+    </table></div>
+    <p>AAA サーバが故障したり、ネットワークが切れたりしたときに誰もログインできなくなるのを防ぐため、<strong>最後に local を入れる</strong>のが一般的で、そのためにローカルユーザーを作っておきます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>802.1X（ポートベースの認証）</h2>
+    <p><strong>802.1X</strong> は、LAN のポート（有線ならスイッチのポート、無線なら AP との接続）を、認証に成功した端末にだけ開放する仕組みです。3 つの役割があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>担当する機器</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>サプリカント（要求者）</td><td>PC などの端末（802.1X クライアントソフト）</td><td>認証を<strong>受ける側</strong></td></tr>
+        <tr><td>オーセンティケータ（認証者）</td><td><strong>スイッチ</strong>、無線 AP/WLC</td><td>端末と RADIUS サーバの間で認証のやり取りを<strong>中継</strong>し、結果に応じて<strong>ポートを開く</strong></td></tr>
+        <tr><td>認証サーバ</td><td>RADIUS サーバ（例：Cisco ISE）</td><td>ユーザー情報を持ち、実際に認証を<strong>判断</strong>する</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="サプリカントの PC がスイッチ（オーセンティケータ）に EAPoL で認証情報を送り、スイッチがそれを RADIUS で認証サーバ（ISE）へ中継する。認証サーバは Access-Accept または Reject を返し、成功ならスイッチがポートを開放する。成功するまでは EAPoL 以外を通さない">
+      <defs>
+        <marker id="arw1607a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="20" width="160" height="60" rx="8" class="d-box"/>
+      <text x="100" y="46" text-anchor="middle" class="d-text-bold">PC</text>
+      <text x="100" y="66" text-anchor="middle" class="d-text-sub">サプリカント</text>
+      <rect x="280" y="20" width="160" height="60" rx="8" class="d-box-accent"/>
+      <text x="360" y="46" text-anchor="middle" class="d-text-bold">スイッチ</text>
+      <text x="360" y="66" text-anchor="middle" class="d-text-sub">オーセンティケータ</text>
+      <rect x="540" y="20" width="160" height="60" rx="8" class="d-box"/>
+      <text x="620" y="46" text-anchor="middle" class="d-text-bold">RADIUS / ISE</text>
+      <text x="620" y="66" text-anchor="middle" class="d-text-sub">認証サーバ</text>
+
+      <path d="M180,110 L278,110" class="d-line" marker-end="url(#arw1607a)"/>
+      <text x="230" y="102" text-anchor="middle" class="d-text-sub">EAPoL</text>
+      <path d="M440,110 L538,110" class="d-line" marker-end="url(#arw1607a)"/>
+      <text x="490" y="102" text-anchor="middle" class="d-text-sub">RADIUS</text>
+      <path d="M540,150 L442,150" class="d-line" marker-end="url(#arw1607a)"/>
+      <text x="490" y="142" text-anchor="middle" class="d-text-sub">Accept/Reject</text>
+
+      <rect x="200" y="176" width="320" height="58" rx="8" class="d-box-good"/>
+      <text x="360" y="200" text-anchor="middle" class="d-text">認証成功ならポートを開放</text>
+      <text x="360" y="222" text-anchor="middle" class="d-text-sub">成功するまでは EAPoL 以外を通さない</text>
+    </svg>
+    <figcaption>図：スイッチは自分では判断せず、端末と RADIUS サーバの間を中継して結果どおりにポートを開く</figcaption>
+    </figure>
+    <p>EAPoL（EAP over LAN）は、端末とスイッチの間で認証のやり取りを運ぶための形式です。スイッチはその中身（EAP）を RADIUS に載せ替えてサーバへ中継します。ノートの図は次のとおりです。</p>
+<pre><code> [PC]                        [スイッチ]                       [RADIUSサーバ / ISE]
+ サプリカント               オーセンティケータ                  認証サーバ
+    │  ── EAPoL（EAP over LAN）──&gt;  │  ── RADIUS（EAPを中継）──&gt;  │
+    │  &lt;────────────────────────── │  &lt;──────────────────────── │
+    │                               │      Access-Accept / Reject │
+    │                     認証成功ならポートを開放
+    │                     （成功するまでは EAPoL 以外は通さない）</code></pre>
+    <p>有線 LAN の 802.1X で、PC を接続された<strong>スイッチ</strong>の役割は<strong>オーセンティケータ</strong>です。DHCP サーバは 802.1X の 3 つの役割に含まれません。</p>
+    <p>認証に成功するまで、スイッチのポートは認証用の通信（EAPoL）以外を通さないので、<strong>許可されていない端末を LAN につないでも通信できません</strong>。無線 LAN のエンタープライズモードも同じ仕組みで、オーセンティケータが無線 AP/WLC になります。</p>
+<pre><code>SW(config)# aaa new-model
+SW(config)# radius server ISE
+SW(config-radius-server)# address ipv4 192.168.100.20 auth-port 1812 acct-port 1813
+SW(config-radius-server)# key R@diusKey
+SW(config)# aaa authentication dot1x default group radius
+SW(config)# dot1x system-auth-control
+SW(config)# interface g0/1
+SW(config-if)# switchport mode access
+SW(config-if)# authentication port-control auto
+SW(config-if)# dot1x pae authenticator</code></pre>
+    <p>802.1X と組み合わせて使うスイッチのポート保護（ポートセキュリティなど）は <a href="60-9_L2セキュリティ.html">60-9 L2セキュリティ</a> で扱います。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>よくある誤解</h2>
+    <ul>
+      <li>「どのコマンドを実行できるか」は<strong>認可</strong>です。認証（本人確認）、アカウンティング（記録）と区別しましょう。<strong>暗号化は AAA の要素ではありません</strong>。</li>
+      <li><strong>TACACS+＝TCP 49・全体暗号化・Cisco</strong>、<strong>RADIUS＝UDP 1812/1813・パスワードのみ暗号化・IETF 標準</strong>。逆に覚えてしまいがちなので注意します。「IEEE 標準」も誤りです。</li>
+      <li>TACACS+ や RADIUS は無線 LAN の<strong>暗号化方式ではありません</strong>（それは WPA2/WPA3）。</li>
+      <li>方法リストの local は「<strong>サーバに到達できないときの予備</strong>」です。サーバが「認証失敗」と答えたら local は試しません。両方での認証でも、ローカル優先でもありません。</li>
+      <li>802.1X でスイッチは<strong>オーセンティケータ</strong>です。サプリカントは端末、認証サーバは RADIUS。DHCP サーバは無関係です。</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li>AAA＝認証（誰か）→認可（何をしてよいか）→アカウンティング（何をしたか）。AAA サーバの例は Cisco ISE。</li>
+      <li>TACACS+ は機器管理者のコマンド制御向け、RADIUS はネットワーク利用者（802.1X、VPN）の認証向け。</li>
+      <li><code>aaa new-model</code> で開始。方法リストは左から順、次へ進むのはエラー（無応答）時のみ。最後に <code>local</code>。</li>
+      <li>802.1X の 3 役割：サプリカント・オーセンティケータ・認証サーバ。認証前は EAPoL のみ通過。</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 「ログインしたユーザーが <code>show</code> だけ使えて <code>configure</code> は使えない」ように制御するのは、AAA のどの機能ですか？</summary>
+      <div class="body"><p>認可（Authorization）です。認証は「誰か」の確認、アカウンティングは「何をしたか」の記録です。</p></div>
+    </details>
+    <details>
+      <summary>Q2. TCP 49 を使い、パケットの本文全体を暗号化するのは TACACS+ と RADIUS のどちらですか？</summary>
+      <div class="body"><p>TACACS+ です。RADIUS は UDP 1812/1813 を使い、暗号化するのはパスワードだけです。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 管理者ごとに実行できるコマンドを細かく制御したいとき、どちらのプロトコルが向いていますか？</summary>
+      <div class="body"><p>TACACS+ です。認証・認可・アカウンティングを個別に扱え、コマンドごとの認可ができます。RADIUS は認証と認可をまとめて扱い、コマンド単位の認可は基本的にできません。</p></div>
+    </details>
+    <details>
+      <summary>Q4. <code>aaa authentication login default group tacacs+ local</code> で、TACACS+ サーバがパスワード誤りとして「失敗」を返しました。local で再認証されますか？</summary>
+      <div class="body"><p>されません。次の方法へ進むのは、サーバが無応答・到達不能（ERROR）のときだけです。サーバが FAIL を返したら、そこでログイン拒否になります。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 方法リストの最後に <code>local</code> を入れておくのはなぜですか？</summary>
+      <div class="body"><p>AAA サーバの故障やネットワーク断のときに、誰も機器にログインできなくなるのを防ぐためです。そのために予備のローカルユーザーを作っておきます。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 有線 LAN の 802.1X で、PC がつながっているスイッチの役割は何ですか？</summary>
+      <div class="body"><p>オーセンティケータです。端末（サプリカント）と RADIUS サーバ（認証サーバ）の間で認証のやり取りを中継し、結果に応じてポートを開きます。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 802.1X が有効なポートに、許可されていない PC をつなぐとどうなりますか？</summary>
+      <div class="body"><p>認証に成功するまで EAPoL 以外の通信は通らないので、LAN で通信できません。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/07_AAA（RADIUS・TACACS+・802.1X）</li>
+      <li>関連ページ：<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a>、<a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a>、<a href="60-9_L2セキュリティ.html">60-9 L2セキュリティ</a>、<a href="60-10_VPN.html">60-10 VPN</a></li>
+      <li>他の章：<a href="../73_認証認可/10-1_認証と認可の違い.html">73 認証と認可の違い</a>、<a href="../73_認証認可/20-3_MFAの方式比較.html">73 MFAの方式比較</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-6_ネットワーク機器への管理アクセス.html"><span class="lbl">← 前のページ</span>ネットワーク機器への管理アクセス</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-8_ACL.html"><span class="lbl">次のページ →</span>ACL</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

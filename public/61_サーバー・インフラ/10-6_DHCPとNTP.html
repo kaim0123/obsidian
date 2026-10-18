@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DHCPとNTP｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 サーバーの基礎 › DHCPとNTP</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 サーバーの基礎</span>
+      <h1>DHCPとNTP</h1>
+      <p class="lead">インフラを陰で支えるネットワークサービスのうち、<strong>DHCP</strong>（IP アドレスなどの自動配布）と <strong>NTP</strong>（時刻同期）を解説します。DHCP では、アドレスを受け取る流れ（DORA）、UDP 67/68、DHCP リレー（<code>ip helper-address</code>）、Cisco ルータの 3 つの役割、リース更新（T1／T2）、確認コマンド、APIPA を見たときの切り分けを扱います。NTP では、時刻をそろえる理由、ストラタム、<code>ntp server</code>／<code>ntp master</code> の設定と確認、ログのタイムスタンプとの関係を扱います。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/10_サーバーの基礎/06_DHCPとNTP（インフラを支えるネットワークサービス）.md</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>DHCP</strong> は端末に IP アドレス・ゲートウェイ・DNS などを <strong>自動で貸し出す</strong> 仕組みで、DISCOVER → OFFER → REQUEST → ACK（DORA）の 4 往復で決まります。<strong>NTP</strong> は機器の時刻を <strong>そろえる</strong> 仕組みで、ストラタムが小さいほど正確な時刻源に近く、16 は「同期していない」を表します。</p>
+    </div>
+
+    <p>このページは <a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a>（IP・ポート・DNS・NAT）を読んでいると理解しやすいです。設定例には、ネットワーク機器で広く使われる Cisco IOS（Cisco 社のルータ・スイッチの OS）のコマンドを使います。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>DHCP とは何か・なぜ必要か</h2>
+    <p><strong>DHCP（Dynamic Host Configuration Protocol）</strong> は、端末がネットワークに接続したときに、IP アドレスなどの設定を <strong>サーバから自動で受け取る</strong> 仕組みです。数百台の PC に手作業でアドレスを設定すると、手間がかかるうえ、アドレスの重複やゲートウェイ（ほかのネットワークへの出口となるルータ）の設定ミスが起きます。DHCP を使えば、これらを一元管理でき、設定ミスも減らせます。</p>
+
+    <h3 id="sec-1-1">1.1 DHCP で配布できる主な情報</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>情報</th><th>Cisco IOS の <code>ip dhcp pool</code> 内のコマンド</th></tr></thead>
+      <tbody>
+        <tr><td>IP アドレスとサブネットマスク</td><td><code>network 192.168.1.0 255.255.255.0</code></td></tr>
+        <tr><td>デフォルトゲートウェイ</td><td><code>default-router 192.168.1.1</code></td></tr>
+        <tr><td>DNS サーバ</td><td><code>dns-server 8.8.8.8</code></td></tr>
+        <tr><td>リース期間（アドレスを使える期間）</td><td><code>lease 7</code>（7 日間）</td></tr>
+        <tr><td>ドメイン名</td><td><code>domain-name example.com</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-2">1.2 DHCP で配布しないもの（よく間違える）</h3>
+    <ul>
+      <li><strong>クライアントの MAC アドレス</strong>：MAC アドレスは、NIC（ネットワークカード）に製造時に割り当てられた固有の値です。むしろ DHCP サーバは、クライアントの MAC アドレスを「誰に貸したか」の識別に使います。</li>
+      <li><strong>VLAN 番号</strong>：VLAN（1 台のスイッチの中を論理的に分けたネットワーク）は、スイッチのポート設定（<code>switchport access vlan 10</code> など）で決まります。端末はどの VLAN に所属しているかを意識せず、ポートに接続された VLAN の DHCP サーバ（またはリレー）からアドレスをもらいます。</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>DHCP の動作：DORA</h2>
+    <p>クライアントがアドレスを取得するときは、4 つのメッセージをやり取りします。頭文字をとって <strong>DORA</strong> と覚えます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="アドレスを持たない DHCP クライアントが、① DHCPDISCOVER を送信元 0.0.0.0:68、宛先 255.255.255.255:67 のブロードキャストで送り DHCP サーバを探す。② サーバ 192.168.1.1 が DHCPOFFER で 192.168.1.20 などを提案する。③ クライアントが DHCPREQUEST をブロードキャストで送り、そのアドレスを要求する。④ サーバが DHCPACK で承認し、クライアントはここで使用を開始する">
+      <defs>
+        <marker id="arw6106a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="30" y="14" width="190" height="54" rx="8" class="d-box"/>
+      <text x="125" y="38" text-anchor="middle" class="d-text-bold">DHCPクライアント</text>
+      <text x="125" y="58" text-anchor="middle" class="d-text-sub">（アドレスなし）</text>
+      <rect x="500" y="14" width="190" height="54" rx="8" class="d-box-accent"/>
+      <text x="595" y="38" text-anchor="middle" class="d-text-bold">DHCPサーバ</text>
+      <text x="595" y="58" text-anchor="middle" class="d-text-sub">192.168.1.1</text>
+      <path d="M125,68 L125,320" class="d-line-dash"/>
+      <path d="M595,68 L595,320" class="d-line-dash"/>
+
+      <text x="360" y="92" text-anchor="middle" class="d-text">① DHCPDISCOVER（ブロードキャスト）</text>
+      <text x="360" y="110" text-anchor="middle" class="d-text-sub">0.0.0.0:68 → 255.255.255.255:67「DHCPサーバはいませんか？」</text>
+      <path d="M125,120 L593,120" class="d-line" marker-end="url(#arw6106a)"/>
+
+      <text x="360" y="150" text-anchor="middle" class="d-text">② DHCPOFFER</text>
+      <text x="360" y="168" text-anchor="middle" class="d-text-sub">「192.168.1.20 を使えますよ（GW、DNS、リース期間）」</text>
+      <path d="M595,178 L127,178" class="d-line" marker-end="url(#arw6106a)"/>
+
+      <text x="360" y="208" text-anchor="middle" class="d-text">③ DHCPREQUEST（ブロードキャスト）</text>
+      <text x="360" y="226" text-anchor="middle" class="d-text-sub">「192.168.1.20 を使わせてください」</text>
+      <path d="M125,236 L593,236" class="d-line" marker-end="url(#arw6106a)"/>
+
+      <text x="360" y="266" text-anchor="middle" class="d-text">④ DHCPACK</text>
+      <text x="360" y="284" text-anchor="middle" class="d-text-sub">「承認します」→ クライアントはここで使用開始</text>
+      <path d="M595,294 L127,294" class="d-line" marker-end="url(#arw6106a)"/>
+    </svg>
+    <figcaption>図：DORA。OFFER は提案にすぎず、ACK を受け取って初めてアドレスを使い始める</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>順番</th><th>メッセージ</th><th>送信者</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>①</td><td>DHCPDISCOVER</td><td>クライアント</td><td>DHCP サーバを探す。宛先がわからないのでブロードキャスト（同じネットワーク全体への一斉送信）</td></tr>
+        <tr><td>②</td><td>DHCPOFFER</td><td>サーバ</td><td>割り当てられる IP アドレスなどを <strong>提案</strong> する</td></tr>
+        <tr><td>③</td><td>DHCPREQUEST</td><td>クライアント</td><td>提案されたアドレスを使いたいと <strong>要求</strong> する</td></tr>
+        <tr><td>④</td><td>DHCPACK</td><td>サーバ</td><td><strong>承認</strong>。これを受け取って、クライアントがアドレスを使い始める</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card">
+        <h4>なぜ ③ REQUEST が必要なのか</h4>
+        <p>同じネットワークに複数の DHCP サーバがあると、クライアントは複数の OFFER を受け取ることがあります。REQUEST をブロードキャストで送り「このサーバのこのアドレスを選んだ」と知らせることで、選ばれなかったサーバは提案したアドレスを取り消せます。</p>
+      </div>
+      <div class="card">
+        <h4>なぜ ④ ACK を受け取るまで使わないのか</h4>
+        <p>OFFER は「提案」にすぎず、まだ正式な割り当てではないからです。ACK で初めて貸し出しが確定します。サーバが拒否する場合は <strong>DHCPNAK</strong> を返します。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>DHCPDISCOVER のアドレスとポート</h2>
+    <p>DHCPDISCOVER の送信元・宛先は、次の組み合わせになります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>値</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>送信元 IP</td><td>0.0.0.0</td><td>自分のアドレスがまだないため</td></tr>
+        <tr><td>宛先 IP</td><td>255.255.255.255</td><td>DHCP サーバの場所（アドレス）がわからないため、ローカルネットワーク全体へブロードキャスト</td></tr>
+        <tr><td>送信元 MAC</td><td>自分の MAC</td><td></td></tr>
+        <tr><td>宛先 MAC</td><td>FFFF.FFFF.FFFF</td><td>L2（データリンク層）のブロードキャスト</td></tr>
+        <tr><td>トランスポート</td><td>UDP</td><td>アドレスがないと TCP の接続を張れない</td></tr>
+        <tr><td>送信元ポート</td><td>68（クライアント）</td><td></td></tr>
+        <tr><td>宛先ポート</td><td>67（サーバ）</td><td></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>255.255.255.255（限定ブロードキャスト）はルータを越えません。</strong> これが、次の章の DHCP リレーが必要になる理由です。</p>
+    <div class="callout warn">
+      <p class="callout-title">紛らわしいアドレスの意味</p>
+      <ul>
+        <li><strong>169.254.x.x</strong>：DHCP でアドレスを取得できなかったときに OS が自分で付ける APIPA アドレス（<a href="#sec-8">8 章</a>）。DISCOVER の送信元ではありません。</li>
+        <li><strong>127.0.0.1</strong>：自分自身を表すループバックアドレス。ネットワークへ送信するパケットには使いません。</li>
+        <li><strong>宛先＝DHCP サーバの IP</strong>：クライアントはサーバのアドレスを知らないので、直接は送れません。</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-3-1">3.1 DHCP のポート番号と TCP/UDP</h3>
+    <ul>
+      <li>DHCP は <strong>UDP</strong> を使い、<strong>サーバ側 67、クライアント側 68</strong> の 2 つのポートを使います（BOOTP という前身のプロトコルから引き継いだ番号）。</li>
+      <li>TCP は使えません。TCP は送信前に 3 ウェイハンドシェイクで接続を確立する必要があり、アドレスを持たないクライアントにはできないからです。</li>
+      <li>ACL（通信を許可・拒否するルールの一覧。<a href="60-8_ACL.html">60-8 ACL</a>）で DHCP を許可するときや、パケットキャプチャを読むときに、この知識が必要です。</li>
+    </ul>
+<pre><code>! 例：インターフェースのACLでDHCPのクライアント→サーバ方向を通す
+access-list 100 permit udp any eq 68 any eq 67</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>DHCP リレー（ip helper-address）</h2>
+    <p>DHCP サーバは、本社のデータセンターなど、クライアントとは別のネットワークに置かれることがよくあります。しかし DHCPDISCOVER は 255.255.255.255 宛てのブロードキャストなので、<strong>ルータはそれを別のネットワークへ転送しません</strong>。</p>
+    <p>そこで、ルータの <strong>クライアントが接続されている側のインターフェース</strong> に <code>ip helper-address &lt;DHCPサーバのIP&gt;</code> を設定します。ルータは受け取った DHCP のブロードキャストを <strong>ユニキャスト（1 対 1 の通信）に変換して DHCP サーバへ中継</strong> します。この機能を <strong>DHCP リレーエージェント</strong> と呼びます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="VLAN10（192.168.10.0/24）にいるアドレスなしの PC が DISCOVER を 255.255.255.255 宛てのブロードキャストで送る。ルータ R1 の G0/0（192.168.10.1）には ip helper-address 10.1.1.100 が設定されており、R1 は DISCOVER をユニキャストに変えて DHCP サーバ 10.1.1.100 へ中継する。送信元は G0/0 の IP 192.168.10.1 で、サーバはこのアドレスを見て 192.168.10.0/24 のプールから選ぶ。サーバの OFFER はユニキャストで R1 に返り、R1 が PC へ渡す">
+      <defs>
+        <marker id="arw6106b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="40" width="170" height="70" rx="8" class="d-box"/>
+      <text x="95" y="66" text-anchor="middle" class="d-text-bold">PC（アドレスなし）</text>
+      <text x="95" y="90" text-anchor="middle" class="d-text-sub">VLAN10 192.168.10.0/24</text>
+
+      <rect x="255" y="30" width="210" height="90" rx="8" class="d-box-accent"/>
+      <text x="360" y="54" text-anchor="middle" class="d-text-bold">R1</text>
+      <text x="360" y="76" text-anchor="middle" class="d-text-sub">G0/0: 192.168.10.1</text>
+      <text x="360" y="98" text-anchor="middle" class="d-text-sub">ip helper-address 10.1.1.100</text>
+
+      <rect x="540" y="40" width="170" height="70" rx="8" class="d-box"/>
+      <text x="625" y="66" text-anchor="middle" class="d-text-bold">DHCPサーバ</text>
+      <text x="625" y="90" text-anchor="middle" class="d-text-sub">10.1.1.100</text>
+
+      <path d="M180,65 L253,65" class="d-line" marker-end="url(#arw6106b)"/>
+      <path d="M465,65 L538,65" class="d-line" marker-end="url(#arw6106b)"/>
+      <path d="M538,95 L467,95" class="d-line-dash" marker-end="url(#arw6106b)"/>
+      <path d="M253,95 L182,95" class="d-line-dash" marker-end="url(#arw6106b)"/>
+
+      <text x="95" y="150" text-anchor="middle" class="d-text-sub">① DISCOVER</text>
+      <text x="95" y="168" text-anchor="middle" class="d-text-sub">（ブロードキャスト</text>
+      <text x="95" y="186" text-anchor="middle" class="d-text-sub">255.255.255.255）</text>
+      <text x="360" y="150" text-anchor="middle" class="d-text-sub">② ユニキャストに変えて中継</text>
+      <text x="360" y="168" text-anchor="middle" class="d-text-sub">送信元：192.168.10.1（G0/0 の IP）</text>
+      <text x="625" y="150" text-anchor="middle" class="d-text-sub">③ 送信元を見て</text>
+      <text x="625" y="168" text-anchor="middle" class="d-text-sub">192.168.10.0/24 の</text>
+      <text x="625" y="186" text-anchor="middle" class="d-text-sub">プールから選ぶ</text>
+      <text x="360" y="230" text-anchor="middle" class="d-text">④ OFFER（ユニキャスト）は点線の向きで R1 経由で PC へ</text>
+    </svg>
+    <figcaption>図：ブロードキャストはルータを越えないので、クライアント側インターフェースの ip helper-address が中継する</figcaption>
+    </figure>
+
+<pre><code>R1(config)# interface GigabitEthernet0/0
+R1(config-if)# description to VLAN10 clients
+R1(config-if)# ip address 192.168.10.1 255.255.255.0
+R1(config-if)# ip helper-address 10.1.1.100</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">ポイント</p>
+      <ul>
+        <li>設定する場所は <strong>クライアント側（ブロードキャストを受け取る側）</strong> のインターフェース。サーバ側ではありません。</li>
+        <li>指定するのは <strong>DHCP サーバの IP アドレスそのもの</strong>。DNS でサーバ名を調べる機能ではありません。</li>
+        <li>リレーするとき、ルータは受信インターフェースのアドレス（<strong>giaddr</strong>）をメッセージに入れます。サーバはそれを見て、どのサブネット用のプールから貸し出すかを決めます。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>Cisco ルータの 3 つの DHCP の役割</h2>
+    <p>Cisco ルータは、DHCP に関して次の 3 つのどの役割にもなれます。コマンドと役割の対応はよく問われます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>意味</th><th>コマンド</th><th>設定場所</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DHCP サーバ</strong></td><td>ルータ自身がアドレスを貸し出す</td><td><code>ip dhcp pool &lt;名前&gt;</code>（＋<code>ip dhcp excluded-address</code>）</td><td>グローバル設定</td></tr>
+        <tr><td><strong>DHCP リレー</strong></td><td>ブロードキャストを別ネットワークのサーバへ中継</td><td><code>ip helper-address &lt;サーバIP&gt;</code></td><td>クライアント側インターフェース</td></tr>
+        <tr><td><strong>DHCP クライアント</strong></td><td>インターフェースが DHCP でアドレスを取得する</td><td><code>ip address dhcp</code></td><td>インターフェース（例：ISP 側）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-1">5.1 DHCP サーバの設定例</h3>
+<pre><code>R1(config)# ip dhcp excluded-address 192.168.1.1 192.168.1.10
+R1(config)# ip dhcp pool LAN
+R1(dhcp-config)# network 192.168.1.0 255.255.255.0
+R1(dhcp-config)# default-router 192.168.1.1
+R1(dhcp-config)# dns-server 8.8.8.8
+R1(dhcp-config)# lease 7
+R1(dhcp-config)# exit</code></pre>
+    <ul>
+      <li><code>ip dhcp excluded-address 192.168.1.1 192.168.1.10</code> は、<strong>192.168.1.1〜192.168.1.10 をクライアントへの割り当て対象から除外</strong> します。ルータ自身（デフォルトゲートウェイ）、サーバ、プリンタなど、手動で設定するアドレスと重複しないようにするためです。</li>
+      <li><code>excluded-address</code> は <strong>プールの外（グローバル設定モード）</strong> で設定します。プールの中ではありません。</li>
+      <li>割り当てる範囲は <code>network</code> コマンドで指定します。excluded-address は「この範囲だけ割り当てる」という意味ではなく、<strong>逆に除外</strong> です。</li>
+      <li><code>lease 7</code> はリース期間 7 日（Cisco の既定は 1 日）。<code>lease 0 8</code> なら 0 日 8 時間です。</li>
+    </ul>
+
+    <h3 id="sec-5-2">5.2 DHCP クライアントの設定例（ISP 側インターフェース）</h3>
+<pre><code>R1(config)# interface GigabitEthernet0/1
+R1(config-if)# ip address dhcp
+R1(config-if)# no shutdown
+
+R1# show ip interface brief
+Interface              IP-Address      OK? Method Status                Protocol
+GigabitEthernet0/0     192.168.1.1     YES manual up                    up
+GigabitEthernet0/1     203.0.113.25    YES DHCP   up                    up</code></pre>
+    <p><code>Method</code> 列が <code>DHCP</code> になっていれば、DHCP でアドレスを取得しています。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>リース期間と更新（T1 / T2）</h2>
+    <p>DHCP のアドレスは「永久に与える」のではなく、<strong>リース期間</strong> の間だけ「貸し出す」ものです。使われなくなったアドレスは期限切れで回収され、別の端末に再利用できます。</p>
+    <p>クライアントは期限が切れる前に自動的に更新するので、通常は同じアドレスを使い続けられます。PC を再起動しなくても、リース期間の途中で自動で更新します。</p>
+    <ol class="steps">
+      <li><strong>リース開始</strong>：ACK を受け取ってアドレスを使い始めます。</li>
+      <li><strong>50% 経過（T1）</strong>：貸してくれたサーバへ、ユニキャストで DHCPREQUEST（更新）を送ります。</li>
+      <li><strong>87.5% 経過（T2）</strong>：T1 で更新できなかったら、どのサーバでもよいのでブロードキャストで DHCPREQUEST を送ります。</li>
+      <li><strong>100%（期限切れ）</strong>：アドレスを使えなくなり、DISCOVER からやり直します。</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>タイミング</th><th>名前</th><th>動作</th></tr></thead>
+      <tbody>
+        <tr><td>50% 経過</td><td>T1（更新 / Renewal）</td><td>アドレスを貸してくれた <strong>サーバに直接（ユニキャスト）</strong> 更新を要求</td></tr>
+        <tr><td>87.5% 経過</td><td>T2（再バインド / Rebinding）</td><td>T1 で更新できなかった場合、<strong>どのサーバでもよいのでブロードキャスト</strong> で要求</td></tr>
+        <tr><td>100%</td><td>期限切れ</td><td>アドレスを使えなくなる。DISCOVER からやり直し</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>最初に更新を要求するのは 50%（T1）</strong> です。87.5%（T2）は「T1 で失敗したときの 2 回目のチャンス」です。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>DHCP の確認コマンド</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>表示内容</th></tr></thead>
+      <tbody>
+        <tr><td><code>show ip dhcp binding</code></td><td>誰（MAC アドレス / クライアント ID）に、どの IP アドレスを、いつまで貸しているか</td></tr>
+        <tr><td><code>show ip dhcp pool</code></td><td>プールの設定と統計（アドレス総数、使用中の数など）。個々のクライアントは表示しない</td></tr>
+        <tr><td><code>show ip dhcp conflict</code></td><td>貸そうとしたアドレスがすでに使われていた（重複していた）記録</td></tr>
+        <tr><td><code>show arp</code></td><td>IP アドレスと MAC アドレスの対応（ARP テーブル）。DHCP の貸し出し状況ではない</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>R1# show ip dhcp binding
+Bindings from all pools not associated with VRF:
+IP address          Client-ID/              Lease expiration        Type
+                    Hardware address/
+                    User name
+192.168.1.11        0100.5056.a1b2.c3       Oct 25 2026 10:15 AM    Automatic
+192.168.1.12        0100.5056.d4e5.f6       Oct 25 2026 10:18 AM    Automatic</code></pre>
+<pre><code>R1# show ip dhcp pool
+
+Pool LAN :
+ Utilization mark (high/low)    : 100 / 0
+ Subnet size (first/next)       : 0 / 0
+ Total addresses                : 254
+ Leased addresses               : 2
+ Pending event                  : none
+ 1 subnet is currently in the pool :
+ Current index        IP address range                    Leased addresses
+ 192.168.1.13         192.168.1.1      - 192.168.1.254     2</code></pre>
+<pre><code>R1# show ip dhcp conflict
+IP address        Detection method   Detection time          VRF
+192.168.1.15      Ping               Oct 18 2026 09:02 AM</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">重複検出の仕組みと覚え方</p>
+      <p>Cisco IOS の DHCP サーバは、アドレスを貸す前にそのアドレスへ ping を送り、応答があれば「誰かが手動で使っている」と判断します。そのアドレスは conflict に記録して貸し出しません。覚え方は「<strong>binding＝誰に何を貸したか、pool＝プールの使用状況、conflict＝重複</strong>」です。</p>
+    </div>
+
+
+    <h2 id="sec-8"><span class="num">8.</span>APIPA（169.254.0.0/16）とトラブルシューティング</h2>
+    <p>Windows の PC で <code>ipconfig</code> を実行して、IP アドレスが <strong>169.254.x.x</strong> になっていたら、<strong>DHCP サーバからアドレスを取得できなかった</strong> ことを示します。</p>
+<pre><code>C:\&gt; ipconfig
+
+イーサネット アダプター イーサネット:
+   自動構成 IPv4 アドレス. . . . . . . : 169.254.10.20
+   サブネット マスク . . . . . . . . . : 255.255.0.0
+   デフォルト ゲートウェイ . . . . . . :</code></pre>
+    <ul>
+      <li>DHCP に失敗すると、OS が <strong>169.254.0.0/16</strong> から自動でアドレスを付けます。これを <strong>APIPA</strong>（Automatic Private IP Addressing、リンクローカルアドレス）と呼びます。</li>
+      <li>DHCP サーバが配るアドレスではありません。</li>
+      <li>手動で設定することも技術的には可能ですが、この範囲のアドレスは通常「自動設定の失敗」を示します。</li>
+      <li><strong>IPv4</strong> のアドレスです（IPv6 のリンクローカルは <code>fe80::/10</code>）。</li>
+      <li>デフォルトゲートウェイが設定されないため、<strong>同じネットワーク内の、同じく APIPA の端末同士としか通信できません</strong>。</li>
+    </ul>
+    <h3 id="sec-8-1">8.1 APIPA を見たときの確認手順</h3>
+    <ol class="steps">
+      <li>ケーブル・スイッチポートの状態（物理層、<code>show interfaces status</code>）</li>
+      <li>スイッチポートの VLAN 設定（正しい VLAN に所属しているか）</li>
+      <li>DHCP サーバの状態（サービスが動いているか、プールが枯渇していないか：<code>show ip dhcp pool</code>）</li>
+      <li>サーバが別ネットワークなら、ルータの <code>ip helper-address</code> の設定（設定場所・サーバ IP が正しいか）</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>DHCP のひっかけポイント・よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td>DORA の順番で REQUEST と OFFER を入れ替えた並び</td><td>DISCOVER → OFFER → REQUEST → ACK。クライアントが使い始めるのは ACK を受け取ってから</td></tr>
+        <tr><td><code>ip helper-address</code> はルータを DHCP サーバにする設定</td><td>サーバにするのは <code>ip dhcp pool</code></td></tr>
+        <tr><td><code>ip helper-address</code> はインターフェースが DHCP でアドレスを取得する設定</td><td>それは <code>ip address dhcp</code></td></tr>
+        <tr><td><code>ip helper-address</code> に DNS 名を書いてサーバを探す</td><td>DHCP サーバの IP アドレスを直接指定する</td></tr>
+        <tr><td><code>excluded-address</code> は「その範囲だけ割り当てる」設定</td><td>逆に除外する。割り当て範囲は <code>network</code>。通信の拒否は ACL の役割で、DHCP サーバのアドレス登録でもない</td></tr>
+        <tr><td>DHCP でクライアントの MAC アドレスや VLAN 番号も配る</td><td>MAC は NIC 固有の値、VLAN 番号はスイッチポートで決まる。どちらも配布しない</td></tr>
+        <tr><td>最初のリース更新は 87.5%。または期限切れ後や再起動時だけ更新する</td><td>最初は 50%（T1）でユニキャスト。87.5% は T2 で、ブロードキャストで任意のサーバに要求する</td></tr>
+        <tr><td>DISCOVER の宛先は DHCP サーバの IP。送信元は 169.254.x.x や 127.0.0.1</td><td>送信元は 0.0.0.0、宛先は 255.255.255.255。サーバの IP は知らないので宛先にならない</td></tr>
+        <tr><td>DHCP は TCP、または 53 番や 69 番</td><td>UDP 67（サーバ）/ 68（クライアント）。TCP は使えない。53 は DNS、69 は TFTP</td></tr>
+        <tr><td><code>show ip dhcp pool</code> で個々のクライアントの対応が見える</td><td>見えるのは binding。conflict は重複の記録、<code>show arp</code> は ARP テーブル</td></tr>
+        <tr><td>169.254.x.x は「正常に取得した」アドレス、または IPv6</td><td>DHCP 失敗のサイン。IPv4 のアドレス</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-9-1">9.1 DHCP で押さえておくポイント</h3>
+    <ul>
+      <li>DORA（DISCOVER → OFFER → REQUEST → ACK）。DISCOVER は 0.0.0.0 → 255.255.255.255 のブロードキャスト。</li>
+      <li>ブロードキャストはルータを越えない → 別ネットワークのサーバには <strong>クライアント側インターフェースに <code>ip helper-address</code></strong>。</li>
+      <li>サーバ＝<code>ip dhcp pool</code>、リレー＝<code>ip helper-address</code>、クライアント＝<code>ip address dhcp</code>。</li>
+      <li><code>ip dhcp excluded-address</code> はグローバル設定で、割り当てから <strong>除外</strong> する範囲。</li>
+      <li>配布する情報：IP／マスク、デフォルトゲートウェイ（default-router）、DNS サーバ（dns-server）、リース期間（lease）。</li>
+      <li>リース更新：T1＝50%（ユニキャストで元のサーバへ）、T2＝87.5%（ブロードキャスト）。</li>
+      <li>UDP、サーバ 67 / クライアント 68。</li>
+      <li>確認：binding（貸出先）、pool（使用状況）、conflict（重複）。</li>
+      <li>169.254.0.0/16（APIPA）＝DHCP 失敗。</li>
+    </ul>
+
+    <h2 id="sec-10"><span class="num">10.</span>NTP：なぜ時刻同期が必要か</h2>
+    <p><strong>NTP（Network Time Protocol）</strong> は、ネットワーク機器の <strong>時刻を同期</strong> させるプロトコルです（<strong>UDP 123</strong>）。</p>
+    <p>機器ごとに時刻がずれていると、障害時に複数の機器のログを突き合わせても、<strong>どの出来事が先に起きたのか</strong> がわからなくなります。たとえば「R1 のインターフェースがダウンした」ログと「SW1 で STP（スイッチ間のループを防ぐ仕組み）のトポロジ変更が起きた」ログのどちらが原因でどちらが結果かは、時刻が正しくそろっていないと判断できません。そのほか、証明書の有効期限の確認、認証（時刻を使うもの）、課金・監査ログなどにも正確な時刻が必要です。</p>
+    <p>時刻を配る側を <strong>NTP サーバ</strong>、受け取る側を <strong>NTP クライアント</strong> と呼びます。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>ストラタム（stratum）</h2>
+    <p>NTP は <strong>階層構造</strong> になっていて、その階層を <strong>ストラタム</strong> という値で表します。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="ストラタム0は原子時計や GPS などの正確な時刻源でネットワーク機器ではない。ストラタム1は時刻源に直接つながる NTP サーバA。ストラタム2は A から取得する NTP サーバB 10.1.1.1。ストラタム3は B から取得するルータR1で、show ntp status では stratum 3 と表示される。ストラタム4は R1 から取得するスイッチSW1。ストラタム16は同期していない状態を表す">
+      <defs>
+        <marker id="arw6106c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="75" y="42" text-anchor="middle" class="d-text-bold">ストラタム0</text>
+      <rect x="160" y="16" width="200" height="40" rx="8" class="d-box-good"/>
+      <text x="260" y="42" text-anchor="middle" class="d-text">原子時計 / GPS</text>
+      <text x="375" y="42" class="d-text-sub">正確な時刻源（ネットワーク機器ではない）</text>
+
+      <text x="75" y="102" text-anchor="middle" class="d-text-bold">ストラタム1</text>
+      <rect x="160" y="76" width="200" height="40" rx="8" class="d-box"/>
+      <text x="260" y="102" text-anchor="middle" class="d-text">NTPサーバA</text>
+      <text x="375" y="102" class="d-text-sub">時刻源に直接つながるサーバ</text>
+
+      <text x="75" y="162" text-anchor="middle" class="d-text-bold">ストラタム2</text>
+      <rect x="160" y="136" width="200" height="40" rx="8" class="d-box"/>
+      <text x="260" y="162" text-anchor="middle" class="d-text">NTPサーバB 10.1.1.1</text>
+      <text x="375" y="162" class="d-text-sub">A から取得</text>
+
+      <text x="75" y="222" text-anchor="middle" class="d-text-bold">ストラタム3</text>
+      <rect x="160" y="196" width="200" height="40" rx="8" class="d-box-accent"/>
+      <text x="260" y="222" text-anchor="middle" class="d-text">ルータR1</text>
+      <text x="375" y="222" class="d-text-sub">B から取得（show ntp status: stratum 3）</text>
+
+      <text x="75" y="282" text-anchor="middle" class="d-text-bold">ストラタム4</text>
+      <rect x="160" y="256" width="200" height="40" rx="8" class="d-box"/>
+      <text x="260" y="282" text-anchor="middle" class="d-text">スイッチSW1</text>
+      <text x="375" y="282" class="d-text-sub">R1 から取得</text>
+
+      <path d="M260,56 L260,74" class="d-line" marker-end="url(#arw6106c)"/>
+      <path d="M260,116 L260,134" class="d-line" marker-end="url(#arw6106c)"/>
+      <path d="M260,176 L260,194" class="d-line" marker-end="url(#arw6106c)"/>
+      <path d="M260,236 L260,254" class="d-line" marker-end="url(#arw6106c)"/>
+      <text x="360" y="320" text-anchor="middle" class="d-text-sub">…　ストラタム16 ＝ 同期していない（unsynchronized）</text>
+    </svg>
+    <figcaption>図：時刻源から 1 段離れるごとにストラタムが 1 ずつ大きくなる</figcaption>
+    </figure>
+
+    <ul>
+      <li><strong>値が小さいほど、原子時計や GPS などの正確な時刻源に近い</strong>。</li>
+      <li>時刻源（ストラタム 0）に直接つながるサーバがストラタム 1。</li>
+      <li>NTP サーバを <strong>1 段経由するごとに 1 ずつ大きくなる</strong>。つまり、自分のストラタム＝同期先のストラタム＋1。</li>
+      <li><strong>ストラタム 16 は「同期していない」</strong> 状態を表す（最も信頼性が高い、ではない）。</li>
+      <li>ストラタムが小さいサーバほど正確な時刻を持つと判断され、同期先として優先されます。</li>
+      <li>ストラタムは時刻源からの距離（階層）であり、<strong>暗号化の強さとは関係ありません</strong>（NTP の認証は別の機能）。</li>
+    </ul>
+
+    <h2 id="sec-12"><span class="num">12.</span>NTP の設定</h2>
+<pre><code>R1(config)# ntp server 10.1.1.1          ! 10.1.1.1 から時刻を取得（R1はNTPクライアント）
+R1(config)# clock timezone JST 9         ! タイムゾーン（表示用）
+
+SW1(config)# ntp server 192.168.1.1      ! R1から時刻を取得
+
+R2(config)# ntp master 3                 ! R2自身を時刻源（NTPサーバ）にする（ストラタム3）</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>モード</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>ntp server &lt;IP&gt;</code></td><td>グローバル設定</td><td>このルータが <strong>NTP クライアント</strong> として、指定したサーバから時刻を取得・同期する</td></tr>
+        <tr><td><code>ntp master [ストラタム]</code></td><td>グローバル設定</td><td>このルータを信頼できる時刻源（NTP サーバ）にする（外部の時刻源がない場合など）</td></tr>
+        <tr><td><code>clock set 10:00:00 1 April 2026</code></td><td><strong>特権 EXEC</strong></td><td>時刻を手動で設定する</td></tr>
+        <tr><td><code>logging host &lt;IP&gt;</code></td><td>グローバル設定</td><td>Syslog（ログを別のサーバへ送る仕組み）の送信先（NTP とは無関係）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">ntp server を設定したルータの役割</p>
+      <p>そのルータは 10.1.1.1 に対しては <strong>クライアント</strong> です。「10.1.1.1 に時刻を提供する」のではありません。ただし同期した後は、そのルータ自身もほかの機器（上の例の SW1 など）へ時刻を提供できます（<strong>クライアント兼サーバ</strong>）。</p>
+    </div>
+
+    <h2 id="sec-13"><span class="num">13.</span>NTP の確認</h2>
+<pre><code>R1# show ntp status
+Clock is synchronized, stratum 3, reference is 10.1.1.1
+nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**10
+reference time is E9A1B2C3.1A2B3C4D (10:15:30.102 JST Sun Oct 18 2026)
+clock offset is 0.5000 msec, root delay is 2.00 msec
+...</code></pre>
+    <ul>
+      <li><code>Clock is synchronized</code> → 同期済み</li>
+      <li><code>stratum 3</code> → <strong>このルータ自身</strong> のストラタム</li>
+      <li><code>reference is 10.1.1.1</code> → 同期先</li>
+    </ul>
+    <p>このルータがストラタム 3 なら、同期先の 10.1.1.1 は <strong>ストラタム 2</strong> です（自分＝サーバ＋1）。このルータから時刻を取得する機器はストラタム 4 になります。</p>
+<pre><code>R1# show ntp associations
+
+  address         ref clock       st   when   poll reach  delay  offset   disp
+*~10.1.1.1        192.0.2.1        2     45     64   377  2.000   0.500  1.000
+ * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured</code></pre>
+    <ul>
+      <li><code>*</code> が付いた行が、実際の同期先（sys.peer）です。</li>
+      <li><code>st</code> 列で、同期先の候補それぞれのストラタムを確認できます（ここでは 10.1.1.1 が 2）。</li>
+    </ul>
+
+    <h2 id="sec-14"><span class="num">14.</span>NTP とログのタイムスタンプ</h2>
+    <p>NTP で時刻をそろえても、それだけではログに日時は付きません。ログに日時を付けるのは <code>service timestamps log datetime msec</code> です（66_可観測性の「Syslog（ログ転送の標準プロトコル）」のノートで詳しく扱っています）。<strong>「NTP で正しい時刻」＋「service timestamps でログに日時を付ける」</strong> の両方がそろって、複数機器のログを時系列で突き合わせられます。</p>
+
+    <h2 id="sec-15"><span class="num">15.</span>NTP のひっかけポイント・よくある誤解</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td>時刻同期は SNMP・Syslog・TFTP で行う</td><td>時刻同期は NTP。SNMP は監視、Syslog はログ送信、TFTP はファイル転送</td></tr>
+        <tr><td><code>ntp server 10.1.1.1</code> は「10.1.1.1 に時刻を提供する」</td><td>「10.1.1.1 <strong>から</strong> 時刻を取得する（自分はクライアント）」。自分をサーバにするのは <code>ntp master</code></td></tr>
+        <tr><td>ログの送信先や時刻の手動設定も ntp コマンドで行う</td><td>ログの送信先は <code>logging host</code>、時刻の手動設定は特権 EXEC の <code>clock set</code></td></tr>
+        <tr><td>ストラタムは大きいほど正確</td><td>小さいほど正確</td></tr>
+        <tr><td>ストラタム 16 は最も信頼性が高い</td><td>「同期していない」状態</td></tr>
+        <tr><td>ストラタムは暗号化の強さ</td><td>時刻源からの距離（階層）</td></tr>
+        <tr><td><code>show ntp status</code> の stratum は同期先の値</td><td><strong>自分自身</strong> の値。同期先はそれより 1 小さい</td></tr>
+        <tr><td><code>ntp server</code> だけでログに日時が付く</td><td><code>service timestamps</code> が必要</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-15-1">15.1 NTP で押さえておくポイント</h3>
+    <ul>
+      <li>NTP は UDP 123。時刻をそろえる目的は、ログの時系列の突き合わせ。</li>
+      <li><code>ntp server &lt;IP&gt;</code> でクライアント、<code>ntp master</code> で時刻源。同期後はクライアント兼サーバになれる。</li>
+      <li>ストラタム：小さいほど正確、1 段ごとに＋1、16＝非同期。</li>
+      <li>確認：<code>show ntp status</code>（自分のストラタム・同期状態・同期先）、<code>show ntp associations</code>（同期先候補とそのストラタム）。</li>
+    </ul>
+
+    <h2 id="sec-16"><span class="num">16.</span>まとめ</h2>
+    <ul>
+      <li>DHCP は IP／マスク・ゲートウェイ・DNS・リース期間などを自動で貸し出す。MAC アドレスや VLAN 番号は配らない。</li>
+      <li>DORA の 4 往復で決まり、ACK で使用開始。DISCOVER は 0.0.0.0:68 → 255.255.255.255:67 の UDP ブロードキャスト。</li>
+      <li>ブロードキャストはルータを越えないので、クライアント側インターフェースに <code>ip helper-address</code>。</li>
+      <li>リース更新は T1＝50%（ユニキャスト）、T2＝87.5%（ブロードキャスト）。169.254.x.x は DHCP 失敗のサイン。</li>
+      <li>NTP（UDP 123）で時刻をそろえ、<code>service timestamps</code> でログに日時を付けると、複数機器のログを時系列で突き合わせられる。</li>
+      <li>ストラタムは小さいほど正確、1 段ごとに＋1、16 は非同期。</li>
+    </ul>
+    <p>次の <a href="10-7_非機能要件を支えるサーバー.html">10-7 非機能要件を支えるサーバー</a> では、DHCP・NTP に加えて DNS・ログ・監視・バックアップなど、運用を支えるほかのサーバーを見渡します。</p>
+
+    <h2 id="sec-quiz"><span class="num">17.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. DHCP でアドレスを取得するときの 4 つのメッセージを順番に答えてください。クライアントがアドレスを使い始めるのはどの時点ですか？</summary>
+      <div class="body"><p>DISCOVER → OFFER → REQUEST → ACK（DORA）です。OFFER は提案にすぎないので、ACK を受け取った時点で使い始めます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. DHCPDISCOVER の送信元 IP・宛先 IP・プロトコルとポートは？</summary>
+      <div class="body"><p>送信元は 0.0.0.0（まだアドレスがない）、宛先は 255.255.255.255（サーバの場所を知らないのでブロードキャスト）です。プロトコルは UDP で、送信元ポート 68、宛先ポート 67 です。アドレスがないと TCP の接続を張れないため UDP を使います。</p></div>
+    </details>
+    <details>
+      <summary>Q3. DHCP サーバが別のネットワークにあります。ルータのどこに、何を設定しますか？</summary>
+      <div class="body"><p>クライアントが接続されている側（ブロードキャストを受け取る側）のインターフェースに、<code>ip helper-address &lt;DHCPサーバのIP&gt;</code> を設定します。ルータはブロードキャストをユニキャストに変えてサーバへ中継し、giaddr（受信インターフェースのアドレス）を入れるので、サーバはどのプールから貸すかを決められます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. <code>ip dhcp excluded-address 192.168.1.1 192.168.1.10</code> の意味と、設定するモードは？</summary>
+      <div class="body"><p>192.168.1.1〜192.168.1.10 を割り当て対象から <strong>除外</strong> する設定です（ゲートウェイやサーバなど手動設定のアドレスと重ならないようにするため）。プールの中ではなく、グローバル設定モードで設定します。割り当て範囲そのものは <code>network</code> で指定します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. リース期間 8 日のクライアントが、最初に更新を要求するのはいつ、どの方法ですか？</summary>
+      <div class="body"><p>50% の T1（4 日経過時）に、貸してくれたサーバへユニキャストで DHCPREQUEST を送ります。失敗したら 87.5% の T2（7 日経過時）にブロードキャストで任意のサーバへ要求し、それでもだめなら期限切れで DISCOVER からやり直します。</p></div>
+    </details>
+    <details>
+      <summary>Q6. PC の <code>ipconfig</code> で 169.254.10.20 と表示されました。何が起きていて、何を確認しますか？</summary>
+      <div class="body"><p>DHCP でアドレスを取得できず、OS が APIPA アドレスを自分で付けた状態です。ケーブル・スイッチポートの状態、ポートの VLAN 設定、DHCP サーバの状態（サービス稼働・プール枯渇）、別ネットワークならルータの <code>ip helper-address</code> の順に確認します。</p></div>
+    </details>
+    <details>
+      <summary>Q7. <code>show ntp status</code> に <code>stratum 3, reference is 10.1.1.1</code> と出ました。10.1.1.1 と、このルータから時刻を取る機器のストラタムは？</summary>
+      <div class="body"><p>表示の stratum 3 はこのルータ自身の値です。同期先の 10.1.1.1 は 1 小さいストラタム 2、このルータから時刻を取る機器は 1 大きいストラタム 4 になります。</p></div>
+    </details>
+    <details>
+      <summary>Q8. 全機器に <code>ntp server</code> を設定したのに、ログに日時が付きません。何が足りませんか？</summary>
+      <div class="body"><p><code>service timestamps log datetime msec</code> が必要です。NTP は時刻をそろえるだけで、ログに日時を付けるのは service timestamps の役割です。両方そろって、複数機器のログを時系列で突き合わせられます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：docs/61_サーバー・インフラ/10_サーバーの基礎/06_DHCPとNTP（インフラを支えるネットワークサービス）.md</li>
+      <li>関連ページ：<a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a>、<a href="10-7_非機能要件を支えるサーバー.html">10-7 非機能要件を支えるサーバー</a>、<a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a>、<a href="60-8_ACL.html">60-8 ACL</a></li>
+      <li>関連ノート（HTML なし）：66_可観測性の「Syslog（ログ転送の標準プロトコル）」（ログの重大度・転送先・タイムスタンプ）、「SNMP（ネットワーク機器のメトリクス収集）」（ネットワーク機器の監視）、「ログ集約基盤」（時刻のそろったログを 1 か所に集める）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-5_ネットワークの基本.html"><span class="lbl">← 前のページ</span>ネットワークの基本</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-7_非機能要件を支えるサーバー.html"><span class="lbl">次のページ →</span>非機能要件を支えるサーバー</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仮想化とクラウド｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 サーバーの基礎 › 仮想化とクラウド</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 サーバーの基礎</span>
+      <h1>仮想化とクラウド</h1>
+      <p class="lead">1 台の物理サーバーを複数の「仮想的なコンピューター」に区切る <strong>仮想化</strong> と、それを巨大な規模でインターネット越しに貸す <strong>クラウド</strong> の仕組みを解説します。ハイパーバイザ（Type 1 / Type 2）、VM とコンテナの違い、IaaS / PaaS / SaaS / FaaS と責任共有モデル、オンプレミスとクラウドの比較と「クラウドの裏側」、主要クラウドの対応サービス、リージョンと AZ、VPS という選択肢までを扱い、発展として仮想スイッチと VRF、補足としてデータセンターの構成も整理します。</p>
+      <p class="meta">もとにしたノート：10_サーバーの基礎/03_仮想化とクラウド、10_サーバーの基礎/仮想化の仕組み（直也テック）、10_サーバーの基礎/クラウド vs オンプレ。何で動いている？AWS・GCP・Azureの裏側の技術を徹底解説（IT技術屋のボヤキ）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>仮想化は <strong>「1 軒の大きな家をシェアハウスに区切る」</strong> 技術です。物理サーバー 1 台は性能が高すぎて、アプリ 1 つでは 10% くらいしか使い切れないことがよくあります。そこで 1 台を複数の仮想マシンに区切って貸し出すのが仮想化で、その大家さんを API で操作でき、使った分だけ払えるようにしたのが <strong>クラウド</strong> です。クラウドは「抽象化」、オンプレは「制御」。どちらが新しい・古いではなく、目的に応じて選びます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>仮想化は「シェアハウス」</h2>
+    <ul>
+      <li><strong>仮想マシン（VM: Virtual Machine）</strong>：ソフトウェアで作られた「部屋」。中で別々の OS が動き、互いに干渉しません</li>
+      <li><strong>ハイパーバイザ（hypervisor）</strong>：物理の CPU・メモリ・ディスクを切り分けて各 VM に配る「大家さん」</li>
+      <li><strong>クラウド</strong>：その大家さんを API で操作でき、使った分だけ払える仕組み</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>仮想化とハイパーバイザ</h2>
+
+    <h3 id="sec-2-1">2.1 なぜ仮想化するのか</h3>
+    <p>かつては「メールは Windows、Web は Linux、DB は UNIX」と 1 アプリ 1 台（計 3 台）で、サーバーの性能が高いため 3 台とも 10% 程度しか使われず、どの機械もほとんど遊んでいました。そこで 3 台分を 1 台にまとめる。これが <strong>仮想化</strong>、つまりハードウェアをソフトウェアで模倣する技術です。</p>
+    <p>中に作られる各マシンが <strong>仮想マシン（VM）</strong> で、VM はソフトウェア上のコンピューターです。VM ごとに別の OS を動かせ、互いに干渉せず、利用者からは実サーバーと区別がつきません。VM を動かすソフトウェアが <strong>ハイパーバイザ</strong> で、たとえば「メール用 VM に CPU 2 個とメモリを割り当て」、そこに OS とアプリを入れれば完成です。仮想化すると次の利点があります。</p>
+    <ul>
+      <li><strong>集約</strong>：3 台分を 1 台にまとめ、電気代・設置スペース・購入費を削減（1 台分で済む）</li>
+      <li><strong>可搬性</strong>：VM の実体は <strong>ファイル（ディスクイメージ）</strong> なので、コピー・バックアップ・別マシンへの移動ができます。丸ごと持ち運べ、壊れても別マシンで再起動できます</li>
+      <li><strong>速さ</strong>：機械を買って届くのを待たずに、数分で新しいサーバーを作れます</li>
+      <li><strong>隔離</strong>：ある VM がクラッシュしても他の VM には影響しません</li>
+    </ul>
+
+    <h3 id="sec-2-2">2.2 Type 1 と Type 2</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Type 1（ベアメタル型）</th><th>Type 2（ホスト型）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>置き場所</strong></td><td>ハードウェアの上に <strong>直接</strong>（OS なし）</td><td>Windows / macOS などの OS の上にアプリとして</td></tr>
+        <tr><td><strong>速さ</strong></td><td>間に OS がないので速い</td><td>ホスト OS を経由する分、オーバーヘッドがある</td></tr>
+        <tr><td><strong>用途</strong></td><td>データセンター・クラウド（データセンターの標準）</td><td>手元の PC で別 OS を試す</td></tr>
+        <tr><td><strong>例</strong></td><td>VMware ESXi、Microsoft Hyper-V、Xen、AWS Nitro Hypervisor</td><td>VirtualBox、VMware Workstation、Parallels</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="左の Type 1 は、ハードウェアの上に直接ハイパーバイザがあり、その上に VM1・VM2・VM3 が並ぶ。右の Type 2 は、ハードウェアの上にホスト OS（Windows など）があり、その上でハイパーバイザが普通のアプリと並んで動き、ハイパーバイザの上に VM1・VM2 が乗る">
+      <text x="180" y="24" text-anchor="middle" class="d-text-bold">Type 1（ベアメタル型）</text>
+      <rect x="20" y="40" width="100" height="44" rx="6" class="d-box"/>
+      <text x="70" y="67" text-anchor="middle" class="d-text">VM1</text>
+      <rect x="130" y="40" width="100" height="44" rx="6" class="d-box"/>
+      <text x="180" y="67" text-anchor="middle" class="d-text">VM2</text>
+      <rect x="240" y="40" width="100" height="44" rx="6" class="d-box"/>
+      <text x="290" y="67" text-anchor="middle" class="d-text">VM3</text>
+      <rect x="20" y="92" width="320" height="44" rx="6" class="d-box-accent"/>
+      <text x="180" y="119" text-anchor="middle" class="d-text-bold">ハイパーバイザ</text>
+      <rect x="20" y="144" width="320" height="44" rx="6" class="d-box"/>
+      <text x="180" y="171" text-anchor="middle" class="d-text">ハードウェア</text>
+
+      <text x="540" y="24" text-anchor="middle" class="d-text-bold">Type 2（ホスト型）</text>
+      <rect x="380" y="40" width="85" height="44" rx="6" class="d-box"/>
+      <text x="422" y="67" text-anchor="middle" class="d-text">VM1</text>
+      <rect x="475" y="40" width="85" height="44" rx="6" class="d-box"/>
+      <text x="517" y="67" text-anchor="middle" class="d-text">VM2</text>
+      <rect x="380" y="92" width="180" height="44" rx="6" class="d-box-accent"/>
+      <text x="470" y="119" text-anchor="middle" class="d-text-bold">ハイパーバイザ</text>
+      <rect x="570" y="40" width="130" height="96" rx="6" class="d-box"/>
+      <text x="635" y="84" text-anchor="middle" class="d-text">普通のアプリ</text>
+      <rect x="380" y="144" width="320" height="44" rx="6" class="d-box"/>
+      <text x="540" y="171" text-anchor="middle" class="d-text">ホスト OS（Windows 等）</text>
+      <rect x="380" y="196" width="320" height="44" rx="6" class="d-box"/>
+      <text x="540" y="223" text-anchor="middle" class="d-text">ハードウェア</text>
+    </svg>
+    <figcaption>図：Type 1 はハードの直上、Type 2 はホスト OS の上でアプリとして動く</figcaption>
+    </figure>
+    <div class="callout tip">
+      <p class="callout-title">KVM はどっち？</p>
+      <p>Linux カーネルに組み込まれた <strong>KVM（Kernel-based Virtual Machine）</strong> は、「Linux 自体がハイパーバイザになる」ので Type 1 とも Type 2 とも説明されます。境界は曖昧になってきており、実務では「クラウドの VM は Type 1 系のハイパーバイザで動いている」と押さえれば十分です。AWS の Nitro も KVM をベースにした軽量ハイパーバイザです。</p>
+    </div>
+    <p>CPU コア数より VM の vCPU 合計が多くても動くのは、ハイパーバイザが <strong>時間を細かく区切って順番に少しずつ実行</strong> し、同時に動いているように見せているからです。逆に言えば、混み合った物理マシン上の VM は <strong>他人の VM の負荷の影響を受けることがある</strong>（<strong>noisy neighbor 問題</strong>：うるさい隣人問題）、というのが VPS や安いクラウドインスタンスの性能がブレる理由です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>VM とコンテナの違い</h2>
+    <p><strong>コンテナ（container）</strong> も「区切って動かす」技術ですが、区切り方が違います。</p>
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="左の仮想マシンは、ハードウェアの上にハイパーバイザがあり、その上にアプリ・ライブラリ・ゲスト OS（カーネル）をそれぞれ持つ VM が3つ並ぶ。右のコンテナは、ハードウェアの上にホスト OS（カーネルは1つを共有）、その上にコンテナランタイム（Docker 等）があり、その上にアプリとライブラリだけを持つコンテナが3つ並ぶ">
+      <text x="180" y="24" text-anchor="middle" class="d-text-bold">仮想マシン（VM）</text>
+      <rect x="20" y="40" width="100" height="110" rx="6" class="d-box"/>
+      <text x="70" y="70" text-anchor="middle" class="d-text">アプリA</text>
+      <text x="70" y="96" text-anchor="middle" class="d-text-sub">ライブラリ</text>
+      <text x="70" y="124" text-anchor="middle" class="d-text-bold">ゲストOS</text>
+      <text x="70" y="141" text-anchor="middle" class="d-text-sub">（カーネル）</text>
+      <rect x="130" y="40" width="100" height="110" rx="6" class="d-box"/>
+      <text x="180" y="70" text-anchor="middle" class="d-text">アプリB</text>
+      <text x="180" y="96" text-anchor="middle" class="d-text-sub">ライブラリ</text>
+      <text x="180" y="124" text-anchor="middle" class="d-text-bold">ゲストOS</text>
+      <text x="180" y="141" text-anchor="middle" class="d-text-sub">（カーネル）</text>
+      <rect x="240" y="40" width="100" height="110" rx="6" class="d-box"/>
+      <text x="290" y="70" text-anchor="middle" class="d-text">アプリC</text>
+      <text x="290" y="96" text-anchor="middle" class="d-text-sub">ライブラリ</text>
+      <text x="290" y="124" text-anchor="middle" class="d-text-bold">ゲストOS</text>
+      <text x="290" y="141" text-anchor="middle" class="d-text-sub">（カーネル）</text>
+      <rect x="20" y="158" width="320" height="44" rx="6" class="d-box-accent"/>
+      <text x="180" y="185" text-anchor="middle" class="d-text-bold">ハイパーバイザ</text>
+      <rect x="20" y="210" width="320" height="44" rx="6" class="d-box"/>
+      <text x="180" y="237" text-anchor="middle" class="d-text">ハードウェア</text>
+
+      <text x="540" y="24" text-anchor="middle" class="d-text-bold">コンテナ</text>
+      <rect x="380" y="40" width="100" height="66" rx="6" class="d-box"/>
+      <text x="430" y="68" text-anchor="middle" class="d-text">アプリA</text>
+      <text x="430" y="92" text-anchor="middle" class="d-text-sub">ライブラリ</text>
+      <rect x="490" y="40" width="100" height="66" rx="6" class="d-box"/>
+      <text x="540" y="68" text-anchor="middle" class="d-text">アプリB</text>
+      <text x="540" y="92" text-anchor="middle" class="d-text-sub">ライブラリ</text>
+      <rect x="600" y="40" width="100" height="66" rx="6" class="d-box"/>
+      <text x="650" y="68" text-anchor="middle" class="d-text">アプリC</text>
+      <text x="650" y="92" text-anchor="middle" class="d-text-sub">ライブラリ</text>
+      <rect x="380" y="114" width="320" height="40" rx="6" class="d-box-accent"/>
+      <text x="540" y="139" text-anchor="middle" class="d-text-bold">コンテナランタイム（Docker 等）</text>
+      <rect x="380" y="162" width="320" height="40" rx="6" class="d-box-warn"/>
+      <text x="540" y="187" text-anchor="middle" class="d-text-bold">ホスト OS（カーネルは 1 つを共有）</text>
+      <rect x="380" y="210" width="320" height="44" rx="6" class="d-box"/>
+      <text x="540" y="237" text-anchor="middle" class="d-text">ハードウェア</text>
+    </svg>
+    <figcaption>図：VM は OS ごと丸ごと区切り、コンテナはホストのカーネルを共有してプロセスを隔離する</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>VM</th><th>コンテナ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>区切る単位</strong></td><td>ハードウェアを仮想化。OS ごと丸ごと</td><td>OS の中でプロセスを隔離</td></tr>
+        <tr><td><strong>カーネル</strong></td><td>VM ごとに別々</td><td><strong>ホストのカーネルを共有</strong></td></tr>
+        <tr><td><strong>起動時間</strong></td><td>数十秒〜数分（OS が起動する）</td><td>数秒以下（プロセスが起動するだけ）</td></tr>
+        <tr><td><strong>サイズ</strong></td><td>GB 単位</td><td>MB〜数百 MB</td></tr>
+        <tr><td><strong>隔離の強さ</strong></td><td>強い（別カーネル）</td><td>VM より弱い（カーネルの脆弱性は全コンテナに影響）</td></tr>
+        <tr><td><strong>別 OS</strong></td><td>Linux の上で Windows も動く</td><td>Linux カーネル上では Linux コンテナのみ</td></tr>
+      </tbody>
+    </table></div>
+    <p>コンテナは Linux カーネルの <strong>namespace（見える範囲を分ける）</strong> と <strong>cgroups（使えるリソース量を制限する）</strong> という機能で実現されています。実務では「VM の上でコンテナを動かす」組み合わせが普通で、クラウドの Kubernetes もノード（コンテナを載せるマシン）は VM です。詳しくは 53_コンテナの「Dockerとは」「09-Docker」「10-Kubernetes」のノートを参照してください。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>IaaS / PaaS / SaaS / FaaS と責任共有モデル</h2>
+    <p>クラウドのサービスは「どこまで事業者が面倒を見てくれるか」で分類されます。ピザで例えると、IaaS は「キッチンを借りて自分で作る」、PaaS は「生地と窯は用意されていて具を載せるだけ」、SaaS は「出来上がったピザを食べるだけ」です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分類</th><th>正式名</th><th>借りるもの</th><th>自分がやること</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>IaaS</strong></td><td>Infrastructure as a Service</td><td>仮想マシン・ネットワーク・ディスク</td><td>OS の更新、ミドルウェア、アプリ、データ</td><td>EC2、Compute Engine、Azure VM</td></tr>
+        <tr><td><strong>PaaS</strong></td><td>Platform as a Service</td><td>アプリ実行環境</td><td>アプリのコードと設定、データ</td><td>Elastic Beanstalk、App Engine、Azure App Service、Heroku</td></tr>
+        <tr><td><strong>FaaS</strong></td><td>Function as a Service</td><td>関数の実行環境</td><td>関数のコード</td><td>Lambda、Cloud Run functions、Azure Functions</td></tr>
+        <tr><td><strong>SaaS</strong></td><td>Software as a Service</td><td>完成したソフト</td><td>使い方・アカウント・データの管理</td><td>Gmail、Slack、Salesforce</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-1">4.1 責任共有モデル</h3>
+    <p>クラウドでは「セキュリティの責任」を事業者と利用者で分担します。AWS はこれを「<strong>クラウドの</strong> セキュリティ（事業者）」と「<strong>クラウドにおける</strong> セキュリティ（利用者）」と表現しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>担当範囲</th><th>IaaS（EC2）</th><th>マネージド DB（RDS）</th><th>FaaS（Lambda）</th><th>SaaS</th></tr></thead>
+      <tbody>
+        <tr><td><strong>データ・アクセス権</strong></td><td>利用者</td><td>利用者</td><td>利用者</td><td>利用者</td></tr>
+        <tr><td><strong>アプリケーション</strong></td><td>利用者</td><td>―</td><td>利用者</td><td>事業者</td></tr>
+        <tr><td><strong>ミドルウェア・DB</strong></td><td>利用者</td><td>事業者</td><td>事業者</td><td>事業者</td></tr>
+        <tr><td><strong>OS のパッチ</strong></td><td><strong>利用者 ★</strong></td><td>事業者</td><td>事業者</td><td>事業者</td></tr>
+        <tr><td><strong>仮想化・物理・施設</strong></td><td>事業者</td><td>事業者</td><td>事業者</td><td>事業者</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">★ が重要</p>
+      <p><strong>EC2 や VPS を選んだら、OS のセキュリティ更新は自分の仕事</strong> です。「クラウドだから安全」ではありません。一方で、どの形態でも <strong>データとアクセス権（誰が何を触れるか）は常に利用者の責任</strong> です。S3 を公開設定にして情報漏えい、という事故はこの部分です。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>オンプレミス vs クラウド</h2>
+    <p><strong>オンプレミス（on-premises、略してオンプレ）</strong> は、自社でサーバーを買ってデータセンターや社内に置く方式です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>オンプレミス</th><th>クラウド</th></tr></thead>
+      <tbody>
+        <tr><td><strong>初期費用</strong></td><td>大きい（機器購入、設置）</td><td>ほぼゼロ</td></tr>
+        <tr><td><strong>継続費用</strong></td><td>減価償却・保守・電気・人件費。長く使うほど割安になりやすい</td><td>従量課金。大規模・長期だと高くつくことも</td></tr>
+        <tr><td><strong>調達速度</strong></td><td>数週間〜数か月</td><td>数分</td></tr>
+        <tr><td><strong>増減</strong></td><td>難しい（ピークに合わせて買う必要）</td><td>API で即座に増減</td></tr>
+        <tr><td><strong>コントロール</strong></td><td>ハード・ネットワークまで自由</td><td>抽象化されており裏側には触れない</td></tr>
+        <tr><td><strong>運用負担</strong></td><td>ハード故障対応・電源・冷却まで自前</td><td>物理層は事業者任せ</td></tr>
+        <tr><td><strong>向いている例</strong></td><td>低遅延必須（工場・金融の一部）、規制で外に出せないデータ、負荷が一定で大規模</td><td>スタートアップ、負荷の変動が大きいサービス、まず試したいとき</td></tr>
+      </tbody>
+    </table></div>
+    <p>動画「クラウド vs オンプレ。何で動いている？AWS・GCP・Azureの裏側の技術を徹底解説」では、この違いを <strong>「クラウド＝抽象化、オンプレ＝制御」</strong> とまとめています。どちらが新しい・古いではなく、目的に応じた選択です。両方を組み合わせる <strong>ハイブリッドクラウド</strong> も一般的です。以下、この動画の内容を紹介します。</p>
+
+    <h3 id="sec-5-1">5.1 クラウドは何の言語で動いているか</h3>
+    <ul>
+      <li>クラウドも結局はプログラム、しかも異常なほど巨大なプログラムです。内部で使われる言語は大きく 3 系統：<strong>C++</strong>、<strong>Java もしくは C#</strong>、<strong>Rust や Go などのモダン言語</strong></li>
+      <li>Python はインタプリタ言語（実行しながら翻訳する言語）で速度・メモリ効率が弱く、クラウドの根幹にはほぼ使われません。基盤はネットワーク制御・仮想化・巨大データのストリーミング処理・超高速のスケジューリングなど性能がシビアな領域ばかりなので、高速・安全・低レベルに強い言語が選ばれます</li>
+      <li>AWS の内部では C と Java が長く使われ、最近は Rust が強くなっています。Google のインフラは C++、Microsoft Azure は C と C++ が中心です</li>
+      <li>クラウドは「低レイヤーの塊」です。「Lambda 便利」の裏では C++ や Rust が徹底した速度最適化をしています</li>
+    </ul>
+
+    <h3 id="sec-5-2">5.2 クラウドの裏側で働く AI</h3>
+    <ul>
+      <li>サーバー故障の予兆検知、ディスクの健康状態のスコアリング、エラーログの自動解析、負荷予測によるサーバー自動増減、ネットワークの異常判定などを AI が常時チェックしています</li>
+      <li>普通のデータセンターとは規模が桁違いで人間には見きれないため、<strong>クラウドは AI なしでは回らない</strong> 世界です。壊れる前に兆候を見つけて予備サーバーへ流すことで、全体の安定性を保っています</li>
+      <li>ただし AI がすべてを解決するわけではなく、クラウドにも弱点があります。その弱点がオンプレを選ぶ理由につながります</li>
+    </ul>
+
+    <h3 id="sec-5-3">5.3 オンプレの 3 つの強み</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>1. 物理的なコントロール権</h4>
+        <p>ハード・電源・ネットワークを自分で選び、自分の判断で触れます。クラウドは抽象化されていて裏側に触れず、触れないことは時に大きな制約になります。</p>
+      </div>
+      <div class="card">
+        <h4>2. コスト構造が明確</h4>
+        <p>クラウドは便利ですが、長期・大規模になるほど高くつきます。オンプレは最初に投資する分、使い続けるほど安くなります。</p>
+      </div>
+      <div class="card">
+        <h4>3. 低遅延が必要なシステムに強い</h4>
+        <p>工場システム、研究施設、金融の一部など、遅延が少しでも許されない世界では、物理的に近いオンプレに勝てません。</p>
+      </div>
+    </div>
+    <ul>
+      <li>オンプレは古い技術ではなく <strong>適所</strong> の問題です。クラウドとオンプレは優劣ではなく用途の違いです</li>
+      <li>オンプレにはネットワーク設定・仮想化・サーバー構築・ストレージ管理・電源冷却の理解・セキュリティポリシー運用など幅広いスキルが必要です。クラウドはクリックで済む部分を肩代わりしてくれますが、オンプレはすべての責任を自分で持ちます。大変ですが、その分コントロールは最大です</li>
+      <li>オンプレでもログ監視・故障予兆検知・トラフィック分析で AI が使われ始めています（クラウドの考え方がオンプレに降りてきている）。ただし AI を活用するにも人手が必要で、クラウドほど自動化は進んでいません</li>
+    </ul>
+    <div class="callout key">
+      <p class="callout-title">動画のまとめ</p>
+      <p>クラウドは <strong>AI と巨大資本によるインフラ</strong>、オンプレは <strong>人間の技術と判断によるインフラ</strong> で、どちらにも価値があります。本質的な違いは「クラウド＝抽象化、オンプレ＝制御」。新しいから良い、古いから悪いではなく、目的に合った選択をするのが最も賢い判断です。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>主要クラウドの対応サービスとリージョン・AZ</h2>
+
+    <h3 id="sec-6-1">6.1 対応サービス表（2026 年時点）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>AWS</th><th>Google Cloud</th><th>Microsoft Azure</th></tr></thead>
+      <tbody>
+        <tr><td><strong>仮想マシン（IaaS）</strong></td><td>Amazon EC2</td><td>Compute Engine</td><td>Azure Virtual Machines</td></tr>
+        <tr><td><strong>手軽な VPS 的サービス</strong></td><td>Amazon Lightsail</td><td>—</td><td>—</td></tr>
+        <tr><td><strong>コンテナ実行（サーバー管理なし）</strong></td><td>Amazon ECS + AWS Fargate</td><td>Cloud Run</td><td>Azure Container Apps</td></tr>
+        <tr><td><strong>Kubernetes</strong></td><td>Amazon EKS</td><td>Google Kubernetes Engine (GKE)</td><td>Azure Kubernetes Service (AKS)</td></tr>
+        <tr><td><strong>サーバーレス関数（FaaS）</strong></td><td>AWS Lambda</td><td>Cloud Run functions</td><td>Azure Functions</td></tr>
+        <tr><td><strong>PaaS</strong></td><td>AWS Elastic Beanstalk</td><td>App Engine</td><td>Azure App Service</td></tr>
+        <tr><td><strong>マネージド RDB</strong></td><td>Amazon RDS / Aurora</td><td>Cloud SQL / AlloyDB</td><td>Azure Database for PostgreSQL / MySQL</td></tr>
+        <tr><td><strong>オブジェクトストレージ</strong></td><td>Amazon S3</td><td>Cloud Storage</td><td>Azure Blob Storage</td></tr>
+        <tr><td><strong>仮想ネットワーク</strong></td><td>Amazon VPC</td><td>VPC</td><td>Azure Virtual Network</td></tr>
+        <tr><td><strong>ロードバランサー</strong></td><td>Elastic Load Balancing (ALB/NLB)</td><td>Cloud Load Balancing</td><td>Azure Load Balancer / Application Gateway</td></tr>
+        <tr><td><strong>DNS</strong></td><td>Amazon Route 53</td><td>Cloud DNS</td><td>Azure DNS</td></tr>
+        <tr><td><strong>CDN</strong></td><td>Amazon CloudFront</td><td>Cloud CDN</td><td>Azure Front Door</td></tr>
+      </tbody>
+    </table></div>
+    <p>名前は違っても中身の考え方はほぼ同じです。1 つのクラウドで覚えた概念は他でも通用します。このシリーズの例は主に AWS で書きます。Lambda・ECS・Cloud Run の得意・不得意は <a href="10-1_サーバーとは何か.html#sec-5">10-1 の発展節</a> で比べています。</p>
+
+    <h3 id="sec-6-2">6.2 リージョンとアベイラビリティゾーン（AZ）</h3>
+    <ul>
+      <li><strong>リージョン（Region）</strong>：地理的に離れた拠点。例：東京 <code>ap-northeast-1</code>、大阪 <code>ap-northeast-3</code>。リージョン同士は独立しており、リソースは自動ではコピーされません</li>
+      <li><strong>アベイラビリティゾーン（AZ: Availability Zone）</strong>：1 つのリージョンの中にある、互いに隔離された複数の拠点（1 つ以上のデータセンター群）。例：<code>ap-northeast-1a</code>。電源・ネットワークが独立しているので、1 つの AZ が停電しても他は動き続けます</li>
+    </ul>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="東京リージョン ap-northeast-1 の中に AZ 1a と AZ 1c がある。ロードバランサーが AZ 1a の Shop API #1 と AZ 1c の Shop API #2 に振り分ける。AZ 1a の DB プライマリから AZ 1c の DB スタンバイへ同期する">
+      <defs>
+        <marker id="arw6103a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="700" height="280" rx="10" class="d-box"/>
+      <text x="30" y="34" class="d-text-bold">リージョン：ap-northeast-1（東京）</text>
+      <rect x="290" y="44" width="140" height="40" rx="8" class="d-box-accent"/>
+      <text x="360" y="69" text-anchor="middle" class="d-text-bold">ロードバランサー</text>
+
+      <rect x="30" y="110" width="310" height="165" rx="8" class="d-box"/>
+      <text x="50" y="132" class="d-text-bold">AZ：1a</text>
+      <rect x="60" y="145" width="250" height="44" rx="8" class="d-box-accent"/>
+      <text x="185" y="172" text-anchor="middle" class="d-text">Shop API #1</text>
+      <rect x="60" y="215" width="250" height="44" rx="8" class="d-box-good"/>
+      <text x="185" y="242" text-anchor="middle" class="d-text">DB プライマリ</text>
+
+      <rect x="380" y="110" width="310" height="165" rx="8" class="d-box"/>
+      <text x="400" y="132" class="d-text-bold">AZ：1c</text>
+      <rect x="410" y="145" width="250" height="44" rx="8" class="d-box-accent"/>
+      <text x="535" y="172" text-anchor="middle" class="d-text">Shop API #2</text>
+      <rect x="410" y="215" width="250" height="44" rx="8" class="d-box-good"/>
+      <text x="535" y="242" text-anchor="middle" class="d-text">DB スタンバイ</text>
+
+      <path d="M330,84 L200,143" class="d-line" marker-end="url(#arw6103a)"/>
+      <path d="M390,84 L520,143" class="d-line" marker-end="url(#arw6103a)"/>
+      <path d="M310,237 L408,237" class="d-line-dash" marker-end="url(#arw6103a)"/>
+      <text x="360" y="228" text-anchor="middle" class="d-text-sub">同期</text>
+    </svg>
+    <figcaption>図：マルチ AZ 構成。1 つの AZ が止まっても、もう一方の AZ で動き続けられる</figcaption>
+    </figure>
+    <p><strong>選び方の基本</strong>：</p>
+    <ul>
+      <li>リージョンは <strong>ユーザーに近い場所</strong>（日本向けなら東京）、加えて法規制（データの国外持ち出し）や料金で選びます</li>
+      <li>本番で止められないなら、サーバーを <strong>複数 AZ に分散</strong> します（マルチ AZ）。1 AZ に全部置くと、その AZ の障害で全停止します（→ <a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a>）</li>
+      <li>地震などの広域災害まで考えるなら、別リージョンにバックアップを置きます（69_SRE・インシデント対応の「DR訓練とRTO・RPO」のノートを参照）</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>VPS という選択肢</h2>
+    <p><strong>VPS（Virtual Private Server）</strong> は、仮想化された 1 台を <strong>月額固定料金</strong> で借りるサービスです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>VPS</th><th>クラウド VM（EC2 等）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>料金</strong></td><td>月額固定（数百円〜）、通信量込みが多い</td><td>従量課金。通信量（特に外向き）にも課金</td></tr>
+        <tr><td><strong>機能</strong></td><td>サーバー 1 台＋簡単なファイアウォール</td><td>ロードバランサー・マネージド DB・IAM など周辺サービスが豊富</td></tr>
+        <tr><td><strong>増減</strong></td><td>プラン変更（再起動が必要なことも）</td><td>API で数分、オートスケールも可能</td></tr>
+        <tr><td><strong>向いている</strong></td><td>個人開発、学習、小規模サイト</td><td>本番サービスで成長が見込まれるもの</td></tr>
+        <tr><td><strong>例</strong></td><td>さくらの VPS、ConoHa VPS、Xserver VPS、DigitalOcean、Linode(Akamai)、Amazon Lightsail</td><td>EC2、Compute Engine、Azure VM</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Shop をどこで動かすか</strong>：学習や最初の公開なら、VPS または EC2 の小さなインスタンス 1 台で十分です。料金が読みやすい VPS は「請求額が怖い」初心者に向いています。DB 分離やロードバランサー、オートスケールまで進むなら、周辺サービスが揃ったクラウドに乗っておくと後が楽です。どちらを選んでも <strong>中身は Ubuntu の Linux サーバー</strong> なので、次の <a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a> の内容はそのまま使えます。</p>
+    <div class="callout warn">
+      <p class="callout-title">クラウドの課金事故に注意</p>
+      <p>クラウドは「作ったまま忘れた」リソースにも課金されます。学習用アカウントでは <strong>予算アラート（AWS Budgets など）を最初に設定</strong> し、使い終わったインスタンス・ディスク・Elastic IP は削除しましょう。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ よくある誤解</th><th>◯ 実際は</th></tr></thead>
+      <tbody>
+        <tr><td>コンテナは軽量な VM</td><td>コンテナは「隔離されたプロセス」で、ホストのカーネルを共有する。VM とは隔離の仕組みも強さも違う</td></tr>
+        <tr><td>クラウドに載せればセキュリティは事業者が守ってくれる</td><td>IaaS では OS のパッチ・ファイアウォール設定・アクセス権は利用者の責任（責任共有モデル）</td></tr>
+        <tr><td>クラウドは常にオンプレより安い</td><td>負荷が一定で大規模・長期なら、オンプレや VPS の方が安いことも多い。クラウドの価値は「速さ」と「増減の柔軟さ」</td></tr>
+        <tr><td>1 つのリージョンに置けば冗長化されている</td><td>1 つの AZ に全部置くと、その AZ の障害で止まる。冗長化はマルチ AZ にして初めて意味がある</td></tr>
+        <tr><td>サーバーレスにすれば運用はゼロ</td><td>OS 管理は不要になるが、権限設定・タイムアウト・コールドスタート・コスト監視などの運用は残る</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>発展：仮想化（ハイパーバイザー・仮想スイッチ・コンテナ・VRF）</h2>
+    <p>ここまでの内容を、ハイパーバイザーの 2 つのタイプ、仮想スイッチ、VM とコンテナの比較、ネットワーク機器の仮想化である VRF まで広げて整理します。</p>
+
+    <h3 id="sec-9-1">9.1 サーバの仮想化とハイパーバイザー</h3>
+    <p><strong>ハイパーバイザー</strong> は、1 台の物理サーバのハードウェア（CPU・メモリ・ストレージ・NIC）を仮想化し、その上で <strong>複数の仮想マシン（VM）</strong> を動かすソフトウェアです。各 VM はそれぞれ独立した <strong>ゲスト OS</strong> を持ちます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>動作する場所</th><th>別名</th><th>主な用途</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>タイプ1</strong></td><td><strong>ハードウェア上で直接動作</strong></td><td><strong>ベアメタル型</strong>、ネイティブ型</td><td>データセンター、本番環境</td><td>VMware ESXi、Microsoft Hyper-V、KVM</td></tr>
+        <tr><td><strong>タイプ2</strong></td><td>Windows などのホスト OS の上で <strong>アプリケーションとして</strong> 動作</td><td>ホスト型</td><td>PC での検証・学習</td><td>VMware Workstation、Oracle VirtualBox</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>     タイプ1（ベアメタル型）               タイプ2（ホスト型）
+ ┌─────┐┌─────┐┌─────┐            ┌─────┐┌─────┐
+ │ App ││ App ││ App │            │ App ││ App │
+ │ゲストOS││ゲストOS││ゲストOS│          │ゲストOS││ゲストOS│
+ └─────┘└─────┘└─────┘            └─────┘└─────┘
+ ┌───────────────────┐            ┌───────────────┐
+ │  ハイパーバイザー   │            │ハイパーバイザー │ ← アプリとして動作
+ └───────────────────┘            ├───────────────┤
+ ┌───────────────────┐            │   ホストOS     │
+ │   ハードウェア     │            ├───────────────┤
+ └───────────────────┘            │  ハードウェア   │
+                                  └───────────────┘</code></pre>
+
+    <h3 id="sec-9-2">9.2 VM 同士の通信と仮想スイッチ</h3>
+    <p>VM 同士や VM と外部の通信には、ハイパーバイザーの中の <strong>仮想スイッチ（vSwitch）</strong> が使われます。各 VM の仮想 NIC（vNIC）が仮想スイッチのポートにつながり、仮想スイッチが物理 NIC（アップリンク）を通じて物理スイッチにつながります。仮想スイッチでも VLAN（1 台のスイッチを論理的に複数のネットワークに分ける技術）を設定でき、物理スイッチとの間は <strong>トランク</strong>（1 本の線で複数の VLAN を運ぶ接続）にするのが一般的です。VLAN の詳細は 11_コンピューターサイエンスの「24スイッチングとVLAN」のノートを参照してください。</p>
+<pre><code> ┌──────────── 物理サーバ ─────────────┐
+ │ [VM1]vNIC  [VM2]vNIC  [VM3]vNIC     │
+ │     \         |         /           │
+ │   ┌──── 仮想スイッチ（vSwitch）───┐   │
+ │   └──────────┬─────────────────┘   │
+ │          物理NIC                    │
+ └──────────────┼─────────────────────┘
+                │ トランク（複数VLAN）
+           [物理スイッチ]</code></pre>
+
+    <h3 id="sec-9-3">9.3 コンテナ</h3>
+    <p><strong>コンテナ</strong> は、<strong>ホスト OS のカーネルを共有</strong> し、アプリケーションとその実行に必要なもの（ライブラリ・設定など）だけをまとめて、互いに分離して動かす仕組みです（構造は <a href="#sec-3">3 章の図</a> と同じです）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>仮想マシン（VM）</th><th>コンテナ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>仮想化するもの</strong></td><td>ハードウェア</td><td>OS（アプリケーションの実行環境）</td></tr>
+        <tr><td><strong>OS</strong></td><td><strong>VM ごとに完全なゲスト OS を持つ</strong></td><td><strong>ゲスト OS を持たず、ホスト OS のカーネルを共有</strong></td></tr>
+        <tr><td><strong>サイズ</strong></td><td>大きい（GB 単位）</td><td>小さい（MB 単位）</td></tr>
+        <tr><td><strong>起動時間</strong></td><td>数十秒〜数分</td><td><strong>数秒</strong></td></tr>
+        <tr><td><strong>分離の強さ</strong></td><td>強い</td><td>VM より弱い</td></tr>
+        <tr><td><strong>動作基盤</strong></td><td>ハイパーバイザー</td><td><strong>Docker などのコンテナエンジン</strong>（ハイパーバイザーは必須ではない）</td></tr>
+        <tr><td><strong>管理ツール</strong></td><td>vCenter など</td><td><strong>Kubernetes</strong>（オーケストレーション：多数のコンテナの配置・管理）</td></tr>
+      </tbody>
+    </table></div>
+    <p>まとめ：<strong>VM＝重いが分離が強い、コンテナ＝軽くて速い</strong>。</p>
+
+    <h3 id="sec-9-4">9.4 VRF</h3>
+    <p><strong>VRF（Virtual Routing and Forwarding）</strong> は、<strong>1 台のルータの中でルーティングテーブル（宛先ごとの道順表）を複数に分け</strong>、仮想的に複数のルータとして動かす技術です。「<strong>L3 版の VLAN</strong>」のようなものです。</p>
+    <ul>
+      <li>インターフェースを <strong>どの VRF に所属させるか</strong> を設定します</li>
+      <li><strong>VRF ごとにルーティングテーブルが独立</strong> しているので、VRF が違えば <strong>同じ IP アドレス範囲（例：10.0.0.0/24）を使っていても互いに干渉しません</strong></li>
+      <li>用途：通信事業者が複数の顧客を 1 台のルータで収容する（MPLS VPN）、管理用の通信を業務用の通信から分離する（管理 VRF）</li>
+    </ul>
+<pre><code>            ┌───────────── Router ─────────────┐
+ 顧客A ─── Gi0/1 ┤ VRF CUST-A のルーティングテーブル │
+ 10.0.0.0/24     │   10.0.0.0/24 → Gi0/1           │
+                 ├────────────────────────────────┤
+ 顧客B ─── Gi0/2 ┤ VRF CUST-B のルーティングテーブル │
+ 10.0.0.0/24     │   10.0.0.0/24 → Gi0/2           │   ← 同じアドレスでも衝突しない
+            └──────────────────────────────────┘</code></pre>
+    <p>設定と確認の例（Cisco ルータ）：</p>
+<pre><code>Router(config)# vrf definition CUST-A
+Router(config-vrf)# address-family ipv4
+Router(config-vrf-af)# exit-address-family
+Router(config)# vrf definition CUST-B
+Router(config-vrf)# address-family ipv4
+Router(config-vrf-af)# exit-address-family
+
+Router(config)# interface gigabitethernet0/1
+Router(config-if)# vrf forwarding CUST-A          ! IPアドレスより先にVRFを指定
+Router(config-if)# ip address 10.0.0.1 255.255.255.0
+Router(config)# interface gigabitethernet0/2
+Router(config-if)# vrf forwarding CUST-B
+Router(config-if)# ip address 10.0.0.1 255.255.255.0   ! 同じアドレスでもエラーにならない
+
+Router# show ip route vrf CUST-A
+Routing Table: CUST-A
+...
+C        10.0.0.0/24 is directly connected, GigabitEthernet0/1
+L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+
+Router# ping vrf CUST-A 10.0.0.10</code></pre>
+    <p>紛らわしい技術：</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>技術</th><th>何を分ける・何をするか</th><th>分野</th></tr></thead>
+      <tbody>
+        <tr><td><strong>VRF</strong></td><td><strong>L3</strong>：ルーティングテーブルを分ける</td><td>ネットワーク基礎</td></tr>
+        <tr><td><strong>VLAN</strong></td><td><strong>L2</strong>：ブロードキャストドメインを分ける（ルーティングテーブルは分けない）</td><td>ネットワークアクセス</td></tr>
+        <tr><td><strong>NAT</strong></td><td>アドレスを変換する</td><td>IP サービス</td></tr>
+        <tr><td><strong>HSRP</strong></td><td>デフォルトゲートウェイを冗長化する（FHRP）</td><td>IP 接続</td></tr>
+        <tr><td><strong>ロードバランサ</strong></td><td>複数のサーバに通信を振り分けて負荷分散する</td><td>ネットワーク基礎</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-5">9.5 ひっかけポイント・よくある誤解</h3>
+    <ul>
+      <li><strong>コンテナを「VM を動かすソフト」と考える誤り。</strong> VM を動かすのはハイパーバイザー。コンテナは OS のカーネルを共有してアプリを分離する仕組みです</li>
+      <li><strong>「コンテナごとに完全なゲスト OS を持つ」は誤り。</strong> それは VM の特徴です</li>
+      <li><strong>「コンテナはハイパーバイザーがなければ動作しない」は誤り。</strong> コンテナエンジン（Docker など）の上で動き、ハイパーバイザーは必須ではありません</li>
+      <li><strong>タイプ1とタイプ2の取り違え。</strong> ハードウェア上で直接動く＝タイプ1（ベアメタル型）。OS の上でアプリとして動く＝タイプ2</li>
+      <li><strong>VRF と VLAN の混同。</strong> VLAN は L2 の分割でルーティングテーブルは分けません。ルーティングテーブルを分けるのは VRF です</li>
+      <li><strong>VRF を NAT・HSRP・ロードバランサと混同しない。</strong></li>
+    </ul>
+
+    <h3 id="sec-9-6">9.6 押さえておくポイント</h3>
+    <ul>
+      <li>ハイパーバイザー タイプ1＝ベアメタル型（例：VMware ESXi）、タイプ2＝ホスト型</li>
+      <li>VM 同士の通信は仮想スイッチ（vSwitch）</li>
+      <li>コンテナ＝ホスト OS のカーネルを共有、軽量・高速起動、Docker などで動く、Kubernetes で管理</li>
+      <li>VM＝ゲスト OS を持つ、重いが分離が強い</li>
+      <li>VRF＝1 台のルータでルーティングテーブルを分ける（L3 版 VLAN）、アドレスが重複してもよい</li>
+    </ul>
+
+    <h2 id="sec-10"><span class="num">10.</span>補足：データセンター</h2>
+    <p>サーバーが実際に置かれる施設であるデータセンターの構成・種類・設備・評価指標と、クラウドとの関係を扱います。<strong>データセンター（Data Center）</strong> とは、サーバーやネットワーク機器などの IT 機器を安全かつ効率的に運用するための専用施設のことです。企業の重要なデータやシステムを 24 時間 365 日安定して稼働させるための物理的な基盤となります。</p>
+
+    <h3 id="sec-10-1">10.1 データセンターの基本構成</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>物理的構造</h4>
+        <ul>
+          <li><strong>建物</strong>：耐震性、耐火性を備えた専用建物</li>
+          <li><strong>フロア</strong>：サーバーラックを配置する広いフロア</li>
+          <li><strong>ラック</strong>：サーバー機器を収納する金属製の棚</li>
+          <li><strong>ケージ</strong>：複数のラックをまとめた区画</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>主要設備</h4>
+        <ol>
+          <li><strong>サーバーラック</strong>：IT 機器を収納・管理</li>
+          <li><strong>ネットワーク機器</strong>：スイッチ、ルーター、ファイアウォール</li>
+          <li><strong>電源設備</strong>：UPS（無停電電源装置）、発電機</li>
+          <li><strong>空調設備</strong>：精密空調、冷却システム</li>
+          <li><strong>監視設備</strong>：セキュリティカメラ、センサー</li>
+        </ol>
+      </div>
+    </div>
+
+    <h3 id="sec-10-2">10.2 データセンターの種類</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>特徴</th><th>メリット</th><th>デメリット</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. 企業内データセンター</strong></td><td>自社専用のデータセンター</td><td>完全な制御、カスタマイズ性</td><td>高コスト、専門知識が必要</td></tr>
+        <tr><td><strong>2. コロケーション（Colo）</strong></td><td>他社のデータセンター内に自社機器を設置</td><td>インフラ管理不要、コスト削減</td><td>物理的アクセス制限</td></tr>
+        <tr><td><strong>3. クラウドデータセンター</strong></td><td>クラウドプロバイダーが運営</td><td>初期費用不要、スケーラビリティ</td><td>月額費用、カスタマイズ制限</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-10-3">10.3 データセンターの重要な機能</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. 電源管理</h4>
+        <ul>
+          <li><strong>UPS（無停電電源装置）</strong>：停電時の電源供給</li>
+          <li><strong>発電機</strong>：長時間停電時の電源確保</li>
+          <li><strong>冗長化</strong>：複数の電源系統による信頼性向上</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. 冷却・空調</h4>
+        <ul>
+          <li><strong>精密空調</strong>：サーバーの適切な温度・湿度管理</li>
+          <li><strong>ホットアイル・コールドアイル</strong>：効率的な空気循環（ラックの吸気側と排気側の通路を分ける）</li>
+          <li><strong>冷却効率</strong>：PUE（Power Usage Effectiveness）の最適化</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>3. セキュリティ</h4>
+        <ul>
+          <li><strong>物理的セキュリティ</strong>：入退室管理、監視カメラ</li>
+          <li><strong>論理的セキュリティ</strong>：ファイアウォール、暗号化</li>
+          <li><strong>アクセス制御</strong>：生体認証、IC カード認証</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>4. ネットワーク</h4>
+        <ul>
+          <li><strong>高速回線</strong>：複数の通信事業者との接続</li>
+          <li><strong>冗長化</strong>：複数の回線による信頼性向上</li>
+          <li><strong>CDN</strong>：コンテンツ配信の最適化</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-4">10.4 データセンターの評価指標</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>1. 可用性（Availability）</h4>
+        <ul>
+          <li><strong>稼働率</strong>：99.9%（8.76 時間/年の停止）</li>
+          <li><strong>Tier 分類</strong>：Tier I〜IV による信頼性レベル</li>
+          <li><strong>SLA</strong>：サービスレベル合意による保証</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. 効率性（Efficiency）</h4>
+        <ul>
+          <li><strong>PUE</strong>：電力使用効率（1.0 に近いほど効率的）</li>
+          <li><strong>冷却効率</strong>：空調システムの最適化</li>
+          <li><strong>スペース効率</strong>：ラック密度の最適化</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>3. スケーラビリティ</h4>
+        <ul>
+          <li><strong>拡張性</strong>：必要に応じた容量増加</li>
+          <li><strong>柔軟性</strong>：多様なニーズへの対応</li>
+          <li><strong>将来性</strong>：新技術への対応能力</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-5">10.5 データセンターの運用</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>日常運用</h4>
+        <ul>
+          <li><strong>監視</strong>：24 時間 365 日のシステム監視</li>
+          <li><strong>メンテナンス</strong>：定期点検・更新作業</li>
+          <li><strong>バックアップ</strong>：データの定期的なバックアップ</li>
+          <li><strong>ログ管理</strong>：アクセス・エラーログの記録・分析</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>災害対策</h4>
+        <ul>
+          <li><strong>BCP（事業継続計画）</strong>：災害時の事業継続</li>
+          <li><strong>DR（災害復旧）</strong>：バックアップサイトでの復旧</li>
+          <li><strong>冗長化</strong>：地理的に分散したデータセンター</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-6">10.6 クラウド時代のデータセンター</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>パブリッククラウド</h4>
+        <ul>
+          <li><strong>AWS</strong>：Amazon Web Services</li>
+          <li><strong>Azure</strong>：Microsoft Azure</li>
+          <li><strong>GCP</strong>：Google Cloud Platform</li>
+          <li><strong>特徴</strong>：共有リソース、従量課金</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>プライベートクラウド</h4>
+        <ul>
+          <li><strong>特徴</strong>：専用リソース、高いセキュリティ</li>
+          <li><strong>用途</strong>：金融機関、政府機関</li>
+          <li><strong>メリット</strong>：完全な制御、カスタマイズ性</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ハイブリッドクラウド</h4>
+        <ul>
+          <li><strong>特徴</strong>：パブリックとプライベートの組み合わせ</li>
+          <li><strong>メリット</strong>：柔軟性、コスト最適化</li>
+          <li><strong>用途</strong>：段階的なクラウド移行</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-7">10.7 データセンターの将来</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>新技術の導入</h4>
+        <ul>
+          <li><strong>エッジコンピューティング</strong>：データセンターの分散化</li>
+          <li><strong>AI/ML</strong>：運用の自動化・最適化</li>
+          <li><strong>5G</strong>：高速通信の実現</li>
+          <li><strong>量子コンピューティング</strong>：次世代計算技術</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>環境への配慮</h4>
+        <ul>
+          <li><strong>グリーンデータセンター</strong>：環境負荷の削減</li>
+          <li><strong>再生可能エネルギー</strong>：太陽光・風力発電の活用</li>
+          <li><strong>カーボンニュートラル</strong>：CO2 排出量の削減</li>
+        </ul>
+      </div>
+    </div>
+    <p>データセンターは現代のデジタル社会を支える重要なインフラです。サーバーやネットワーク機器を安全かつ効率的に運用するための物理的な基盤として、電源、冷却、セキュリティ、ネットワークなどの様々な機能を統合的に提供しています。クラウドサービスの普及により、データセンターの重要性はさらに高まっており、今後の技術発展とともに進化し続けています。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <ul>
+      <li>仮想化は 1 台の物理マシンをハイパーバイザで区切り、複数の VM を動かす技術。VM の実体はファイルで、集約・可搬性・復旧のしやすさが利点。クラウドの土台</li>
+      <li>ハイパーバイザには Type 1（ハード直上、データセンター向け）と Type 2（OS 上、手元 PC 向け）がある</li>
+      <li>コンテナはホストのカーネルを共有するので軽くて速いが、隔離は VM より弱い</li>
+      <li>IaaS → PaaS → FaaS → SaaS の順に事業者の担当が広がる。IaaS では OS パッチは自分の責任</li>
+      <li>クラウド＝抽象化、オンプレ＝制御。優劣ではなく用途で選ぶ</li>
+      <li>リージョンは場所、AZ はリージョン内の独立した拠点。本番はマルチ AZ が基本</li>
+      <li>学習・小規模なら VPS、成長と周辺サービスを見込むならクラウド VM</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. VM とコンテナの最も本質的な違いは何ですか？</summary>
+      <div class="body"><p><strong>カーネルを共有するかどうか</strong> です。VM はそれぞれが自分の OS（カーネル）を持ちますが、コンテナはホスト OS のカーネルを共有し、namespace と cgroups でプロセスを隔離しているだけです。そのため起動が速く軽量な反面、隔離の強さは VM に劣ります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. Shop を EC2 で動かしていたところ、OS の脆弱性を突かれて侵入されました。責任共有モデルでは、これは誰の責任ですか？</summary>
+      <div class="body"><p><strong>利用者（自分）の責任</strong> です。EC2（IaaS）ではゲスト OS の更新・パッチ適用は利用者の担当です。AWS が責任を持つのはハイパーバイザ・物理サーバー・データセンターなど「クラウドそのもの」のセキュリティです。</p></div>
+    </details>
+    <details>
+      <summary>Q3. Shop の API サーバー 2 台を同じ AZ に置いています。何が問題で、どう直すべきですか？</summary>
+      <div class="body"><p>その AZ で停電やネットワーク障害が起きると 2 台とも同時に止まり、冗長化の意味がありません。API サーバーを <strong>別々の AZ（例：1a と 1c）に配置</strong> し、ロードバランサーで振り分けます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. ハードウェア上で直接動くハイパーバイザーはタイプ1・タイプ2のどちらですか？VirtualBox はどちらですか？</summary>
+      <div class="body"><p>ハードウェア上で直接動くのは <strong>タイプ1（ベアメタル型）</strong> で、VMware ESXi などがあり、データセンターの標準です。VirtualBox は Windows や Mac などのホスト OS の上でアプリとして動く <strong>タイプ2（ホスト型）</strong> です。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 物理コアが 4 つしかないマシンで、vCPU 合計 8 個分の VM が動くのはなぜですか？そのとき起こりうる問題は？</summary>
+      <div class="body"><p>ハイパーバイザが時間を細かく区切り、順番に少しずつ実行して同時に動いているように見せているからです。そのぶん、混み合ったマシンでは他の VM の負荷の影響を受けて性能がブレることがあります（noisy neighbor 問題）。</p></div>
+    </details>
+    <details>
+      <summary>Q6. オンプレミスがクラウドより向いているのはどんな場合ですか？</summary>
+      <div class="body"><p>ハード・電源・ネットワークまで自分で制御したい場合、負荷が一定で大規模・長期に使う（使い続けるほど安くなる）場合、工場・研究施設・金融の一部のように低遅延が必須の場合、規制でデータを外に出せない場合などです。</p></div>
+    </details>
+    <details>
+      <summary>Q7. VRF と VLAN の違いを説明してください。</summary>
+      <div class="body"><p>VLAN は <strong>L2</strong> でブロードキャストドメインを分ける技術で、ルーティングテーブルは分けません。VRF は <strong>L3</strong> で 1 台のルータの中のルーティングテーブルを分ける技術で、VRF が違えば同じ IP アドレス範囲を使っても干渉しません。</p></div>
+    </details>
+    <details>
+      <summary>Q8. 「サーバーレスにすれば運用はゼロ」は正しいですか？</summary>
+      <div class="body"><p>正しくありません。OS 管理は不要になりますが、権限設定・タイムアウト・コールドスタート・コスト監視などの運用は残ります。また、どの形態でもデータとアクセス権は利用者の責任です。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/10_サーバーの基礎/03_仮想化とクラウド</li>
+      <li>ノート：61_サーバー・インフラ/10_サーバーの基礎/仮想化の仕組み</li>
+      <li>ノート：61_サーバー・インフラ/10_サーバーの基礎/クラウド vs オンプレ。何で動いている？AWS・GCP・Azureの裏側の技術を徹底解説</li>
+      <li>直也テック「仮想化の仕組み」 https://www.youtube.com/shorts/AhxtCNqPkJw</li>
+      <li>IT技術屋のボヤキ「クラウド vs オンプレ。何で動いている？AWS・GCP・Azureの裏側の技術を徹底解説」 https://www.youtube.com/watch?v=CsQl3QfS2KQ</li>
+      <li>AWS Shared Responsibility Model https://aws.amazon.com/compliance/shared-responsibility-model/</li>
+      <li>Amazon EC2: Regions and Zones https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html</li>
+      <li>AWS Nitro System https://aws.amazon.com/ec2/nitro/</li>
+      <li>Docker docs: What is a container? https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/</li>
+      <li>NIST SP 800-145: The NIST Definition of Cloud Computing https://csrc.nist.gov/pubs/sp/800/145/final</li>
+      <li>Google Cloud: Compare AWS and Azure services to Google Cloud https://cloud.google.com/docs/get-started/aws-azure-gcp-service-comparison</li>
+      <li>関連ページ：<a href="10-1_サーバーとは何か.html">10-1 サーバーとは何か</a>、<a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a>、<a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a>、<a href="40-3_Terraform入門.html">40-3 Terraform入門</a>、<a href="../41_アーキテクチャ/40-6_サーバーレス.html">41 サーバーレス</a></li>
+      <li>関連ノート（HTML なし）：53_コンテナ「Dockerとは」「10-Kubernetes」、11_コンピューターサイエンス「24スイッチングとVLAN」、69_SRE・インシデント対応「DR訓練とRTO・RPO」</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-2_サーバーの種類と役割.html"><span class="lbl">← 前のページ</span>サーバーの種類と役割</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-4_Linuxサーバーの基本.html"><span class="lbl">次のページ →</span>Linuxサーバーの基本</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

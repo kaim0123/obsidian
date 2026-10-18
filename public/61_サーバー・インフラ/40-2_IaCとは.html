@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IaCとは｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 構築・IaC › IaCとは</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 構築・IaC</span>
+      <h1>IaCとは</h1>
+      <p class="lead"><strong>IaC（Infrastructure as Code）</strong> は、サーバー・ネットワーク・DB・DNS などのインフラ構成をコードで書き、ツールで自動的に作る・変えるやり方です。このページでは、IaC の 4 つの利点、<strong>宣言型と命令型</strong> の違い、最重要の性質である <strong>冪等性</strong>、プロビジョニング・構成管理・イメージ作成・コンテナの役割分担、主要ツールの比較と選び方、<strong>GitOps</strong>、Terraform のライセンス変更と OpenTofu の経緯を解説します。最後にネットワーク機器を例に、構成ドリフト・冪等性・Git による変更管理を整理します。</p>
+      <p class="meta">もとにしたノート：40_構築・IaC/02_IaCとは</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>IaC は <strong>「料理のレシピを、腕のいいシェフの頭の中から紙に書き出し、さらに調理ロボットが読める形式にしたもの」</strong> です。コードは Git で管理して <strong>レビュー → マージ → 適用</strong> し、鍵になる性質は <strong>宣言型</strong> と <strong>冪等性</strong> です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>IaC をひとことで</h2>
+    <p>手順書（人が読むレシピ）と違い、IaC のコードは <strong>機械がそのまま実行</strong> します。だから何度作っても同じ料理（サーバー）ができ、レシピの変更は Git で誰でもレビューできます。</p>
+    <ul>
+      <li><strong>IaC</strong> ＝ インフラ（サーバー、ネットワーク、DB、DNS…）の構成を <strong>コードで記述し、ツールで自動的に作る・変える</strong> やり方</li>
+      <li>コードは Git で管理し、アプリと同じように <strong>レビュー → マージ → 適用</strong> する</li>
+      <li>鍵になる性質は <strong>宣言型</strong> と <strong>冪等性</strong></li>
+    </ul>
+    <p>手作業構築の限界（IaC が必要な理由）は <a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a> で見ました。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>IaC の 4 つの利点</h2>
+    <p>前のページで見た手作業の問題が、IaC でどう解決されるかを整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>利点</th><th>内容</th><th>Shop での例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>再現性</strong></td><td>同じコードから何度でも同じ環境ができる</td><td>本番と同じ構成のステージング環境を 10 分で作れる</td></tr>
+        <tr><td><strong>レビュー</strong></td><td>変更がプルリクエストとして差分で見える</td><td>「セキュリティグループで 5432 番を 0.0.0.0/0 に開けてない？」と指摘できる</td></tr>
+        <tr><td><strong>履歴</strong></td><td>Git に「誰が・いつ・なぜ」が残る</td><td>障害時に「昨日のこのコミットで ALB の設定が変わった」と特定できる</td></tr>
+        <tr><td><strong>自動化</strong></td><td>CI/CD から実行できる</td><td>マージしたら自動で <code>plan</code>、承認されたら <code>apply</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>加えて、コード自体が <strong>常に正しいドキュメント</strong> になる点も大きいです。手順書は古くなりますが、IaC のコードは実際に使われているので嘘をつきにくいのです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>宣言型と命令型</h2>
+    <p>IaC ツールの書き方には大きく 2 つのスタイルがあります。</p>
+
+    <h3 id="sec-3-1">3.1 命令型：手順を書く</h3>
+    <p><strong>命令型（Imperative）</strong> は「どうやって作るか（手順）」を書きます。</p>
+<pre><code># 命令型：手順を書く（シェルスクリプト）
+aws ec2 run-instances --image-id ami-xxxx --instance-type t3.small --count 2</code></pre>
+    <p>これを 2 回実行すると、サーバーは <strong>4 台</strong> になります。「今何台あるか」を自分で調べて分岐を書かない限り、正しく動きません。</p>
+
+    <h3 id="sec-3-2">3.2 宣言型：あるべき姿を書く</h3>
+    <p><strong>宣言型（Declarative）</strong> は「最終的にどうなっていてほしいか（あるべき姿）」を書きます。</p>
+<pre><code># 宣言型：あるべき姿を書く（Terraform）
+resource "aws_instance" "api" {
+  count         = 2
+  ami           = "ami-xxxx"
+  instance_type = "t3.small"
+}</code></pre>
+    <p>ツールが <strong>現状とあるべき姿の差分</strong> を計算し、足りなければ作り、多ければ消し、違えば直します。何回実行しても結果は 2 台です。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="コード（あるべき姿は2台）と現実（今は1台）を比べて差分計算し、計画「1台追加」を立てて適用すると、現実が2台になる">
+      <defs>
+        <marker id="arw402a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="20" width="150" height="56" rx="8" class="d-box-accent"/>
+      <text x="85" y="44" text-anchor="middle" class="d-text-bold">コード</text>
+      <text x="85" y="63" text-anchor="middle" class="d-text-sub">あるべき姿：2 台</text>
+      <rect x="10" y="124" width="150" height="56" rx="8" class="d-box"/>
+      <text x="85" y="148" text-anchor="middle" class="d-text-bold">現実</text>
+      <text x="85" y="167" text-anchor="middle" class="d-text-sub">今は 1 台</text>
+      <rect x="200" y="72" width="120" height="56" rx="8" class="d-box-warn"/>
+      <text x="260" y="105" text-anchor="middle" class="d-text-bold">差分計算</text>
+      <path d="M160,48 L230,48 L230,70" class="d-line" marker-end="url(#arw402a)"/>
+      <path d="M160,152 L230,152 L230,130" class="d-line" marker-end="url(#arw402a)"/>
+      <rect x="360" y="72" width="120" height="56" rx="8" class="d-box"/>
+      <text x="420" y="96" text-anchor="middle" class="d-text-bold">計画</text>
+      <text x="420" y="115" text-anchor="middle" class="d-text-sub">1 台追加</text>
+      <rect x="510" y="72" width="80" height="56" rx="8" class="d-box"/>
+      <text x="550" y="105" text-anchor="middle" class="d-text-bold">適用</text>
+      <rect x="620" y="72" width="90" height="56" rx="8" class="d-box-good"/>
+      <text x="665" y="96" text-anchor="middle" class="d-text-bold">現実</text>
+      <text x="665" y="115" text-anchor="middle" class="d-text-sub">2 台</text>
+      <path d="M320,100 L358,100" class="d-line" marker-end="url(#arw402a)"/>
+      <path d="M480,100 L508,100" class="d-line" marker-end="url(#arw402a)"/>
+      <path d="M590,100 L618,100" class="d-line" marker-end="url(#arw402a)"/>
+    </svg>
+    <figcaption>図：宣言型ツールは「あるべき姿」と「現実」の差分だけを適用する。何回流しても結果は 2 台</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>命令型</th><th>宣言型</th></tr></thead>
+      <tbody>
+        <tr><td>書くもの</td><td>手順（How）</td><td>最終状態（What）</td></tr>
+        <tr><td>再実行</td><td>結果が変わり得る</td><td>結果は同じ</td></tr>
+        <tr><td>例</td><td>シェルスクリプト、AWS CLI</td><td>Terraform、CloudFormation、Kubernetes マニフェスト</td></tr>
+        <tr><td>得意</td><td>一度きりの処理、細かい順序制御</td><td>長期的に維持するインフラ</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout tip">
+      <p class="callout-title">Ansible はどっち？</p>
+      <p>Ansible のプレイブックは「上から順にタスクを実行する」点では手続き的ですが、各モジュールは「nginx が installed 状態であること」のように <strong>状態を宣言</strong> します。「手続き的に並べた宣言」と考えると分かりやすいです。Pulumi や AWS CDK は TypeScript などの命令型言語で書きますが、プログラムが <strong>組み立てるのは宣言的なモデル</strong> で、最終的な適用は宣言型として行われます。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>冪等性</h2>
+    <p><strong>冪等性（Idempotency、べきとうせい）</strong> とは、「<strong>同じ操作を何回行っても、1 回行ったときと同じ結果になる</strong>」性質です。エレベーターの「閉」ボタンを何回押しても、ドアが閉まった状態は変わらないのと同じです。</p>
+    <span class="code-label bad">✕ 冪等でない例：実行するたびに行が増える</span>
+<pre><code>echo "PermitRootLogin no" &gt;&gt; /etc/ssh/sshd_config</code></pre>
+    <span class="code-label good">◯ 冪等な例：何回やってもファイルの中身は同じ</span>
+<pre><code>echo "PermitRootLogin no" &gt; /etc/ssh/sshd_config.d/10-hardening.conf</code></pre>
+    <p>IaC ツールが冪等であることで、次のことが可能になります。</p>
+    <ul>
+      <li><strong>安心して再実行できる</strong>：途中で失敗しても、もう一度流せばよい</li>
+      <li><strong>定期実行でドリフトを直せる</strong>：誰かが手で変えても、次の実行で「あるべき姿」に戻る</li>
+      <li><strong>変化がないことを確認できる</strong>：Terraform の <code>plan</code> が "No changes"、Ansible が <code>changed=0</code> なら、実機はコード通り</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>ツールの役割分担</h2>
+    <p>IaC ツールは「何を作るか」によって担当が分かれます。Shop の構成で見てみましょう。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="外側の箱は①プロビジョニング（箱を作る）で、VPC、サブネット、EC2、SG、RDS、ALB、Route 53をTerraform、OpenTofu、CloudFormation、Pulumiが作る。その中のEC2インスタンスの中で、②構成管理（Ansible、Chef、Puppet）がNginx、Node.js、ユーザー、sysctl、unitファイルを整え、③イメージ作成（Packer）が②を焼き込んだAMIを作り、④コンテナ（Docker）がShop APIイメージをECSやKubernetesで実行する">
+      <rect x="10" y="10" width="700" height="310" rx="10" class="d-box"/>
+      <text x="30" y="38" class="d-text-bold">① プロビジョニング（箱を作る）</text>
+      <text x="320" y="38" class="d-text-sub">Terraform / OpenTofu / CloudFormation / Pulumi</text>
+      <text x="30" y="60" class="d-text-sub">VPC, サブネット, EC2, SG, RDS, ALB, Route 53</text>
+      <rect x="40" y="76" width="640" height="230" rx="10" class="d-box-accent"/>
+      <text x="60" y="102" class="d-text-bold">EC2 インスタンス</text>
+      <rect x="60" y="114" width="600" height="54" rx="8" class="d-box"/>
+      <text x="76" y="137" class="d-text-bold">② 構成管理（中身を整える）　Ansible / Chef / Puppet</text>
+      <text x="76" y="157" class="d-text-sub">Nginx, Node.js, ユーザー, sysctl, unit ファイル</text>
+      <rect x="60" y="178" width="600" height="46" rx="8" class="d-box"/>
+      <text x="76" y="206" class="d-text-bold">③ イメージ作成（②を焼き込んだ AMI）　Packer</text>
+      <rect x="60" y="234" width="600" height="58" rx="8" class="d-box-good"/>
+      <text x="76" y="258" class="d-text-bold">④ コンテナ（アプリ＋依存をまとめて配布）　Docker</text>
+      <text x="76" y="279" class="d-text-sub">Shop API イメージ → ECS / Kubernetes で実行</text>
+    </svg>
+    <figcaption>図：外側の「箱」はプロビジョニング、箱の中身は構成管理・イメージ作成・コンテナが受け持つ</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>役割</th><th>代表ツール</th><th>例え</th></tr></thead>
+      <tbody>
+        <tr><td>① プロビジョニング（Provisioning）</td><td>クラウドの API を呼んでリソースを作る</td><td>Terraform、OpenTofu、CloudFormation、Pulumi</td><td>部屋を借りる・間取りを決める</td></tr>
+        <tr><td>② 構成管理（Configuration Management）</td><td>OS の中のパッケージ・設定ファイル・サービスを整える</td><td>Ansible、Chef、Puppet</td><td>家具を入れて配置する</td></tr>
+        <tr><td>③ イメージ作成（Image Building）</td><td>②を済ませた状態をマシンイメージに焼く</td><td>Packer、EC2 Image Builder</td><td>家具付きの部屋をモデルルームとして複製</td></tr>
+        <tr><td>④ コンテナ</td><td>アプリと依存関係をイメージにまとめる</td><td>Docker、Kubernetes</td><td>家具ごと運べるコンテナハウス</td></tr>
+      </tbody>
+    </table></div>
+    <p>典型的な組み合わせは次の 3 パターンです。</p>
+    <ol class="steps">
+      <li><strong>Terraform + Ansible</strong>：Terraform で EC2 を作り、Ansible で中身を設定する（ミュータブル寄り。この章で扱う形）</li>
+      <li><strong>Packer + Terraform</strong>：Packer で Ansible を使って AMI を作り、Terraform はその AMI で EC2 を作るだけ（イミュータブル）</li>
+      <li><strong>Terraform + コンテナ</strong>：Terraform で ECS/EKS とネットワークを作り、アプリはコンテナイメージで配る（53_コンテナの「Dockerとは」「Kubernetes」のノート）</li>
+    </ol>
+
+    <h2 id="sec-6"><span class="num">6.</span>主要ツールの比較（2026 年時点）</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ツール</th><th>種類</th><th>書き方</th><th>対象</th><th>状態管理</th><th>ライセンス</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Terraform</strong></td><td>プロビジョニング</td><td>HCL（宣言型）</td><td>マルチクラウド・SaaS</td><td>state ファイル（自分で管理 or HCP Terraform）</td><td>BSL 1.1</td></tr>
+        <tr><td><strong>OpenTofu</strong></td><td>プロビジョニング</td><td>HCL（Terraform 互換）</td><td>同上</td><td>state ファイル</td><td>MPL 2.0</td></tr>
+        <tr><td><strong>CloudFormation</strong></td><td>プロビジョニング</td><td>YAML / JSON</td><td>AWS 専用</td><td>AWS が管理（スタック）</td><td>AWS のサービス</td></tr>
+        <tr><td><strong>AWS CDK</strong></td><td>プロビジョニング</td><td>TypeScript / Python 等 → CloudFormation</td><td>AWS 専用</td><td>CloudFormation スタック</td><td>Apache 2.0</td></tr>
+        <tr><td><strong>Pulumi</strong></td><td>プロビジョニング</td><td>TypeScript / Python / Go / C# / Java / YAML</td><td>マルチクラウド</td><td>Pulumi Cloud or 自前バックエンド</td><td>Apache 2.0</td></tr>
+        <tr><td><strong>Ansible</strong></td><td>構成管理</td><td>YAML（プレイブック）</td><td>OS 内部・ネットワーク機器</td><td>持たない（毎回実機を確認）</td><td>GPL v3</td></tr>
+        <tr><td><strong>Chef</strong></td><td>構成管理</td><td>Ruby DSL</td><td>OS 内部</td><td>Chef Server</td><td>Apache 2.0（配布物は商用ライセンス）</td></tr>
+        <tr><td><strong>Puppet</strong></td><td>構成管理</td><td>Puppet DSL（宣言型）</td><td>OS 内部</td><td>Puppet Server</td><td>Apache 2.0（オープンソース版）</td></tr>
+        <tr><td><strong>Packer</strong></td><td>イメージ作成</td><td>HCL</td><td>AMI、VM イメージ等</td><td>なし</td><td>BSL 1.1</td></tr>
+      </tbody>
+    </table></div>
+    <p>選び方の目安：</p>
+    <ul>
+      <li><strong>AWS だけ、AWS 純正が安心</strong> → CloudFormation / CDK（<a href="40-5_CloudFormationとCDK.html">40-5 CloudFormationとCDK</a>）</li>
+      <li><strong>複数クラウドや Cloudflare・GitHub・Datadog なども一緒に管理したい</strong> → Terraform / OpenTofu（<a href="40-3_Terraform入門.html">40-3 Terraform入門</a>）</li>
+      <li><strong>アプリ開発者が使い慣れた言語で書きたい</strong> → Pulumi / CDK</li>
+      <li><strong>VM の中身を整える</strong> → Ansible（エージェント不要で学習コストが低い。<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>）</li>
+      <li>Chef / Puppet は <strong>エージェント</strong>（管理対象に常駐させる専用プログラム）常駐型で、大規模な既存環境で使われていることが多く、新規採用は減っています</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>GitOps</h2>
+    <p><strong>GitOps</strong> は、IaC をさらに進めて <strong>「Git リポジトリを唯一の正（Single Source of Truth）とし、実環境を自動的に Git に合わせ続ける」</strong> 運用方法です。CNCF の OpenGitOps プロジェクトは原則を次の 4 つにまとめています。</p>
+    <ol class="steps">
+      <li><strong>宣言的（Declarative）</strong>：あるべき状態を宣言的に記述する</li>
+      <li><strong>バージョン管理され不変（Versioned and Immutable）</strong>：その状態は Git などに履歴付きで保存される</li>
+      <li><strong>自動で取り込まれる（Pulled Automatically）</strong>：エージェントが Git から状態を自動で取得する</li>
+      <li><strong>継続的に調整される（Continuously Reconciled）</strong>：実環境と宣言を常に比較し、ずれを直す</li>
+    </ol>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="開発者がGitリポジトリにプルリクエストを出し、レビューしてマージする。GitOpsエージェント（Argo CDやFlux）は常に、Gitからあるべき状態を取得し、実環境から実際の状態を取得し、差分があれば実環境に適用してドリフトを修正する">
+      <defs>
+        <marker id="arw402b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="16" width="140" height="44" rx="8" class="d-box"/>
+      <text x="80" y="43" text-anchor="middle" class="d-text-bold">開発者</text>
+      <rect x="200" y="16" width="150" height="44" rx="8" class="d-box"/>
+      <text x="275" y="43" text-anchor="middle" class="d-text-bold">Git リポジトリ</text>
+      <rect x="390" y="10" width="170" height="56" rx="8" class="d-box-accent"/>
+      <text x="475" y="34" text-anchor="middle" class="d-text-bold">GitOps エージェント</text>
+      <text x="475" y="53" text-anchor="middle" class="d-text-sub">Argo CD / Flux</text>
+      <rect x="600" y="16" width="110" height="44" rx="8" class="d-box"/>
+      <text x="655" y="43" text-anchor="middle" class="d-text-bold">実環境</text>
+      <path d="M80,60 L80,285" class="d-line-dash"/>
+      <path d="M275,60 L275,285" class="d-line-dash"/>
+      <path d="M475,66 L475,285" class="d-line-dash"/>
+      <path d="M655,60 L655,285" class="d-line-dash"/>
+
+      <text x="178" y="98" text-anchor="middle" class="d-text-sub">PR → レビュー → マージ</text>
+      <path d="M80,108 L273,108" class="d-line" marker-end="url(#arw402b)"/>
+
+      <rect x="250" y="130" width="460" height="148" rx="8" class="d-box-warn"/>
+      <text x="262" y="150" class="d-text-sub">常に繰り返す</text>
+      <text x="375" y="172" text-anchor="middle" class="d-text-sub">あるべき状態を取得</text>
+      <path d="M475,182 L277,182" class="d-line" marker-end="url(#arw402b)"/>
+      <text x="565" y="212" text-anchor="middle" class="d-text-sub">実際の状態を取得</text>
+      <path d="M475,222 L653,222" class="d-line" marker-end="url(#arw402b)"/>
+      <text x="565" y="250" text-anchor="middle" class="d-text-sub">差分があれば適用</text>
+      <path d="M475,260 L653,260" class="d-line" marker-end="url(#arw402b)"/>
+    </svg>
+    <figcaption>図：人は Git にマージするだけ。エージェントが Git と実環境を比べ、ずれを直し続ける</figcaption>
+    </figure>
+
+    <p>人が <code>kubectl apply</code> や <code>terraform apply</code> を手元から打つのではなく、<strong>Git にマージすることが唯一の変更手段</strong> になります。Kubernetes の世界では Argo CD や Flux が代表的です。Terraform でも、CI でマージ時に <code>apply</code> する（Atlantis、HCP Terraform、Spacelift など）ことで近い運用ができます。CI/CD とデプロイ戦略は 64_CI-CD・65_リリース・デプロイのノートで扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>Terraform のライセンス変更と OpenTofu</h2>
+    <p>ツール選定で知っておくべき出来事です（2026 年時点の情報）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>時期</th><th>出来事</th></tr></thead>
+      <tbody>
+        <tr><td>2023 年 8 月 10 日</td><td>HashiCorp が Terraform を含む製品のライセンスを <strong>MPL 2.0（オープンソース）から BSL 1.1（Business Source License）</strong> に変更すると発表。BSL では、自社製品と競合する形で Terraform をホスティング・組み込み提供することが制限されます。<strong>自社のインフラ管理に Terraform を使うこと自体は、商用でも引き続き可能</strong> です。</td></tr>
+        <tr><td>2023 年 9 月</td><td>コミュニティによるフォーク（分岐して作られた別プロジェクト）<strong>OpenTofu</strong>（当初の名前は OpenTF）が Linux Foundation のプロジェクトとして受け入れられる。ライセンスは MPL 2.0 のまま。</td></tr>
+        <tr><td>2024 年 1 月</td><td>OpenTofu 1.6 が最初の安定版としてリリース。</td></tr>
+        <tr><td>2025 年 2 月</td><td>IBM による HashiCorp の買収が完了。</td></tr>
+        <tr><td>2025 年 4 月</td><td>OpenTofu が CNCF の Sandbox プロジェクトに。</td></tr>
+      </tbody>
+    </table></div>
+    <p>OpenTofu は Terraform 1.5 系からの分岐で、HCL・プロバイダー・state 形式がおおむね互換です（コマンドは <code>tofu plan</code> など）。その後はそれぞれ独自機能（OpenTofu の state 暗号化など）を追加しており、<strong>新しい機能ほど互換性は保証されない</strong> 点に注意してください。このサイトでは Terraform で説明しますが、ほぼそのまま OpenTofu にも読み替えられます。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>発展：構成ドリフト・冪等性・バージョン管理（ネットワーク機器の例）</h2>
+    <p>ネットワーク機器の設定を例に、構成ドリフト・冪等性・IaC と Git による変更管理を整理します。ネットワーク機器の自動化そのものは <a href="40-6_ネットワーク自動化とSDN.html">40-6 ネットワーク自動化とSDN</a> で扱います。</p>
+
+    <h3 id="sec-9-1">9.1 構成ドリフト</h3>
+    <p><strong>構成ドリフト（configuration drift）</strong> とは、<strong>手作業の変更が積み重なり、機器の設定が標準の設定から少しずつずれていく問題</strong> です。</p>
+<pre><code> 標準設定（ゴールデンコンフィグ）
+   SW1: ntp server 10.0.0.1 / logging 10.0.0.5 / snmp ...
+   SW2: 同上
+   SW3: 同上
+        │ 障害対応で SW2 に一時的な設定を追加 → 戻し忘れ
+        │ SW3 は担当者が独自に ACL を修正
+        ▼
+   SW1: 標準どおり
+   SW2: 標準 + debug設定 + 一時ACL        ← ドリフト
+   SW3: 標準 - logging + 独自ACL          ← ドリフト
+   → 同じ役割の機器なのに設定がばらばら → トラブルの原因</code></pre>
+    <p><strong>ゴールデンコンフィグ</strong> は、同じ役割の機器がそろえるべき「お手本の設定」のことです。<strong>対策</strong>：構成管理ツールで「あるべき設定」をコードとして定義しておけば、</p>
+    <ul>
+      <li>変更履歴が残る</li>
+      <li>標準とのずれを <strong>機械的に検出</strong> できる</li>
+      <li>ツールを再実行して <strong>元に戻せる</strong></li>
+    </ul>
+    <p>構成ドリフトは「<strong>設定内容のずれ</strong>」のことであり、次とは無関係です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>似て非なるもの</th><th>実際の話題</th></tr></thead>
+      <tbody>
+        <tr><td>STP の再計算でルートブリッジが移る</td><td>STP の動作</td></tr>
+        <tr><td>NTP の同期が外れて時刻がずれる</td><td>時刻のずれ（NTP で防ぐ）</td></tr>
+        <tr><td>無線端末が AP 間を移動する</td><td>無線 LAN のローミング</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-2">9.2 冪等性（ネットワーク機器の例）</h3>
+    <p><strong>冪等性（idempotency）</strong> とは、<strong>同じ処理を何度実行しても、結果が同じ状態になる性質</strong> です。</p>
+<pre><code> 処理：「VLAN 10 (Sales) が存在する状態にする」
+
+ 1回目: VLAN 10 なし → 作成する        → 結果：VLAN 10 あり   (changed)
+ 2回目: VLAN 10 あり → 何もしない      → 結果：VLAN 10 あり   (ok)
+ 3回目: VLAN 10 あり → 何もしない      → 結果：VLAN 10 あり   (ok)
+         ↑ 何度実行しても同じ状態 ＝ 冪等</code></pre>
+    <p>冪等でない例：実行するたびに設定が 1 行ずつ追加されていく（実行のたびに結果が変わる）。</p>
+    <p><strong>なぜ重要か</strong>：</p>
+    <ul>
+      <li>すでに望ましい状態なら何も変更しないので、<strong>安心して繰り返し実行できる</strong>。</li>
+      <li>一部の機器で処理が失敗しても、<strong>同じ処理をもう一度すべての機器に実行するだけで</strong>、全体を望ましい状態にそろえられる。</li>
+      <li>構成ドリフトの修正にも使える（定期的に再実行すれば標準に戻る）。</li>
+    </ul>
+    <p>冪等性は「処理時間（1 秒以内に終わる）」や「並列実行（全機器に同時に実行）」とは関係ありません。</p>
+
+    <h3 id="sec-9-3">9.3 IaC とバージョン管理</h3>
+    <p><strong>IaC（Infrastructure as Code）</strong> は、<strong>インフラの設定をコードとして管理する考え方</strong> です。ネットワークの設定やプレイブックを <strong>Git などのバージョン管理システム</strong> で管理すると、ソフトウェア開発と同じ方法でネットワークの変更を管理できます。</p>
+<pre><code> 担当者A: vlan.yml を編集 ─&gt; git commit ─&gt; プルリクエスト
+                                              │ レビュー（担当者Bが差分を確認）
+                                              ▼
+                                         テスト環境で事前確認
+                                              │
+                                              ▼
+                                       main にマージ → Ansible で本番適用
+                                              │ 問題発生！
+                                              ▼
+                                       git revert で以前の版に戻して再適用</code></pre>
+    <p>Git で管理する利点：</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>利点</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>変更履歴</td><td><strong>誰がいつ何を変更したか</strong> が残る</td></tr>
+        <tr><td>差分確認</td><td>変更前後の差分を確認できる</td></tr>
+        <tr><td>レビュー</td><td>複数人で変更内容をレビューできる</td></tr>
+        <tr><td>テスト</td><td>テスト環境で事前に確認できる</td></tr>
+        <tr><td>切り戻し</td><td>問題が起きたとき <strong>以前の状態（バージョン）へ戻しやすい</strong></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">注意点</p>
+      <ul>
+        <li>機器の <strong>転送性能は変わらない</strong>（管理方法の話）。</li>
+        <li><strong>セキュリティ対策は不要にならない</strong>。むしろ <strong>コードの中にパスワードなどを書かない</strong> よう注意が必要（Ansible Vault や環境変数などで秘密情報を分離）。</li>
+        <li>設定ミスは減らせるが <strong>絶対に起きなくなるわけではない</strong>。レビューやテストと組み合わせる。</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-9-4">9.4 ひっかけポイントと押さえておくポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ひっかけポイント・よくある誤解</h4>
+        <ul>
+          <li>構成ドリフト＝ <strong>設定内容のずれ</strong>。STP のルートブリッジ移動、NTP の時刻ずれ、無線ローミングではない。</li>
+          <li>冪等性＝ <strong>何度実行しても同じ結果</strong>。1 行ずつ追加される（冪等でない）、1 秒以内、同時実行とは無関係。</li>
+          <li>Git で管理しても性能向上・セキュリティ不要・ミスゼロにはならない。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>押さえておくポイント</h4>
+        <ul>
+          <li>構成ドリフト ＝ 手作業変更の蓄積による標準からのずれ。構成管理ツールで検出・修正。</li>
+          <li>冪等性 ＝ 何度実行しても同じ状態。望ましい状態なら何もしない。</li>
+          <li>IaC ＋ Git ＝ 履歴・レビュー・テスト・切り戻し。秘密情報をコードに書かない。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li><strong>✕ IaC を導入すれば手作業は一切なくなる</strong><br>◯ 初回のアカウント作成、state 用バケットの用意、緊急時の調査などは残ります。大事なのは「<strong>変更は必ずコード経由</strong>」というルールで、手で変えたら必ずコードに戻すことです。</li>
+        <li><strong>✕ 宣言型ならどんな変更も安全</strong><br>◯ 宣言型ツールは「あるべき姿に合わせる」ために <strong>リソースを削除・再作成</strong> することがあります。DB の再作成はデータ消失を意味します。適用前に計画（plan / 変更セット）を必ず読みます。</li>
+        <li><strong>✕ Terraform と Ansible はどちらか一方を選ぶもの</strong><br>◯ 得意分野が違います。「箱」は Terraform、「中身」は Ansible と分担するのが定番です。</li>
+        <li><strong>✕ Terraform の BSL 化で、会社で Terraform を使うのは違法になった</strong><br>◯ 自社インフラの管理に使うのは問題ありません。制限されるのは Terraform と競合する製品・サービスを提供するケースです。判断が必要な場合は法務に確認してください。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <ul>
+      <li>IaC はインフラ構成をコード化し、ツールで自動的に作る・変える方法</li>
+      <li>利点は再現性・レビュー・履歴・自動化、そして「正しいドキュメント」</li>
+      <li>宣言型は「あるべき姿」を書き、ツールが差分を計算する。冪等なので何度でも安全に再実行できる</li>
+      <li>プロビジョニング（Terraform 等）・構成管理（Ansible 等）・イメージ作成（Packer）・コンテナで役割を分担する</li>
+      <li>GitOps は Git を唯一の正とし、エージェントが実環境を継続的に合わせる運用</li>
+      <li>Terraform は 2023 年に BSL 化し、MPL のフォーク OpenTofu が生まれた</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 次のスクリプトは冪等ですか。理由とともに答えてください：<code>useradd shop</code></summary>
+      <div class="body"><p>冪等ではありません。2 回目の実行では「ユーザーが既に存在する」というエラーになります。冪等にするには <code>id shop || useradd shop</code> のように存在確認を加えるか、Ansible の <code>user</code> モジュールのように「存在すること」を宣言するツールを使います。</p></div>
+    </details>
+    <details>
+      <summary>Q2. Shop の EC2 インスタンスとセキュリティグループを作るのと、その EC2 に Nginx を入れて設定するのとでは、それぞれどの種類のツールが適していますか。</summary>
+      <div class="body"><p>EC2 とセキュリティグループの作成はプロビジョニングツール（Terraform、CloudFormation など）、Nginx の導入と設定は構成管理ツール（Ansible など）が適しています。Packer で Nginx 入りの AMI を作る方法もあります。</p></div>
+    </details>
+    <details>
+      <summary>Q3. GitOps で「継続的に調整される（Continuously Reconciled）」とはどういう意味ですか。</summary>
+      <div class="body"><p>エージェントが Git 上の宣言と実環境を常に比較し、誰かが手で変更するなどしてずれが生じたら、自動的に Git の状態へ戻し続けることです。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 命令型の <code>aws ec2 run-instances --count 2</code> と、宣言型の <code>count = 2</code> を、それぞれ 2 回実行すると何台になりますか。</summary>
+      <div class="body"><p>命令型は実行のたびに 2 台作るので 4 台、宣言型は「2 台ある状態」に合わせるだけなので 2 台のままです。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 「NTP の同期が外れて機器の時刻がずれた」は構成ドリフトですか。</summary>
+      <div class="body"><p>いいえ。構成ドリフトは手作業の変更などで <strong>設定内容</strong> が標準からずれていくことです。時刻のずれは NTP の話題で、構成ドリフトとは関係ありません。</p></div>
+    </details>
+    <details>
+      <summary>Q6. ネットワーク設定を Git で管理すれば、パスワードをコードに書いても安全ですか。</summary>
+      <div class="body"><p>いいえ。Git で管理してもセキュリティ対策は不要になりません。むしろ履歴に残って広まりやすいので、Ansible Vault や環境変数などで秘密情報をコードから分離します。</p></div>
+    </details>
+    <details>
+      <summary>Q7. Terraform の BSL 化のあと、会社の自社インフラ管理に Terraform を使い続けてよいですか。</summary>
+      <div class="body"><p>使えます。BSL で制限されるのは Terraform と競合する製品・サービスとしてホスティング・組み込み提供するケースです。判断が必要な場合は法務に確認します。MPL 2.0 のままのフォークとして OpenTofu もあります。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/40_構築・IaC/02_IaCとは</li>
+      <li>HashiCorp adopts Business Source License (2023) https://www.hashicorp.com/en/blog/hashicorp-adopts-business-source-license</li>
+      <li>OpenTofu https://opentofu.org/</li>
+      <li>Linux Foundation Launches OpenTofu https://www.linuxfoundation.org/press/announcing-opentofu</li>
+      <li>IBM Completes Acquisition of HashiCorp https://newsroom.ibm.com/2025-02-27-ibm-completes-acquisition-of-hashicorp,-creates-comprehensive,-end-to-end-hybrid-cloud-platform</li>
+      <li>OpenGitOps Principles https://opengitops.dev/</li>
+      <li>Terraform - What is Infrastructure as Code https://developer.hashicorp.com/terraform/tutorials/aws-get-started/infrastructure-as-code</li>
+      <li>Ansible documentation https://docs.ansible.com/</li>
+      <li>Pulumi documentation https://www.pulumi.com/docs/</li>
+      <li>関連ページ：<a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a>、<a href="40-3_Terraform入門.html">40-3 Terraform入門</a>、<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>、<a href="40-5_CloudFormationとCDK.html">40-5 CloudFormationとCDK</a></li>
+      <li>関連ノート（解説ページなし）：53_コンテナ「Dockerとは」「Kubernetes」、65_リリース・デプロイ「MOC_リリース・デプロイ体系」</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-1_サーバー構築の流れ.html"><span class="lbl">← 前のページ</span>サーバー構築の流れ</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-3_Terraform入門.html"><span class="lbl">次のページ →</span>Terraform入門</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

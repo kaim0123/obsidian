@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudFormationとCDK｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 構築・IaC › CloudFormationとCDK</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 構築・IaC</span>
+      <h1>CloudFormationとCDK</h1>
+      <p class="lead"><strong>AWS CloudFormation</strong> は AWS 純正の IaC で、YAML / JSON のテンプレートから <strong>スタック</strong> という単位でリソースをまとめて作ります。<strong>AWS CDK</strong> は、そのテンプレートを TypeScript などのプログラミング言語で書けるようにする道具です。このページでは、テンプレートとスタックの考え方、<strong>変更セット</strong>・<strong>ロールバック</strong>・<strong>ドリフト検出</strong> による安全な運用、CDK の <code>synth</code> / <code>diff</code> / <code>deploy</code> と L1/L2/L3 コンストラクト、Pulumi との比較、Terraform とどちらを選ぶかの判断基準を解説します。</p>
+      <p class="meta">もとにしたノート：40_構築・IaC/05_CloudFormationとCDK</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>CloudFormation は <strong>「AWS 純正の施工管理サービス」</strong>、CDK は <strong>「その施工管理サービスへの発注書を、プログラミング言語で書けるようにする道具」</strong> です。工事記録（state）は AWS 側が保管してくれ、失敗すれば自動で元に戻ります。そのかわり <strong>AWS 専用</strong> です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>CloudFormation と CDK の位置づけ</h2>
+    <p>Terraform が「どの国（クラウド）の現場でも請け負う外部の建築会社」だとすると、CloudFormation は AWS の中に住んでいる専属の施工チームで、工事記録（state）も AWS 側が保管してくれます。</p>
+    <ul>
+      <li><strong>CloudFormation</strong>：YAML / JSON のテンプレートを渡すと、AWS がリソースをまとめて作成・更新・削除する。まとめた単位を <strong>スタック</strong> と呼ぶ</li>
+      <li><strong>AWS CDK（Cloud Development Kit）</strong>：TypeScript / Python / Java / C# / Go でインフラを書き、CloudFormation テンプレートに <strong>変換（synth）</strong> してデプロイする</li>
+      <li>どちらも <strong>AWS 専用</strong>。そのぶん AWS との統合が深い</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">AWS 製品の詳細</p>
+      <p>個々の AWS サービス（CodePipeline など開発者ツール群）の詳細は 63_AWS の「10_開発者ツール」のノートにまとめています。このページは「IaC としての考え方と使い方」に絞ります。宣言型・冪等性は <a href="40-2_IaCとは.html">40-2 IaCとは</a>、比較対象の Terraform は <a href="40-3_Terraform入門.html">40-3 Terraform入門</a> を見てください。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>CloudFormation のテンプレートとスタック</h2>
+
+    <h3 id="sec-2-1">2.1 テンプレートの構造</h3>
+    <p>テンプレートは「あるべき姿」を書いた宣言型のファイルです。主なセクションは次の通りです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>セクション</th><th>役割</th><th>Terraform でいうと</th></tr></thead>
+      <tbody>
+        <tr><td><code>Parameters</code></td><td>外から渡す入力値</td><td><code>variable</code></td></tr>
+        <tr><td><code>Mappings</code> / <code>Conditions</code></td><td>表引き・条件分岐</td><td><code>locals</code>、<code>count</code></td></tr>
+        <tr><td><code>Resources</code></td><td>作るリソース（<strong>必須</strong>）</td><td><code>resource</code></td></tr>
+        <tr><td><code>Outputs</code></td><td>出力値。他スタックへのエクスポートも可</td><td><code>output</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>Shop の Web サーバー（セキュリティグループ + EC2）を CloudFormation で書くと次のようになります。</p>
+<pre><code># shop-web.yml
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shop web/api server
+
+Parameters:
+  Env:
+    Type: String
+    AllowedValues: [stg, prod]
+  AdminCidr:
+    Type: String
+    Description: SSH を許可する管理者の IP (/32)
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+  UbuntuAmi:
+    # Canonical が公開している SSM パラメータから最新の Ubuntu 24.04 AMI を引く
+    Type: AWS::SSM::Parameter::Value&lt;AWS::EC2::Image::Id&gt;
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+
+Resources:
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Shop web server
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 22,  ToPort: 22,  CidrIp: !Ref AdminCidr }
+
+  WebInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAmi
+      InstanceType: t3.small
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !GetAtt WebSecurityGroup.GroupId
+      MetadataOptions:
+        HttpTokens: required          # IMDSv2 を強制
+      Tags:
+        - Key: Name
+          Value: !Sub shop-${Env}-web-01
+
+Outputs:
+  PublicIp:
+    Value: !GetAtt WebInstance.PublicIp</code></pre>
+    <p><code>!Ref</code>（パラメータやリソースの参照）、<code>!GetAtt</code>（リソースの属性）、<code>!Sub</code>（文字列への埋め込み）は <strong>組み込み関数</strong> です。Terraform と同じく、参照関係から作成順序が自動で決まります。</p>
+
+    <h3 id="sec-2-2">2.2 スタック</h3>
+    <p><strong>スタック（Stack）</strong> は「1 つのテンプレートから作られたリソースのまとまり」です。スタック単位で作成・更新・削除するので、<strong>スタックを消すと中のリソースもまとめて消えます</strong>。</p>
+<pre><code>aws cloudformation deploy \
+  --template-file shop-web.yml \
+  --stack-name shop-prod-web \
+  --parameter-overrides Env=prod AdminCidr=203.0.113.10/32 KeyName=shop-deploy
+
+aws cloudformation describe-stacks --stack-name shop-prod-web \
+  --query "Stacks[0].Outputs"</code></pre>
+    <p>Terraform との大きな違いは <strong>state を自分で管理しなくてよい</strong> ことです。どのリソースがどのスタックに属するかは AWS 側が記録しており、S3 バケットやロックの準備は不要です。</p>
+    <p>実務では、ネットワーク・DB・アプリのように <strong>ライフサイクルの違うものはスタックを分け</strong>、<code>Outputs</code> の <code>Export</code> と <code>!ImportValue</code>（またはパラメータ）でつなぎます。誤削除が困る DB には <code>DeletionPolicy: Retain</code> や <code>Snapshot</code> を付け、スタックには <strong>削除保護（Termination Protection）</strong> を有効にします。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>安全に変更する仕組み</h2>
+
+    <h3 id="sec-3-1">3.1 変更セット</h3>
+    <p><strong>変更セット（Change Set）</strong> は Terraform の <code>plan</code> に当たるもので、「このテンプレートを適用すると何が起きるか」を実行前に確認できます。</p>
+<pre><code># 変更セットを作るだけで、実行はしない
+aws cloudformation deploy --template-file shop-web.yml --stack-name shop-prod-web \
+  --parameter-overrides Env=prod AdminCidr=203.0.113.10/32 KeyName=shop-deploy \
+  --no-execute-changeset
+
+aws cloudformation describe-change-set --stack-name shop-prod-web \
+  --change-set-name &lt;表示された名前&gt;
+# → 内容を確認してから
+aws cloudformation execute-change-set --stack-name shop-prod-web \
+  --change-set-name &lt;名前&gt;</code></pre>
+    <p>各変更には <code>Action</code>（Add / Modify / Remove）と、Modify の場合は <strong><code>Replacement</code>（True / False / Conditional）</strong> が表示されます。<code>Replacement: True</code> は Terraform の <code>-/+</code> と同じく <strong>作り直し</strong> なので、必ず確認します。</p>
+
+    <h3 id="sec-3-2">3.2 ロールバック</h3>
+    <p>CloudFormation は更新の途中でエラーが起きると、<strong>自動的に直前の正常な状態へロールバック</strong> します。これは Terraform にはない大きな利点で、「半分だけ更新されて壊れた環境」が残りにくくなります。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="UPDATE_IN_PROGRESSから、全リソースが成功すればUPDATE_COMPLETEになる。途中で失敗するとUPDATE_ROLLBACK_IN_PROGRESSになり、UPDATE_ROLLBACK_COMPLETEで元の状態に戻る。ロールバックも失敗するとUPDATE_ROLLBACK_FAILEDになり手動対応が必要">
+      <defs>
+        <marker id="arw405a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="90" width="200" height="50" rx="8" class="d-box-accent"/>
+      <text x="110" y="120" text-anchor="middle" class="d-text-bold">UPDATE_IN_PROGRESS</text>
+      <rect x="290" y="14" width="200" height="50" rx="8" class="d-box-good"/>
+      <text x="390" y="44" text-anchor="middle" class="d-text-bold">UPDATE_COMPLETE</text>
+      <rect x="250" y="150" width="240" height="50" rx="8" class="d-box-warn"/>
+      <text x="370" y="180" text-anchor="middle" class="d-text-bold">ROLLBACK_IN_PROGRESS</text>
+      <rect x="530" y="90" width="180" height="56" rx="8" class="d-box-good"/>
+      <text x="620" y="114" text-anchor="middle" class="d-text-bold">ROLLBACK_COMPLETE</text>
+      <text x="620" y="134" text-anchor="middle" class="d-text-sub">元の状態に戻る</text>
+      <rect x="530" y="166" width="180" height="56" rx="8" class="d-box-bad"/>
+      <text x="620" y="190" text-anchor="middle" class="d-text-bold">ROLLBACK_FAILED</text>
+      <text x="620" y="210" text-anchor="middle" class="d-text-sub">手動対応が必要</text>
+      <path d="M150,90 L150,39 L288,39" class="d-line" marker-end="url(#arw405a)"/>
+      <text x="160" y="60" class="d-text-sub">全リソース成功</text>
+      <path d="M150,140 L150,175 L248,175" class="d-line" marker-end="url(#arw405a)"/>
+      <text x="160" y="196" class="d-text-sub">途中で失敗</text>
+      <path d="M490,165 L528,125" class="d-line" marker-end="url(#arw405a)"/>
+      <path d="M490,190 L528,194" class="d-line" marker-end="url(#arw405a)"/>
+    </svg>
+    <figcaption>図：更新が途中で失敗すると自動でロールバックする（図中の ROLLBACK_… は UPDATE_ROLLBACK_… の略）</figcaption>
+    </figure>
+
+    <ul>
+      <li>新規作成時に失敗すると <code>ROLLBACK_COMPLETE</code> になり、そのスタックは削除して作り直すしかありません</li>
+      <li>調査のために <code>--disable-rollback</code> オプションを付けて、失敗時点の状態を残すこともできます（開発環境向け）</li>
+      <li>CloudWatch アラームを <strong>ロールバックトリガー</strong> に設定すると、更新後にアラームが鳴ったら自動で戻すこともできます</li>
+    </ul>
+
+    <h3 id="sec-3-3">3.3 ドリフト検出</h3>
+    <p>コンソールで手動変更された場合に備え、<strong>ドリフト検出（Drift Detection）</strong> があります。</p>
+<pre><code>aws cloudformation detect-stack-drift --stack-name shop-prod-web
+aws cloudformation describe-stack-resource-drifts --stack-name shop-prod-web \
+  --stack-resource-drift-status-filters MODIFIED DELETED</code></pre>
+    <p>結果は <code>IN_SYNC</code> / <code>MODIFIED</code> / <code>DELETED</code> などで表示され、どのプロパティがテンプレートと違うかが分かります。Terraform と違い、<strong>検出するだけで自動では直しません</strong>。テンプレートを再適用するか、テンプレートを実態に合わせて更新します（AWS Config のルールで定期的にチェックすることもできます）。</p>
+    <div class="callout tip">
+      <p class="callout-title">既存リソースの取り込み</p>
+      <p>手作業で作ったリソースは <strong>リソースのインポート</strong>（<code>IMPORT</code> タイプの変更セット）でスタックに取り込めます。2024 年からは、既存リソースをスキャンしてテンプレートを生成する <strong>IaC ジェネレーター</strong> も使えます。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>AWS CDK：TypeScript でインフラを書く</h2>
+
+    <h3 id="sec-4-1">4.1 なぜ CDK か</h3>
+    <p>CloudFormation の YAML は、規模が大きくなると <strong>数千行</strong> になり、繰り返しや条件分岐が書きにくくなります。CDK は TypeScript などのプログラミング言語でインフラを書き、<strong>CloudFormation テンプレートを生成</strong> します。ループ、関数、クラス、型チェック、IDE の補完がそのまま使えます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 120" role="img" aria-label="TypeScriptコード（lib/shop-stack.ts）をcdk synthでCloudFormationテンプレートに変換し、cdk deployでCloudFormationスタックとしてデプロイすると、AWSリソースができる">
+      <defs>
+        <marker id="arw405b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="30" width="160" height="60" rx="8" class="d-box-accent"/>
+      <text x="90" y="56" text-anchor="middle" class="d-text-bold">TypeScript</text>
+      <text x="90" y="76" text-anchor="middle" class="d-text-sub">lib/shop-stack.ts</text>
+      <rect x="210" y="30" width="160" height="60" rx="8" class="d-box"/>
+      <text x="290" y="56" text-anchor="middle" class="d-text-bold">CloudFormation</text>
+      <text x="290" y="76" text-anchor="middle" class="d-text-sub">テンプレート</text>
+      <rect x="410" y="30" width="160" height="60" rx="8" class="d-box"/>
+      <text x="490" y="56" text-anchor="middle" class="d-text-bold">CloudFormation</text>
+      <text x="490" y="76" text-anchor="middle" class="d-text-sub">スタック</text>
+      <rect x="610" y="30" width="100" height="60" rx="8" class="d-box-good"/>
+      <text x="660" y="65" text-anchor="middle" class="d-text-bold">AWS</text>
+      <path d="M170,60 L208,60" class="d-line" marker-end="url(#arw405b)"/>
+      <text x="190" y="22" text-anchor="middle" class="d-text-sub">cdk synth</text>
+      <path d="M370,60 L408,60" class="d-line" marker-end="url(#arw405b)"/>
+      <text x="390" y="22" text-anchor="middle" class="d-text-sub">cdk deploy</text>
+      <path d="M570,60 L608,60" class="d-line" marker-end="url(#arw405b)"/>
+    </svg>
+    <figcaption>図：CDK のコードはテンプレートに変換され、最終的には CloudFormation がリソースを作る</figcaption>
+    </figure>
+
+    <h3 id="sec-4-2">4.2 始め方とワークフロー</h3>
+<pre><code>npm install -g aws-cdk
+mkdir shop-infra &amp;&amp; cd shop-infra
+cdk init app --language typescript
+cdk bootstrap        # アカウント×リージョンごとに 1 回：CDK 用の S3 バケットや IAM ロールを作る</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>役割</th><th>Terraform でいうと</th></tr></thead>
+      <tbody>
+        <tr><td><code>cdk synth</code></td><td>CloudFormation テンプレートを生成（<code>cdk.out/</code>）</td><td>—</td></tr>
+        <tr><td><code>cdk diff</code></td><td>デプロイ済みスタックとの差分を表示</td><td><code>plan</code></td></tr>
+        <tr><td><code>cdk deploy</code></td><td>変更セットを作って適用</td><td><code>apply</code></td></tr>
+        <tr><td><code>cdk destroy</code></td><td>スタックを削除</td><td><code>destroy</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-3">4.3 Shop の Web サーバーを CDK で書く</h3>
+<pre><code>// lib/shop-web-stack.ts
+import * as cdk from "aws-cdk-lib";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import { Construct } from "constructs";
+
+interface ShopWebStackProps extends cdk.StackProps {
+  env: { account: string; region: string };
+  stage: "stg" | "prod";
+  adminCidr: string;
+}
+
+export class ShopWebStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: ShopWebStackProps) {
+    super(scope, id, props);
+
+    const vpc = ec2.Vpc.fromLookup(this, "Vpc", { isDefault: true });
+
+    const sg = new ec2.SecurityGroup(this, "WebSg", {
+      vpc,
+      description: "Shop web server",
+    });
+    sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80));
+    sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443));
+    sg.addIngressRule(ec2.Peer.ipv4(props.adminCidr), ec2.Port.tcp(22));
+
+    const instance = new ec2.Instance(this, "Web", {
+      vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
+      machineImage: ec2.MachineImage.fromSsmParameter(
+        "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+      ),
+      securityGroup: sg,
+      requireImdsv2: true,
+      ssmSessionPermissions: true, // SSH の代わりに Session Manager で入れる IAM 権限
+    });
+
+    cdk.Tags.of(this).add("Project", "shop");
+    new cdk.CfnOutput(this, "PublicIp", { value: instance.instancePublicIp });
+  }
+}</code></pre>
+<pre><code>// bin/shop-infra.ts
+import * as cdk from "aws-cdk-lib";
+import { ShopWebStack } from "../lib/shop-web-stack";
+
+const app = new cdk.App();
+const env = { account: "123456789012", region: "ap-northeast-1" };
+for (const stage of ["stg", "prod"] as const) {
+  new ShopWebStack(app, `shop-${stage}-web`, { env, stage, adminCidr: "203.0.113.10/32" });
+}</code></pre>
+    <p><code>for</code> 文で stg と prod の 2 スタックを作っている点に注目してください。YAML ではコピーが必要だった部分が、普通のプログラムとして書けます。<code>ssmSessionPermissions</code> のような 1 行が、裏で IAM ロールやインスタンスプロファイルを自動生成してくれるのも CDK の特徴です。</p>
+<pre><code>cdk diff shop-prod-web
+cdk deploy shop-prod-web</code></pre>
+
+    <h3 id="sec-4-4">4.4 コンストラクトの L1 / L2 / L3</h3>
+    <p>CDK の部品は <strong>コンストラクト（Construct）</strong> と呼ばれ、抽象度で 3 段階に分かれます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>レベル</th><th>正体</th><th>例</th><th>特徴</th></tr></thead>
+      <tbody>
+        <tr><td><strong>L1</strong>（CFN リソース）</td><td>CloudFormation リソースと 1 対 1</td><td><code>ec2.CfnInstance</code>、<code>s3.CfnBucket</code></td><td>名前が <code>Cfn</code> で始まる。全プロパティを自分で指定。新サービスにすぐ対応</td></tr>
+        <tr><td><strong>L2</strong>（キュレーテッド）</td><td>1 リソース＋妥当な既定値と便利メソッド</td><td><code>ec2.Instance</code>、<code>s3.Bucket</code></td><td><code>bucket.grantRead(role)</code> のように IAM も自動。普段はこれを使う</td></tr>
+        <tr><td><strong>L3</strong>（パターン）</td><td>複数リソースを組み合わせた構成</td><td><code>ecs_patterns.ApplicationLoadBalancedFargateService</code></td><td>ALB + ECS + Fargate などを数行で。細かい制御は難しい</td></tr>
+      </tbody>
+    </table></div>
+    <p>L2 で足りないプロパティは <code>node.defaultChild</code> で L1 に降りて上書き（<strong>エスケープハッチ</strong>）できます。抽象度が高いほど楽ですが、<strong>生成されるリソースを把握しにくくなる</strong> ので、<code>cdk synth</code> の出力や <code>cdk diff</code> で中身を確認する習慣を付けましょう。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>Pulumi との比較</h2>
+    <p><strong>Pulumi</strong> も TypeScript / Python / Go などでインフラを書くツールで、CDK とよく比較されます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>AWS CDK</th><th>Pulumi</th></tr></thead>
+      <tbody>
+        <tr><td>対象</td><td>AWS（CloudFormation 経由）</td><td>マルチクラウド・SaaS</td></tr>
+        <tr><td>実行エンジン</td><td>CloudFormation</td><td>Pulumi エンジン（各クラウド API を直接呼ぶ）</td></tr>
+        <tr><td>state</td><td>CloudFormation が管理</td><td>Pulumi Cloud または S3 等の自前バックエンド</td></tr>
+        <tr><td>ロールバック</td><td>CloudFormation の自動ロールバック</td><td>自動ロールバックなし（Terraform と同様）</td></tr>
+        <tr><td>速度・上限</td><td>CloudFormation の制約（1 スタック 500 リソースなど）を受ける</td><td>CloudFormation の制約なし</td></tr>
+        <tr><td>言語</td><td>TS / JS / Python / Java / C# / Go</td><td>TS / JS / Python / Go / C# / Java / YAML</td></tr>
+      </tbody>
+    </table></div>
+    <p>「プログラミング言語で書きたいが、AWS 以外も管理したい」なら Pulumi、「AWS だけで、AWS のサポートや CloudFormation の安全機構を活かしたい」なら CDK、というのが大まかな分かれ目です。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>Terraform とどちらを選ぶか</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>CloudFormation / CDK</th><th>Terraform / OpenTofu</th></tr></thead>
+      <tbody>
+        <tr><td>対応範囲</td><td>AWS のみ</td><td>AWS + 他クラウド + Cloudflare / GitHub / Datadog など</td></tr>
+        <tr><td>state 管理</td><td>不要（AWS が管理）</td><td>自分で用意（S3 + <code>use_lockfile</code> など）</td></tr>
+        <tr><td>失敗時</td><td>自動ロールバック</td><td>途中まで適用された状態で止まる（再 apply で前進）</td></tr>
+        <tr><td>新サービス対応</td><td>AWS 公式。リリース当日対応も多い</td><td>プロバイダーの更新待ち（多くは早い）</td></tr>
+        <tr><td>ドリフト</td><td>検出のみ</td><td>plan で検出し apply で修正</td></tr>
+        <tr><td>学習資産</td><td>AWS に閉じる</td><td>他クラウドでも使える。求人・情報が多い</td></tr>
+        <tr><td>費用</td><td>CloudFormation 自体は AWS 公式リソースなら無料</td><td>OSS 版は無料（HCP Terraform は有料プランあり）</td></tr>
+      </tbody>
+    </table></div>
+    <p>判断の目安：</p>
+    <ul>
+      <li><strong>AWS だけで完結し、チームが AWS に詳しい</strong> → CDK（TypeScript に慣れたアプリ開発者なら特に）</li>
+      <li><strong>DNS は Cloudflare、監視は Datadog、など AWS 外のサービスも一緒に管理したい</strong> → Terraform / OpenTofu</li>
+      <li><strong>すでに組織で使っているものがある</strong> → それに合わせる。混在は運用コストが上がる</li>
+      <li>どちらを選んでも、<strong>plan / diff / 変更セットをレビューしてから適用する</strong> 原則は同じです</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li><strong>✕ CloudFormation のスタックを消しても、作ったリソースは残る</strong><br>◯ スタックの削除は中のリソースの削除です。DB などには <code>DeletionPolicy: Retain</code> / <code>Snapshot</code> を設定し、スタックの削除保護を有効にします。</li>
+        <li><strong>✕ CDK を使えば CloudFormation を知らなくてよい</strong><br>◯ CDK は最終的に CloudFormation で動くので、エラーメッセージ、ロールバック、リソースの置き換え（Replacement）などは CloudFormation の知識が必要です。</li>
+        <li><strong>✕ ドリフト検出すれば自動で元に戻る</strong><br>◯ CloudFormation のドリフト検出は差分を報告するだけです。修正はテンプレートの再適用やテンプレート側の更新で行います。</li>
+        <li><strong>✕ CDK でコンストラクトの ID（<code>"Web"</code> など）を変えても、名前が変わるだけ</strong><br>◯ <strong>論理 ID</strong>（テンプレート内でリソースを指す名前）が変わるため、CloudFormation は「古いリソースを削除して新しいものを作る」と判断します。リファクタリング時は <code>cdk diff</code> で置き換えが起きないか確認します。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>CloudFormation は AWS 純正の宣言型 IaC。テンプレートからスタック単位でリソースを管理し、state 管理は不要</li>
+      <li>変更セットで事前確認し、失敗時は自動ロールバック。ドリフト検出は検出のみ</li>
+      <li>CDK は TypeScript などで書いて CloudFormation テンプレートを生成する。<code>synth</code> / <code>diff</code> / <code>deploy</code></li>
+      <li>コンストラクトは L1（Cfn そのまま）/ L2（既定値付き）/ L3（パターン）</li>
+      <li>AWS 専用なら CDK、マルチクラウドや SaaS も管理するなら Terraform / OpenTofu、言語で書きつつマルチクラウドなら Pulumi</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. CloudFormation の変更セットで <code>Replacement: True</code> と表示されたリソースがありました。どういう意味で、何に注意しますか。</summary>
+      <div class="body"><p>そのリソースが削除→再作成されることを意味します（Terraform の <code>-/+</code> に相当）。EC2 なら IP やディスクの中身、DB ならデータが失われる可能性があるため、原因のプロパティ変更が本当に必要か、データ退避や <code>DeletionPolicy</code> の設定があるかを確認してから実行します。</p></div>
+    </details>
+    <details>
+      <summary>Q2. CDK の L1 と L2 コンストラクトの違いを、S3 バケットを例に説明してください。</summary>
+      <div class="body"><p>L1 の <code>s3.CfnBucket</code> は CloudFormation の <code>AWS::S3::Bucket</code> と 1 対 1 で、全プロパティを自分で指定します。L2 の <code>s3.Bucket</code> は妥当な既定値に加え、<code>grantRead()</code> のように IAM ポリシーを自動生成する便利メソッドを持つ、より高水準な部品です。</p></div>
+    </details>
+    <details>
+      <summary>Q3. Shop が DNS を Cloudflare で、インフラを AWS で管理している場合、IaC ツールの選択で何を考慮しますか。</summary>
+      <div class="body"><p>CloudFormation / CDK は AWS 外の Cloudflare を管理できないため、両方を 1 つのツールで管理したいなら Terraform / OpenTofu（または Pulumi）が向いています。AWS 部分を CDK にする場合は、Cloudflare 側を別ツールで管理する運用コストを考慮します。</p></div>
+    </details>
+    <details>
+      <summary>Q4. CloudFormation の更新が途中で失敗すると、スタックはどうなりますか。Terraform とどう違いますか。</summary>
+      <div class="body"><p>CloudFormation は自動的に直前の正常な状態へロールバックします（<code>UPDATE_ROLLBACK_COMPLETE</code>）。Terraform は途中まで適用された状態で止まり、再 apply で前進させます。ロールバック自体も失敗すると <code>UPDATE_ROLLBACK_FAILED</code> になり、手動対応が必要です。</p></div>
+    </details>
+    <details>
+      <summary>Q5. CloudFormation のドリフト検出で <code>MODIFIED</code> と出ました。放っておけば自動で直りますか。</summary>
+      <div class="body"><p>直りません。ドリフト検出は差分を報告するだけです。テンプレートを再適用して元に戻すか、手動変更が正しいならテンプレートを実態に合わせて更新します。</p></div>
+    </details>
+    <details>
+      <summary>Q6. CloudFormation で、state 用の S3 バケットやロックの準備が要らないのはなぜですか。</summary>
+      <div class="body"><p>どのリソースがどのスタックに属するかを AWS 側が記録・管理しているからです。Terraform では state を自分で用意し（S3 + <code>use_lockfile</code> など）、ロックで同時実行を防ぐ必要があります。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/40_構築・IaC/05_CloudFormationとCDK</li>
+      <li>AWS CloudFormation User Guide https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html</li>
+      <li>Update CloudFormation stacks using change sets https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-updating-stacks-changesets.html</li>
+      <li>Detect unmanaged configuration changes to stacks and resources (drift) https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-drift.html</li>
+      <li>DeletionPolicy attribute https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-deletionpolicy.html</li>
+      <li>AWS CDK v2 Developer Guide - Constructs https://docs.aws.amazon.com/cdk/v2/guide/constructs.html</li>
+      <li>AWS CDK CLI reference https://docs.aws.amazon.com/cdk/v2/guide/cli.html</li>
+      <li>Find Ubuntu images on AWS (SSM parameters) https://ubuntu.com/aws/docs/aws-how-to/instances/find-ubuntu-images/</li>
+      <li>Pulumi vs. AWS CDK https://www.pulumi.com/docs/iac/concepts/vs/cloud-template-transpilers/aws-cdk/</li>
+      <li>関連ページ：<a href="40-3_Terraform入門.html">40-3 Terraform入門</a>、<a href="40-2_IaCとは.html">40-2 IaCとは</a>、<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>、<a href="40-6_ネットワーク自動化とSDN.html">40-6 ネットワーク自動化とSDN</a>、<a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a></li>
+      <li>関連ノート（解説ページなし）：65_リリース・デプロイ「ヘルスチェックと自動ロールバック」「MOC_リリース・デプロイ体系」、63_AWS「10_開発者ツール」</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-4_構成管理とAnsible.html"><span class="lbl">← 前のページ</span>構成管理とAnsible</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-6_ネットワーク自動化とSDN.html"><span class="lbl">次のページ →</span>ネットワーク自動化とSDN</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

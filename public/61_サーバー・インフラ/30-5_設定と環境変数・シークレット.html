@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設定と環境変数・シークレット｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 アプリ実行環境 › 設定と環境変数・シークレット</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 アプリ実行環境</span>
+      <h1>設定と環境変数・シークレット</h1>
+      <p class="lead">DB の接続先やパスワードのように、環境ごとに変わる値は <strong>コードから分けて</strong> 渡します。このページでは、The Twelve-Factor App の「設定は環境変数に」という原則とその理由、環境変数をアプリに渡す方法（systemd、<code>.env</code>、コンテナ）、パスワードや API キーなどの <strong>シークレット</strong> を安全に保管・配布する方法（Secrets Manager / Parameter Store / Vault / sops）、起動時に設定を検証して「設定ミスのまま動き出す」事故を防ぐ方法、ローテーションと「ログにシークレットを出さない」ための実務の注意を解説します。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/30_アプリ実行環境/05_設定と環境変数・シークレット</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>アプリのコードは <strong>「レシピ」</strong>、設定は <strong>「その日の仕入れ先や店舗の鍵」</strong> です。レシピは全店舗で同じものを使い回しますが、仕入れ先や鍵は店舗ごとに違います。鍵をレシピ本に書き込んで配ってしまったら、レシピ本を見た人は誰でも店に入れてしまいます。だから <strong>コードと設定を分け</strong>（同じビルド成果物を開発・ステージング・本番で使い回す）、設定のうち <strong>シークレット</strong>（secret：パスワード、API キー、秘密鍵など、漏れると被害が出る値）はさらに厳重に保管するのが基本方針です。</p>
+    </div>
+
+    <p>この記事は <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> を読んでいると理解しやすいです。設計の観点からの整理は <a href="../41_アーキテクチャ/50-3_設定・シークレット・フィーチャーフラグ.html">41 設定・シークレット・フィーチャーフラグ</a> も参照してください。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>The Twelve-Factor App の Config 原則</h2>
+    <p><strong>The Twelve-Factor App</strong> は、Heroku の開発者がまとめた「クラウドで動かしやすいアプリの 12 の原則」です。その 3 番目 <strong>Config</strong> では次のように述べています。</p>
+    <ul>
+      <li>設定（config）とは <strong>デプロイごとに変わりうる値</strong> のこと。DB の接続先、外部サービスの認証情報、ホスト名など</li>
+      <li>設定はコードから <strong>厳密に分離</strong> する。ルーティングのように環境で変わらないものは設定ではなく、コードに置いてよい</li>
+      <li>設定は <strong>環境変数</strong> に格納する。言語や OS に依存せず、うっかりリポジトリにコミットされにくいから</li>
+      <li>判定基準：<strong>「今すぐこのリポジトリをオープンソースにしても、認証情報が漏れないか？」</strong></li>
+    </ul>
+    <p>Shop API の例で、何が設定で何がコードかを整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>分類</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><code>DATABASE_URL</code>（DB 接続先とパスワード）</td><td>設定（シークレット）</td><td>環境ごとに違い、漏れると致命的</td></tr>
+        <tr><td><code>STRIPE_SECRET_KEY</code></td><td>設定（シークレット）</td><td>決済の API キー</td></tr>
+        <tr><td><code>PORT=3000</code>、<code>LOG_LEVEL=info</code></td><td>設定</td><td>環境で変えたいことがある</td></tr>
+        <tr><td><code>PUBLIC_BASE_URL=https://shop.example.com</code></td><td>設定</td><td>ステージングは別ドメイン</td></tr>
+        <tr><td><code>/api/orders</code> のルーティング、税率計算ロジック</td><td>コード</td><td>どの環境でも同じ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-1">1.1 環境ごとの設定</h3>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="どの環境でも同一のビルド成果物（dist またはコンテナイメージ）を、開発では .env ファイル、ステージングでは Parameter Store の /shop/stg/*、本番では Parameter Store の /shop/prod/* と Secrets Manager の設定と組み合わせて動かす">
+      <defs>
+        <marker id="arrow-30-5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="85" width="230" height="80" rx="8" class="d-box-accent"/>
+      <text x="135" y="112" text-anchor="middle" class="d-text-bold">ビルド成果物</text>
+      <text x="135" y="132" text-anchor="middle" class="d-text-sub">dist/ または コンテナイメージ</text>
+      <text x="135" y="150" text-anchor="middle" class="d-text-sub">どの環境でも同一</text>
+      <rect x="400" y="15" width="300" height="56" rx="8" class="d-box"/>
+      <text x="550" y="39" text-anchor="middle" class="d-text-bold">開発</text>
+      <text x="550" y="58" text-anchor="middle" class="d-text-sub">.env ファイル</text>
+      <rect x="400" y="97" width="300" height="56" rx="8" class="d-box"/>
+      <text x="550" y="121" text-anchor="middle" class="d-text-bold">ステージング</text>
+      <text x="550" y="140" text-anchor="middle" class="d-text-sub">Parameter Store /shop/stg/*</text>
+      <rect x="400" y="179" width="300" height="56" rx="8" class="d-box-good"/>
+      <text x="550" y="203" text-anchor="middle" class="d-text-bold">本番</text>
+      <text x="550" y="222" text-anchor="middle" class="d-text-sub">Parameter Store /shop/prod/* ＋ Secrets Manager</text>
+      <path d="M250,110 L398,45" class="d-line" marker-end="url(#arrow-30-5a)"/>
+      <path d="M250,125 L398,125" class="d-line" marker-end="url(#arrow-30-5a)"/>
+      <path d="M250,140 L398,205" class="d-line" marker-end="url(#arrow-30-5a)"/>
+    </svg>
+    <figcaption>図：変わるのは渡す設定だけ。ビルド成果物は全環境で同じものを使う</figcaption>
+    </figure>
+    <p>「<code>config/production.json</code> と <code>config/development.json</code> をリポジトリに置いて <code>NODE_ENV</code> で切り替える」方式もよく見かけますが、次の問題があります。</p>
+    <ul>
+      <li>シークレットまでファイルに書くとリポジトリに入ってしまう</li>
+      <li>環境が増える（ステージング、検証用、顧客別…）たびにファイルが増える</li>
+      <li>本番の値を変えるのにコードのデプロイが必要になる</li>
+    </ul>
+    <p><strong>環境で変わらない既定値はコード、環境で変わる値は環境変数、シークレットは専用ストアから環境変数へ</strong> と分けると整理しやすくなります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>環境変数の渡し方</h2>
+
+    <h3 id="sec-2-1">2.1 systemd の EnvironmentFile</h3>
+    <p>VM 上で systemd から起動する場合（<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>）は、<code>EnvironmentFile=</code> で 1 行 1 変数のファイルを読ませます。<code>/etc/shop-api/env</code>（root 所有、<code>shop</code> グループだけ読める <code>640</code>）の例です。</p>
+<pre><code>PORT=3000
+LOG_LEVEL=info
+PUBLIC_BASE_URL=https://shop.example.com
+DATABASE_URL=postgres://shop_app:xxxxxxxx@10.0.2.10:5432/shop
+STRIPE_SECRET_KEY=sk_live_xxxxxxxx</code></pre>
+<pre><code>[Service]
+EnvironmentFile=/etc/shop-api/env
+# 先頭に - を付けると「ファイルが無くてもエラーにしない」
+# EnvironmentFile=-/etc/shop-api/env.local</code></pre>
+    <p>注意点は次のとおりです。</p>
+    <ul>
+      <li>これはシェルスクリプトではありません。<code>$(...)</code> や <code>export</code> は使えません。</li>
+      <li>パーミッション（ファイルの読み書き権限）を必ず絞ります。<code>/etc/systemd/system/*.service</code> は誰でも読めるので、<strong>unit ファイルの <code>Environment=</code> にシークレットを直接書かない</strong> でください。</li>
+      <li><code>systemctl show shop-api -p Environment</code> や <code>/proc/&lt;PID&gt;/environ</code>（root か同じユーザーなら読める）で値が見えることは理解しておきます。より厳密にしたい場合は systemd の <code>LoadCredential=</code>（ファイルとして渡し、環境変数に残さない仕組み）もあります。</li>
+    </ul>
+
+    <h3 id="sec-2-2">2.2 .env と dotenv（主に開発環境）</h3>
+    <p>開発機では、プロジェクト直下の <code>.env</code> ファイルを読み込むのが一般的です。Node.js では長く <code>dotenv</code> パッケージが使われてきましたが、Node.js 20.6 以降は標準で <code>--env-file</code> オプションがあります。</p>
+<pre><code># Node.js 20.6+ の標準機能
+node --env-file=.env dist/server.js
+
+# dotenv パッケージを使う場合（コードの先頭で）
+# import "dotenv/config";</code></pre>
+    <p><strong><code>.env</code> は Git に入れない</strong> のが鉄則です。代わりに、キーの一覧だけを書いた <code>.env.example</code> をコミットして「何を設定すればよいか」を共有します。</p>
+<pre><code># .gitignore
+.env
+.env.*
+!.env.example</code></pre>
+<pre><code># .env.example（値はダミー。これはコミットする）
+PORT=3000
+DATABASE_URL=postgres://shop_app:password@localhost:5432/shop_dev
+STRIPE_SECRET_KEY=sk_test_xxx</code></pre>
+    <div class="callout bad">
+      <p class="callout-title">一度コミットしたシークレットは「漏れた」と考える</p>
+      <p>後のコミットで削除しても Git の履歴に残ります。公開リポジトリなら数分以内に自動収集ボットに拾われることもあります。<strong>まず該当キーを無効化・再発行（ローテーション）</strong> し、その後で履歴の書き換え（<code>git filter-repo</code> など）を検討します。順序が逆だと、書き換え作業の間も漏れたキーが有効なままです。GitHub の secret scanning / push protection や <code>gitleaks</code> などで事前に止める仕組みも入れておきましょう。</p>
+    </div>
+
+    <h3 id="sec-2-3">2.3 コンテナ</h3>
+<pre><code>docker run --env-file ./env.prod -e LOG_LEVEL=info shop-api:1.4.0</code></pre>
+<pre><code># Kubernetes：Secret を環境変数として注入
+env:
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: shop-api-secrets
+        key: database-url</code></pre>
+    <p><strong>Dockerfile の <code>ENV</code> や <code>ARG</code> にシークレットを書かない</strong> でください。イメージのレイヤーや <code>docker history</code> から読めてしまいます。Kubernetes の Secret も既定では base64 で符号化されているだけ（暗号化ではない）なので、etcd（Kubernetes の設定データの保存先）の暗号化や外部シークレットストア連携（External Secrets Operator など）と組み合わせます。くわしくはコンテナの本番向けベストプラクティスのノートを参照してください。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>シークレットの管理</h2>
+    <p><code>/etc/shop-api/env</code> を手でサーバーに置く方法は 1 台なら成り立ちますが、台数が増えたり、担当者が入れ替わったりすると「誰がどの値を持っているか」が分からなくなります。そこで <strong>シークレット専用の保管庫</strong> を使います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>サービス / ツール</th><th>概要</th><th>向いている場面</th></tr></thead>
+      <tbody>
+        <tr><td><strong>AWS Systems Manager Parameter Store</strong></td><td>階層的なキー（<code>/shop/prod/DATABASE_URL</code>）で値を保存。<code>SecureString</code> 型は KMS（AWS の鍵管理サービス）で暗号化。標準パラメータは追加料金なし（2026 年時点）</td><td>AWS 上の設定値全般。まずはここから</td></tr>
+        <tr><td><strong>AWS Secrets Manager</strong></td><td>シークレット専用。<strong>自動ローテーション</strong>（RDS のパスワード等）、他アカウントとの共有に強い。1 シークレットごとに月額課金</td><td>DB パスワードなど定期的に変えたいもの</td></tr>
+        <tr><td><strong>HashiCorp Vault</strong></td><td>クラウド非依存のシークレット管理。動的シークレット（要求のたびに期限付き DB ユーザーを発行）が特徴</td><td>マルチクラウド・オンプレ、高度な要件</td></tr>
+        <tr><td><strong>sops</strong>（＋ age / KMS）</td><td>YAML / JSON / .env の <strong>値だけを暗号化</strong> して Git に置ける</td><td>GitOps、IaC と一緒にバージョン管理したい場合</td></tr>
+        <tr><td>GCP Secret Manager / Azure Key Vault</td><td>各クラウドの同等サービス</td><td>各クラウド上で</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-1">3.1 Shop API で Parameter Store を使う例</h3>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="運用者が Parameter Store に /shop/prod/DATABASE_URL を SecureString で登録する。EC2 は起動時に IAM ロールで認証して /shop/prod/ 以下のパラメータを取得し、復号済みの値を受け取る。EC2 は /run/shop-api/env 経由で環境変数として Shop API に渡す">
+      <defs>
+        <marker id="arrow-30-5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="140" height="50" rx="8" class="d-box"/>
+      <text x="80" y="40" text-anchor="middle" class="d-text-bold">運用者</text>
+      <rect x="190" y="10" width="160" height="50" rx="8" class="d-box-accent"/>
+      <text x="270" y="40" text-anchor="middle" class="d-text-bold">Parameter Store</text>
+      <rect x="390" y="10" width="160" height="50" rx="8" class="d-box"/>
+      <text x="470" y="32" text-anchor="middle" class="d-text-bold">EC2</text>
+      <text x="470" y="50" text-anchor="middle" class="d-text-sub">IAM ロール</text>
+      <rect x="590" y="10" width="120" height="50" rx="8" class="d-box-good"/>
+      <text x="650" y="40" text-anchor="middle" class="d-text-bold">Shop API</text>
+      <path d="M80,60 L80,290" class="d-line-dash"/>
+      <path d="M270,60 L270,290" class="d-line-dash"/>
+      <path d="M470,60 L470,290" class="d-line-dash"/>
+      <path d="M650,60 L650,290" class="d-line-dash"/>
+      <text x="175" y="92" text-anchor="middle" class="d-text-sub">① put-parameter</text>
+      <path d="M80,102 L268,102" class="d-line" marker-end="url(#arrow-30-5b)"/>
+      <text x="470" y="140" text-anchor="middle" class="d-text-sub">起動時（ExecStartPre）</text>
+      <text x="370" y="170" text-anchor="middle" class="d-text-sub">② get-parameters-by-path</text>
+      <path d="M470,180 L272,180" class="d-line" marker-end="url(#arrow-30-5b)"/>
+      <text x="370" y="212" text-anchor="middle" class="d-text-sub">③ 復号済みの値</text>
+      <path d="M270,222 L468,222" class="d-line-dash" marker-end="url(#arrow-30-5b)"/>
+      <text x="560" y="254" text-anchor="middle" class="d-text-sub">④ 環境変数で渡す</text>
+      <path d="M470,264 L648,264" class="d-line" marker-end="url(#arrow-30-5b)"/>
+    </svg>
+    <figcaption>図：サーバーはアクセスキーを持たず、IAM ロールで Parameter Store から値を取り出す</figcaption>
+    </figure>
+<pre><code># 運用者が値を登録（一度だけ）
+aws ssm put-parameter --name /shop/prod/DATABASE_URL \
+  --type SecureString --value 'postgres://shop_app:xxxx@db.internal:5432/shop'</code></pre>
+    <p>サーバー側は、<strong>EC2 にアタッチした IAM ロール</strong>（サーバーに与える AWS の権限セット）で読み取ります。サーバー上に AWS のアクセスキーを置く必要がないのがポイントです（「シークレットを取り出すためのシークレット」問題を IAM ロールで解決）。IAM ポリシーは <code>ssm:GetParametersByPath</code> を <code>arn:aws:ssm:*:*:parameter/shop/prod/*</code> だけに絞り、<code>kms:Decrypt</code> も該当キーに限定します。</p>
+    <p>起動前にパラメータを取得してファイル（例：<code>/run/shop-api/env</code>）に書き出すスクリプトを <code>ExecStartPre=</code> で実行する方法や、アプリ自身が AWS SDK で起動時に読む方法があります。後者はファイルに平文が残らない利点があります。</p>
+
+    <h3 id="sec-3-2">3.2 sops で暗号化したファイルを Git に置く</h3>
+<pre><code># age で鍵を作り、.env の値だけを暗号化
+sops --encrypt --age age1xxxx... env.prod &gt; env.prod.enc
+# 復号（デプロイ時に、鍵を持つ CI やサーバーだけが実行）
+sops --decrypt env.prod.enc &gt; /etc/shop-api/env</code></pre>
+    <p>キー名は平文のまま残るので差分レビューができ、値は暗号化されているのでリポジトリに置けます。復号鍵の管理は KMS などに任せるのが一般的です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>起動時バリデーション</h2>
+    <p>環境変数は「文字列」で、しかも <strong>設定し忘れても <code>undefined</code> になるだけ</strong> です。<code>DATABASE_URL</code> を書き忘れた本番サーバーが起動し、最初の注文が来た瞬間にエラーになる——という事故を防ぐため、<strong>起動時にまとめて検証し、不備があれば即座に終了する</strong>（<strong>fail fast</strong>）ようにします。</p>
+<pre><code>// src/config.ts
+import { z } from "zod";
+
+const EnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  PUBLIC_BASE_URL: z.string().url(),
+  DATABASE_URL: z.string().startsWith("postgres://"),
+  STRIPE_SECRET_KEY: z.string().min(1),
+});
+
+const parsed = EnvSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  // 値そのものは出さず、どのキーが不正かだけを出す
+  console.error("Invalid environment variables:",
+    parsed.error.issues.map((i) =&gt; `${i.path.join(".")}: ${i.message}`));
+  process.exit(1);
+}
+
+export const config = parsed.data; // 型付きで安全に使える</code></pre>
+    <ul>
+      <li>アプリ内では <code>process.env.XXX</code> を直接参照せず、この <code>config</code> だけを使うようにすると、必要な設定の一覧がこのファイルに集約されます。</li>
+      <li>systemd 配下で <code>process.exit(1)</code> すると <code>Restart=on-failure</code> で再起動を繰り返し、起動回数制限で <code>failed</code> になります。<code>journalctl -u shop-api</code> に原因が残るので、すぐに気づけます。</li>
+      <li>Python（FastAPI の管理画面）なら <code>pydantic-settings</code> の <code>BaseSettings</code> が同じ役割を担います。</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>ローテーションとログへの漏えい防止</h2>
+
+    <h3 id="sec-5-1">5.1 ローテーション</h3>
+    <p><strong>ローテーション</strong>（rotation）とは、シークレットを定期的、または漏えいの疑いがあるときに新しい値に入れ替えることです。漏れていても気づいていないケースに備え、被害を受ける期間を短くします。DB パスワードを止めずに入れ替える基本手順は次のとおりです。</p>
+    <ol class="steps">
+      <li>新しいパスワード（または新しい DB ユーザー）を作る — この時点で新旧どちらでも接続できる</li>
+      <li>シークレットストアの値を新しいものに更新</li>
+      <li>アプリを順番に再起動（ローリング）して新しい値を読ませる</li>
+      <li>すべてのインスタンスが新しい値で動いていることを確認</li>
+      <li>古いパスワードを無効化</li>
+    </ol>
+    <p>AWS Secrets Manager の自動ローテーションは、この手順を Lambda 関数で自動化したものです。「アプリが起動時にしか値を読まない」作りだと、ローテーション後に再起動が必要な点に注意します。</p>
+
+    <h3 id="sec-5-2">5.2 ログにシークレットを出さない</h3>
+    <p>よくある漏えい経路は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>経路</th><th>例</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td>起動時の設定ダンプ</td><td><code>console.log(process.env)</code> / <code>console.log(config)</code></td><td>出力するならキー名だけ、または値をマスク</td></tr>
+        <tr><td>エラーメッセージ</td><td>接続失敗時に <code>DATABASE_URL</code> 全体がスタックトレースに入る</td><td>ロガーの redact 機能を使う</td></tr>
+        <tr><td>リクエストログ</td><td><code>Authorization</code> ヘッダーや Cookie をそのまま記録</td><td>ロガーで該当パスを除外</td></tr>
+        <tr><td>URL のクエリ文字列</td><td><code>?api_key=...</code> がアクセスログに残る</td><td>キーはヘッダーで送る</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// pino の redact 機能で、該当フィールドを自動マスク
+import pino from "pino";
+export const logger = pino({
+  redact: ["req.headers.authorization", "req.headers.cookie", "*.password", "*.token"],
+});</code></pre>
+    <p>ログはログ集約基盤に送られ、アプリより多くの人が見られることが多いため、「ログに出た時点で漏えい」と考えるのが安全です。ログ出力の注意点は <a href="../71_セキュリティ基礎/50-3_セキュアな運用とログ出力.html">71 セキュアな運用とログ出力</a> でも扱います。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td><code>.env</code> は <code>.gitignore</code> に入れたから安全</td><td>追加する前に一度でもコミットしていれば履歴に残っています。<code>git log --all -- .env</code> で確認し、残っていればキーを再発行します。</td></tr>
+        <tr><td>環境変数にすれば暗号化される</td><td>環境変数は平文です。<code>/proc/&lt;PID&gt;/environ</code> や <code>docker inspect</code> で見えます。守っているのは「リポジトリに入らない」ことと、ファイル・ストアのアクセス権です。</td></tr>
+        <tr><td>Kubernetes の Secret は暗号化されている</td><td>既定では base64 符号化だけです。etcd の暗号化や RBAC での読み取り制限が別途必要です。</td></tr>
+        <tr><td>本番とステージングで同じ DB パスワードでもよい</td><td>ステージングは権限が緩くなりがちです。環境ごとに別のシークレットにし、ステージングから本番の値を読めないよう IAM で分けます。</td></tr>
+        <tr><td>設定が足りなくても動くところまで動けばよい</td><td>起動時に検証して即終了する方が、障害の発見が早く原因も明確です。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
+    <ul>
+      <li>設定（デプロイごとに変わる値）はコードから分離し、環境変数で渡す。判定基準は「今すぐ公開しても認証情報が漏れないか」</li>
+      <li>VM では systemd の <code>EnvironmentFile=</code>（権限 640）、開発では <code>.env</code>（Git に入れない、<code>.env.example</code> を共有）、コンテナでは <code>--env-file</code> や Kubernetes Secret</li>
+      <li>本番のシークレットは Parameter Store / Secrets Manager / Vault / sops で一元管理し、サーバーは IAM ロールなどで取り出す</li>
+      <li>起動時に zod などで必須の環境変数を検証し、不備があれば即終了（fail fast）</li>
+      <li>シークレットは定期的にローテーションし、ログ・エラーメッセージ・URL に出さない</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">8.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 新人が誤って本番の STRIPE_SECRET_KEY を含む .env を公開リポジトリに push してしまいました。最初にやるべきことは何ですか？</summary>
+      <div class="body"><p>Stripe の管理画面でそのキーを無効化し、新しいキーを発行して本番に反映することです。Git の履歴から削除するのはその後です。公開リポジトリでは短時間で収集される可能性があるため、「漏れた前提」で動きます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. config/production.json に DB パスワードを書いてリポジトリに置く方式の問題点を 2 つ挙げてください。</summary>
+      <div class="body"><p>①リポジトリを読める人全員（や漏えい時の第三者）に本番の認証情報が見える。②パスワードの変更（ローテーション）にコードの変更とデプロイが必要になる。ほかに、環境が増えるたびにファイルが増える点もあります。</p></div>
+    </details>
+    <details>
+      <summary>Q3. EC2 上の Shop API が Parameter Store から値を読むとき、AWS のアクセスキーをサーバーに置かずに済むのはなぜですか？</summary>
+      <div class="body"><p>EC2 にアタッチした IAM ロールの一時的な認証情報を、SDK や CLI がインスタンスメタデータから自動で取得するためです。権限はロールのポリシーで <code>/shop/prod/*</code> の読み取りだけに絞ります。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 環境変数にしたシークレットは暗号化されていますか？</summary>
+      <div class="body"><p>いいえ、平文です。<code>/proc/&lt;PID&gt;/environ</code> や <code>docker inspect</code> で見えます。環境変数で守れるのは「リポジトリに入らない」ことで、あとはファイルやストアのアクセス権で守ります。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 起動時に環境変数を検証して、不備があれば即終了させる（fail fast）利点は何ですか？</summary>
+      <div class="body"><p>設定漏れのまま動き出し、最初の注文が来た瞬間にエラーになるような事故を防げます。起動直後に止まり、<code>journalctl</code> などに「どのキーが不正か」が残るので、障害の発見が早く原因も明確です。</p></div>
+    </details>
+    <details>
+      <summary>Q6. DB パスワードを止めずにローテーションするとき、古いパスワードを無効化するのはどの段階ですか？</summary>
+      <div class="body"><p>新しいパスワードを作ってストアを更新し、アプリを順番に再起動して、すべてのインスタンスが新しい値で動いていると確認した後です。先に無効化すると、まだ古い値を使っているインスタンスが接続できなくなります。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/30_アプリ実行環境/05_設定と環境変数・シークレット</li>
+      <li>The Twelve-Factor App — III. Config https://12factor.net/config</li>
+      <li>systemd.exec — EnvironmentFile= / LoadCredential=（systemd 公式 man） https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html</li>
+      <li>Node.js CLI — --env-file https://nodejs.org/api/cli.html#--env-fileconfig</li>
+      <li>AWS Systems Manager Parameter Store https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html</li>
+      <li>AWS Secrets Manager — Rotate secrets https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets.html</li>
+      <li>HashiCorp Vault Documentation https://developer.hashicorp.com/vault/docs</li>
+      <li>SOPS: Secrets OPerationS https://github.com/getsops/sops</li>
+      <li>Kubernetes — Secrets https://kubernetes.io/docs/concepts/configuration/secret/</li>
+      <li>Zod https://zod.dev/</li>
+      <li>OWASP Secrets Management Cheat Sheet https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html</li>
+      <li>関連ページ：<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a>、<a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a>、<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a>、<a href="../41_アーキテクチャ/50-3_設定・シークレット・フィーチャーフラグ.html">41 設定・シークレット・フィーチャーフラグ</a>、<a href="../71_セキュリティ基礎/00-0_目次.html">71 セキュリティ基礎</a>、<a href="../73_認証認可/00-0_目次.html">73 認証認可</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-4_プロセス管理とsystemd.html"><span class="lbl">← 前のページ</span>プロセス管理とsystemd</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-6_データベースサーバーの運用.html"><span class="lbl">次のページ →</span>データベースサーバーの運用</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

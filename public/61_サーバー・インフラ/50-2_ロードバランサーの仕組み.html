@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ロードバランサーの仕組み｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 スケーリング・負荷分散 › ロードバランサーの仕組み</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 スケーリング・負荷分散</span>
+      <h1>ロードバランサーの仕組み</h1>
+      <p class="lead"><strong>ロードバランサー</strong> は、入口を 1 つにまとめて後ろの複数サーバーにリクエストを振り分ける仕組みです。このページでは、L4 と L7 の違い、振り分けアルゴリズム（ラウンドロビン・最小接続・重み付き・IP ハッシュ・最小応答時間）の特徴と弱点、<strong>ヘルスチェック</strong> で壊れたサーバーを切り離して戻す流れ、スティッキーセッション・TLS 終端・<strong>コネクションドレイニング</strong>、Nginx upstream と AWS ALB の設定例、DNS ラウンドロビンとの違いを解説します。</p>
+      <p class="meta">もとにしたノート：61_サーバー・インフラ/50_スケーリング・負荷分散/02_ロードバランサーの仕組み、61_サーバー・インフラ/50_スケーリング・負荷分散/ロードバランサの裏側 — 振り分けと切り離し｜ねる前エンジニアリング（動画 https://www.youtube.com/watch?v=NG4JOHdCmUY）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>ロードバランサーは <strong>入口を 1 つにして、渡す先を決める受付係</strong> です。重さがバラバラなら「空いている所へ（最小接続）」、壊れた先は <strong>ヘルスチェックが続けて失敗したら外し、続けて成功したら戻す</strong>。止めるときは <strong>まず新しい依頼を止め、手元を片付けてから</strong> 止めます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>ロードバランサーとは</h2>
+
+    <h3 id="sec-1-1">1.1 よくある場面</h3>
+    <ul>
+      <li>セール開始の瞬間にアクセスが一気に来て、1 台では受け切れない</li>
+      <li>台数を増やしたのに、1 台だけがやけに重い（振り分け方の問題）</li>
+      <li>新しい版を出すたびに数秒だけエラーが出る（「少しだけならいい」と放っておかないのが、品質に責任を持つということです）</li>
+    </ul>
+    <p>このページの前半は「振り分け方」、後半は「壊れた先・止める先の外し方」の話です。</p>
+
+    <h3 id="sec-1-2">1.2 1 台に全部が集まると</h3>
+    <p>1 台のサーバーが同時にさばける数（例：6 つ）を超えると、溢れた分は待たされるか、間に合わずエラーになります。しかもその 1 台が止まれば全員が使えません。1 台に頼ると <strong>「遅い」と「止まる」</strong> の 2 つが困るので、サーバーを複数台並べます（<a href="50-1_スケーリングの基本.html">スケーリングの基本</a> のスケールアウト）。</p>
+    <p>ところが、利用者に 3 つの住所を教えるのは大変です。そこで真ん中に振り分け役を置き、入口を 1 つにします。これがロードバランサーです。</p>
+
+    <h3 id="sec-1-3">1.3 銀行の受付係の例え</h3>
+    <p><strong>ロードバランサー（Load Balancer、LB：負荷分散装置）</strong> は、銀行の「番号札の受付係」です。お客さんは入口で受付に並ぶだけで、どの窓口に行くかは受付係が「空いている窓口」を見て案内してくれます。窓口の係員が倒れたら、受付係はそこに案内するのをやめます。受付係は自分では処理せず、窓口へ案内するだけです。</p>
+    <ul>
+      <li>入口（IP アドレス・ドメイン）を <strong>1 つ</strong> にまとめ、後ろの複数サーバーに振り分ける</li>
+      <li>振り分け方（<strong>アルゴリズム</strong>）を選べる</li>
+      <li><strong>ヘルスチェック</strong> で壊れたサーバーを自動で切り離し、直れば戻す</li>
+      <li>利用者からは後ろに何台いても 1 台に見える</li>
+    </ul>
+    <p>ロードバランサーは <a href="20-3_リバースプロキシ.html">リバースプロキシ</a>（利用者の代わりに後ろのサーバーへ取り次ぐ中継役）の一種と考えると分かりやすいです。リバースプロキシの転送先が複数になったものがロードバランサーです。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>L4 と L7 の違い</h2>
+    <p>「L4」「L7」は OSI 参照モデル（通信の仕組みを 7 つの層に分けた考え方）の層（レイヤー）を指します。<strong>どの層の情報を見て振り分けるか</strong> の違いです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>L4 ロードバランサー</th><th>L7 ロードバランサー</th></tr></thead>
+      <tbody>
+        <tr><td>見る情報</td><td>IP アドレスとポート（TCP/UDP）</td><td>HTTP の中身（パス、ホスト名、ヘッダー、Cookie）</td></tr>
+        <tr><td>例え</td><td>封筒の宛名だけ見て仕分ける</td><td>手紙を開けて内容を読んで仕分ける</td></tr>
+        <tr><td>できること</td><td>高速な転送、TCP 以外（UDP、DB 接続、ゲームなど）も扱える</td><td><code>/api/*</code> は API へ、<code>/admin/*</code> は管理画面へ、などの経路ルール。ヘッダー追加、リダイレクト</td></tr>
+        <tr><td>TLS</td><td>そのまま通すことが多い（終端も可能）</td><td>終端して中身を見るのが普通</td></tr>
+        <tr><td>速さ</td><td>速い、遅延が小さい</td><td>中身を解析するぶん少し重い</td></tr>
+        <tr><td>製品例</td><td>AWS NLB、HAProxy（mode tcp）、Nginx stream</td><td>AWS ALB、Nginx（http）、HAProxy（mode http）、Envoy、GCP 外部アプリケーション LB</td></tr>
+      </tbody>
+    </table></div>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="上段：利用者のリクエストをL7ロードバランサー（ALB）がHTTPを解釈し、ホスト名api.shop.example.comならShop API群へ、パス/admin/*なら管理画面（FastAPI）へ送る。下段：社内バッチの接続をL4ロードバランサー（NLB）がTCPのまま5432番ポートでDBプロキシ群へ転送する">
+      <defs>
+        <marker id="arw1502a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="70" width="100" height="50" rx="8" class="d-box"/>
+      <text x="70" y="100" text-anchor="middle" class="d-text">利用者</text>
+      <rect x="180" y="60" width="160" height="70" rx="8" class="d-box-accent"/>
+      <text x="260" y="90" text-anchor="middle" class="d-text-bold">L7 LB（ALB）</text>
+      <text x="260" y="112" text-anchor="middle" class="d-text-sub">HTTP を解釈</text>
+      <path d="M120,95 L178,95" class="d-line" marker-end="url(#arw1502a)"/>
+      <rect x="540" y="20" width="160" height="50" rx="8" class="d-box"/>
+      <text x="620" y="50" text-anchor="middle" class="d-text">Shop API 群</text>
+      <rect x="540" y="110" width="160" height="50" rx="8" class="d-box"/>
+      <text x="620" y="140" text-anchor="middle" class="d-text">管理画面（FastAPI）</text>
+      <path d="M340,80 L538,45" class="d-line" marker-end="url(#arw1502a)"/>
+      <text x="440" y="48" text-anchor="middle" class="d-text-sub">Host: api.shop.example.com</text>
+      <path d="M340,110 L538,135" class="d-line" marker-end="url(#arw1502a)"/>
+      <text x="440" y="142" text-anchor="middle" class="d-text-sub">パス /admin/*</text>
+
+      <rect x="20" y="215" width="100" height="50" rx="8" class="d-box"/>
+      <text x="70" y="245" text-anchor="middle" class="d-text">社内バッチ</text>
+      <rect x="180" y="205" width="160" height="70" rx="8" class="d-box-accent"/>
+      <text x="260" y="235" text-anchor="middle" class="d-text-bold">L4 LB（NLB）</text>
+      <text x="260" y="257" text-anchor="middle" class="d-text-sub">TCP をそのまま転送</text>
+      <path d="M120,240 L178,240" class="d-line" marker-end="url(#arw1502a)"/>
+      <rect x="540" y="215" width="160" height="50" rx="8" class="d-box"/>
+      <text x="620" y="245" text-anchor="middle" class="d-text">DB プロキシ群</text>
+      <path d="M340,240 L538,240" class="d-line" marker-end="url(#arw1502a)"/>
+      <text x="440" y="230" text-anchor="middle" class="d-text-sub">5432/tcp</text>
+    </svg>
+    <figcaption>図：L7 は HTTP の中身（ホスト名・パス）で行き先を変え、L4 は IP とポートだけを見てそのまま転送する</figcaption>
+    </figure>
+    <p>Web アプリ（Shop）ではたいてい <strong>L7</strong> を使います。L4 は「固定 IP が欲しい」「HTTP 以外のプロトコル」「とにかく低遅延・大量接続」などの場合に選びます。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>振り分けアルゴリズム</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>アルゴリズム</th><th>仕組み</th><th>得意</th><th>弱点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ラウンドロビン（Round Robin）</strong></td><td>順番に 1 台ずつ配る</td><td>リクエストの重さが揃っているとき。既定値であることが多い</td><td>重さを見ない。重い処理が 1 台に続くとそこだけ詰まる</td></tr>
+        <tr><td><strong>重み付き（Weighted）</strong></td><td>性能に応じて配る比率を変える（例 3:1）</td><td>性能の違うサーバーが混在、新バージョンに少しだけ流す</td><td>重みの管理が必要</td></tr>
+        <tr><td><strong>最小接続（Least Connections）</strong></td><td>処理中の接続・リクエストが最も少ない所へ</td><td>処理時間がバラバラな API</td><td>「すぐエラーを返す壊れたサーバー」は処理中が少なく見え、そこに集まる</td></tr>
+        <tr><td><strong>IP ハッシュ（IP Hash）</strong></td><td>送信元 IP から計算して毎回同じサーバーへ</td><td>簡易的なスティッキー</td><td>会社や携帯キャリアの NAT で同じ IP の利用者が大量だと偏る。台数が変わると振り先がずれる</td></tr>
+        <tr><td><strong>最小応答時間（Least Time／Least Response Time）</strong></td><td>応答が速いサーバーを優先</td><td>性能差や一時的な遅延に追従</td><td>実装が製品依存。計測のための仕組みが必要</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>NAT</strong> は、多くの端末が 1 つのグローバル IP アドレスを共有して外へ出る仕組みです。そのため、会社や携帯回線の利用者は外から見ると同じ IP に見えることがあります。</p>
+
+    <h3 id="sec-3-1">3.1 順番に配る（ラウンドロビン）</h3>
+    <p>1 つ目はサーバー 1、2 つ目は 2、3 つ目は 3、4 つ目でまた 1 に戻る、という配り方です。数は公平で、依頼の重さがどれも同じならうまくいきます。しかし一覧を出すだけの軽い依頼もあれば、大きな集計をする重い依頼もあります。重い依頼がたまたまサーバー 1 に続けて当たると、数は公平でもサーバー 1 だけ処理が積み上がります。「増やしたのに 1 台だけ重い」の正体の 1 つがこれです。順番は数を揃えるだけで、重さは見ていません。</p>
+    <p>性能の違うサーバーが混ざるときは、強いサーバーに多めに配る <strong>重み</strong> を付けます（重み付き）。</p>
+
+    <h3 id="sec-3-2">3.2 空いている所へ（最小接続）</h3>
+    <p>振り分け役は各サーバーの処理中の数を覚えておき、渡したら +1、返事が来たら −1 して、一番少ない所へ次の依頼を渡します。重い依頼で詰まった所は処理中の数が多いのでしばらく選ばれず、<strong>重さの違いに後から追いつく</strong> 配り方です。</p>
+    <p>多くの場面で良い選択ですが、数える手間がかかります。さらに、処理中の数が少ないのが「壊れてすぐエラーを返すから」という場合もあり、<strong>早く失敗するサーバーに依頼が集まる</strong> 危険があります。だからこそ次のヘルスチェックがセットで必要です。</p>
+
+    <h3 id="sec-3-3">3.3 同じ人は同じ所へ</h3>
+    <p>ログイン中の情報などをサーバーの記憶（メモリ）に置いている場合、A さんの情報はサーバー 1 にしかないので、A さんの依頼はいつもサーバー 1 へ渡す、という決め方です（IP ハッシュや、5 章のスティッキーセッション）。弱点は 2 つあります。1 つは <strong>偏りやすい</strong> こと。もう 1 つは、そのサーバーが止まると別のサーバーは A さんを知らないので、<strong>ログインし直しになったりカートの中身が消えたり</strong> することです。今は記憶を <strong>共有の置き場</strong> に出し、どのサーバーでも同じ記憶を読めるようにする作りが多いです（<a href="50-1_スケーリングの基本.html">ステートレス化</a>）。</p>
+
+    <h3 id="sec-3-4">3.4 AWS ALB で選べるもの</h3>
+    <p>AWS ALB では「ラウンドロビン（既定）」「最小未処理リクエスト（Least outstanding requests）」「重み付きランダム（Weighted random）」から選べます（2026 年時点）。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>ヘルスチェックと切り離し</h2>
+    <p>何もしなければ、LB は落ちたサーバーにも律儀に振り分け続けます。3 台中 1 台が落ちれば、<strong>3 回に 1 回エラー</strong> です。しかも利用者にはどのサーバーかは見えず、「たまにエラーが出る」としか分かりません。だから振り分け役の側で、倒れた先に気づく必要があります。</p>
+    <p><strong>ヘルスチェック（Health Check：健康診断）</strong> には 2 種類あります。</p>
+    <ul>
+      <li><strong>アクティブ</strong>：LB が数秒ごとに <code>/healthz</code> などへリクエストを送り、決まった時間内に 200 が返るか確かめる（ALB、HAProxy、NGINX Plus）</li>
+      <li><strong>パッシブ</strong>：実際のリクエストの失敗を数えて判断する（オープンソース版 Nginx の <code>max_fails</code>）</li>
+    </ul>
+
+    <h3 id="sec-4-1">4.1 外す・戻すの流れ</h3>
+    <figure>
+    <svg viewBox="0 0 720 400" role="img" aria-label="ロードバランサーがAPI #2にGET /healthzを送るが、1回目も2回目もタイムアウトする。連続失敗が閾値に達したので切り離し、以降は#1と#3にだけ振る。切り離した後も様子見のチェックは続け、200 OKが2回続いて連続成功が閾値に達したら復帰させる">
+      <defs>
+        <marker id="arw1502b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        <marker id="arw1502c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-bad"/></marker>
+      </defs>
+      <rect x="60" y="15" width="180" height="44" rx="8" class="d-box-accent"/>
+      <text x="150" y="42" text-anchor="middle" class="d-text-bold">ロードバランサー</text>
+      <rect x="480" y="15" width="180" height="44" rx="8" class="d-box"/>
+      <text x="570" y="42" text-anchor="middle" class="d-text-bold">API #2</text>
+      <path d="M150,59 L150,390" class="d-line-dash"/>
+      <path d="M570,59 L570,390" class="d-line-dash"/>
+
+      <text x="360" y="84" text-anchor="middle" class="d-text">GET /healthz（1 回目）</text>
+      <path d="M150,92 L568,92" class="d-line" marker-end="url(#arw1502b)"/>
+      <path d="M570,108 L152,108" class="d-line-bad" marker-end="url(#arw1502c)"/>
+      <text x="360" y="124" text-anchor="middle" class="d-text-sub">タイムアウト</text>
+      <text x="360" y="146" text-anchor="middle" class="d-text">GET /healthz（2 回目）</text>
+      <path d="M150,154 L568,154" class="d-line" marker-end="url(#arw1502b)"/>
+      <path d="M570,170 L152,170" class="d-line-bad" marker-end="url(#arw1502c)"/>
+      <text x="360" y="186" text-anchor="middle" class="d-text-sub">タイムアウト</text>
+
+      <rect x="90" y="196" width="540" height="40" rx="8" class="d-box-bad"/>
+      <text x="360" y="221" text-anchor="middle" class="d-text">連続失敗が閾値に → 切り離し（以降 #1 と #3 にだけ振る）</text>
+
+      <text x="360" y="258" text-anchor="middle" class="d-text">GET /healthz（様子見は続ける）</text>
+      <path d="M150,266 L568,266" class="d-line" marker-end="url(#arw1502b)"/>
+      <path d="M570,282 L152,282" class="d-line" marker-end="url(#arw1502b)"/>
+      <text x="360" y="298" text-anchor="middle" class="d-text-sub">200 OK</text>
+      <path d="M150,312 L568,312" class="d-line" marker-end="url(#arw1502b)"/>
+      <path d="M570,328 L152,328" class="d-line" marker-end="url(#arw1502b)"/>
+      <text x="360" y="344" text-anchor="middle" class="d-text-sub">200 OK</text>
+
+      <rect x="90" y="352" width="540" height="36" rx="8" class="d-box-good"/>
+      <text x="360" y="375" text-anchor="middle" class="d-text">連続成功が閾値に → 復帰</text>
+    </svg>
+    <figcaption>図：1 回の失敗では外さず、決めた回数続けて失敗したら外す。外した後も様子見を続け、続けて成功したら戻す</figcaption>
+    </figure>
+    <p>1 回失敗しただけでは外しません（たまたま遅れただけかもしれないからです）。決めた回数 <strong>続けて失敗</strong> したら切り離し、以降は残りのサーバーにだけ配ります。切り離した後も様子見の依頼は送り続けるので、直ったことにも気づけます。決めた回数続けて成功したら戻します。<strong>外すのも戻すのも振り分け役が自動で</strong> 行います。</p>
+
+    <h3 id="sec-4-2">4.2 設計のポイント</h3>
+    <ol class="steps">
+      <li><strong>気づくまでの時間 ≒ 間隔 × 失敗回数</strong>。気づくまでの間はエラーが出ています。間隔 5 秒 × 3 回ならおよそ 15 秒、ALB の既定（間隔 30 秒・Unhealthy 閾値 2 回）だと最大 1 分ほど気づきません。かといって間隔を短く・回数を少なくしすぎると、一瞬遅れただけで外してしまい、外しすぎると残りの台に依頼が集まってそこも倒れます。早すぎても遅すぎても困ります。</li>
+      <li><strong>浅いチェックと深いチェック</strong>。<code>/healthz</code> が「プロセスが動いているか」だけなら軽いが DB 障害を見落とします。DB まで確認すると、<strong>DB 全体が落ちたときに全台が不合格になり全部外れる</strong> という事故が起きます。</li>
+      <li><strong>全台不合格のときの挙動を知っておく</strong>。ALB は全ターゲットが Unhealthy になると、あえて全台に流す <strong>フェイルオープン</strong> の動作をします。</li>
+    </ol>
+
+    <h3 id="sec-4-3">4.3 浅い確認と深い確認</h3>
+    <p>サーバー側には様子見のための窓口を用意します。最短の形は、呼ばれたら <code>200</code>（成功）で OK を返すだけです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>浅い確認</th><th>深い確認</th></tr></thead>
+      <tbody>
+        <tr><td>見るもの</td><td>返事ができるか（プログラムが動いているか）</td><td>DB なども使えるか（DB に一言聞き、答えがあれば <code>200</code>、なければ <code>503</code>＝使えない）</td></tr>
+        <tr><td>重さ</td><td>軽い</td><td>確かめる分重い</td></tr>
+        <tr><td>弱点</td><td>つながる先の不調を見落とす（DB につながらなくても OK を返す）</td><td>共通の先が止まると全部外れる（全サーバーが揃って「使えない」と答え、誰も使えなくなる）</td></tr>
+      </tbody>
+    </table></div>
+    <p>どちらが正解ということはなく、現場では使い分けたり組み合わせたりします。<strong>外したら何が起きるか</strong> を先に考えて、何を確かめるかを決めます。</p>
+<pre><code>// Shop API のヘルスチェック窓口（浅い／深いを分ける）
+app.get("/healthz", (_req, res) =&gt; res.status(200).send("ok")); // LB 用：生きているか
+
+app.get("/readyz", async (_req, res) =&gt; {                        // 監視用：依存先も見る
+  try {
+    await pool.query("SELECT 1");
+    res.status(200).send("ready");
+  } catch {
+    res.status(503).send("db unavailable");
+  }
+});</code></pre>
+    <p>Kubernetes の liveness／readiness の考え方やデプロイ時の自動ロールバックは、65_リリース・デプロイの「03_ヘルスチェックと自動ロールバック」のノートを参照してください。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>スティッキーセッション・TLS 終端・コネクションドレイニング</h2>
+
+    <h3 id="sec-5-1">5.1 スティッキーセッション（Sticky Session／Session Affinity）</h3>
+    <p>同じ利用者を同じサーバーへ送り続ける機能です。ALB では LB が <code>AWSALB</code> という Cookie を発行して実現します。サーバーのメモリにセッションがあるアプリを、とりあえず複数台で動かすための <strong>応急処置</strong> です。偏りやすく、そのサーバーが落ちるとセッションは消えるので、根本対策はステートレス化（<a href="50-1_スケーリングの基本.html">スケーリングの基本</a>）です。</p>
+
+    <h3 id="sec-5-2">5.2 TLS 終端（TLS Termination）</h3>
+    <p>HTTPS の暗号を <strong>LB で解いて</strong>、後ろには HTTP（または再暗号化した HTTPS）で渡すことです。</p>
+    <ul>
+      <li>証明書を LB 1 か所で管理できる（ALB なら ACM の証明書を無料で自動更新）</li>
+      <li>暗号処理の CPU 負荷をアプリサーバーから外せる</li>
+      <li>L7 の振り分け（パス・Cookie を見る）には TLS 終端が必須</li>
+      <li>アプリには <code>X-Forwarded-Proto: https</code> や <code>X-Forwarded-For</code>（元の利用者 IP）が渡るので、アプリ側で信頼するプロキシを設定する（Express なら <code>app.set("trust proxy", 1)</code>）</li>
+    </ul>
+    <p>証明書そのものの話は <a href="20-4_HTTPSとTLS証明書.html">HTTPSとTLS証明書</a> を参照してください。</p>
+
+    <h3 id="sec-5-3">5.3 コネクションドレイニング（Connection Draining）</h3>
+    <p>新しい版を出すときは 1 台ずつ止めて入れ替えますが、いきなり止めると処理中だった依頼が途中で切れます。これが <strong>「出すたびに数秒だけ出るエラー」の正体</strong> です。正しい順番は次のとおりです。</p>
+    <ol class="steps">
+      <li>まず、そのサーバーに <strong>新しい依頼を送るのをやめる</strong></li>
+      <li>手元の処理中の分だけ片付ける（処理中の数が 3、2、1 と減っていく）</li>
+      <li>処理中が 0 になってから止めて入れ替える</li>
+      <li>これを 1 台ずつ繰り返せば、止めずに入れ替えられる</li>
+    </ol>
+    <p>このように「新しいリクエストを送るのをやめる → 処理中のものが終わるのを待つ → 止める」の順にする機能がコネクションドレイニングです。外すのは壊れたときだけではありません。</p>
+    <p>ALB では「登録解除の遅延（Deregistration delay）」と呼び、既定 300 秒です。API が数秒で応答するなら 30〜60 秒程度に短くするとデプロイやスケールインが速くなります。アプリ側も SIGTERM（プロセスに「終了して」と伝える合図）を受けたら新規受付を止めて処理中を片付けるようにします（65_リリース・デプロイの「08_ゼロダウンタイムデプロイの条件」「03_ローリングアップデート」のノート）。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>設定例：Nginx upstream と AWS ALB</h2>
+
+    <h3 id="sec-6-1">6.1 Nginx upstream（Shop：API 2 台 + 予備）</h3>
+<pre><code># /etc/nginx/conf.d/shop-api.conf
+upstream shop_api {
+    least_conn;                      # 最小接続（既定はラウンドロビン）
+
+    # 10 秒（fail_timeout）の間に 3 回（max_fails）失敗したら、
+    # 10 秒間そのサーバーを使わない（パッシブヘルスチェック）
+    server 10.0.1.11:3000 max_fails=3 fail_timeout=10s;
+    server 10.0.1.12:3000 max_fails=3 fail_timeout=10s;
+    server 10.0.1.13:3000 backup;    # 上 2 台が使えないときだけ使う
+
+    keepalive 32;                    # 後ろとの接続を再利用
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name api.shop.example.com;
+    # ssl_certificate などは「HTTPSとTLS証明書」の回を参照
+
+    location / {
+        proxy_pass http://shop_api;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 失敗時に次のサーバーへ再送する条件（POST など非冪等は既定で再送しない）
+        proxy_next_upstream error timeout http_502 http_503;
+        proxy_connect_timeout 3s;
+    }
+}</code></pre>
+    <ul>
+      <li><code>max_fails</code> の既定は 1、<code>fail_timeout</code> の既定は 10 秒です。<code>fail_timeout</code> は「失敗を数える時間幅」と「使わない期間」の 2 つの意味を持ちます。</li>
+      <li>オープンソース版 Nginx には <strong>アクティブヘルスチェック（<code>health_check</code>）がありません</strong>（NGINX Plus の機能）。実リクエストが失敗して初めて気づくので、その 1 回は利用者にエラーが見えることがあります（<code>proxy_next_upstream</code> で別サーバーへ再送して隠せる場合もあります）。</li>
+      <li><code>least_time</code>（最小応答時間）や <code>drain</code> パラメータは長く商用版のみでしたが、最近のバージョンでオープンソース版にも入りつつあります。使う前に手元のバージョンのドキュメントで確認してください（2026 年時点）。</li>
+      <li>設定変更後は <code>sudo nginx -t &amp;&amp; sudo systemctl reload nginx</code>。</li>
+    </ul>
+    <p><strong>非冪等</strong>（ひべきとう）とは、同じ依頼を 2 回送ると結果が変わる処理のことです（例：注文の POST を再送すると注文が 2 件できる）。Nginx の基本は <a href="20-2_Nginx入門.html">Nginx入門</a> を参照してください。</p>
+
+    <h3 id="sec-6-2">6.2 AWS ALB の構成要素</h3>
+<pre><code>ALB（shop-alb）  ← DNS 名を Route 53 で api.shop.example.com に紐付け
+ ├─ リスナー :80   → ルール：すべて HTTPS へリダイレクト
+ └─ リスナー :443（ACM 証明書・TLS 終端）
+     ├─ ルール 1：Host = api.shop.example.com      → ターゲットグループ shop-api-tg
+     ├─ ルール 2：Path = /admin/*                  → ターゲットグループ shop-admin-tg
+     └─ デフォルト：固定レスポンス 404
+ターゲットグループ shop-api-tg（HTTP:3000）
+ ├─ ヘルスチェック：GET /healthz、間隔・閾値
+ ├─ 属性：アルゴリズム、登録解除の遅延、スティッキー
+ └─ ターゲット：EC2 ×N（Auto Scaling Group が自動登録）</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>リスナー（Listener）</strong></td><td>どのポート・プロトコルで待ち受けるか。443 では証明書を持つ</td></tr>
+        <tr><td><strong>ルール（Rule）</strong></td><td>条件（ホスト名・パス・ヘッダー等）と行き先（転送・リダイレクト・固定応答）。優先度順に評価</td></tr>
+        <tr><td><strong>ターゲットグループ（Target Group）</strong></td><td>振り分け先の集まり。ヘルスチェックとアルゴリズムはここで設定</td></tr>
+      </tbody>
+    </table></div>
+    <p>ターゲットグループのヘルスチェック既定値（instance／ip ターゲット、2026 年時点）は、間隔 30 秒、タイムアウト 5 秒、Healthy 閾値 5 回、Unhealthy 閾値 2 回、成功コード 200 です。Terraform で書くと次のようになります（Terraform の基本は <a href="40-3_Terraform入門.html">Terraform入門</a>）。</p>
+<pre><code>resource "aws_lb_target_group" "shop_api" {
+  name     = "shop-api-tg"
+  port     = 3000
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  load_balancing_algorithm_type = "least_outstanding_requests"
+  deregistration_delay          = 60   # 既定 300 秒を短縮
+
+  health_check {
+    path                = "/healthz"
+    interval            = 10
+    timeout             = 5
+    healthy_threshold   = 3
+    unhealthy_threshold = 2
+    matcher             = "200"
+  }
+}
+
+resource "aws_lb_listener_rule" "api" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 10
+  condition {
+    host_header { values = ["api.shop.example.com"] }
+  }
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.shop_api.arn
+  }
+}</code></pre>
+
+    <h3 id="sec-6-3">6.3 その他の製品</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>HAProxy</h4>
+        <p>オープンソースの高性能 LB。L4/L7 両方、アクティブヘルスチェック標準搭載。オンプレや自前構築の定番。</p>
+      </div>
+      <div class="card">
+        <h4>AWS NLB</h4>
+        <p>L4。AZ ごとに固定 IP（Elastic IP）を持てる、超大量接続向け。</p>
+      </div>
+      <div class="card">
+        <h4>GCP Cloud Load Balancing</h4>
+        <p>グローバルな単一 Anycast IP で複数リージョンに振り分けられる外部アプリケーション LB などがある。</p>
+      </div>
+      <div class="card">
+        <h4>Envoy</h4>
+        <p>サービスメッシュ（Istio など）やモダンなプロキシの中核。動的設定、リトライ、サーキットブレーカーが得意。Kubernetes の Ingress／Gateway の実体として使われることも多い（53_コンテナの「10-Kubernetes」のノート）。</p>
+      </div>
+    </div>
+    <p>製品ごとの設定画面は覚えなくてかまいません。名前や画面は製品で違っても、振り分け方と外し方の考え方は同じです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>DNS ラウンドロビンとの違い</h2>
+    <p>DNS に同じ名前で複数の A レコードを登録し、問い合わせごとに順番を変えて返す方法を <strong>DNS ラウンドロビン</strong> と呼びます（DNS の基本は <a href="10-5_ネットワークの基本.html">ネットワークの基本</a>）。</p>
+<pre><code>api.shop.example.com.  60  IN  A  203.0.113.11
+api.shop.example.com.  60  IN  A  203.0.113.12</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>DNS ラウンドロビン</th><th>ロードバランサー</th></tr></thead>
+      <tbody>
+        <tr><td>費用・手軽さ</td><td>ほぼ無料、すぐできる</td><td>LB の費用がかかる</td></tr>
+        <tr><td>壊れたサーバー</td><td>基本は気づかない。TTL の間、キャッシュした利用者は落ちたサーバーに行き続ける</td><td>ヘルスチェックで数十秒以内に外す</td></tr>
+        <tr><td>振り分けの細かさ</td><td>クライアントやリゾルバのキャッシュ次第で偏る</td><td>リクエスト単位で制御</td></tr>
+        <tr><td>サーバー入れ替え</td><td>DNS 変更が全世界に行き渡るまで時間がかかる</td><td>ターゲット登録・解除で即時</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>TTL</strong> は、DNS の答えをキャッシュしてよい秒数です（上の例では 60 秒）。実務では「DNS で複数リージョンや複数 LB に大まかに分け、その先は LB で細かく振り分ける」という <strong>組み合わせ</strong> が一般的です。Route 53 のヘルスチェック付きフェイルオーバールーティングは <a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a> で扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>AI に設定を書かせたときに見るところ</h2>
+    <p>振り分けの設定も、今は AI に書かせることが多くなりました。AI は動く設定は書けますが、<strong>壊れたときの動きはこちらが聞かないと考えてくれない</strong> ことが多いです。「1 台倒れたらどうなる？」と聞くのが大事です。見るところは次の 4 つです。</p>
+    <ol class="steps">
+      <li>様子見の窓口が何を確かめているか（OK を返すだけか、DB まで見るか）</li>
+      <li>続けて何回で外すか、間隔は何秒か</li>
+      <li>止めるときに手元の依頼を待っているか（待つ時間がゼロだと、出すたびにエラーが出る）</li>
+      <li>ログインなどの記憶をサーバーの中に置いていないか（止まったときに消える）</li>
+    </ol>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>LB を置けば壊れたサーバーは自動で外れる</td><td>ヘルスチェックの設定と、アプリ側の <code>/healthz</code> 窓口が正しくないと外れません。OSS 版 Nginx はパッシブのみです。</td></tr>
+        <tr><td>ヘルスチェックは深いほど安全</td><td>DB まで見ると、DB 障害時に全台が外れて全面停止します。外したら何が起きるかを考えて決めます。</td></tr>
+        <tr><td>スティッキーセッションでセッション問題は解決</td><td>そのサーバーが落ちればセッションは消えます。偏りも出ます。根本はステートレス化です。</td></tr>
+        <tr><td>LB 自体は壊れない</td><td>自前の Nginx/HAProxy 1 台の LB は新たな SPOF です。ALB などのマネージド LB は複数 AZ に分散されていますが、サブネットを 2 つ以上の AZ に置く必要があります。</td></tr>
+        <tr><td>デプロイ時の数秒のエラーは仕方ない</td><td>コネクションドレイニングとアプリの graceful shutdown（処理中を片付けてから終わる、行儀の良い終了）で防げます。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>LB は入口を 1 つにまとめ、後ろの複数台に振り分けるリバースプロキシ。L4 は IP/ポート、L7 は HTTP の中身を見る</li>
+      <li>アルゴリズムは重さが揃えばラウンドロビン、バラバラなら最小接続。ただし壊れた台に集まらないようヘルスチェックとセット</li>
+      <li>ヘルスチェックは続けて失敗したら外し、続けて成功したら戻す。「間隔 × 回数」で気づく速さが決まる。浅い／深いの使い分けが大事</li>
+      <li>TLS 終端は LB で行い、<code>X-Forwarded-*</code> で元の情報をアプリへ渡す</li>
+      <li>止めるときはコネクションドレイニングで、まず新しい依頼を止めて処理中のリクエストを待つ</li>
+      <li>DNS ラウンドロビンは手軽だが壊れたサーバーを外せない。LB と組み合わせて使う</li>
+      <li>製品ごとの設定画面は知らなくてよい。名前や画面は違っても考え方は同じ</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ALB のヘルスチェックを「間隔 30 秒・Unhealthy 閾値 2」のまま使っています。API が 1 台落ちてから切り離されるまで、最大でどれくらいかかりますか。また短くしすぎると何が起きますか。</summary>
+      <div class="body"><p>およそ 30 秒 × 2 回 = 最大 1 分ほどです（タイムアウト時間も加わります）。短くしすぎると、GC（ガベージコレクション：使わなくなったメモリの片付け）や一時的な高負荷で少し遅れただけのサーバーまで外してしまい、残りのサーバーに負荷が集中して連鎖的に落ちる危険があります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. オープンソース版 Nginx の <code>server 10.0.1.11:3000 max_fails=3 fail_timeout=10s;</code> は何を意味しますか。</summary>
+      <div class="body"><p>10 秒の間にこのサーバーへの通信が 3 回失敗したら、その後 10 秒間はこのサーバーを使わない、という意味です。実リクエストの失敗で判断するパッシブヘルスチェックです。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 最小接続アルゴリズムで「1 台だけエラー率が高いのに、そこにリクエストが集まる」現象が起きました。なぜでしょうか。</summary>
+      <div class="body"><p>壊れたサーバーはリクエストを受けるとすぐエラーを返すため、処理中の接続数が常に少なく見えます。最小接続は「処理中が少ない所」を選ぶので、そこに集まります。ヘルスチェックで切り離す、あるいはエラー率を見て外す仕組み（ALB の自動ターゲット重みなど）と組み合わせます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. ラウンドロビンで 3 台に均等に配っているのに、1 台だけやけに重くなりました。考えられる原因と対策は？</summary>
+      <div class="body"><p>ラウンドロビンは数を揃えるだけで重さを見ないため、重い依頼（大きな集計など）がたまたま 1 台に続けて当たると、そこだけ処理が積み上がります。重さがバラバラなら最小接続（空いている所へ）に変えると、詰まった所を自然に避けられます。性能の違うサーバーが混ざっている場合は重み付けも検討します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. ヘルスチェックの窓口で DB まで確認する「深い確認」にした場合、どんな事故が起きえますか。</summary>
+      <div class="body"><p>DB が全体で止まると、全サーバーが揃って 503（使えない）を返し、振り分け役が全台を切り離してしまいます。浅い確認は軽いが DB の不調を見落とし、深い確認は気づけるが共通の先が止まると全部外れる、というトレードオフです。外したら何が起きるかを先に考えて決めます（ALB は全台 Unhealthy 時にフェイルオープンで全台に流します）。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 新しい版をデプロイするたびに数秒だけエラーが出ます。原因と正しい手順は？</summary>
+      <div class="body"><p>サーバーをいきなり止めて、処理中の依頼を途中で切っているのが原因です。まず新しい依頼を送るのをやめ、手元の処理中の分を片付け、0 になってから止めて入れ替える（コネクションドレイニング）を 1 台ずつ繰り返します。アプリ側も SIGTERM で新規受付を止めて処理中を片付けるようにします。</p></div>
+    </details>
+    <details>
+      <summary>Q7. DNS ラウンドロビンだけで 2 台に振り分けているとき、1 台が落ちたらどうなりますか。</summary>
+      <div class="body"><p>DNS は基本的にサーバーの故障に気づかないので、TTL の間（キャッシュした利用者はそれ以上）落ちたサーバーに行き続けます。LB ならヘルスチェックで数十秒以内に外せます。実務では DNS で大まかに分け、その先を LB で細かく振り分ける組み合わせが一般的です。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/50_スケーリング・負荷分散/02_ロードバランサーの仕組み</li>
+      <li>ノート：61_サーバー・インフラ/50_スケーリング・負荷分散/ロードバランサの裏側 — 振り分けと切り離し｜ねる前エンジニアリング</li>
+      <li>ねる前エンジニアリング「ロードバランサの裏側 — 振り分けと切り離し」 https://www.youtube.com/watch?v=NG4JOHdCmUY</li>
+      <li>Module ngx_http_upstream_module（nginx.org） https://nginx.org/en/docs/http/ngx_http_upstream_module.html</li>
+      <li>Using nginx as HTTP load balancer（nginx.org） https://nginx.org/en/docs/http/load_balancing.html</li>
+      <li>Health checks for Application Load Balancer target groups（AWS） https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html</li>
+      <li>Edit target group attributes for your Application Load Balancer（AWS） https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-target-group-attributes.html</li>
+      <li>HAProxy Configuration Manual https://docs.haproxy.org/</li>
+      <li>Envoy Proxy Documentation https://www.envoyproxy.io/docs</li>
+      <li>Cloud Load Balancing overview（Google Cloud） https://cloud.google.com/load-balancing/docs/load-balancing-overview</li>
+      <li>関連ページ：<a href="50-1_スケーリングの基本.html">スケーリングの基本</a>、<a href="50-3_オートスケーリング.html">オートスケーリング</a>、<a href="20-3_リバースプロキシ.html">リバースプロキシ</a>、<a href="20-4_HTTPSとTLS証明書.html">HTTPSとTLS証明書</a>、<a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-1_スケーリングの基本.html"><span class="lbl">← 前のページ</span>スケーリングの基本</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-3_オートスケーリング.html"><span class="lbl">次のページ →</span>オートスケーリング</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

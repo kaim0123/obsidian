@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OSのハードニングとパッチ管理｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 サーバー・ネットワークセキュリティ › OSのハードニングとパッチ管理</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 サーバー・ネットワークセキュリティ</span>
+      <h1>OSのハードニングとパッチ管理</h1>
+      <p class="lead"><strong>ハードニング（hardening）</strong> とは、OS を「固くする」こと、つまり攻撃に使える隙を一つずつ潰していく作業です。このページでは、不要なサービス・パッケージの削除、ユーザーと sudo の管理、<strong>unattended-upgrades</strong> による自動セキュリティ更新と再起動の扱い（needrestart・Livepatch）、fail2ban・ファイルパーミッション・sysctl、CIS Benchmarks・Lynis による点検、そして <strong>イミュータブルインフラ</strong> でのパッチの考え方を解説します。</p>
+      <p class="meta">もとにしたノート：61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/04_OSのハードニングとパッチ管理</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>OS のハードニングは <strong>減らす</strong>（不要なサービス・パッケージ・ユーザー・権限を削る）と <strong>更新し続ける</strong>（パッチを素早く、できれば自動で当てる）の 2 本柱です。実際の侵入の多くは、<strong>修正パッチがすでに公開されている既知の脆弱性</strong> を突かれたものです。</p>
+    </div>
+
+    <p>このページは <a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a> と <a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a> を読んでいると理解しやすいです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>ハードニングとは：減らす・更新し続ける</h2>
+    <p>引っ越したばかりの家で、使わない勝手口を塞ぎ、合鍵を回収し、古い鍵を最新のものに交換していくイメージです。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>減らす</h4>
+        <p>不要なサービス・パッケージ・ユーザー・権限を削ります（攻撃面の縮小。<a href="60-1_サーバーセキュリティの基本.html">60-1</a>）。</p>
+      </div>
+      <div class="card">
+        <h4>更新し続ける</h4>
+        <p>脆弱性の修正（<strong>パッチ</strong>）を素早く、できれば自動で当てます。特にこちらが重要です。</p>
+      </div>
+    </div>
+    <p>脆弱性管理のサイクルという一般論は <a href="../71_セキュリティ基礎/50-4_脆弱性管理とランサムウェア対策.html">71 脆弱性管理とランサムウェア対策</a> でも扱っています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>不要なサービス・パッケージを削る</h2>
+    <p>動いているサービスはそれぞれが攻撃面です。まず「今なにが動いているか」を把握します。</p>
+<pre><code># 動いているサービスの一覧
+systemctl list-units --type=service --state=running
+
+# ネットワークで待ち受けているもの（→ 60-3 ファイアウォールとネットワーク制御）
+sudo ss -tulnp
+
+# 自動起動が有効なもの
+systemctl list-unit-files --type=service --state=enabled</code></pre>
+    <p>Shop サーバーで必要なのは、おおむね <code>ssh</code>・<code>nginx</code>・<code>shop-api</code>（自作の systemd ユニット）・<code>postgresql</code>・<code>systemd-journald</code>・<code>cron</code>/タイマー・<code>unattended-upgrades</code> などです。用途が分からないものは <strong>すぐ消さずに調べてから</strong> 判断します。待ち受けポートの読み方は <a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a> で扱いました。</p>
+<pre><code># 不要なサービスを停止し、自動起動も無効にする
+sudo systemctl disable --now avahi-daemon.service
+
+# パッケージごと消す（設定ファイルも含めて削除するなら purge）
+sudo apt purge telnet
+sudo apt autoremove --purge</code></pre>
+
+    <div class="callout tip">
+      <p class="callout-title">クラウドのイメージは最初から絞られている</p>
+      <p>Ubuntu Server のクラウドイメージは、デスクトップ版のような不要なサービスはほとんど入っていません。ただし <code>snapd</code> は AWS の SSM Agent などが snap で提供されているので、安易に消すと管理手段を失います。「なんとなく消す」のではなく、<strong>何のためのものかを確認してから</strong> 消しましょう。</p>
+    </div>
+    <p>新しいサーバーを作るときは「インストールしてから削る」より「<strong>最初から最小構成で作る</strong>」方が確実です。Ansible や Packer で必要なものだけを入れる構成にしておけば、削り忘れも起きません（<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>）。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>ユーザーと sudo の管理</h2>
+
+    <h3 id="sec-3-1">3.1 ユーザーの原則</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>例</th><th>ルール</th></tr></thead>
+      <tbody>
+        <tr><td>人間の管理者</td><td><code>taro</code>, <code>hanako</code></td><td>1 人 1 アカウント。SSH 鍵でログインし、必要時に sudo</td></tr>
+        <tr><td>アプリの実行ユーザー</td><td><code>shop</code></td><td>ログインシェルなし（<code>/usr/sbin/nologin</code>）、sudo なし</td></tr>
+        <tr><td>root</td><td><code>root</code></td><td>直接ログインさせない（<code>PermitRootLogin no</code>）</td></tr>
+      </tbody>
+    </table></div>
+<pre><code># 管理者ユーザーを作り、sudo グループに追加
+sudo adduser taro
+sudo usermod -aG sudo taro
+
+# アプリ用のシステムユーザー（ログイン不可、ホームなし）
+sudo useradd --system --shell /usr/sbin/nologin --no-create-home shop
+
+# ログイン可能なシェルを持つユーザーを棚卸し
+awk -F: '$7 !~ /(nologin|false)$/ {print $1, $7}' /etc/passwd
+
+# 辞めた人のアカウントをロック（削除前の一時措置）
+sudo usermod --lock --expiredate 1 hanako</code></pre>
+    <p>共有アカウント（全員が <code>ubuntu</code> でログインする等）は、誰が何をしたか追えなくなるので避けます。ログ監査の前提が崩れてしまいます（<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a>）。アプリを専用ユーザーで動かす方法は <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> を参照してください。</p>
+
+    <h3 id="sec-3-2">3.2 sudo の設定</h3>
+    <p>sudo の設定は必ず <code>visudo</code> で編集します。文法エラーのまま保存すると sudo 自体が使えなくなるため、<code>visudo</code> は保存前にチェックしてくれます。</p>
+<pre><code># 追加設定は /etc/sudoers.d/ に分けて書く
+sudo visudo -f /etc/sudoers.d/deploy</code></pre>
+    <span class="code-label bad">✕ 危険な例：パスワードなしで何でもできる</span>
+<pre><code>deploy ALL=(ALL) NOPASSWD: ALL</code></pre>
+    <span class="code-label good">◯ 安全な例：必要なコマンドだけを許可する（最小権限）</span>
+<pre><code># デプロイ用ユーザーには、Shop API の再起動だけを許可する（最小権限）
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart shop-api.service</code></pre>
+    <p><code>NOPASSWD: ALL</code>（パスワードなしで何でもできる）は、そのユーザーの SSH 鍵が漏れた瞬間に root を取られるのと同じです。自動化のためにパスワードなしが必要なら、上の例のように <strong>コマンドを限定</strong> します。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>自動セキュリティアップデートと再起動</h2>
+
+    <h3 id="sec-4-1">4.1 unattended-upgrades</h3>
+    <p>Ubuntu には <strong>unattended-upgrades</strong>（無人で更新を当てる仕組み）が既定でインストールされており、セキュリティ更新が自動で適用されるようになっています。まず有効になっているか確認します。</p>
+<pre><code># 有効化されているか確認（両方 "1" なら有効）
+cat /etc/apt/apt.conf.d/20auto-upgrades
+# APT::Periodic::Update-Package-Lists "1";
+# APT::Periodic::Unattended-Upgrade "1";
+
+# 無効なら対話的に有効化
+sudo dpkg-reconfigure --priority=low unattended-upgrades
+
+# 何が更新されるかを試す（実際には変更しない）
+sudo unattended-upgrade -v --dry-run
+
+# 実行ログ
+less /var/log/unattended-upgrades/unattended-upgrades.log</code></pre>
+    <p>動作の細かい設定は <code>/etc/apt/apt.conf.d/50unattended-upgrades</code> にあります。既定では <strong>セキュリティ更新のみ</strong>（<code>${distro_codename}-security</code>）が対象で、通常の機能更新は自動では入りません。この既定のままが無難です。</p>
+
+    <h3 id="sec-4-2">4.2 再起動が必要な更新の扱い</h3>
+    <p>パッケージを更新しても、<strong>すでに動いているプロセスは古いコードのまま</strong> です。ここが見落とされがちなポイントです。</p>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="セキュリティ更新が適用されたら、何が更新されたかで分かれる。一般のライブラリやミドルウェアなら、needrestartが影響するサービスを再起動する。カーネルなら、Livepatchが有効なら一部の重大な修正は再起動なしで適用される。Livepatchが無効または対象外なら/var/run/reboot-requiredが作られ再起動が必要になり、メンテナンス時間に再起動するかAutomatic-Rebootを使う">
+      <defs>
+        <marker id="arw604a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="230" y="10" width="260" height="44" rx="8" class="d-box-accent"/>
+      <text x="360" y="37" text-anchor="middle" class="d-text-bold">セキュリティ更新が適用される</text>
+      <path d="M360,54 L360,76" class="d-line" marker-end="url(#arw604a)"/>
+      <rect x="270" y="78" width="180" height="40" rx="8" class="d-box"/>
+      <text x="360" y="103" text-anchor="middle" class="d-text">何が更新された？</text>
+
+      <path d="M300,118 L160,152" class="d-line" marker-end="url(#arw604a)"/>
+      <text x="170" y="134" text-anchor="middle" class="d-text-sub">ライブラリ・ミドルウェア</text>
+      <rect x="40" y="154" width="240" height="56" rx="8" class="d-box-good"/>
+      <text x="160" y="178" text-anchor="middle" class="d-text">needrestart が影響する</text>
+      <text x="160" y="198" text-anchor="middle" class="d-text">サービスを再起動</text>
+
+      <path d="M420,118 L540,152" class="d-line" marker-end="url(#arw604a)"/>
+      <text x="530" y="134" text-anchor="middle" class="d-text-sub">カーネル</text>
+      <rect x="440" y="154" width="200" height="40" rx="8" class="d-box"/>
+      <text x="540" y="179" text-anchor="middle" class="d-text">Livepatch は有効？</text>
+
+      <path d="M480,194 L410,232" class="d-line" marker-end="url(#arw604a)"/>
+      <text x="420" y="212" text-anchor="middle" class="d-text-sub">はい</text>
+      <rect x="290" y="234" width="210" height="56" rx="8" class="d-box-good"/>
+      <text x="395" y="258" text-anchor="middle" class="d-text">一部の重大な修正は</text>
+      <text x="395" y="278" text-anchor="middle" class="d-text">再起動なしで適用</text>
+
+      <path d="M600,194 L620,232" class="d-line" marker-end="url(#arw604a)"/>
+      <text x="650" y="212" text-anchor="middle" class="d-text-sub">いいえ/対象外</text>
+      <rect x="515" y="234" width="200" height="86" rx="8" class="d-box-warn"/>
+      <text x="615" y="256" text-anchor="middle" class="d-text-sub">reboot-required が作られる</text>
+      <text x="615" y="276" text-anchor="middle" class="d-text-bold">→ 再起動が必要</text>
+      <text x="615" y="296" text-anchor="middle" class="d-text-sub">メンテナンス時間に再起動</text>
+      <text x="615" y="312" text-anchor="middle" class="d-text-sub">または Automatic-Reboot</text>
+    </svg>
+    <figcaption>図：更新が「当たった」ことと、動いているプロセスやカーネルが「切り替わった」ことは別</figcaption>
+    </figure>
+    <ul>
+      <li><strong>needrestart</strong>：更新後、古いライブラリを使い続けているサービスを検出します。Ubuntu 24.04 からは <strong>既定で自動的にサービスを再起動</strong> するようになりました。つまり unattended-upgrades で OpenSSL が更新されると、Nginx などが自動で再起動されます。再起動されると困るサービス（例：単一構成の DB）は <code>/etc/needrestart/conf.d/</code> で除外設定ができます。</li>
+      <li><strong>カーネル更新</strong>：カーネルは再起動しないと切り替わりません。再起動が必要になると <code>/var/run/reboot-required</code> が作られるので、監視して計画的に再起動します。</li>
+    </ul>
+<pre><code># 再起動が必要か確認
+[ -f /var/run/reboot-required ] &amp;&amp; cat /var/run/reboot-required.pkgs
+
+# 50unattended-upgrades で深夜に自動再起動させる場合
+# Unattended-Upgrade::Automatic-Reboot "true";
+# Unattended-Upgrade::Automatic-Reboot-Time "03:00";</code></pre>
+    <p>自動再起動を有効にするかは構成次第です。Shop が API 2 台以上 + ロードバランサーの構成なら、1 台ずつ再起動しても止まりません（<a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a>）。1 台構成なら、再起動の時間帯をユーザーの少ない時間に決めて手動で行う方が安全です。</p>
+    <ul>
+      <li><strong>Livepatch</strong>：Canonical の <strong>Livepatch</strong> を使うと、重大なカーネルの脆弱性修正の一部を再起動なしで適用できます。Ubuntu Pro（2026 年時点で個人利用は少数台まで無料）に登録し <code>sudo pro enable livepatch</code> で有効化します。ただし <strong>すべての修正が対象ではない</strong> ため、定期的な再起動が不要になるわけではありません。</li>
+    </ul>
+
+    <h3 id="sec-4-3">4.3 サポート期限（EOL）にも注意</h3>
+    <p>パッチは <strong>サポート期間中の OS・ソフトにしか出ません</strong>。サポートが終わること（<strong>EOL</strong>：End of Life）を過ぎたソフトには、脆弱性が見つかっても修正が出ません。クリップ「MySQLはセキュリティが弱いのか」では、2023 年 10 月にサポートが終了した MySQL 5.7 を「動いているから」と使い続ける危険性が語られています（<a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a>）。OS も同様で、Ubuntu LTS の標準サポートは 5 年です（24.04 は 2029 年まで。Ubuntu Pro の ESM で延長可能）。OS・Node.js・PostgreSQL それぞれの EOL を把握し、計画的にバージョンアップしましょう。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>fail2ban：総当たりを自動でブロック</h2>
+    <p><strong>fail2ban</strong> はログを監視し、ログイン失敗を繰り返す IP をファイアウォールで一定時間ブロックするツールです。鍵認証にしていれば総当たりは成功しませんが、ログのノイズと無駄な負荷を減らせます。</p>
+<pre><code>sudo apt install fail2ban</code></pre>
+    <p>設定は <code>jail.conf</code> を直接編集せず、<code>jail.local</code> または <code>jail.d/</code> に書きます。</p>
+<pre><code># /etc/fail2ban/jail.d/sshd.local
+[sshd]
+enabled  = true
+backend  = systemd     # journald から sshd のログを読む
+maxretry = 5           # 5 回失敗したら
+findtime = 10m         # 10 分以内に
+bantime  = 1h          # 1 時間ブロック
+ignoreip = 127.0.0.1/8 198.51.100.24   # 自分の IP は除外（締め出し防止）</code></pre>
+<pre><code>sudo systemctl enable --now fail2ban
+sudo systemctl restart fail2ban
+sudo fail2ban-client status sshd        # ブロック中の IP を確認
+sudo fail2ban-client set sshd unbanip 203.0.113.45   # 解除</code></pre>
+    <p>Nginx のログを対象に、ログインページへの総当たりや不審なスキャンをブロックする jail も作れます。ただし fail2ban は <strong>補助的な対策</strong> で、IP を変えながら来る攻撃（分散した総当たり）には効きにくい点は理解しておきましょう。ログイン機能そのものへの攻撃と対策は <a href="../73_認証認可/20-1_ログイン機能への攻撃と対策.html">73 ログイン機能への攻撃と対策</a> で扱います。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>ファイルパーミッションとカーネルパラメータ</h2>
+
+    <h3 id="sec-6-1">6.1 ファイルパーミッション</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ファイル</th><th>推奨</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td><code>~/.ssh/</code></td><td><code>700</code></td><td>他人に鍵を見られない・書き換えられない</td></tr>
+        <tr><td><code>~/.ssh/authorized_keys</code></td><td><code>600</code></td><td>他人が鍵を追加できない</td></tr>
+        <tr><td><code>/etc/shadow</code></td><td><code>640 root:shadow</code>（既定）</td><td>パスワードハッシュの保護</td></tr>
+        <tr><td><code>/etc/shop/.env</code>（シークレット）</td><td><code>600</code> 所有者 <code>shop</code></td><td>アプリ以外が読めない（<a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a>）</td></tr>
+        <tr><td><code>/var/www/shop</code>（静的ファイル）</td><td>所有者 <code>root</code>、Nginx は読み取りのみ</td><td>Web から書き換えられない</td></tr>
+      </tbody>
+    </table></div>
+<pre><code># 誰でも書き込めるファイルを探す（/proc 等は除外）
+sudo find / -xdev -type f -perm -0002 -ls 2&gt;/dev/null
+
+# SUID（実行すると所有者=root の権限で動く）ファイルの一覧。普段と違うものが増えていないか
+sudo find / -xdev -perm -4000 -type f 2&gt;/dev/null</code></pre>
+    <p><strong>SUID</strong> は、実行した人ではなくファイルの所有者（多くは root）の権限で動く特別な印です。SUID ファイルの一覧は、後で比較できるよう保存しておくと侵入検知にも役立ちます（<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a>）。</p>
+
+    <h3 id="sec-6-2">6.2 カーネルパラメータ（sysctl）</h3>
+    <p><strong>sysctl</strong> はカーネルの動作を実行時に変える仕組みです。ネットワーク関連を中心に、代表的なものを紹介します。多くは Ubuntu の既定値で既に安全側ですが、明示しておくと監査で確認しやすくなります。</p>
+<pre><code>sudo tee /etc/sysctl.d/99-hardening.conf &gt; /dev/null &lt;&lt;'EOF'
+# SYN フラッド攻撃への耐性（SYN Cookie）
+net.ipv4.tcp_syncookies = 1
+# 送信元アドレスの偽装パケットを捨てる（逆経路フィルタ）
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+# ICMP リダイレクトを受け付けない・送らない（経路の乗っ取り防止）
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+# ソースルーティングされたパケットを拒否
+net.ipv4.conf.all.accept_source_route = 0
+# ルーターではないので転送しない（Docker / Kubernetes ホストでは 1 が必要なので注意）
+net.ipv4.ip_forward = 0
+# 一般ユーザーにカーネルのアドレスやログを見せない
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+EOF
+
+sudo sysctl --system      # 反映
+sysctl net.ipv4.tcp_syncookies   # 確認</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">コピペで済ませない</p>
+      <p><code>ip_forward = 0</code> は Docker やルーター役のサーバーでは通信を壊します。sysctl の設定は <strong>用途を理解したうえで</strong> 入れ、変更後はサービスの動作確認をしてください。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>CIS Benchmarks と自動チェック</h2>
+    <p>「何をどこまで固めればよいか」を自分で考えるのは大変です。そこで業界標準のチェックリストを使います。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>CIS Benchmarks</h4>
+        <p>非営利団体 CIS（Center for Internet Security）が公開している、OS やソフトごとの推奨設定集です。Ubuntu 24.04 用もあり、<strong>Level 1</strong>（業務への影響が少ない基本設定）と <strong>Level 2</strong>（より厳しい設定）に分かれています。数百項目あるので、まず Level 1 を目安にします。Ubuntu Pro の <strong>Ubuntu Security Guide（usg）</strong> を使うと、CIS に沿った監査と自動適用ができます。</p>
+      </div>
+      <div class="card">
+        <h4>Lynis</h4>
+        <p>オープンソースのセキュリティ監査ツールで、サーバーを診断して改善提案と「ハードニング指数」を出してくれます。</p>
+      </div>
+    </div>
+<pre><code>sudo apt install lynis
+sudo lynis audit system</code></pre>
+<pre><code>  -[ Lynis Results ]-
+  Warnings (1):
+  ! Found one or more vulnerable packages. [PKGS-7392]
+  Suggestions (28):
+  * Consider hardening SSH configuration [SSH-7408]
+      - Details  : MaxAuthTries (6 --&gt; 3)
+  ...
+  Hardening index : 68 [#############       ]</code></pre>
+    <p>すべての提案に従う必要はありません。指摘を読んで「Shop に必要か」を判断し、対応したものは Ansible のロールに入れてコード化します。こうしておけば、新しいサーバーも最初から同じ水準で作れます。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>イミュータブルインフラなら「パッチ＝イメージ作り直し」</h2>
+    <p>ここまでは「動いているサーバーを更新し続ける」前提でした。もう 1 つの考え方が <strong>イミュータブルインフラ（immutable infrastructure、不変のインフラ）</strong> です。サーバーには一切手を入れず、変更が必要なら <strong>新しいイメージを作って入れ替える</strong> 方式です。</p>
+    <ol class="steps">
+      <li>パッチが公開される</li>
+      <li>Packer / Dockerfile で、最新パッケージ入りのイメージを作成する</li>
+      <li>脆弱性スキャン・テストを通す</li>
+      <li>新イメージでサーバー／コンテナをローリング入れ替えする</li>
+      <li>古いサーバーは破棄する</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>更新し続ける（ミュータブル）</th><th>作り直す（イミュータブル）</th></tr></thead>
+      <tbody>
+        <tr><td>パッチ適用</td><td><code>apt upgrade</code>・unattended-upgrades</td><td>イメージを再ビルドして入れ替え</td></tr>
+        <tr><td>構成のずれ</td><td>手作業の変更が溜まりやすい</td><td>全台が同じイメージで揃う</td></tr>
+        <tr><td>再起動の問題</td><td>計画が必要</td><td>入れ替え＝新しいカーネルで起動</td></tr>
+        <tr><td>侵入された場合</td><td>痕跡を消しきれたか不安が残る</td><td>破棄して作り直せる</td></tr>
+      </tbody>
+    </table></div>
+    <p>コンテナの場合も同じで、<strong>ベースイメージを定期的に更新してビルドし直す</strong> ことがパッチ適用になります。古いイメージのコンテナを動かし続けるのは、パッチを当てていないサーバーと同じです。入れ替え手順は 65_リリース・デプロイの「ローリングアップデート」「Blue-Greenデプロイ」のノート、オートスケーリングとの組み合わせは <a href="50-3_オートスケーリング.html">50-3 オートスケーリング</a> を参照してください。コンテナイメージの運用は 53_コンテナの「本番向けベストプラクティス」のノートにもまとまっています。</p>
+
+    <h3 id="sec-8-1">8.1 よくある誤解・つまずき</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td><code>apt upgrade</code> したからもう安全</td><td>動いているプロセスやカーネルは再起動まで古いままです。needrestart の動作と <code>/var/run/reboot-required</code> を確認しましょう。</td></tr>
+        <tr><td>自動更新はサービスが壊れるから切っておく</td><td>既定はセキュリティ更新のみで、止めるリスクの方が大きいです。止めたいサービスは needrestart の除外や、冗長構成で対応します。</td></tr>
+        <tr><td>fail2ban を入れたからパスワード認証でも大丈夫</td><td>分散した総当たりは防げません。鍵認証が本命で、fail2ban は補助です。</td></tr>
+        <tr><td>CIS の全項目を満たさないと危険</td><td>Level 1 を目安に、自分の環境に合わせて取捨選択します。重要なのは判断した理由を残し、コード化することです。</td></tr>
+        <tr><td>コンテナならパッチは関係ない</td><td>ベースイメージの中の OS パッケージにも脆弱性があります。定期的な再ビルドがパッチ適用です。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>ハードニングの基本は「減らす（サービス・パッケージ・ユーザー・権限）」と「更新し続ける」の 2 本柱</li>
+      <li>人は 1 人 1 アカウント + sudo、アプリは nologin の専用ユーザー、<code>NOPASSWD: ALL</code> は避けてコマンドを限定</li>
+      <li>unattended-upgrades でセキュリティ更新を自動化し、24.04 の needrestart の自動再起動とカーネル更新後の再起動を計画する（Livepatch は補助）</li>
+      <li>fail2ban・パーミッション・sysctl で隙を減らし、Lynis / CIS Benchmarks で抜けを点検する</li>
+      <li>イミュータブルインフラでは、パッチ適用＝イメージを作り直して入れ替えること</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. unattended-upgrades で libssl のセキュリティ更新が入りました。Nginx は新しいライブラリを使っていますか？Ubuntu 24.04 の場合で答えてください。</summary>
+      <div class="body"><p>Ubuntu 24.04 では needrestart が既定で影響のあるサービスを自動再起動するため、通常は Nginx も再起動されて新しいライブラリを使います。ただし除外設定をしたサービスや、カーネルの更新は再起動するまで古いままです。<code>/var/run/reboot-required</code> と needrestart の出力で確認します。</p></div>
+    </details>
+    <details>
+      <summary>Q2. CI からのデプロイ用に deploy ALL=(ALL) NOPASSWD: ALL と設定しようとしています。何が問題で、どう直すべきですか？</summary>
+      <div class="body"><p>deploy ユーザーの鍵が漏れると、パスワードなしで root 権限のあらゆる操作ができてしまいます（最小権限に反する）。<code>deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart shop-api.service</code> のように、必要なコマンドだけに限定します。</p></div>
+    </details>
+    <details>
+      <summary>Q3. Shop をコンテナで動かしています。ベースイメージの OpenSSL に脆弱性が公表されました。イミュータブルな運用ではどう対処しますか？</summary>
+      <div class="body"><p>動いているコンテナの中で <code>apt upgrade</code> するのではなく、修正済みのベースイメージで Shop のイメージを再ビルドし、スキャンとテストを通してから、ローリングアップデート等で新しいコンテナに入れ替え、古いコンテナを破棄します。</p></div>
+    </details>
+    <details>
+      <summary>Q4. アプリ用ユーザー shop を作るとき、ログインシェルを /usr/sbin/nologin にするのはなぜですか？</summary>
+      <div class="body"><p>アプリを動かすためだけのユーザーなので、人がログインする必要がないからです。ログインできなくしておけば、万一このユーザーの認証情報が漏れても、シェルに入られる入口になりません（攻撃面の縮小・最小権限）。</p></div>
+    </details>
+    <details>
+      <summary>Q5. Livepatch を有効にすれば、カーネル更新のための再起動はもう不要ですか？</summary>
+      <div class="body"><p>不要にはなりません。Livepatch が再起動なしで当てられるのは重大な修正の一部だけで、すべての修正が対象ではないため、定期的な再起動は引き続き必要です。</p></div>
+    </details>
+    <details>
+      <summary>Q6. Docker ホストに sysctl の推奨設定をそのままコピーして net.ipv4.ip_forward = 0 を入れたら、何が起きる可能性がありますか？</summary>
+      <div class="body"><p>コンテナへの通信転送ができなくなり、サービスが壊れる可能性があります。Docker や Kubernetes のホスト、ルーター役のサーバーでは <code>ip_forward = 1</code> が必要です。sysctl は用途を理解したうえで入れ、変更後に動作確認をします。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/04_OSのハードニングとパッチ管理</li>
+      <li>Ubuntu Server docs - Automatic updates https://ubuntu.com/server/docs/how-to/software/automatic-updates/</li>
+      <li>needrestart changes in Ubuntu 24.04: service restarts（Ubuntu Discourse） https://discourse.ubuntu.com/t/needrestart-changes-in-ubuntu-24-04-service-restarts/44671</li>
+      <li>Ubuntu Livepatch https://ubuntu.com/security/livepatch</li>
+      <li>Ubuntu Security Guide（CIS / DISA-STIG） https://ubuntu.com/security/certifications/docs/usg</li>
+      <li>CIS Benchmarks - Ubuntu Linux https://www.cisecurity.org/benchmark/ubuntu_linux</li>
+      <li>Lynis（CISOfy） https://cisofy.com/lynis/</li>
+      <li>Fail2Ban（GitHub） https://github.com/fail2ban/fail2ban</li>
+      <li>Linux kernel docs - IP sysctl https://docs.kernel.org/networking/ip-sysctl.html</li>
+      <li>関連ページ：<a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a>、<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>、<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>、<a href="../71_セキュリティ基礎/50-4_脆弱性管理とランサムウェア対策.html">71 脆弱性管理とランサムウェア対策</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-3_ファイアウォールとネットワーク制御.html"><span class="lbl">← 前のページ</span>ファイアウォールとネットワーク制御</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-5_ログ監査と侵入の検知.html"><span class="lbl">次のページ →</span>ログ監査と侵入の検知</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

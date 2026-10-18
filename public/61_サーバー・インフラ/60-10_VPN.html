@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VPN｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 サーバー・ネットワークセキュリティ › VPN</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 サーバー・ネットワークセキュリティ</span>
+      <h1>VPN（サイト間・リモートアクセス・IPsec・GRE）</h1>
+      <p class="lead"><strong>VPN（Virtual Private Network）</strong>は、インターネットのような信頼できない回線の上に、暗号化された仮想的な専用線（トンネル）を作る技術です。このページでは、<strong>サイト間 VPN とリモートアクセス VPN の違い</strong>、<strong>IPsec が提供する 4 つのセキュリティ機能</strong>、<strong>トンネルモードとトランスポートモード</strong>、そして <strong>GRE と GRE over IPsec</strong> を解説します。</p>
+      <p class="meta">もとにしたノート：60_サーバー・ネットワークセキュリティ/10_VPN（サイト間・リモートアクセス・IPsec・GRE）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>拠点同士を常時つなぐのがサイト間 VPN（主に IPsec）、個人の端末から必要なときにつなぐのがリモートアクセス VPN（主に TLS）です。</strong>IPsec は機密性・完全性・認証・リプレイ防止を提供し、サイト間 VPN では元のパケットを丸ごと暗号化するトンネルモードを使います。GRE は暗号化できない代わりにマルチキャストを運べるので、IPsec と組み合わせて使います。</p>
+    </div>
+
+    <p>このページは、<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a> と <a href="60-8_ACL.html">60-8 ACL</a> を読んでいると理解しやすいです。VPN の位置づけ（ネットワーク防御の全体の中で何を守るか）は <a href="../71_セキュリティ基礎/50-1_ネットワークと端末の防御.html">71 ネットワークと端末の防御</a> でも紹介しています。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>サイト間 VPN とリモートアクセス VPN</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>サイト間 VPN（site-to-site VPN）</th><th>リモートアクセス VPN</th></tr></thead>
+      <tbody>
+        <tr><td>つなぐもの</td><td><strong>拠点と拠点</strong>（本社⇔支社）</td><td><strong>個々の端末</strong>（在宅勤務の PC など）⇔社内</td></tr>
+        <tr><td>トンネルを張る機器</td><td>拠点の<strong>ルータやファイアウォール同士</strong></td><td>端末の <strong>VPN クライアントソフト</strong>⇔VPN 装置（ASA/FTD など）</td></tr>
+        <tr><td>接続のタイミング</td><td><strong>常時</strong>（常設）</td><td>必要なときに接続</td></tr>
+        <tr><td>端末の特別なソフト</td><td><strong>不要</strong>（端末は普段どおり通信するだけ）</td><td>必要（Cisco Secure Client〔旧 AnyConnect〕など）または <strong>Web ブラウザ</strong></td></tr>
+        <tr><td>主なプロトコル</td><td><strong>IPsec</strong></td><td><strong>TLS</strong>（IPsec/IKEv2 を使うこともある）</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="上段はサイト間VPN。本社LANのルータ（203.0.113.1）と支社LANのルータ（198.51.100.1）が、インターネット経由で常時 IPsec トンネルを張る。PC は普段どおり通信し、暗号化はルータが行う。下段はリモートアクセスVPN。在宅PCは Cisco Secure Client で、出張先PCは Webブラウザで、TLS（TCP 443）のトンネルを VPN 装置（ASA/FTD）へ張り、社内LANにつながる">
+      <text x="20" y="24" class="d-text-bold">サイト間 VPN</text>
+      <rect x="20" y="40" width="110" height="50" rx="8" class="d-box"/>
+      <text x="75" y="70" text-anchor="middle" class="d-text">本社 LAN</text>
+      <rect x="150" y="40" width="120" height="50" rx="8" class="d-box-accent"/>
+      <text x="210" y="62" text-anchor="middle" class="d-text-bold">R-本社</text>
+      <text x="210" y="80" text-anchor="middle" class="d-text-sub">203.0.113.1</text>
+      <rect x="450" y="40" width="120" height="50" rx="8" class="d-box-accent"/>
+      <text x="510" y="62" text-anchor="middle" class="d-text-bold">R-支社</text>
+      <text x="510" y="80" text-anchor="middle" class="d-text-sub">198.51.100.1</text>
+      <rect x="590" y="40" width="110" height="50" rx="8" class="d-box"/>
+      <text x="645" y="70" text-anchor="middle" class="d-text">支社 LAN</text>
+      <path d="M130,65 L150,65" class="d-line"/>
+      <path d="M570,65 L590,65" class="d-line"/>
+      <rect x="270" y="52" width="180" height="26" rx="13" class="d-box-good"/>
+      <text x="360" y="70" text-anchor="middle" class="d-text-sub">IPsec トンネル（常時）</text>
+      <text x="360" y="116" text-anchor="middle" class="d-text-sub">PC は普段どおり通信するだけ。暗号化はルータが行う</text>
+
+      <path d="M20,140 L700,140" class="d-line-dash"/>
+
+      <text x="20" y="170" class="d-text-bold">リモートアクセス VPN</text>
+      <rect x="20" y="186" width="200" height="44" rx="8" class="d-box"/>
+      <text x="120" y="213" text-anchor="middle" class="d-text">在宅PC（Secure Client）</text>
+      <rect x="20" y="244" width="200" height="44" rx="8" class="d-box"/>
+      <text x="120" y="271" text-anchor="middle" class="d-text">出張先PC（ブラウザ）</text>
+      <rect x="440" y="214" width="140" height="50" rx="8" class="d-box-accent"/>
+      <text x="510" y="236" text-anchor="middle" class="d-text-bold">VPN 装置</text>
+      <text x="510" y="254" text-anchor="middle" class="d-text-sub">ASA/FTD</text>
+      <rect x="600" y="214" width="100" height="50" rx="8" class="d-box"/>
+      <text x="650" y="244" text-anchor="middle" class="d-text">社内 LAN</text>
+      <path d="M220,208 L440,232" class="d-line"/>
+      <path d="M220,266 L440,248" class="d-line"/>
+      <path d="M580,239 L600,239" class="d-line"/>
+      <text x="330" y="244" text-anchor="middle" class="d-text-sub">TLS（TCP 443）</text>
+    </svg>
+    <figcaption>図：サイト間 VPN はルータ同士が常時トンネルを張り、リモートアクセス VPN は端末が必要なときに VPN 装置へつなぐ</figcaption>
+    </figure>
+    <p>ノートの図は次のとおりです。</p>
+<pre><code>【サイト間VPN】
+ 本社LAN ── [R-本社] ══════ IPsecトンネル（インターネット経由・常時）══════ [R-支社] ── 支社LAN
+             203.0.113.1                                              198.51.100.1
+  PCは普段どおり通信するだけ。暗号化はルータが行う。
+
+【リモートアクセスVPN】
+ 在宅PC（Cisco Secure Client）══ TLS（TCP 443）トンネル ══&gt; [VPN装置(ASA/FTD)] ── 社内LAN
+ 出張先PC（Webブラウザ）      ══ TLS ═══════════════════&gt; ┘</code></pre>
+    <p>本社と支社の<strong>ルータ同士</strong>で、インターネット越しに<strong>常時</strong>トンネルを張って拠点間の LAN をつなぐのが<strong>サイト間 VPN</strong>です。似た言葉と混同しないようにしましょう。</p>
+    <ul>
+      <li>VLAN：スイッチ内でネットワークを論理的に分ける技術。暗号化やインターネット越しの接続とは無関係です。</li>
+      <li>NAT：プライベート IP とグローバル IP を変換する技術。暗号化はしません。</li>
+    </ul>
+    <p>在宅勤務の社員が Cisco Secure Client や Web ブラウザで接続するリモートアクセス VPN で主に使われるのは <strong>TLS</strong>（HTTPS でも使われる暗号化の仕組み）です。TLS は Web ブラウザでも使われているため、<strong>ファイアウォールを通りやすい（TCP 443）</strong>という利点があります。次のプロトコルはリモートアクセス VPN には使えません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロトコル</th><th>使えない理由</th></tr></thead>
+      <tbody>
+        <tr><td>GRE</td><td>カプセル化するトンネルのプロトコルで、<strong>暗号化の機能がない</strong></td></tr>
+        <tr><td>Telnet</td><td>機器へのリモートログイン。通信は暗号化されない</td></tr>
+        <tr><td>SNMPv2c</td><td>機器の監視。コミュニティ名も平文</td></tr>
+      </tbody>
+    </table></div>
+    <p>VPN 接続ユーザーの認証には、<a href="60-7_AAA.html">60-7 AAA</a> で扱った RADIUS がよく使われます。また、VPN 機器自体の脆弱性はランサムウェアの侵入口として狙われやすいので、パッチ管理も欠かせません（<a href="../71_セキュリティ基礎/50-4_脆弱性管理とランサムウェア対策.html">71 脆弱性管理とランサムウェア対策</a>）。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>IPsec が提供するセキュリティ機能</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>機能</th><th>内容</th><th>使う技術の例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>機密性</strong>（暗号化）</td><td>盗聴されても内容を読めない</td><td>AES など</td></tr>
+        <tr><td><strong>完全性</strong>（改ざん検知）</td><td>途中でデータが書き換えられていないか確認する</td><td>ハッシュ（HMAC-SHA など）</td></tr>
+        <tr><td><strong>認証</strong></td><td>通信相手が本物かを確認する</td><td>事前共有キー、デジタル証明書</td></tr>
+        <tr><td><strong>リプレイ攻撃の防止</strong></td><td>盗聴したパケットを再送する攻撃を防ぐ</td><td>シーケンス番号</td></tr>
+      </tbody>
+    </table></div>
+    <p>覚え方は「機密性・完全性・認証・リプレイ防止」です。次のものは IPsec の機能ではありません。</p>
+    <ul>
+      <li>IP アドレスの自動割り当て → <strong>DHCP</strong> の役割です。</li>
+      <li>通信帯域の保証 → <strong>QoS</strong> の役割です。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">補足：IKE・ESP・AH</p>
+      <p>IPsec は、鍵交換に <strong>IKE</strong>（Internet Key Exchange、UDP 500/4500）を使い、データの保護には <strong>ESP</strong>（暗号化＋完全性。IP プロトコル番号 50）または <strong>AH</strong>（完全性・認証のみで暗号化なし。番号 51）を使います。VPN で暗号化を行うのは ESP です。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>IPsec のモード：トンネルモードとトランスポートモード</h2>
+<pre><code>元のパケット:                  [元IPヘッダ][TCP/UDP][データ]
+
+トンネルモード:   [新IPヘッダ][ESPヘッダ][元IPヘッダ][TCP/UDP][データ][ESPトレーラ/認証]
+                   ↑ルータ同士の          └──────── 暗号化される範囲 ────────┘
+                    グローバルアドレス       （元の送信元・宛先も隠れる）
+
+トランスポートモード:         [元IPヘッダ][ESPヘッダ][TCP/UDP][データ][ESPトレーラ/認証]
+                              ↑そのまま              └── 暗号化される範囲 ──┘</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モード</th><th>暗号化の範囲</th><th>新しい IP ヘッダ</th><th>主な用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>トンネルモード</strong></td><td><strong>元の IP パケット全体</strong>（元の IP ヘッダを含む）</td><td><strong>付ける</strong></td><td><strong>サイト間 VPN</strong>（ゲートウェイ間）</td></tr>
+        <tr><td>トランスポートモード</td><td>データ部分だけ（元の IP ヘッダはそのまま）</td><td>付けない</td><td>端末同士の通信（ホスト間）、GRE over IPsec</td></tr>
+      </tbody>
+    </table></div>
+    <p>サイト間 VPN では、拠点のルータが社内のパケットを<strong>まるごと暗号化</strong>し、ルータ同士のグローバルアドレスを付けた<strong>新しいヘッダ</strong>でインターネットへ送ります。受け取った相手のルータが外側のヘッダを外して復号し、元のパケットを社内へ転送します。社内のアドレスなど、元の送信元・宛先も隠せます。</p>
+    <p>「モード」という名前が付く別の言葉と混同しないようにしましょう。</p>
+    <ul>
+      <li>パッシブモード：<strong>FTP</strong> のデータ転送の方式です（<a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a>）。</li>
+      <li>モニターモード：<strong>無線 AP</strong> のモードの一つです。</li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>GRE と GRE over IPsec</h2>
+    <p><strong>GRE（Generic Routing Encapsulation）</strong>は、パケットをカプセル化（別のパケットで包むこと）して拠点間を<strong>仮想的につなぐ</strong>トンネルのプロトコルです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>GRE</th><th>従来の IPsec（クリプトマップ方式）</th></tr></thead>
+      <tbody>
+        <tr><td>暗号化</td><td><strong>できない</strong></td><td>できる</td></tr>
+        <tr><td>マルチキャスト（OSPF などのルーティングプロトコル）</td><td><strong>運べる</strong></td><td>運べない（ユニキャストのみ）</td></tr>
+      </tbody>
+    </table></div>
+    <p>互いの弱点を補うため、<strong>GRE でカプセル化したうえで IPsec で暗号化する（GRE over IPsec）</strong>構成が使われます。<strong>マルチキャスト</strong>は複数の相手へまとめて送る通信で、OSPF（ルータ同士が経路を教え合うプロトコル）などが使います。</p>
+<pre><code>[元のOSPFパケット（マルチキャスト 224.0.0.5）]
+      ↓ GREでカプセル化（ユニキャストのトンネルパケットになる）
+[GREの外側IPヘッダ][GREヘッダ][元のパケット]
+      ↓ IPsecで暗号化
+[IPヘッダ][ESP][暗号化された GRE パケット][ESP認証]</code></pre>
+    <p>GRE トンネルの設定例（暗号化なし）です。</p>
+<pre><code>R1(config)# interface tunnel 0
+R1(config-if)# ip address 172.16.0.1 255.255.255.252
+R1(config-if)# tunnel source g0/1                    ! 自分のグローバル側
+R1(config-if)# tunnel destination 198.51.100.1       ! 相手のグローバルアドレス
+R1(config-if)# exit
+R1(config)# router ospf 1
+R1(config-router)# network 172.16.0.0 0.0.0.3 area 0  ! トンネル越しにOSPFが動く</code></pre>
+<pre><code>R1# show interfaces tunnel 0
+Tunnel0 is up, line protocol is up
+  Hardware is Tunnel
+  Internet address is 172.16.0.1/30
+  Tunnel source 203.0.113.1 (GigabitEthernet0/1), destination 198.51.100.1
+  Tunnel protocol/transport GRE/IP</code></pre>
+    <p>GRE について、次のような理解は誤りです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤った理解</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>AES で通信を暗号化する</td><td>GRE は暗号化しない。AES で暗号化するのは IPsec など</td></tr>
+        <tr><td>無線 LAN の認証方式</td><td>無線 LAN とは無関係</td></tr>
+        <tr><td>ユニキャストしか運べない</td><td>GRE は<strong>マルチキャストも運べる</strong>ため、トンネル越しに OSPF などを動かせる</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">補足</p>
+      <p>現在は VTI（仮想トンネルインターフェース）方式の IPsec や DMVPN など、IPsec でもルーティングプロトコルを扱える方式もあります。基本としては「GRE＝マルチキャスト可・暗号化なし、従来の IPsec＝暗号化あり・マルチキャスト不可、組み合わせて GRE over IPsec」と理解しておきましょう。</p>
+    </div>
+    <p>クラウド（AWS）でのサイト間 VPN については、63_AWS の「02_サイト間VPN基本概念」のノートで扱っています。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>よくある誤解</h2>
+    <ul>
+      <li>拠点間・常時・ルータ同士＝<strong>サイト間 VPN</strong>。個人の端末・必要なとき・クライアントソフト＝<strong>リモートアクセス VPN</strong>。VLAN や NAT は VPN ではありません。</li>
+      <li>IPsec の機能は機密性・完全性・認証・リプレイ防止です。<strong>IP アドレス割り当て（DHCP）や帯域保証（QoS）はしません</strong>。</li>
+      <li>元の IP ヘッダごと暗号化して新ヘッダを付けるのは<strong>トンネルモード</strong>。トランスポートモードはデータ部分だけです。パッシブモード（FTP）、モニターモード（無線 AP）は無関係です。</li>
+      <li>リモートアクセス VPN の主なプロトコルは <strong>TLS</strong>（TCP 443 で通りやすい）。サイト間 VPN は主に IPsec です。</li>
+      <li><strong>GRE は暗号化しません</strong>。また GRE はマルチキャストを運べます（ユニキャストだけではありません）。</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li>サイト間 VPN＝拠点ルータ同士・常時・主に IPsec。リモートアクセス VPN＝端末から必要時・Cisco Secure Client/ブラウザ・TLS（または IPsec/IKEv2）。</li>
+      <li>IPsec＝機密性（AES）・完全性（ハッシュ）・認証・リプレイ防止。</li>
+      <li>サイト間 VPN はトンネルモード（元のパケット全体を暗号化＋新 IP ヘッダ）。</li>
+      <li>GRE＝カプセル化のみ・暗号化なし・マルチキャスト可 → GRE over IPsec で補完。</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 本社と支社のルータ同士でインターネット越しに常時トンネルを張る VPN は何と呼びますか？</summary>
+      <div class="body"><p>サイト間 VPN です。端末は特別なソフトなしで普段どおり通信し、暗号化はルータが行います。主に IPsec を使います。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 在宅勤務の PC から Cisco Secure Client やブラウザで接続するリモートアクセス VPN で、主に使われるプロトコルとその利点は？</summary>
+      <div class="body"><p>TLS です。HTTPS と同じ TCP 443 を使うので、ファイアウォールを通りやすいという利点があります。</p></div>
+    </details>
+    <details>
+      <summary>Q3. IPsec が提供する 4 つのセキュリティ機能を挙げてください。</summary>
+      <div class="body"><p>機密性（暗号化）、完全性（改ざん検知）、認証（相手の確認）、リプレイ攻撃の防止です。IP アドレスの割り当て（DHCP）や帯域保証（QoS）は IPsec の役割ではありません。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 元の IP ヘッダごと暗号化し、新しい IP ヘッダを付けるのはどちらのモードですか？</summary>
+      <div class="body"><p>トンネルモードです。サイト間 VPN で使い、社内の送信元・宛先アドレスも隠せます。トランスポートモードはデータ部分だけを暗号化し、元の IP ヘッダはそのままです。</p></div>
+    </details>
+    <details>
+      <summary>Q5. IPsec で実際にデータを暗号化するのは ESP と AH のどちらですか？</summary>
+      <div class="body"><p>ESP（IP プロトコル番号 50）です。AH（番号 51）は完全性・認証だけで暗号化はしません。鍵交換には IKE（UDP 500/4500）を使います。</p></div>
+    </details>
+    <details>
+      <summary>Q6. GRE だけでトンネルを作ると、どんな弱点がありますか？ どう補いますか？</summary>
+      <div class="body"><p>GRE は暗号化できません。そこで GRE でカプセル化したうえで IPsec で暗号化する GRE over IPsec にします。GRE はマルチキャストを運べるので、トンネル越しに OSPF などを動かせます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/10_VPN（サイト間・リモートアクセス・IPsec・GRE）</li>
+      <li>関連ノート（解説ページなし）：63_AWS/06_ネットワーキング/06_接続サービス/02_サイト間VPN基本概念</li>
+      <li>関連ページ：<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a>、<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>、<a href="60-7_AAA.html">60-7 AAA</a>、<a href="60-8_ACL.html">60-8 ACL</a>、<a href="60-9_L2セキュリティ.html">60-9 L2セキュリティ</a></li>
+      <li>他の章：<a href="../71_セキュリティ基礎/50-1_ネットワークと端末の防御.html">71 ネットワークと端末の防御</a>、<a href="../71_セキュリティ基礎/50-4_脆弱性管理とランサムウェア対策.html">71 脆弱性管理とランサムウェア対策</a>、<a href="../71_セキュリティ基礎/20-3_ゼロトラスト.html">71 ゼロトラスト</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-9_L2セキュリティ.html"><span class="lbl">← 前のページ</span>L2セキュリティ</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <span class="empty"></span>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

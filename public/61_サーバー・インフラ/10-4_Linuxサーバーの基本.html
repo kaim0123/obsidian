@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linuxサーバーの基本｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 サーバーの基礎 › Linuxサーバーの基本</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 サーバーの基礎</span>
+      <h1>Linuxサーバーの基本</h1>
+      <p class="lead">なぜサーバーの OS は <strong>Linux</strong> が主流なのか、どのディストリビューションを選ぶかから始めて、ディレクトリ構成（<code>/etc</code> <code>/var/log</code> <code>/home</code> <code>/opt</code> <code>/srv</code>）、ユーザー・グループ・パーミッション・sudo、apt によるパッケージ管理、プロセスとサービス（systemctl）、ログ（journalctl）とリソース確認、そして <strong>新しいサーバーを借りた初日にやること</strong> までを解説します。前提は <a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a> を読んでいること、ターミナルで <code>cd</code> や <code>ls</code> を使ったことがあれば十分です。</p>
+      <p class="meta">もとにしたノート：10_サーバーの基礎/04_Linuxサーバーの基本</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>Linux サーバーは <strong>「画面のない、ひたすら働き続けるパソコン」</strong> です。マウスもデスクトップもなく、SSH で遠隔からコマンドを打って操作します。覚えることは <strong>「どこに何があるか（ディレクトリ）」「誰が何をできるか（権限）」「何が動いているか（プロセス・サービス）」「何が起きたか（ログ）」</strong> の 4 つに集約されます。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>Linux サーバーは「画面のないパソコン」</h2>
+    <p>最初は不安ですが、覚えることは上の 4 つです。このページの基準は次のとおりです。</p>
+    <ul>
+      <li>サーバー OS は Linux が圧倒的多数派です。このシリーズでは <strong>Ubuntu Server 24.04 LTS</strong> を基準にします</li>
+      <li>設定は <code>/etc</code>、ログは <code>/var/log</code> と journald、サービスは <code>systemctl</code> で管理します</li>
+      <li>root で直接作業せず、一般ユーザー＋<code>sudo</code> で必要なときだけ管理者権限を使います</li>
+    </ul>
+    <p>コマンド操作そのもの（ファイル操作・リダイレクト・vi など）を基礎から学びたい場合は、52_シェルCLI の「Linux基礎」のノート群（Linuxとは何か、権限管理、プロセス監視、パッケージ管理、サービス管理など）も参照してください。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>なぜ Linux か、どれを選ぶか</h2>
+
+    <h3 id="sec-2-1">2.1 Linux が選ばれる理由</h3>
+    <ul>
+      <li><strong>無料・オープンソース</strong>：台数を増やしてもライセンス費用がかかりません</li>
+      <li><strong>GUI が不要で軽い</strong>：メモリや CPU をアプリに回せます</li>
+      <li><strong>自動化しやすい</strong>：すべてがコマンドとテキストの設定ファイルなので、スクリプトや Ansible で再現できます（→ <a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>）</li>
+      <li><strong>エコシステム</strong>：Nginx・PostgreSQL・Docker など、サーバーソフトの多くは Linux を第一の動作環境としています</li>
+      <li><strong>コンテナの土台</strong>：Docker のコンテナは Linux カーネルの機能で動きます（→ <a href="10-3_仮想化とクラウド.html#sec-3">10-3 VM とコンテナの違い</a>）</li>
+    </ul>
+    <p>Windows Server も .NET Framework や Active Directory を使う社内システムでは現役ですが、Web サービスでは Linux が標準です。</p>
+
+    <h3 id="sec-2-2">2.2 ディストリビューション</h3>
+    <p>Linux は「カーネル＋ソフト一式」を組み合わせた <strong>ディストリビューション（distribution、略してディストロ）</strong> として配布されます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>系統</th><th>代表</th><th>パッケージ管理</th><th>特徴</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Debian 系</strong></td><td><strong>Ubuntu Server LTS</strong>、Debian</td><td><code>apt</code>（.deb）</td><td>情報が多く初心者向き。クラウドのイメージも豊富</td></tr>
+        <tr><td><strong>RHEL 系</strong></td><td>Red Hat Enterprise Linux、Rocky Linux、AlmaLinux</td><td><code>dnf</code>（.rpm）</td><td>企業システムで定番。RHEL は有償サポート付き</td></tr>
+        <tr><td><strong>Amazon Linux</strong></td><td>Amazon Linux 2023</td><td><code>dnf</code></td><td>AWS 向けに最適化。Fedora ベース</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>LTS（Long Term Support）</strong> は長期サポート版のことです。Ubuntu の LTS は 2 年ごとに出て、<strong>標準で 5 年間のセキュリティ更新</strong>、Ubuntu Pro（個人は 5 台まで無料）でさらに延長されます。Ubuntu 24.04 LTS の標準サポートは 2029 年 5 月までです（2026 年時点）。本番サーバーには必ず LTS を選びます。</p>
+    <div class="callout tip">
+      <p class="callout-title">他ディストリでの読み替え</p>
+      <p>以降のコマンドは Ubuntu 基準です。RHEL 系・Amazon Linux では <code>apt</code> → <code>dnf</code>、<code>ufw</code> → <code>firewalld</code>、管理者グループ <code>sudo</code> → <code>wheel</code>、<code>/var/log/syslog</code> → <code>/var/log/messages</code> と読み替えてください。<code>systemctl</code> と <code>journalctl</code> は共通です。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>ディレクトリ構成（FHS）</h2>
+    <p>Linux のディレクトリ配置は <strong>FHS（Filesystem Hierarchy Standard）</strong> という規約でおおむね決まっています。「設定ファイルどこ？」で迷わないために、主要な場所を覚えましょう。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パス</th><th>中身</th><th>Shop での例</th></tr></thead>
+      <tbody>
+        <tr><td><code>/etc</code></td><td><strong>設定ファイル</strong></td><td><code>/etc/nginx/nginx.conf</code>、<code>/etc/systemd/system/shop-api.service</code></td></tr>
+        <tr><td><code>/var/log</code></td><td><strong>ログファイル</strong></td><td><code>/var/log/nginx/access.log</code>、<code>/var/log/nginx/error.log</code></td></tr>
+        <tr><td><code>/var/lib</code></td><td>アプリが管理するデータ</td><td><code>/var/lib/postgresql/16/main</code>（DB の実データ）</td></tr>
+        <tr><td><code>/var/www</code></td><td>Web コンテンツ（慣習）</td><td>静的ファイルを置く場所の候補</td></tr>
+        <tr><td><code>/home</code></td><td>一般ユーザーのホーム</td><td><code>/home/deploy</code></td></tr>
+        <tr><td><code>/root</code></td><td>root ユーザーのホーム</td><td>普段は使わない</td></tr>
+        <tr><td><code>/opt</code></td><td>パッケージ外の追加ソフト</td><td><code>/opt/shop-api</code>（自作アプリの配置先の候補）</td></tr>
+        <tr><td><code>/srv</code></td><td>そのサーバーが提供するデータ</td><td><code>/srv/shop</code>（配置先の別候補）</td></tr>
+        <tr><td><code>/usr/bin</code>, <code>/usr/sbin</code></td><td>コマンド本体</td><td><code>node</code>、<code>nginx</code></td></tr>
+        <tr><td><code>/tmp</code></td><td>一時ファイル。再起動で消える</td><td>大事なものは置かない</td></tr>
+      </tbody>
+    </table></div>
+    <p>自作アプリを <code>/opt</code> と <code>/srv</code> のどちらに置くかは流派がありますが、<strong>チーム内で 1 つに決めて揃える</strong> ことが大切です。本シリーズでは <code>/opt/shop-api</code> に置きます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>ユーザー・グループ・パーミッション・sudo</h2>
+
+    <h3 id="sec-4-1">4.1 ユーザーとグループ</h3>
+    <p>Linux は複数人・複数プログラムで使う前提の OS で、<strong>誰がやったか</strong> を常に管理しています。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>root</h4>
+        <p>何でもできる管理者。うっかり <code>rm -rf /</code> も実行できてしまいます。</p>
+      </div>
+      <div class="card">
+        <h4>一般ユーザー</h4>
+        <p>人間の作業用（例：<code>deploy</code>）。</p>
+      </div>
+      <div class="card">
+        <h4>システムユーザー</h4>
+        <p>サービス専用でログインできないユーザー（例：Nginx の <code>www-data</code>、DB の <code>postgres</code>、Shop API 用の <code>shop</code>）。</p>
+      </div>
+    </div>
+    <p>サービスごとに専用ユーザーを作るのは、<strong>乗っ取られても被害をそのユーザーの権限内に閉じ込める</strong> ためです（最小権限の考え方。→ <a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">71 最小権限とデータ最小化</a>）。</p>
+
+    <h3 id="sec-4-2">4.2 パーミッション</h3>
+    <p><strong>パーミッション</strong>（アクセス権）は、<code>ls -l</code> で見られます。</p>
+<pre><code>$ ls -l /opt/shop-api/.env
+-rw-r----- 1 shop shop 512 Oct 12 10:00 /opt/shop-api/.env
+ │└┬┘└┬┘└┬┘   │    │
+ │ │  │  │    │    └ 所有グループ
+ │ │  │  │    └ 所有ユーザー
+ │ │  │  └ その他(other): ---  何もできない
+ │ │  └ グループ(group): r--  読むだけ
+ │ └ 所有者(user):  rw-  読み書き
+ └ 種類（- はファイル、d はディレクトリ）</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>記号</th><th>数字</th><th>ファイルでは</th><th>ディレクトリでは</th></tr></thead>
+      <tbody>
+        <tr><td><strong>r</strong></td><td>4</td><td>読める</td><td>中身の一覧を見られる</td></tr>
+        <tr><td><strong>w</strong></td><td>2</td><td>書ける</td><td>中にファイルを作成・削除できる</td></tr>
+        <tr><td><strong>x</strong></td><td>1</td><td>実行できる</td><td>中に入れる（<code>cd</code>）</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>sudo chown shop:shop /opt/shop-api/.env   # 所有者を shop に
+sudo chmod 640 /opt/shop-api/.env         # rw-r----- （6=4+2, 4, 0）</code></pre>
+    <div class="callout bad">
+      <p class="callout-title">やってはいけない</p>
+      <p>DB のパスワードを含む <code>.env</code> を <code>644</code>（誰でも読める）にしない、<code>chmod 777</code> で「とりあえず動かす」をしない、が鉄則です。</p>
+    </div>
+
+    <h3 id="sec-4-3">4.3 sudo</h3>
+    <p><code>sudo</code>（superuser do）は、許可された一般ユーザーが <strong>そのコマンドだけ root 権限で実行する</strong> 仕組みです。Ubuntu では <code>sudo</code> グループのメンバーが使えます。</p>
+<pre><code>sudo adduser deploy              # ユーザー作成（対話式）
+sudo usermod -aG sudo deploy     # sudo グループに追加（-a を忘れると他のグループから外れる）
+sudo -u shop whoami              # shop ユーザーとして実行 → shop</code></pre>
+    <p>root で直接ログインせずに sudo を使う理由は、<strong>誰がいつ何をしたかがログに残る</strong>（<code>/var/log/auth.log</code>）ことと、<strong>うっかり事故を減らす</strong> ことです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>パッケージ管理（apt）</h2>
+    <p>ソフトのインストール・更新は <strong>パッケージマネージャー</strong>（ソフトの導入・更新・削除をまとめて管理する道具）で行います。Ubuntu では <code>apt</code> です。</p>
+<pre><code>sudo apt update                  # パッケージ一覧（カタログ）を最新化する。インストールはしない
+sudo apt upgrade                 # インストール済みのソフトを更新する
+sudo apt install nginx           # インストール
+apt list --installed | grep nginx  # インストール済みか確認
+sudo apt remove nginx            # 削除（設定ファイルは残る）
+sudo apt purge nginx             # 設定ファイルごと削除
+sudo apt autoremove              # 不要になった依存パッケージを削除</code></pre>
+    <ul>
+      <li><code>update</code> と <code>upgrade</code> の違いはよく混同されます。<strong>update はカタログ更新、upgrade は実際の更新</strong> です</li>
+      <li>Ubuntu Server では <strong>unattended-upgrades</strong> が既定で有効になっており、セキュリティ更新は自動で適用されます。カーネル更新後は再起動が必要なことがあり、<code>/var/run/reboot-required</code> ファイルの有無で分かります</li>
+      <li>Ubuntu 標準リポジトリの Node.js や PostgreSQL は版が古いことがあるため、公式リポジトリ（NodeSource、PostgreSQL の apt リポジトリ）を追加して入れることが多いです（→ <a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a>）</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>プロセスとサービス</h2>
+
+    <h3 id="sec-6-1">6.1 プロセスを見る</h3>
+    <p><strong>プロセス（process）</strong> は「実行中のプログラム」です。</p>
+<pre><code>ps aux | grep node          # 全プロセスから node を探す
+ps aux --sort=-%mem | head  # メモリ使用量の多い順
+top                         # リアルタイム表示（q で終了）
+htop                        # top の見やすい版（sudo apt install htop）</code></pre>
+    <p><code>top</code> の見どころは、上部の <strong>load average</strong>（直近 1・5・15 分の平均的な実行待ちの数。vCPU 数を大きく超えると混雑）と、各プロセスの <strong>%CPU・%MEM</strong> です。</p>
+
+    <h3 id="sec-6-2">6.2 サービスを管理する（systemd）</h3>
+    <p>サーバーで常駐するプログラム（Nginx、PostgreSQL、Shop API）は <strong>サービス（service）</strong> として <strong>systemd</strong> に管理させます。systemd は起動時の自動起動、落ちたときの自動再起動、ログの収集を引き受けてくれます。</p>
+<pre><code>systemctl status nginx         # 状態確認（active (running) なら稼働中）
+sudo systemctl start nginx     # 起動
+sudo systemctl stop nginx      # 停止
+sudo systemctl restart nginx   # 再起動
+sudo systemctl reload nginx    # 設定だけ読み直す（接続を切らない）
+sudo systemctl enable nginx    # OS 起動時に自動起動する
+systemctl is-enabled nginx     # 自動起動が有効か
+systemctl --failed             # 失敗しているサービス一覧</code></pre>
+    <p><code>start</code> は「今起動」、<code>enable</code> は「次回起動時から自動起動」で、<strong>別物</strong> です（<code>enable --now</code> で両方）。Shop API 用のサービスファイルの書き方は <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> で扱います。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>ログとリソース確認</h2>
+
+    <h3 id="sec-7-1">7.1 ログを見る</h3>
+<pre><code>journalctl -u nginx                 # nginx サービスのログ
+journalctl -u shop-api -f           # Shop API のログを追いかけ表示（tail -f 相当）
+journalctl -u shop-api --since "1 hour ago"
+journalctl -p err -b                # 今回の起動以降のエラー以上のログ
+sudo tail -f /var/log/nginx/error.log   # ファイルに書くタイプのログ
+sudo less /var/log/auth.log         # ログイン・sudo の記録</code></pre>
+    <p>ログには 2 系統あります。systemd 管理下のサービスの標準出力は <strong>journald</strong>（<code>journalctl</code> で読む）に、Nginx などが独自に書くログは <strong><code>/var/log</code> 配下のファイル</strong> に残ります。</p>
+    <ol class="steps">
+      <li><code>systemctl status</code> でサービスが動いているか見る</li>
+      <li><code>journalctl -u</code> でサービスのログを見る</li>
+      <li>アプリ固有のログ（<code>/var/log/nginx/error.log</code> など）を見る</li>
+    </ol>
+    <p>「動かない」ときは、この順に見ましょう。ログの集約や監視は 66_可観測性の「サーバー監視とログ管理の基本」「ログ集約基盤」のノートや、<a href="60-5_ログ監査と侵入の検知.html">60-5 ログ監査と侵入の検知</a> へ。</p>
+
+    <h3 id="sec-7-2">7.2 リソースを確認する</h3>
+<pre><code>df -h          # ディスク使用量（Use% が 90% 超えは要注意）
+du -sh /var/log/*  # どのディレクトリが容量を食っているか
+free -h        # メモリ。見るべきは used ではなく available
+uptime         # 稼働時間と load average
+nproc          # CPU コア数
+ss -tlnp       # 待ち受け中の TCP ポートと、どのプロセスか（要 sudo で全表示）</code></pre>
+    <p><code>free</code> で <code>free</code> 列が小さくても慌てないでください。Linux は空きメモリをディスクキャッシュに使うので、<strong>実際に使える量は <code>available</code> 列</strong> です。<code>ss</code> の読み方は <a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a> で詳しく扱います。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>初日にやるサーバー初期設定の流れ</h2>
+    <p>新しい Ubuntu サーバー（VPS / EC2）を借りたら、アプリを入れる前に次の流れで整えます。各項目のセキュリティ的な詳細は 60 章で扱います。</p>
+    <ol class="steps">
+      <li><strong>SSH でログイン</strong>：EC2 なら <code>ubuntu</code> ユーザー＋鍵</li>
+      <li><strong>パッケージを最新化</strong>：<code>apt update &amp;&amp; apt upgrade</code></li>
+      <li><strong>作業用ユーザー作成</strong>：sudo グループに追加し、SSH 鍵を配置</li>
+      <li><strong>SSH を堅くする</strong>：パスワード認証・root ログインを禁止</li>
+      <li><strong>ファイアウォール</strong>：22・80・443 のみ許可</li>
+      <li><strong>タイムゾーン・ホスト名・自動更新の確認</strong></li>
+      <li><strong>アプリ用のシステムユーザー作成</strong>：その後 Nginx / Node.js / PostgreSQL を導入</li>
+    </ol>
+<pre><code># 2. 最新化
+sudo apt update &amp;&amp; sudo apt upgrade -y
+
+# 3. 作業用ユーザー
+sudo adduser deploy
+sudo usermod -aG sudo deploy
+sudo mkdir -p /home/deploy/.ssh
+sudo cp ~/.ssh/authorized_keys /home/deploy/.ssh/
+sudo chown -R deploy:deploy /home/deploy/.ssh
+sudo chmod 700 /home/deploy/.ssh &amp;&amp; sudo chmod 600 /home/deploy/.ssh/authorized_keys
+# → 別ターミナルで deploy として SSH ログインできることを必ず確認してから次へ
+
+# 4. SSH（詳細は 60 章）
+#   /etc/ssh/sshd_config.d/ に PasswordAuthentication no / PermitRootLogin no を設定し
+sudo systemctl reload ssh
+
+# 5. ファイアウォール（クラウドではセキュリティグループも設定）
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+sudo ufw status verbose
+
+# 6. 基本設定
+sudo timedatectl set-timezone Asia/Tokyo
+sudo hostnamectl set-hostname shop-web-01
+systemctl status unattended-upgrades
+
+# 7. アプリ用のシステムユーザー（ログイン不可）
+sudo useradd --system --create-home --home-dir /opt/shop-api --shell /usr/sbin/nologin shop</code></pre>
+    <div class="callout warn">
+      <p class="callout-title">締め出しに注意</p>
+      <p>SSH の設定変更やファイアウォール有効化の前に、<strong>今の SSH セッションを閉じずに、別ターミナルで新しくログインできることを確認</strong> してください。<code>ufw enable</code> の前に <code>ufw allow OpenSSH</code> を忘れると、自分自身が締め出されます。VPS ならコンソール機能、EC2 ならシリアルコンソールや EC2 Instance Connect が最後の救済手段です。</p>
+    </div>
+    <p>SSH・ファイアウォール・ハードニングの詳細は <a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a>・<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>・<a href="60-4_OSのハードニングとパッチ管理.html">60-4 OSのハードニングとパッチ管理</a> を、構築全体の流れは <a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a> を参照してください。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ よくある誤解</th><th>◯ 実際は</th></tr></thead>
+      <tbody>
+        <tr><td>権限エラーが出たら <code>chmod 777</code> で解決</td><td>誰でも書き換え可能になり、侵入の足がかりになる。所有者（<code>chown</code>）と必要最小限の権限を設定する</td></tr>
+        <tr><td><code>apt update</code> でソフトが更新される</td><td>update はカタログの更新だけ。実際の更新は <code>apt upgrade</code></td></tr>
+        <tr><td><code>systemctl start</code> したから再起動後も動く</td><td>自動起動には <code>systemctl enable</code> が必要</td></tr>
+        <tr><td><code>free</code> の free 列が少ない＝メモリ不足</td><td>Linux は空きをキャッシュに使う。見るべきは <code>available</code> 列</td></tr>
+        <tr><td>作業は root でやった方が楽</td><td>一度のタイプミスでシステムを壊せるうえ、誰が何をしたか追えない。一般ユーザー＋sudo が基本</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>補足：Linux の特徴とアーキテクチャ</h2>
+    <p>Linux そのものの特徴、カーネルからアプリケーションまでの構造、主要ディストリビューション、用途とセキュリティ機能を一覧で整理します。</p>
+    <p><strong>Linux（リナックス）</strong> とは、1991 年にリーナス・トーバルズ（Linus Torvalds）によって開発されたオープンソースの Unix 系オペレーティングシステムです。現在、サーバー、デスクトップ、組み込みシステム、スーパーコンピュータなど、様々な環境で広く使用されています。</p>
+
+    <h3 id="sec-10-1">10.1 Linux の特徴</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. オープンソース</h4>
+        <ul>
+          <li><strong>ソースコード公開</strong>：誰でもソースコードを閲覧・改変可能</li>
+          <li><strong>無料</strong>：基本的に無料で使用可能</li>
+          <li><strong>コミュニティ開発</strong>：世界中の開発者が協力して開発</li>
+          <li><strong>透明性</strong>：開発プロセスが公開されている</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. 高い安定性</h4>
+        <ul>
+          <li><strong>長時間稼働</strong>：サーバーとして 24 時間 365 日の稼働</li>
+          <li><strong>クラッシュ耐性</strong>：システムの異常終了が少ない</li>
+          <li><strong>メモリ管理</strong>：効率的なメモリ使用と管理</li>
+          <li><strong>プロセス管理</strong>：堅牢なプロセス制御</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>3. 高いセキュリティ</h4>
+        <ul>
+          <li><strong>権限管理</strong>：細かいアクセス権限の設定</li>
+          <li><strong>ユーザー分離</strong>：ユーザー間の適切な分離</li>
+          <li><strong>セキュリティパッチ</strong>：迅速な脆弱性修正</li>
+          <li><strong>監査機能</strong>：詳細なログ記録</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>4. 高いカスタマイズ性</h4>
+        <ul>
+          <li><strong>設定の柔軟性</strong>：詳細な設定変更が可能</li>
+          <li><strong>モジュール設計</strong>：必要な機能のみを組み込み</li>
+          <li><strong>ディストリビューション</strong>：多様な Linux 版の選択</li>
+          <li><strong>ソースコード改変</strong>：必要に応じた機能追加・修正</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-2">10.2 Linux のアーキテクチャ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>構成要素</th><th>役割</th><th>機能・種類</th><th>例・特徴</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. カーネル</strong></td><td>Linux の中核部分</td><td>ハードウェア管理、プロセス管理、メモリ管理</td><td>モノリシックカーネル、モジュール化。定期的な更新・改良</td></tr>
+        <tr><td><strong>2. シェル</strong></td><td>ユーザーとカーネルのインターフェース</td><td>Bash、Zsh、Fish、PowerShell。コマンド実行、スクリプト処理、環境設定</td><td>強力なコマンドライン環境</td></tr>
+        <tr><td><strong>3. システムライブラリ</strong></td><td>アプリケーションとカーネルの仲介</td><td>システムコールの提供、共通機能の実装</td><td>glibc、musl、uClibc。標準化された API</td></tr>
+        <tr><td><strong>4. アプリケーション</strong></td><td>具体的な機能の実現</td><td>デスクトップアプリ、サーバーアプリ、開発ツール</td><td>Firefox、LibreOffice、Apache、MySQL。豊富なソフトウェア選択肢</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-11"><span class="num">11.</span>補足：Linux ディストリビューション</h2>
+
+    <h3 id="sec-11-1">11.1 主要ディストリビューション</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ディストリ</th><th>特徴</th><th>用途</th><th>その他</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Ubuntu</strong></td><td>初心者向け、使いやすい</td><td>デスクトップ、サーバー、クラウド</td><td>サポート：長期サポート版（LTS）。派生版：Kubuntu、Xubuntu、Lubuntu</td></tr>
+        <tr><td><strong>CentOS/RHEL</strong></td><td>企業向け、高信頼性</td><td>サーバー、エンタープライズ</td><td>サポート：商用サポート、長期サポート。派生版：Rocky Linux、AlmaLinux</td></tr>
+        <tr><td><strong>Debian</strong></td><td>安定性重視、コミュニティ開発</td><td>サーバー、組み込みシステム</td><td>厳格な品質管理。派生版：Ubuntu、Linux Mint</td></tr>
+        <tr><td><strong>Fedora</strong></td><td>最新技術、実験的機能</td><td>デスクトップ、開発環境</td><td>Red Hat の技術検証版。6 ヶ月ごとのリリース</td></tr>
+        <tr><td><strong>openSUSE</strong></td><td>ヨーロッパ発、YaST 設定ツール</td><td>デスクトップ、サーバー</td><td>優れたパッケージ管理。派生版：SUSE Linux Enterprise</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-11-2">11.2 特殊用途ディストリビューション</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>サーバー向け</h4>
+        <ul>
+          <li><strong>Ubuntu Server</strong>：クラウド・サーバー最適化</li>
+          <li><strong>CentOS</strong>：エンタープライズサーバー</li>
+          <li><strong>Debian</strong>：安定したサーバー環境</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>セキュリティ向け</h4>
+        <ul>
+          <li><strong>Kali Linux</strong>：ペネトレーションテスト</li>
+          <li><strong>Parrot Security</strong>：セキュリティ分析</li>
+          <li><strong>BlackArch</strong>：セキュリティ研究</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>組み込み向け</h4>
+        <ul>
+          <li><strong>Yocto Project</strong>：組み込み Linux 構築</li>
+          <li><strong>Buildroot</strong>：軽量組み込みシステム</li>
+          <li><strong>OpenWrt</strong>：ルーター・ネットワーク機器</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout warn">
+      <p class="callout-title">CentOS について</p>
+      <p>この一覧には CentOS が載っていますが、従来の CentOS Linux はサポートが終了しており、いまは後継として Rocky Linux や AlmaLinux が使われます（2.2 の表を参照）。新しくサーバーを作るときは、サポート期間中のディストリビューションを選んでください。</p>
+    </div>
+
+    <h2 id="sec-12"><span class="num">12.</span>補足：Linux の基本操作と用途</h2>
+
+    <h3 id="sec-12-1">12.1 Linux の基本操作</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. ファイルシステム</h4>
+        <ul>
+          <li><strong>階層構造</strong>：ルート（/）を起点とした階層</li>
+          <li><strong>主要ディレクトリ</strong>：/bin、/etc、/home、/var、/tmp</li>
+          <li><strong>権限</strong>：読み取り（r）、書き込み（w）、実行（x）</li>
+          <li><strong>所有者</strong>：ユーザー、グループ、その他</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. 基本コマンド</h4>
+        <ul>
+          <li><strong>ファイル操作</strong>：ls、cd、cp、mv、rm、mkdir</li>
+          <li><strong>テキスト処理</strong>：cat、grep、sed、awk、sort</li>
+          <li><strong>プロセス管理</strong>：ps、top、kill、jobs</li>
+          <li><strong>ネットワーク</strong>：ping、ssh、scp、wget、curl</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>3. パッケージ管理</h4>
+        <ul>
+          <li><strong>APT</strong>：Debian/Ubuntu 系のパッケージ管理</li>
+          <li><strong>YUM/DNF</strong>：Red Hat 系のパッケージ管理</li>
+          <li><strong>Zypper</strong>：openSUSE 系のパッケージ管理</li>
+          <li><strong>Pacman</strong>：Arch Linux 系のパッケージ管理</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>4. システム管理</h4>
+        <ul>
+          <li><strong>ユーザー管理</strong>：useradd、usermod、userdel</li>
+          <li><strong>権限管理</strong>：chmod、chown、chgrp</li>
+          <li><strong>サービス管理</strong>：systemctl、service</li>
+          <li><strong>ログ管理</strong>：journalctl、tail、grep</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-12-2">12.2 Linux の用途</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. サーバー</strong></td><td>Web サーバー：Apache、Nginx／データベースサーバー：MySQL、PostgreSQL／メールサーバー：Postfix、Sendmail／ファイルサーバー：Samba、NFS</td></tr>
+        <tr><td><strong>2. クラウド・コンテナ</strong></td><td>クラウドプラットフォーム：AWS、Azure、GCP／コンテナ：Docker、Podman／オーケストレーション：Kubernetes、Docker Swarm／サーバーレス：AWS Lambda、Azure Functions</td></tr>
+        <tr><td><strong>3. 開発環境</strong></td><td>プログラミング：多様な言語の開発環境／バージョン管理：Git、SVN／CI/CD：Jenkins、GitLab CI、GitHub Actions／テスト環境：自動テスト、品質管理</td></tr>
+        <tr><td><strong>4. 組み込みシステム</strong></td><td>IoT デバイス：センサー、アクチュエーター／ルーター：ネットワーク機器／スマートフォン：Android（Linux ベース）／自動車：車載システム</td></tr>
+        <tr><td><strong>5. スーパーコンピュータ</strong></td><td>HPC：高性能計算／科学計算：シミュレーション、データ分析／AI/ML：機械学習、深層学習／研究開発：学術研究、企業研究</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-13"><span class="num">13.</span>補足：Linux のセキュリティと学習方法</h2>
+
+    <h3 id="sec-13-1">13.1 Linux のセキュリティ</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>1. ユーザー管理</h4>
+        <ul>
+          <li><strong>権限分離</strong>：root ユーザーと一般ユーザーの分離</li>
+          <li><strong>sudo</strong>：管理者権限の一時的な取得</li>
+          <li><strong>グループ管理</strong>：ユーザーグループによる権限管理</li>
+          <li><strong>パスワードポリシー</strong>：強固なパスワード設定</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. ファイアウォール</h4>
+        <ul>
+          <li><strong>iptables</strong>：パケットフィルタリング</li>
+          <li><strong>ufw</strong>：簡易ファイアウォール設定</li>
+          <li><strong>firewalld</strong>：動的ファイアウォール管理</li>
+          <li><strong>ネットワークセキュリティ</strong>：ポート制御、アクセス制限</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>3. 暗号化</h4>
+        <ul>
+          <li><strong>ファイル暗号化</strong>：LUKS、eCryptfs</li>
+          <li><strong>通信暗号化</strong>：SSH、TLS/SSL</li>
+          <li><strong>ディスク暗号化</strong>：フルディスク暗号化</li>
+          <li><strong>鍵管理</strong>：GPG、SSH 鍵</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>4. 監視・ログ</h4>
+        <ul>
+          <li><strong>システム監視</strong>：top、htop、iotop</li>
+          <li><strong>ログ管理</strong>：syslog、journald</li>
+          <li><strong>セキュリティ監査</strong>：auditd、AIDE</li>
+          <li><strong>侵入検知</strong>：fail2ban、OSSEC</li>
+        </ul>
+      </div>
+    </div>
+    <p>サーバーのセキュリティ全体は <a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a> から順に扱います。</p>
+
+    <h3 id="sec-13-2">13.2 Linux の学習方法</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>1. 基礎学習</h4>
+        <ul>
+          <li><strong>コマンドライン</strong>：基本的なコマンドの習得</li>
+          <li><strong>ファイルシステム</strong>：ディレクトリ構造の理解</li>
+          <li><strong>権限管理</strong>：ファイル・ディレクトリの権限設定</li>
+          <li><strong>プロセス管理</strong>：プロセスの監視・制御</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>2. 実践学習</h4>
+        <ul>
+          <li><strong>仮想環境</strong>：VirtualBox、VMware での学習</li>
+          <li><strong>クラウド環境</strong>：AWS、Azure での実践</li>
+          <li><strong>プロジェクト</strong>：実際のシステム構築</li>
+          <li><strong>コミュニティ</strong>：フォーラム、勉強会への参加</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>3. 資格取得</h4>
+        <ul>
+          <li><strong>LPIC</strong>：Linux Professional Institute Certification</li>
+          <li><strong>RHCE</strong>：Red Hat Certified Engineer</li>
+          <li><strong>CompTIA Linux+</strong>：業界標準の Linux 資格</li>
+          <li><strong>Ubuntu 認定</strong>：Ubuntu の専門知識</li>
+        </ul>
+      </div>
+    </div>
+    <p>Linux は、オープンソースの Unix 系オペレーティングシステムとして、高い安定性、セキュリティ、カスタマイズ性を提供しています。サーバー、クラウド、組み込みシステム、スーパーコンピュータなど、様々な環境で広く使用されており、現代の IT インフラを支える重要な技術です。Linux の習得により、効率的で安全なシステム構築・運用が可能になります。</p>
+
+    <h2 id="sec-14"><span class="num">14.</span>まとめ</h2>
+    <ul>
+      <li>サーバー OS は Linux が主流。本番には LTS 版（このシリーズでは Ubuntu Server 24.04 LTS）を選ぶ</li>
+      <li>設定は <code>/etc</code>、ログは <code>/var/log</code> と journald、アプリは <code>/opt</code> か <code>/srv</code> に置く</li>
+      <li>サービスごとに専用ユーザーを作り、パーミッションは最小限に。管理作業は sudo で</li>
+      <li>ソフトは <code>apt</code>、常駐プログラムは <code>systemctl</code>、ログは <code>journalctl</code>、リソースは <code>df</code> <code>free</code> <code>ss</code> で確認</li>
+      <li>初日は「最新化 → 作業ユーザー → SSH 強化 → ファイアウォール → 基本設定」の順に整え、締め出しに注意する</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">15.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Shop API の設定ファイル <code>.env</code> に DB パスワードが入っています。所有者 <code>shop</code>、パーミッション <code>600</code> と <code>644</code> のどちらにすべきですか？</summary>
+      <div class="body"><p><strong><code>600</code>（rw-------）</strong> です（グループで読む必要があれば <code>640</code>）。<code>644</code> は「その他」のユーザーも読めるため、サーバー上の別のプロセスが乗っ取られた場合にパスワードが漏れます。</p></div>
+    </details>
+    <details>
+      <summary>Q2. <code>sudo systemctl start shop-api</code> で起動できたのに、サーバー再起動後に Shop API が動いていませんでした。何が足りなかったでしょう？</summary>
+      <div class="body"><p><code>sudo systemctl enable shop-api</code> です。<code>start</code> は今起動するだけで、OS 起動時の自動起動は <code>enable</code> で設定します。<code>sudo systemctl enable --now shop-api</code> で両方を一度に行えます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 「サイトが急に 500 エラーを返すようになった」とき、Linux サーバー上で最初に確認するコマンドを 3 つ挙げてください。</summary>
+      <div class="body"><p>例：<code>systemctl status shop-api</code>（サービスが落ちていないか）、<code>journalctl -u shop-api --since "10 min ago"</code>（エラーログ）、<code>df -h</code>（ディスクフルでログや DB が書けなくなっていないか）。他に <code>free -h</code>（メモリ不足）、<code>sudo tail /var/log/nginx/error.log</code> も有効です。</p></div>
+    </details>
+    <details>
+      <summary>Q4. <code>apt update</code> と <code>apt upgrade</code> の違いは？</summary>
+      <div class="body"><p><code>apt update</code> はパッケージ一覧（カタログ）を最新化するだけで、ソフトは更新しません。<code>apt upgrade</code> がインストール済みのソフトを実際に更新します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. <code>free -h</code> で free 列がほとんど 0 でした。メモリ不足と判断してよいですか？</summary>
+      <div class="body"><p>まだ判断できません。Linux は空きメモリをディスクキャッシュに使うので free 列は小さくなりがちです。実際に使える量は <code>available</code> 列で見ます。</p></div>
+    </details>
+    <details>
+      <summary>Q6. Nginx の設定ファイル、Nginx のアクセスログ、PostgreSQL の実データは、それぞれ FHS ではどのディレクトリにありますか？</summary>
+      <div class="body"><p>設定は <code>/etc</code>（<code>/etc/nginx/nginx.conf</code>）、ログは <code>/var/log</code>（<code>/var/log/nginx/access.log</code>）、アプリが管理するデータは <code>/var/lib</code>（<code>/var/lib/postgresql/16/main</code>）です。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 初期設定で <code>ufw enable</code> を実行する前に、必ずやっておくことは何ですか？</summary>
+      <div class="body"><p><code>sudo ufw allow OpenSSH</code> で SSH を許可しておくことです。忘れると自分が締め出されます。加えて、今の SSH セッションを閉じずに、別ターミナルで新しくログインできることを確認してから進めます。</p></div>
+    </details>
+    <details>
+      <summary>Q8. root で直接作業せず、一般ユーザー＋sudo を使うのはなぜですか？</summary>
+      <div class="body"><p>誰がいつ何をしたかが <code>/var/log/auth.log</code> に残ること、そして一度のタイプミスでシステムを壊すようなうっかり事故を減らせることです。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/10_サーバーの基礎/04_Linuxサーバーの基本</li>
+      <li>Ubuntu release cycle https://ubuntu.com/about/release-cycle</li>
+      <li>Ubuntu Server documentation https://documentation.ubuntu.com/server/</li>
+      <li>Ubuntu Server docs: Automatic updates https://documentation.ubuntu.com/server/how-to/software/automatic-updates/</li>
+      <li>Filesystem Hierarchy Standard 3.0 (Linux Foundation) https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html</li>
+      <li>systemctl(1) — systemd man page https://www.freedesktop.org/software/systemd/man/latest/systemctl.html</li>
+      <li>journalctl(1) — systemd man page https://www.freedesktop.org/software/systemd/man/latest/journalctl.html</li>
+      <li>関連ページ：<a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a>、<a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="60-1_サーバーセキュリティの基本.html">60-1 サーバーセキュリティの基本</a>、<a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a>、<a href="40-1_サーバー構築の流れ.html">40-1 サーバー構築の流れ</a>、<a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">71 最小権限とデータ最小化</a></li>
+      <li>関連ノート（HTML なし）：52_シェルCLI「Linux基礎」、66_可観測性「サーバー監視とログ管理の基本」「ログ集約基盤」、11_コンピューターサイエンスの体系ノート（プロセス・メモリなど OS の理論）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-3_仮想化とクラウド.html"><span class="lbl">← 前のページ</span>仮想化とクラウド</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-5_ネットワークの基本.html"><span class="lbl">次のページ →</span>ネットワークの基本</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

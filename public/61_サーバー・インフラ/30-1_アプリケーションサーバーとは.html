@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アプリケーションサーバーとは｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 アプリ実行環境 › アプリケーションサーバーとは</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 アプリ実行環境</span>
+      <h1>アプリケーションサーバーとは</h1>
+      <p class="lead">Nginx のような <strong>Web サーバー</strong> と、あなたが書いたコードを動かす <strong>アプリケーションサーバー</strong> は、得意なことが違うので役割を分けます。このページでは、両者の境界線、リクエストが Nginx → アプリサーバー → アプリのコード → DB と流れる全体像、Node.js / Python / Ruby / Java / PHP それぞれのアプリサーバーの正体、プロセス・スレッド・イベントループという 3 つの同時処理モデル、そして本番で必須になる <strong>ステートレス設計</strong> と <strong>コネクションプール</strong> を解説します。最後に補足として、プログラミング言語とデータベースの分類・選び方・連携（ORM・トランザクション）も整理します。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/30_アプリ実行環境/01_アプリケーションサーバーとは</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>レストランに例えると、<strong>Web サーバーは「ホール係」、アプリケーションサーバーは「厨房」</strong> です。ホール係（Nginx）は入口でお客さんを迎え、水やメニュー（静的ファイル）ならその場で出し、料理の注文（動的なリクエスト）だけを厨房に通します。厨房（アプリケーションサーバー）はレシピ（あなたが書いたアプリのコード）に従って料理を作り、必要なら冷蔵庫（データベース）から食材を取り出します。</p>
+    </div>
+
+    <p>この記事は <a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a> と <a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> を読んでいると理解しやすいです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>Web サーバーとアプリサーバーの違い</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>Web サーバー</h4>
+        <p>HTTP の受付・<strong>TLS 終端</strong>（HTTPS の暗号をここで解くこと）・静的ファイル配信・振り分けが得意です。中身の「業務ロジック」は知りません。</p>
+      </div>
+      <div class="card">
+        <h4>アプリケーションサーバー（Application Server）</h4>
+        <p>あなたのコードを実行して、リクエストごとに違う結果（<strong>動的コンテンツ</strong>）を作ります。</p>
+      </div>
+    </div>
+    <p>両者を分けるのは「得意なことが違う」からです。Nginx は数万の接続をさばくのが得意ですが、商品の在庫計算はできません。アプリは計算できますが、遅いクライアントや大量の静的ファイルの相手は苦手です。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>Web サーバーとアプリサーバーの境界</h2>
+
+    <h3 id="sec-2-1">2.1 それぞれの担当</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>仕事</th><th>Web サーバー（Nginx）</th><th>アプリケーションサーバー</th></tr></thead>
+      <tbody>
+        <tr><td>HTTPS（TLS）の暗号化・復号</td><td>◎ ここでやる</td><td>✕ 通常やらない</td></tr>
+        <tr><td>画像・CSS・JS などの静的ファイル</td><td>◎ ディスクから直接返す</td><td>△ できるが非効率</td></tr>
+        <tr><td>遅いクライアントの相手（バッファリング）</td><td>◎</td><td>✕ 苦手</td></tr>
+        <tr><td>ログイン判定・注文処理・DB 読み書き</td><td>✕</td><td>◎ ここでやる</td></tr>
+        <tr><td>複数のアプリへの振り分け・負荷分散</td><td>◎</td><td>✕</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>バッファリング</strong> とは、通信の遅い相手とのやり取りを Web サーバーがいったん受け止めて、アプリを待たせないようにすることです。</p>
+    <p>「アプリケーションサーバー」という言葉は少し曖昧で、次の 2 つの意味で使われます。</p>
+    <ol class="steps">
+      <li><strong>ソフトウェアとしてのアプリサーバー</strong>：Gunicorn、Puma、Tomcat など、「アプリのコードを読み込んで HTTP リクエストを渡してくれるプログラム」</li>
+      <li><strong>マシン（役割）としてのアプリサーバー</strong>：「アプリが動いているサーバー機」。構成図で「AP サーバー」と書かれるもの</li>
+    </ol>
+    <p>このページでは主に 1 の意味で使い、「アプリのコードを動かす実行環境」として説明します。</p>
+
+    <h3 id="sec-2-2">2.2 Shop でのリクエストの流れ</h3>
+    <p>この章で例に使う通販サイト「Shop」の 1 台構成（Nginx ＋ Shop API ＋ PostgreSQL）で、「商品一覧を見る」リクエストを追ってみます。</p>
+    <figure>
+    <svg viewBox="0 0 720 420" role="img" aria-label="ブラウザが HTTPS で Nginx の 443 番に GET /products を送る。Nginx は TLS を復号し、127.0.0.1:3000 の Node.js アプリサーバーに転送する。アプリサーバーはリクエストオブジェクトをアプリのコードに渡し、コードはプールの接続を借りて PostgreSQL に SELECT を送る。行データが返り、コードが JSON を組み立て、アプリサーバーが HTTP 200 を Nginx に返し、Nginx が暗号化してブラウザへ返す">
+      <defs>
+        <marker id="arrow-30-1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="120" height="50" rx="8" class="d-box"/>
+      <text x="70" y="40" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <rect x="155" y="10" width="120" height="50" rx="8" class="d-box"/>
+      <text x="215" y="32" text-anchor="middle" class="d-text-bold">Nginx</text>
+      <text x="215" y="50" text-anchor="middle" class="d-text-sub">:443</text>
+      <rect x="300" y="10" width="130" height="50" rx="8" class="d-box-accent"/>
+      <text x="365" y="32" text-anchor="middle" class="d-text-bold">アプリサーバー</text>
+      <text x="365" y="50" text-anchor="middle" class="d-text-sub">Node.js :3000</text>
+      <rect x="455" y="10" width="130" height="50" rx="8" class="d-box"/>
+      <text x="520" y="32" text-anchor="middle" class="d-text-bold">アプリのコード</text>
+      <text x="520" y="50" text-anchor="middle" class="d-text-sub">ルーティング・業務</text>
+      <rect x="610" y="10" width="100" height="50" rx="8" class="d-box"/>
+      <text x="660" y="32" text-anchor="middle" class="d-text-bold">PostgreSQL</text>
+      <text x="660" y="50" text-anchor="middle" class="d-text-sub">:5432</text>
+      <path d="M70,60 L70,410" class="d-line-dash"/>
+      <path d="M215,60 L215,410" class="d-line-dash"/>
+      <path d="M365,60 L365,410" class="d-line-dash"/>
+      <path d="M520,60 L520,410" class="d-line-dash"/>
+      <path d="M660,60 L660,410" class="d-line-dash"/>
+
+      <text x="142" y="88" text-anchor="middle" class="d-text-sub">① GET /products</text>
+      <path d="M70,98 L213,98" class="d-line" marker-end="url(#arrow-30-1a)"/>
+      <text x="215" y="125" text-anchor="middle" class="d-text-sub">TLS 復号・静的か判定</text>
+      <text x="290" y="148" text-anchor="middle" class="d-text-sub">② proxy_pass</text>
+      <path d="M215,158 L363,158" class="d-line" marker-end="url(#arrow-30-1a)"/>
+      <text x="442" y="188" text-anchor="middle" class="d-text-sub">③ リクエストを渡す</text>
+      <path d="M365,198 L518,198" class="d-line" marker-end="url(#arrow-30-1a)"/>
+      <text x="590" y="228" text-anchor="middle" class="d-text-sub">④ SELECT（プール）</text>
+      <path d="M520,238 L658,238" class="d-line" marker-end="url(#arrow-30-1a)"/>
+      <text x="590" y="268" text-anchor="middle" class="d-text-sub">⑤ 行データ</text>
+      <path d="M660,278 L522,278" class="d-line-dash" marker-end="url(#arrow-30-1a)"/>
+      <text x="442" y="308" text-anchor="middle" class="d-text-sub">⑥ JSON を組み立て</text>
+      <path d="M520,318 L367,318" class="d-line-dash" marker-end="url(#arrow-30-1a)"/>
+      <text x="290" y="348" text-anchor="middle" class="d-text-sub">⑦ 200 + JSON</text>
+      <path d="M365,358 L217,358" class="d-line-dash" marker-end="url(#arrow-30-1a)"/>
+      <text x="142" y="388" text-anchor="middle" class="d-text-sub">⑧ 暗号化して返す</text>
+      <path d="M215,398 L72,398" class="d-line-dash" marker-end="url(#arrow-30-1a)"/>
+    </svg>
+    <figcaption>図：外から届くのは Nginx の 443 番だけ。アプリサーバーは 127.0.0.1:3000 で Nginx からの転送だけを受ける</figcaption>
+    </figure>
+    <p>Nginx からアプリへの転送は <code>proxy_pass http://127.0.0.1:3000/products</code> のように書きます。ポイントは、<strong>ポート 3000 は外に公開せず、<code>127.0.0.1</code>（自分自身だけを指すアドレス）で待ち受ける</strong> ことです。外から届くのは Nginx の 443 番だけで、アプリサーバーは「Nginx からしか話しかけられない厨房」にしておきます（<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a> 参照）。</p>
+
+    <h3 id="sec-2-3">2.3 「アプリサーバー」と「アプリのコード」の境界</h3>
+    <p>言語によっては、アプリサーバーとアプリのコードの間に <strong>決まったインターフェース（約束事）</strong> があります。</p>
+<pre><code>              ┌───────────── アプリサーバー ─────────────┐   ┌── アプリのコード ──┐
+Nginx ─HTTP─▶ │ ソケット受付 → HTTP解析 → ワーカーへ割当 │ ─▶│ Flask / FastAPI    │
+              └──────────────────────────────────────────┘   │ Rails / Spring ... │
+                         ▲ 約束事: WSGI / ASGI / Rack / Servlet / FastCGI        │
+                                                              └────────────────────┘</code></pre>
+    <p>この約束事があるおかげで、「Flask アプリを Gunicorn で動かす」「Rails アプリを Puma で動かす」のように、<strong>アプリサーバーとフレームワークを自由に組み合わせられる</strong> のです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>言語ごとのアプリサーバー</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>言語</th><th>代表的なアプリサーバー</th><th>アプリとの約束事</th><th>同時処理モデル（既定）</th></tr></thead>
+      <tbody>
+        <tr><td>Node.js</td><td><strong>なし（Node.js 自身がサーバー）</strong></td><td><code>http</code> モジュール</td><td>イベントループ（1 プロセス）</td></tr>
+        <tr><td>Python（同期）</td><td>Gunicorn、uWSGI</td><td>WSGI</td><td>マルチプロセス（＋スレッド）</td></tr>
+        <tr><td>Python（非同期）</td><td>Uvicorn、Hypercorn、Gunicorn＋ASGI ワーカー</td><td>ASGI</td><td>イベントループ × プロセス</td></tr>
+        <tr><td>Ruby</td><td>Puma</td><td>Rack</td><td>マルチプロセス × マルチスレッド</td></tr>
+        <tr><td>Java</td><td>Tomcat、Jetty（Spring Boot に組み込み）</td><td>Servlet</td><td>スレッドプール</td></tr>
+        <tr><td>PHP</td><td>PHP-FPM</td><td>FastCGI</td><td>マルチプロセス（リクエストごとに使い捨ての状態）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-1">3.1 Node.js：自分自身がサーバー</h3>
+    <p>Node.js では、Express などのアプリが <code>app.listen(3000)</code> を呼んだ瞬間に <strong>アプリ自体が HTTP サーバー</strong> になります。Python の Gunicorn のような「間に入るアプリサーバー」はありません。その代わり、プロセスの監視や再起動、マルチコア活用は PM2 や systemd、コンテナ基盤に任せます。詳しくは <a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a> で扱います。</p>
+
+    <h3 id="sec-3-2">3.2 Python：WSGI / ASGI サーバーが必要</h3>
+    <p>Flask・Django（同期）は <strong>WSGI</strong>、FastAPI（非同期）は <strong>ASGI</strong> という約束事でアプリサーバーとつながります。<code>flask run</code> のような開発用サーバーは本番向けではないため、Gunicorn や Uvicorn を使います。詳しくは <a href="30-3_Pythonアプリを本番で動かす.html">30-3 Pythonアプリを本番で動かす</a> で扱います。</p>
+
+    <h3 id="sec-3-3">3.3 Ruby：Puma</h3>
+    <p>Rails の既定アプリサーバーです。<code>workers</code>（プロセス数）と <code>threads</code>（各プロセスのスレッド数）の 2 軸で同時処理数を決めます。</p>
+<pre><code># config/puma.rb（抜粋）
+workers ENV.fetch("WEB_CONCURRENCY", 2)
+threads 5, 5
+bind "tcp://127.0.0.1:3000"</code></pre>
+
+    <h3 id="sec-3-4">3.4 Java：Tomcat / Jetty</h3>
+    <p>Java では Servlet という仕様に沿ったコンテナ（Tomcat、Jetty）がアプリサーバーです。昔は Tomcat を別にインストールして WAR ファイルを配置していましたが、現在の Spring Boot は <strong>Tomcat を内蔵した実行可能 JAR</strong> を <code>java -jar app.jar</code> で起動するのが主流です。リクエストごとにスレッドプールのスレッドが 1 本割り当てられます。</p>
+
+    <h3 id="sec-3-5">3.5 PHP：PHP-FPM</h3>
+    <p>PHP は Nginx から <strong>FastCGI</strong> で PHP-FPM（FastCGI Process Manager）にリクエストを渡します。PHP-FPM はワーカープロセスを何本か用意し、1 リクエストずつ処理します。リクエストが終わると変数はすべて捨てられるので、<strong>PHP は言語の仕組みとして自然にステートレス</strong> になっています。</p>
+<pre><code>; /etc/php/8.3/fpm/pool.d/www.conf（Ubuntu 24.04 の PHP 8.3 の例・抜粋）
+[www]
+user = www-data
+group = www-data
+listen = /run/php/php8.3-fpm.sock
+pm = dynamic
+pm.max_children = 20      ; 同時に処理できるリクエスト数の上限
+pm.start_servers = 4
+pm.min_spare_servers = 2
+pm.max_spare_servers = 6
+pm.max_requests = 500     ; 500 リクエストごとにワーカーを作り直す（メモリリーク対策）</code></pre>
+    <p>Nginx 側では、<code>.php</code> へのリクエストを PHP-FPM のソケットへ渡します。</p>
+<pre><code>location ~ \.php$ {
+    include snippets/fastcgi-php.conf;
+    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+}</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>同時処理モデル：プロセス・スレッド・イベントループ</h2>
+    <p>アプリサーバー選びで一番大事なのは「<strong>同時に来たリクエストをどうさばくか</strong>」です。厨房の例えで比べます。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>マルチプロセス</h4>
+        <p>料理人 A・B・C が、それぞれ <strong>専用の台所</strong> を持って料理します。</p>
+      </div>
+      <div class="card">
+        <h4>マルチスレッド</h4>
+        <p>料理人 A・B・C が、<strong>1 つの共有の台所</strong> で一緒に料理します。</p>
+      </div>
+      <div class="card">
+        <h4>イベントループ</h4>
+        <p>料理人は <strong>1 人</strong>。鍋を火にかけたら、煮えるのを待たずに次の注文へ取りかかります。</p>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モデル</th><th>仕組み</th><th>長所</th><th>短所</th><th>代表例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>マルチプロセス</strong></td><td>OS のプロセスを複数起動し、それぞれが 1 リクエストを担当</td><td>1 つが落ちても他は無事。メモリが独立していて安全</td><td>プロセスごとにメモリを消費。同時数＝プロセス数</td><td>Gunicorn sync、PHP-FPM</td></tr>
+        <tr><td><strong>マルチスレッド</strong></td><td>1 プロセス内に複数スレッド。メモリを共有</td><td>プロセスより軽い。同時数を増やしやすい</td><td>共有データの競合（スレッドセーフ）に注意</td><td>Tomcat、Puma、Gunicorn gthread</td></tr>
+        <tr><td><strong>イベントループ</strong></td><td>1 スレッドが「待ち時間」の間に別の処理を進める</td><td>DB や外部 API 待ちが多い処理で非常に効率的</td><td>CPU を長く使う処理が 1 つあると全体が止まる</td><td>Node.js、Uvicorn</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>スレッドセーフ</strong> とは、複数のスレッドが同時に同じデータを触っても壊れないように作られていることです。</p>
+    <p>実際には組み合わせて使います。たとえば「Puma = プロセス × スレッド」「Gunicorn＋Uvicorn ワーカー = プロセス × イベントループ」「Node.js を PM2 cluster で 4 プロセス = プロセス × イベントループ」です。<strong>プロセスを増やすのはマルチコア CPU を使い切るため</strong>、スレッドやイベントループは <strong>1 コアの中で待ち時間を有効活用するため</strong>、と覚えると整理しやすいです。</p>
+    <div class="callout tip">
+      <p class="callout-title">Web アプリは「待ち時間」が大半</p>
+      <p>一般的な API の処理時間の多くは、DB や外部 API の応答待ち（<strong>I/O 待ち</strong>）です。この待ち時間に CPU を遊ばせないために、スレッドやイベントループが使われます。逆に画像変換や暗号計算のような CPU を使う処理（<strong>CPU バウンド</strong>）は、プロセスを増やすかバックグラウンドジョブに逃がすのが基本です。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>ステートレスにする理由</h2>
+    <p><strong>ステートレス（stateless）</strong> とは、「アプリサーバーのメモリやローカルディスクに、次のリクエストで必要な情報を残さない」設計です。</p>
+
+    <h3 id="sec-5-1">5.1 なぜ必要か</h3>
+    <p>Shop が成長して API を 2 台にし、<strong>ロードバランサー（LB）</strong>（リクエストを複数のサーバーに振り分ける装置）の後ろに置いたとします。</p>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="ロードバランサーが API サーバー1 と API サーバー2 にリクエストを振り分ける。サーバー1 のメモリには A さんのカートがあるが、サーバー2 は A さんのカートを知らない">
+      <defs>
+        <marker id="arrow-30-1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="40" y="75" width="140" height="50" rx="8" class="d-box"/>
+      <text x="110" y="105" text-anchor="middle" class="d-text-bold">LB</text>
+      <rect x="380" y="20" width="300" height="60" rx="8" class="d-box-good"/>
+      <text x="530" y="45" text-anchor="middle" class="d-text-bold">API サーバー1</text>
+      <text x="530" y="66" text-anchor="middle" class="d-text-sub">メモリに「A さんのカート」</text>
+      <rect x="380" y="120" width="300" height="60" rx="8" class="d-box-bad"/>
+      <text x="530" y="145" text-anchor="middle" class="d-text-bold">API サーバー2</text>
+      <text x="530" y="166" text-anchor="middle" class="d-text-sub">A さんのカートを知らない！</text>
+      <path d="M180,90 L378,50" class="d-line" marker-end="url(#arrow-30-1b)"/>
+      <path d="M180,110 L378,150" class="d-line-bad" marker-end="url(#arrow-30-1b)"/>
+      <text x="270" y="155" text-anchor="middle" class="d-text-sub">次はこちらへ</text>
+    </svg>
+    <figcaption>図：状態をサーバーのメモリに持つと、別のサーバーに振られた瞬間に消えたように見える</figcaption>
+    </figure>
+    <p>ログイン状態やカートをサーバー1のメモリに持っていると、次のリクエストがサーバー2に振られた瞬間に「ログアウトされた」「カートが空になった」という事故が起きます。また、デプロイや再起動でプロセスが入れ替わるたびに状態が消えます。同じことは 1 台の中でも起こります。PM2 cluster や Gunicorn のように <strong>複数プロセスで動かすと、プロセス同士はメモリを共有しない</strong> からです。</p>
+
+    <h3 id="sec-5-2">5.2 どこに状態を置くか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>状態</th><th>置き場所</th></tr></thead>
+      <tbody>
+        <tr><td>セッション・ログイン状態</td><td>Redis などの <strong>共有ストア</strong>（複数のサーバーから使える共通の置き場）、または署名付きトークン（JWT など）</td></tr>
+        <tr><td>カート・注文などの業務データ</td><td>PostgreSQL</td></tr>
+        <tr><td>アップロード画像</td><td>S3 などのオブジェクトストレージ</td></tr>
+        <tr><td>キャッシュ</td><td>Redis（ローカルメモリのキャッシュは「消えてもよい」ものだけ）</td></tr>
+      </tbody>
+    </table></div>
+    <p>ステートレスにしておけば、サーバーを増やす・減らす・入れ替えるのが自由になります。これは <a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a> や、ローリングアップデート（サーバーを 1 台ずつ順に入れ替えるデプロイ方法）の前提条件です。セッションの詳細は <a href="../74_セッション管理/00-0_目次.html">74 セッション管理</a> を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>コネクションプール</h2>
+
+    <h3 id="sec-6-1">6.1 例え</h3>
+    <p>DB への接続は「電話をかけて相手が出るまで待つ」ようなもので、TCP 接続・認証・セッション準備に毎回時間がかかります。<strong>コネクションプール（connection pool）</strong> は、あらかじめ何本か電話をつないだままにしておき、使いたい処理が「借りて、使ったら返す」仕組みです。</p>
+
+    <h3 id="sec-6-2">6.2 仕組みと設定例（Shop API / Node.js + pg）</h3>
+<pre><code>// src/db.ts
+import { Pool } from "pg";
+
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 10,                      // このプロセスが持つ最大接続数
+  idleTimeoutMillis: 30_000,    // 使われない接続は 30 秒で閉じる
+  connectionTimeoutMillis: 5_000, // 借りられないまま 5 秒経ったらエラー
+});
+
+// 使う側：pool.query は「借りる → 実行 → 返す」を自動で行う
+const { rows } = await pool.query("SELECT id, name, price FROM products LIMIT 50");</code></pre>
+
+    <h3 id="sec-6-3">6.3 実務での注意：接続数は「掛け算」で増える</h3>
+    <p>プールはプロセスごとに作られます。DB から見た接続数は次の掛け算です。</p>
+<pre><code>DB への総接続数 = サーバー台数 × 1台あたりのプロセス数 × プールの max
+例）API 2台 × PM2 4プロセス × max 10 = 80 接続</code></pre>
+    <p>PostgreSQL の <code>max_connections</code> の既定値は 100 です。台数やプロセスを増やしたとたんに <code>too many connections</code> で落ちる、という事故がよくあります。対策は次のとおりです。</p>
+    <ul>
+      <li>プールの <code>max</code> を「DB の上限 ÷ 全プロセス数」から逆算する（管理用・マイグレーション用の余裕も残す）</li>
+      <li>接続数が多くなる構成では PgBouncer や RDS Proxy のような <strong>外部のコネクションプーラー</strong> を間に置く</li>
+      <li>詳しくは <a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a> を参照</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>アプリサーバー選びの観点</h2>
+    <p>多くの場合「言語とフレームワークが決まれば、アプリサーバーもほぼ決まる」ので、迷ったら各フレームワークの公式ドキュメントが推奨するものを選ぶのが正解です。そのうえで次の観点を確認します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>確認すること</th></tr></thead>
+      <tbody>
+        <tr><td>処理の性質</td><td>I/O 待ちが多い → イベントループ／スレッド。CPU を使う → プロセスを増やす・ジョブに分離</td></tr>
+        <tr><td>同時処理数</td><td>プロセス数 × スレッド数（または非同期の同時実行数）が想定アクセスに足りるか</td></tr>
+        <tr><td>メモリ</td><td>1 プロセスあたりのメモリ × プロセス数がサーバーのメモリに収まるか</td></tr>
+        <tr><td>再起動とシャットダウン</td><td>SIGTERM で処理中のリクエストを終えてから止まれるか（<strong>グレースフルシャットダウン</strong>）</td></tr>
+        <tr><td>運用のしやすさ</td><td>systemd・コンテナとの相性、ログの出し方、ヘルスチェックのしやすさ</td></tr>
+        <tr><td>実行基盤</td><td>VM なら 1 台でプロセスを複数、コンテナなら「1 コンテナ 1 プロセス」でコンテナ数を増やす方が素直</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">コンテナ時代の考え方</p>
+      <p>Kubernetes や ECS では、プロセス監視・再起動・台数の増減を基盤が担当します。そのため、アプリサーバー側のマルチプロセス機能（PM2 cluster、Gunicorn の複数ワーカー）を使わず、<strong>1 コンテナ 1 プロセスにしてコンテナ数で調整する</strong> 構成がよく選ばれます（コンテナの本番向けベストプラクティス）。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td>Nginx があればアプリも動く</td><td>Nginx はアプリのコードを実行しません。アプリを実行するのはアプリサーバー（Node.js、Gunicorn など）で、Nginx は手前で受け付けて転送するだけです。</td></tr>
+        <tr><td>Node.js はアプリサーバーがないから本番では Nginx が不要</td><td>Node.js 自身が HTTP サーバーになれても、TLS 終端・静的ファイル・遅いクライアント対策のために Nginx を前に置くのが定番です。</td></tr>
+        <tr><td>プロセスを増やせば増やすほど速くなる</td><td>CPU コア数やメモリ、DB の接続上限を超えると逆に遅くなったり落ちたりします。</td></tr>
+        <tr><td>メモリ上の変数にセッションを持っても 1 台なら問題ない</td><td>1 台でも複数プロセスで動かせばプロセス間で共有されず、再起動でも消えます。最初から外部ストアに置きましょう。</td></tr>
+        <tr><td>コネクションプールの max は大きいほど安心</td><td>総接続数は「台数 × プロセス数 × max」。DB の上限を超えないよう逆算します。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>補足：プログラミング言語とデータベースの役割</h2>
+    <p>アプリサーバーの上で動くプログラミング言語と、その先にあるデータベースについて、種類・選び方・連携方法（ORM・トランザクション）を整理します。</p>
+    <p>プログラミング言語とデータベースは、Web アプリケーションやシステム開発において重要な役割を果たします。プログラミング言語は、コンピュータに指示を与えるための言語であり、データベースは、データを効率的に保存・管理・検索するためのシステムです。両者は密接に関連し、現代の IT システムを支える基盤技術です。</p>
+
+    <h3 id="sec-9-1">9.1 プログラミング言語とは・分類</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>定義</td><td>コンピュータに指示を与えるための人工言語</td></tr>
+        <tr><td>役割</td><td>人間の意図をコンピュータが理解できる形式に変換</td></tr>
+        <tr><td>特徴</td><td>構文規則、データ型、制御構造を持つ</td></tr>
+        <tr><td>例</td><td>Java、Python、JavaScript、C++、PHP</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c3">
+      <div class="card">
+        <h4>用途による分類</h4>
+        <ul>
+          <li><strong>Web 開発</strong>：JavaScript、PHP、Python、Ruby</li>
+          <li><strong>システム開発</strong>：C、C++、Rust、Go</li>
+          <li><strong>データ分析</strong>：Python、R、MATLAB</li>
+          <li><strong>モバイル開発</strong>：Swift、Kotlin、Dart</li>
+          <li><strong>ゲーム開発</strong>：C++、C#、Lua</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>実行方式による分類</h4>
+        <ul>
+          <li><strong>コンパイル型</strong>：C、C++、Java、Go</li>
+          <li><strong>インタープリター型</strong>：Python、Ruby、JavaScript</li>
+          <li><strong>ハイブリッド型</strong>：Java、C#</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>パラダイムによる分類</h4>
+        <ul>
+          <li><strong>手続き型</strong>：C、Pascal、Fortran</li>
+          <li><strong>オブジェクト指向</strong>：Java、C++、Python</li>
+          <li><strong>関数型</strong>：Haskell、Lisp、Scala</li>
+          <li><strong>論理型</strong>：Prolog</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-9-2">9.2 主要なプログラミング言語</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>言語</th><th>特徴</th><th>用途</th><th>フレームワーク</th><th>メリット</th></tr></thead>
+      <tbody>
+        <tr><td>JavaScript</td><td>ブラウザとサーバー両方で動作</td><td>Web 開発、フロントエンド、バックエンド</td><td>React、Vue.js、Node.js</td><td>汎用性、豊富なライブラリ</td></tr>
+        <tr><td>Python</td><td>読みやすく、学習しやすい</td><td>Web 開発、データ分析、AI/ML</td><td>Django、Flask、FastAPI</td><td>豊富なライブラリ、コミュニティ</td></tr>
+        <tr><td>Java</td><td>プラットフォーム独立、オブジェクト指向</td><td>エンタープライズ、Android 開発</td><td>Spring、Hibernate</td><td>高い信頼性、豊富なエコシステム</td></tr>
+        <tr><td>PHP</td><td>Web 開発特化、サーバーサイド</td><td>Web アプリケーション、CMS</td><td>Laravel、Symfony</td><td>Web 開発に最適化、学習コスト低</td></tr>
+        <tr><td>C#</td><td>Microsoft 製、.NET Framework</td><td>Windows 開発、Web 開発、ゲーム開発</td><td>ASP.NET、Unity</td><td>統合開発環境、豊富なツール</td></tr>
+      </tbody>
+    </table></div>
+    <p>なお、表の「フレームワーク」欄はノートの分類のまま載せています。厳密には Node.js は JavaScript の実行環境、Hibernate は Java の ORM（後述）です。</p>
+
+    <h3 id="sec-9-3">9.3 プログラミング言語の選択基準</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>プロジェクト要件</h4>
+        <ul>
+          <li><strong>性能要件</strong>：処理速度、メモリ使用量</li>
+          <li><strong>開発期間</strong>：開発スピード、学習コスト</li>
+          <li><strong>保守性</strong>：コードの可読性、保守の容易さ</li>
+          <li><strong>スケーラビリティ</strong>：拡張性、負荷対応</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>チーム要件</h4>
+        <ul>
+          <li><strong>スキルレベル</strong>：チームの技術レベル</li>
+          <li><strong>経験</strong>：既存の経験と知識</li>
+          <li><strong>学習コスト</strong>：新技術の習得時間</li>
+          <li><strong>リソース</strong>：開発リソースの制約</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>技術要件</h4>
+        <ul>
+          <li><strong>プラットフォーム</strong>：対象プラットフォーム</li>
+          <li><strong>統合</strong>：既存システムとの統合</li>
+          <li><strong>ライブラリ</strong>：利用可能なライブラリ</li>
+          <li><strong>コミュニティ</strong>：サポートとドキュメント</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-9-4">9.4 データベースとは・分類</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>定義</td><td>データを効率的に保存・管理・検索するシステム</td></tr>
+        <tr><td>役割</td><td>データの永続化、整合性の保証、高速検索</td></tr>
+        <tr><td>特徴</td><td>ACID 特性、正規化、インデックス</td></tr>
+        <tr><td>例</td><td>MySQL、PostgreSQL、MongoDB、Redis</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card">
+        <h4>データモデルによる分類</h4>
+        <ul>
+          <li><strong>リレーショナル（RDB）</strong>：表形式、SQL 使用</li>
+          <li><strong>NoSQL</strong>：非リレーショナル、柔軟なスキーマ</li>
+          <li><strong>グラフ</strong>：ノードとエッジの関係</li>
+          <li><strong>時系列</strong>：時間順のデータ</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>用途による分類</h4>
+        <ul>
+          <li><strong>OLTP</strong>：オンライントランザクション処理（注文などの日々の細かい読み書き）</li>
+          <li><strong>OLAP</strong>：オンライン分析処理（大量データの集計）</li>
+          <li><strong>キャッシュ</strong>：高速アクセス用</li>
+          <li><strong>検索</strong>：全文検索、ファセット検索</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-9-5">9.5 主要なデータベース</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>DB</th><th>特徴</th><th>用途</th><th>メリット</th><th>デメリット</th></tr></thead>
+      <tbody>
+        <tr><td>MySQL</td><td>オープンソース、高信頼性</td><td>Web アプリケーション、CMS</td><td>低コスト、豊富な情報</td><td>機能制限、性能制限</td></tr>
+        <tr><td>PostgreSQL</td><td>高機能、標準準拠</td><td>エンタープライズ、複雑なクエリ</td><td>豊富な機能、高い性能</td><td>学習コスト、設定の複雑さ</td></tr>
+        <tr><td>MongoDB</td><td>ドキュメント指向、スキーマレス</td><td>大規模データ、リアルタイム処理</td><td>柔軟性、スケーラビリティ</td><td>トランザクション制限、メモリ使用量</td></tr>
+        <tr><td>Redis</td><td>インメモリ、高速アクセス</td><td>キャッシュ、セッション管理</td><td>高速性、豊富なデータ型</td><td>永続化の制限、メモリ依存</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-6">9.6 データベース設計の原則</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>正規化</h4>
+        <ul>
+          <li><strong>第 1 正規形</strong>：原子値のみ</li>
+          <li><strong>第 2 正規形</strong>：部分関数従属の除去</li>
+          <li><strong>第 3 正規形</strong>：推移関数従属の除去</li>
+          <li><strong>目的</strong>：データの重複排除、整合性確保</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ACID 特性</h4>
+        <ul>
+          <li><strong>Atomicity</strong>：原子性、全成功または全失敗</li>
+          <li><strong>Consistency</strong>：一貫性、データの整合性</li>
+          <li><strong>Isolation</strong>：独立性、並行実行の制御</li>
+          <li><strong>Durability</strong>：永続性、データの永続化</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>インデックス設計</h4>
+        <ul>
+          <li><strong>主キー</strong>：一意性の保証</li>
+          <li><strong>外部キー</strong>：参照整合性</li>
+          <li><strong>複合インデックス</strong>：複数カラムの組み合わせ</li>
+          <li><strong>部分インデックス</strong>：条件付きインデックス</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-9-7">9.7 プログラミング言語とデータベースの連携</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>データベース接続</h4>
+        <ul>
+          <li><strong>ODBC</strong>：データベース接続の標準</li>
+          <li><strong>JDBC</strong>：Java 用データベース接続</li>
+          <li><strong>ORM</strong>：オブジェクト関係マッピング（DB の表とプログラムのオブジェクトを対応づける仕組み）</li>
+          <li><strong>クエリビルダー</strong>：動的クエリ生成</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>主要な ORM</h4>
+        <ul>
+          <li><strong>Hibernate</strong>：Java 用 ORM</li>
+          <li><strong>Entity Framework</strong>：.NET 用 ORM</li>
+          <li><strong>Django ORM</strong>：Python 用 ORM</li>
+          <li><strong>Eloquent</strong>：PHP 用 ORM</li>
+          <li><strong>Sequelize</strong>：Node.js 用 ORM</li>
+        </ul>
+      </div>
+    </div>
+    <p>データベース操作のパターンは次の 3 つに整理できます。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>CRUD 操作</h4>
+        <ul>
+          <li><strong>Create</strong>：データの作成</li>
+          <li><strong>Read</strong>：データの読み取り</li>
+          <li><strong>Update</strong>：データの更新</li>
+          <li><strong>Delete</strong>：データの削除</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>トランザクション管理</h4>
+        <ul>
+          <li><strong>開始</strong>：トランザクションの開始</li>
+          <li><strong>コミット</strong>：変更の確定</li>
+          <li><strong>ロールバック</strong>：変更の取り消し</li>
+          <li><strong>分離レベル</strong>：並行制御のレベル</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>エラーハンドリング</h4>
+        <ul>
+          <li><strong>例外処理</strong>：エラーの捕捉と処理</li>
+          <li><strong>ログ記録</strong>：エラー情報の記録</li>
+          <li><strong>リトライ</strong>：失敗時の再試行</li>
+          <li><strong>フォールバック</strong>：代替処理</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-9-8">9.8 パフォーマンス最適化</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>プログラミング言語の最適化</h4>
+        <ul>
+          <li><strong>アルゴリズム</strong>：効率的なアルゴリズムの選択</li>
+          <li><strong>データ構造</strong>：適切なデータ構造の使用</li>
+          <li><strong>メモリ管理</strong>：メモリの効率的な使用</li>
+          <li><strong>並行処理</strong>：マルチスレッド、非同期処理</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>データベースの最適化</h4>
+        <ul>
+          <li><strong>クエリ最適化</strong>：効率的な SQL の作成</li>
+          <li><strong>インデックス</strong>：適切なインデックスの設定</li>
+          <li><strong>正規化</strong>：データベース設計の最適化</li>
+          <li><strong>キャッシュ</strong>：クエリ結果のキャッシュ</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>システム全体の最適化</h4>
+        <ul>
+          <li><strong>負荷分散</strong>：複数サーバーでの処理分散</li>
+          <li><strong>キャッシュ戦略</strong>：多層キャッシュの実装</li>
+          <li><strong>非同期処理</strong>：バックグラウンド処理</li>
+          <li><strong>監視</strong>：パフォーマンス監視</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-9-9">9.9 セキュリティ対策</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>プログラミング言語のセキュリティ</h4>
+        <ul>
+          <li><strong>入力検証</strong>：不正なデータの検出</li>
+          <li><strong>認証・認可</strong>：ユーザーの身元確認</li>
+          <li><strong>暗号化</strong>：データの保護</li>
+          <li><strong>セキュアコーディング</strong>：安全なプログラミング</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>データベースのセキュリティ</h4>
+        <ul>
+          <li><strong>アクセス制御</strong>：ユーザー権限の管理</li>
+          <li><strong>暗号化</strong>：データの暗号化</li>
+          <li><strong>監査</strong>：アクセスログの記録</li>
+          <li><strong>バックアップ</strong>：データの保護</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>共通のセキュリティ対策</h4>
+        <ul>
+          <li><strong>SQL インジェクション</strong>：不正な SQL の実行防止</li>
+          <li><strong>XSS</strong>：クロスサイトスクリプティング対策</li>
+          <li><strong>CSRF</strong>：クロスサイトリクエストフォージェリ対策</li>
+          <li><strong>HTTPS</strong>：通信の暗号化</li>
+        </ul>
+      </div>
+    </div>
+    <p>それぞれの攻撃と対策は <a href="../72_Web脆弱性対策/20-3_SQLインジェクション.html">72 SQLインジェクション</a>、<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">72 XSSの基本</a>、<a href="../72_Web脆弱性対策/30-1_CSRF.html">72 CSRF</a> でくわしく扱います。</p>
+
+    <h3 id="sec-9-10">9.10 開発ツールと環境</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>統合開発環境（IDE）</h4>
+        <ul>
+          <li><strong>Visual Studio Code</strong>：軽量で拡張性の高いエディタ</li>
+          <li><strong>IntelliJ IDEA</strong>：Java 開発に特化</li>
+          <li><strong>Eclipse</strong>：オープンソースの IDE</li>
+          <li><strong>PyCharm</strong>：Python 開発に特化</li>
+          <li><strong>Visual Studio</strong>：Microsoft 製の IDE</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>データベース管理ツール</h4>
+        <ul>
+          <li><strong>phpMyAdmin</strong>：MySQL 管理ツール</li>
+          <li><strong>pgAdmin</strong>：PostgreSQL 管理ツール</li>
+          <li><strong>MongoDB Compass</strong>：MongoDB 管理ツール</li>
+          <li><strong>DBeaver</strong>：汎用データベース管理ツール</li>
+          <li><strong>Navicat</strong>：商用データベース管理ツール</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>バージョン管理</h4>
+        <ul>
+          <li><strong>Git</strong>：分散バージョン管理システム</li>
+          <li><strong>GitHub</strong>：Git ホスティングサービス</li>
+          <li><strong>GitLab</strong>：統合開発プラットフォーム</li>
+          <li><strong>Bitbucket</strong>：Atlassian 製の Git サービス</li>
+        </ul>
+      </div>
+    </div>
+    <p>プログラミング言語とデータベースは、現代の IT システムを支える重要な技術です。プログラミング言語は、コンピュータに指示を与えるための言語として、さまざまな用途に応じて選択されます。データベースは、データを効率的に保存・管理・検索するためのシステムとして、アプリケーションの基盤となります。両者の適切な選択と連携により、効率的で安全なシステムを構築できます。また、パフォーマンス最適化とセキュリティ対策により、信頼性の高いシステム運用が可能になります。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>Web サーバーは「受付・TLS・静的ファイル・振り分け」、アプリサーバーは「アプリのコードの実行」を担当する</li>
+      <li>Python は WSGI/ASGI、Ruby は Rack、Java は Servlet、PHP は FastCGI という約束事でアプリサーバーとアプリがつながる。Node.js はアプリ自身がサーバー</li>
+      <li>同時処理モデルはプロセス・スレッド・イベントループの 3 つ。マルチコア活用はプロセス、待ち時間の活用はスレッド／イベントループ</li>
+      <li>状態はアプリサーバーに持たず、DB・Redis・オブジェクトストレージに置く（ステートレス）</li>
+      <li>DB 接続はコネクションプールで再利用し、総接続数を DB の上限から逆算する</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Shop API を 2 台に増やしたら「ときどきログインが外れる」と苦情が来ました。考えられる原因と対策は？</summary>
+      <div class="body"><p>セッションを各サーバーのメモリに保存していることが原因と考えられます。ロードバランサーが別のサーバーに振ると、そのサーバーはセッションを知りません。Redis などの共有ストアにセッションを置くか、署名付きトークンを使ってアプリをステートレスにします。</p></div>
+    </details>
+    <details>
+      <summary>Q2. API 3 台 × 各 4 プロセス × プール max 10 の構成で、PostgreSQL の max_connections が既定値の 100 だと何が起きますか？</summary>
+      <div class="body"><p>最大 3 × 4 × 10 = 120 接続になり、上限 100 を超えて <code>too many connections</code> エラーが起こり得ます。max を 6〜7 程度に下げるか、PgBouncer / RDS Proxy などのプーラーを入れます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 画像のサムネイル生成（CPU を長く使う処理）を Node.js の API の中で同期的に実行すると、何が問題になりますか？</summary>
+      <div class="body"><p>Node.js はイベントループ（1 スレッド）で動くため、CPU を占有する処理の間はそのプロセスの他のリクエストがすべて待たされます。ワーカースレッドやバックグラウンドジョブに分離するのが基本です。</p></div>
+    </details>
+    <details>
+      <summary>Q4. Nginx を入れれば、アプリのコードも Nginx が実行してくれますか？</summary>
+      <div class="body"><p>いいえ。Nginx は受付・TLS 終端・静的ファイル配信・振り分けを担当し、アプリのコードは実行しません。コードを動かすのは Node.js、Gunicorn、Puma、PHP-FPM などのアプリサーバーです。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 「Flask アプリを Gunicorn で動かす」のように、フレームワークとアプリサーバーを自由に組み合わせられるのはなぜですか？</summary>
+      <div class="body"><p>両者の間に WSGI / ASGI / Rack / Servlet / FastCGI といった決まった約束事（インターフェース）があるからです。約束事を守っていれば、どのアプリサーバーでも同じアプリを動かせます。</p></div>
+    </details>
+    <details>
+      <summary>Q6. プロセスを増やす目的と、スレッドやイベントループを使う目的の違いは何ですか？</summary>
+      <div class="body"><p>プロセスを増やすのはマルチコア CPU を使い切るためです。スレッドやイベントループは、1 コアの中で DB や外部 API の待ち時間を有効活用するためです。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/30_アプリ実行環境/01_アプリケーションサーバーとは</li>
+      <li>Gunicorn - Design https://gunicorn.org/design/</li>
+      <li>PHP Manual - FastCGI Process Manager (FPM) https://www.php.net/manual/en/install.fpm.php</li>
+      <li>Puma - README https://github.com/puma/puma</li>
+      <li>Spring Boot - Embedded Web Servers https://docs.spring.io/spring-boot/how-to/webserver.html</li>
+      <li>node-postgres - Pooling https://node-postgres.com/features/pooling</li>
+      <li>PostgreSQL Documentation - Connections and Authentication (max_connections) https://www.postgresql.org/docs/current/runtime-config-connection.html</li>
+      <li>関連ページ：<a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a>、<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a>、<a href="../74_セッション管理/00-0_目次.html">74 セッション管理</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-6_HTTPキャッシュと圧縮.html"><span class="lbl">← 前のページ</span>HTTPキャッシュと圧縮</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="30-2_Node.jsアプリを本番で動かす.html"><span class="lbl">次のページ →</span>Node.jsアプリを本番で動かす</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

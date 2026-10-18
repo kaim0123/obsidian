@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高可用性と冗長化｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 スケーリング・負荷分散 › 高可用性と冗長化</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 スケーリング・負荷分散</span>
+      <h1>高可用性と冗長化</h1>
+      <p class="lead"><strong>冗長化</strong> は予備を用意して 1 つ壊れても全体が止まらないようにすること、<strong>高可用性</strong> はその結果としてサービスが使える時間の割合が高い状態です。このページでは、可用性 99.9%／99.99% が「年間どれだけ止まってよいか」を意味するのか、<strong>単一障害点（SPOF）</strong> の洗い出し方、アクティブ-アクティブ／アクティブ-スタンバイ／N+1 の冗長化パターン、マルチ AZ・マルチリージョンと DB のフェイルオーバー、RTO／RPO と「バックアップは冗長化ではない」理由、Shop の最終構成を解説します。発展として、デフォルトゲートウェイの冗長化（FHRP：HSRP／VRRP／GLBP）も扱います。</p>
+      <p class="meta">もとにしたノート：61_サーバー・インフラ/50_スケーリング・負荷分散/05_高可用性と冗長化</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>可用性は <strong>年間何分まで止まってよいか</strong> に直して考え、まず <strong>SPOF を見つけて潰します</strong>。予備への切り替え（フェイルオーバー）にも時間はかかり、ゼロにはなりません。冗長化は「壊れても動き続ける」、バックアップは「壊れた後に戻す」ためのもので、<strong>別物なので両方必要</strong> です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>冗長化と高可用性：飛行機の例え</h2>
+    <p>飛行機にはエンジンが 2 つ以上あり、1 つ止まっても飛び続けられます。パイロットも 2 人乗っています。<strong>冗長化（Redundancy）</strong> とは、このように <strong>予備を用意して、1 つ壊れても全体が止まらないようにすること</strong> です。そして <strong>高可用性（High Availability、HA）</strong> は、その結果として「サービスが使える時間の割合が高い」状態のことです。</p>
+    <ul>
+      <li>可用性は <strong>%（稼働率）</strong> で表し、「年間何分まで止まってよいか」に直して考える</li>
+      <li>まず <strong>単一障害点（SPOF：Single Point of Failure）</strong> を見つけて潰す</li>
+      <li>予備への <strong>切り替え（フェイルオーバー）</strong> には時間がかかる。ゼロにはならない</li>
+      <li>冗長化は「壊れても動き続ける」、バックアップは「壊れた後に戻す」。<strong>別物</strong> で両方必要</li>
+    </ul>
+    <p>可用性は、性能やセキュリティと並ぶ <strong>非機能要件</strong>（機能そのもの以外の品質の要求）の代表です（<a href="10-7_非機能要件を支えるサーバー.html">非機能要件を支えるサーバー</a>、<a href="../41_アーキテクチャ/12-1_品質特性と非機能要件.html">41 品質特性と非機能要件</a>）。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>可用性の数字</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>可用性</th><th>年間停止時間</th><th>月間停止時間（30 日）</th><th>イメージ</th></tr></thead>
+      <tbody>
+        <tr><td>99%</td><td>約 3.65 日</td><td>約 7.2 時間</td><td>1 台構成＋手作業復旧</td></tr>
+        <tr><td>99.9%（スリーナイン）</td><td>約 8.76 時間</td><td>約 43 分</td><td>単一 AZ で冗長化、手早い復旧</td></tr>
+        <tr><td>99.95%</td><td>約 4.38 時間</td><td>約 22 分</td><td>マルチ AZ を正しく組んだ構成</td></tr>
+        <tr><td>99.99%（フォーナイン）</td><td>約 52.6 分</td><td>約 4.3 分</td><td>マルチ AZ ＋自動フェイルオーバー＋無停止デプロイ</td></tr>
+        <tr><td>99.999%（ファイブナイン）</td><td>約 5.3 分</td><td>約 26 秒</td><td>マルチリージョン、通信キャリア級。費用と運用が桁違い</td></tr>
+      </tbody>
+    </table></div>
+    <p>覚えておきたいポイントは 3 つです。</p>
+    <ol class="steps">
+      <li><strong>9 を 1 つ増やすごとに、許される停止時間は 1/10、費用と手間は数倍</strong> になる</li>
+      <li><strong>直列につながる部品の可用性は掛け算</strong> で下がる。99.9% の部品が 3 つ直列なら 0.999³ ≈ 99.7%</li>
+      <li><strong>並列（冗長化）にすると上がる</strong>。99% の部品 2 台が独立に壊れるなら、両方同時に壊れる確率は 1% × 1% = 0.01% → 99.99%（ただし「独立に壊れる」が前提。同じ AZ・同じバグなら同時に壊れる）</li>
+    </ol>
+
+    <div class="callout tip">
+      <p class="callout-title">計画停止も停止</p>
+      <p>利用者から見れば、メンテナンスでもデプロイでも止まっていれば同じです。99.99% を目指すなら、OS パッチ・DB のバージョンアップ・デプロイも無停止で行える必要があります（65_リリース・デプロイの「08_ゼロダウンタイムデプロイの条件」のノート）。目標値の決め方（SLO・エラーバジェット）は 69_SRE・インシデント対応のノート（MOC）を参照してください。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>SPOF の洗い出し</h2>
+    <p><strong>SPOF</strong> は「そこが 1 つ壊れたら全体が止まる部品」です。構成図を描き、リクエストの通り道を入口から順にたどって、<strong>1 つしかないもの</strong> に印を付けます。</p>
+    <p>Shop の段階 2（<a href="50-1_スケーリングの基本.html">スケーリングの基本</a>。EC2 1 台 ＋ RDS）の構成で洗い出すと次のようになります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>部品</th><th>1 つしかない？</th><th>壊れたら</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td>DNS（Route 53）</td><td>マネージドで冗長</td><td>—</td><td>そのまま（レジストラ・ネームサーバー設定の誤りには注意）</td></tr>
+        <tr><td>EC2（Nginx + API）</td><td><strong>1 台</strong></td><td>全停止</td><td>ALB + ASG で 2 台以上、2 AZ</td></tr>
+        <tr><td>RDS PostgreSQL</td><td><strong>Single-AZ</strong></td><td>全停止、データ損失の恐れ</td><td>Multi-AZ 化</td></tr>
+        <tr><td>セッション（API のメモリ）</td><td><strong>各サーバー内</strong></td><td>ログイン切れ</td><td>Redis（ElastiCache、レプリカ付き）へ</td></tr>
+        <tr><td>商品画像（EC2 のディスク）</td><td><strong>1 台のディスク</strong></td><td>画像が消える</td><td>S3 へ（S3 は複数 AZ に保存される）</td></tr>
+        <tr><td>AZ（データセンター）</td><td><strong>ap-northeast-1a のみ</strong></td><td>AZ 障害で全停止</td><td>2 AZ 以上に分散</td></tr>
+        <tr><td>TLS 証明書の更新</td><td>手作業 1 人</td><td>期限切れで全停止</td><td>ACM で自動更新</td></tr>
+        <tr><td>運用担当者</td><td><strong>1 人だけが手順を知っている</strong></td><td>復旧できない</td><td>ランブック（69_SRE・インシデント対応の「02_ランブックの書き方」のノート）、IaC（<a href="40-2_IaCとは.html">IaCとは</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p>最後の 2 行のように、<strong>人・手順・証明書・外部サービス（決済代行など）</strong> も SPOF になり得ます。機械だけを見ないことが大切です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>冗長化パターン</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パターン</th><th>仕組み</th><th>長所</th><th>短所</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>アクティブ-アクティブ</strong></td><td>全台が同時に処理する</td><td>予備が遊ばない。切り替え時間がほぼゼロ（LB が外すだけ）</td><td>ステートレスである必要。1 台壊れたとき残りで全負荷を受けられる容量が必要</td><td>ALB 配下の API サーバー</td></tr>
+        <tr><td><strong>アクティブ-スタンバイ</strong></td><td>1 台が処理、もう 1 台は待機してデータだけ同期</td><td>状態を持つもの（DB）でも実現しやすい</td><td>待機機が遊ぶ。切り替えに数十秒〜数分</td><td>RDS Multi-AZ、Redis のレプリカ</td></tr>
+        <tr><td><strong>N+1</strong></td><td>必要台数 N に予備 1 を足す</td><td>1 台故障に耐える最小の追加コスト</td><td>2 台同時故障には耐えない</td><td>API 4 台必要なら 5 台</td></tr>
+        <tr><td><strong>N+2／2N</strong></td><td>予備を 2 台、または全体を 2 倍</td><td>メンテナンス中の故障にも耐える</td><td>コスト増</td><td>重要度の高いシステム</td></tr>
+      </tbody>
+    </table></div>
+    <p>マルチ AZ で N+1 を考えるときは <strong>AZ 単位</strong> で考えます。「API が 4 台必要」で 2 AZ に分けるなら、1 AZ が丸ごと落ちても残り 1 AZ で 4 台必要なので、<strong>各 AZ 4 台 = 合計 8 台</strong>（あるいは AZ 障害時にオートスケールで増えるまでの劣化を許容して少なめにする）という判断になります。3 AZ に分ければ各 AZ 2 台・合計 6 台で済み、効率が上がります。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>マルチ AZ・マルチリージョンと DB の冗長化</h2>
+
+    <h3 id="sec-5-1">5.1 マルチ AZ とマルチリージョン</h3>
+    <ul>
+      <li><strong>AZ（Availability Zone）</strong>：同じリージョン内の、電源・ネットワーク・建物が独立したデータセンター群。AZ 間は低遅延の専用回線（<a href="10-3_仮想化とクラウド.html">仮想化とクラウド</a>）</li>
+      <li><strong>マルチ AZ</strong>：ALB・ASG・RDS を 2〜3 AZ に分散。AZ 間の遅延は小さいので、DB の <strong>同期レプリケーション</strong>（書き込みが複製先にも届いてから完了とする複製）が使える。<strong>多くのサービスはまずここまでで十分</strong></li>
+      <li><strong>マルチリージョン</strong>：東京と大阪など、地理的に離れたリージョンで動かす。大地震やリージョン全体の障害に耐えるが、距離があるので DB は <strong>非同期レプリケーション</strong>（複製を後から追いかけて送る）になり、切り替え時に直近のデータが失われ得る。費用・複雑さが大幅に増える</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>マルチ AZ</th><th>マルチリージョン</th></tr></thead>
+      <tbody>
+        <tr><td>守れるもの</td><td>1 データセンターの障害</td><td>リージョン全体の障害・広域災害</td></tr>
+        <tr><td>DB 複製</td><td>同期（データ損失ほぼなし）</td><td>非同期（数秒分の損失があり得る）</td></tr>
+        <tr><td>切り替え</td><td>自動（数十秒〜数分）</td><td>Route 53 フェイルオーバーなど。手順と訓練が必要</td></tr>
+        <tr><td>コスト・複雑さ</td><td>中</td><td>大</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-2">5.2 DB の冗長化（RDS Multi-AZ）</h3>
+    <figure>
+    <svg viewBox="0 0 720 240" role="img" aria-label="Shop APIはエンドポイントのDNS名shop-db.xxxx.rds.amazonaws.comでAZ aのプライマリに接続する。プライマリはAZ cのスタンバイ（読めない）に同期レプリケーションする。障害時はDNSがスタンバイを指すよう切り替わる">
+      <defs>
+        <marker id="arw1505a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="90" width="130" height="56" rx="8" class="d-box-accent"/>
+      <text x="75" y="123" text-anchor="middle" class="d-text-bold">Shop API</text>
+      <rect x="290" y="30" width="170" height="180" rx="10" class="d-box"/>
+      <text x="375" y="55" text-anchor="middle" class="d-text-sub">AZ a</text>
+      <rect x="310" y="90" width="130" height="56" rx="8" class="d-box-good"/>
+      <text x="375" y="123" text-anchor="middle" class="d-text-bold">プライマリ</text>
+      <rect x="530" y="30" width="180" height="180" rx="10" class="d-box"/>
+      <text x="620" y="55" text-anchor="middle" class="d-text-sub">AZ c</text>
+      <rect x="550" y="90" width="140" height="56" rx="8" class="d-box-warn"/>
+      <text x="620" y="114" text-anchor="middle" class="d-text-bold">スタンバイ</text>
+      <text x="620" y="134" text-anchor="middle" class="d-text-sub">読めない</text>
+      <path d="M140,118 L308,118" class="d-line" marker-end="url(#arw1505a)"/>
+      <text x="224" y="98" text-anchor="middle" class="d-text-sub">エンドポイント</text>
+      <text x="224" y="142" text-anchor="middle" class="d-text-sub">（DNS 名）</text>
+      <path d="M440,108 L548,108" class="d-line" marker-end="url(#arw1505a)"/>
+      <text x="494" y="96" text-anchor="middle" class="d-text-sub">同期複製</text>
+      <path d="M140,140 Q330,235 548,140" class="d-line-dash" marker-end="url(#arw1505a)"/>
+      <text x="345" y="232" text-anchor="middle" class="d-text-sub">障害時：DNS がスタンバイを指すよう切替</text>
+    </svg>
+    <figcaption>図：RDS Multi-AZ は別 AZ に同期スタンバイを持ち、障害時は DNS の向き先を切り替える</figcaption>
+    </figure>
+    <ul>
+      <li><strong>Multi-AZ DB インスタンス</strong>：別 AZ に同期スタンバイを 1 台持つ。スタンバイは読み取りには使えない（読み取り分散は <a href="50-1_スケーリングの基本.html">スケーリングの基本</a> のリードレプリカで）。フェイルオーバーは <strong>通常 60〜120 秒</strong>（AWS の記載、2026 年時点）</li>
+      <li><strong>Multi-AZ DB クラスター</strong>：読み取り可能なスタンバイを 2 台持つ構成。フェイルオーバーがより短い</li>
+      <li>切り替えは <strong>DNS の向き先変更</strong> で行われるので、アプリは <strong>既存の接続が切れたら再接続する</strong> 必要があります。接続プールの再接続設定、DNS を長時間キャッシュしない設定（JVM は TTL 60 秒以下が推奨）を確認します</li>
+      <li>同期レプリケーションのため、Single-AZ より書き込みレイテンシがやや増えます</li>
+    </ul>
+    <p>自前の PostgreSQL で冗長化する場合はストリーミングレプリケーションと Patroni などの自動フェイルオーバーツールが必要で、難易度が高いです（<a href="30-6_データベースサーバーの運用.html">データベースサーバーの運用</a>、62_データアーキテクチャの「05_WALとクラッシュリカバリ」のノート）。</p>
+
+    <h3 id="sec-5-3">5.3 フェイルオーバーと切り替え時間</h3>
+    <p>「冗長化しているから止まらない」は誤りで、正確には <strong>「切り替え時間だけ止まる・遅くなる」</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>部品</th><th>検知 + 切り替えの目安</th><th>利用者への影響</th></tr></thead>
+      <tbody>
+        <tr><td>API サーバー 1 台（ALB 配下）</td><td>ヘルスチェック間隔 × 閾値（数十秒）</td><td>その間、一部のリクエストがエラー</td></tr>
+        <tr><td>RDS Multi-AZ</td><td>60〜120 秒</td><td>書き込み・読み込みとも失敗。アプリは再接続</td></tr>
+        <tr><td>Redis（ElastiCache レプリカ付き）</td><td>数十秒程度</td><td>セッション読み書き失敗。キャッシュなら DB にフォールバック</td></tr>
+        <tr><td>リージョン（Route 53 フェイルオーバー）</td><td>ヘルスチェック + DNS TTL（数分）＋手順次第</td><td>数分〜数十分</td></tr>
+      </tbody>
+    </table></div>
+    <p>切り替え中に利用者に起きることを想定し、<strong>リトライ（冪等な処理だけ）</strong>、<strong>タイムアウト</strong>、<strong>エラー画面の文言</strong> まで設計しておきます。<strong>冪等</strong>（べきとう）とは、同じ処理を何度やっても結果が同じになる性質です。ヘルスチェックの仕組みは <a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a> を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>RTO／RPO と「バックアップは冗長化ではない」</h2>
+    <ul>
+      <li><strong>RTO（Recovery Time Objective：目標復旧時間）</strong>：障害発生から何分以内に復旧させるか</li>
+      <li><strong>RPO（Recovery Point Objective：目標復旧時点）</strong>：最大で何分前までのデータなら失ってよいか</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手段</th><th>主に縮めるもの</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td>冗長化（Multi-AZ、ASG）</td><td><strong>RTO</strong>（自動で数分以内に戻る）</td><td>RDS Multi-AZ で RTO 2 分・RPO ほぼ 0</td></tr>
+        <tr><td>バックアップ（スナップショット、PITR）</td><td><strong>RPO</strong>（どの時点に戻せるか）</td><td>RDS の自動バックアップで 5 分前の時点に復元</td></tr>
+        <tr><td>マルチリージョン</td><td>広域災害時の RTO／RPO</td><td>非同期レプリカで RPO 数秒、RTO 数十分</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>PITR（Point-In-Time Recovery）</strong> は、バックアップと変更履歴を使って、指定した時点の状態に戻す機能です。</p>
+
+    <div class="callout warn">
+      <p class="callout-title">バックアップは冗長化ではない、冗長化はバックアップではない</p>
+      <ul>
+        <li>バックアップからの復元は <strong>数十分〜数時間</strong> かかります。止まらないための仕組みではありません。</li>
+        <li>逆に、冗長化は <strong>間違った操作もそのまま複製</strong> します。<code>DELETE FROM orders;</code> を誤って実行すれば、スタンバイからも一瞬で消えます。ランサムウェアや誤削除から守るのはバックアップ（できれば別アカウント・別リージョン、削除できない設定）です。</li>
+        <li>そして <strong>復元を試したことのないバックアップは、無いのと同じ</strong> です。定期的に復元訓練をします。</li>
+      </ul>
+    </div>
+    <p>RTO／RPO の決め方と復旧訓練の進め方は 69_SRE・インシデント対応の「04_DR訓練とRTO・RPO」、手順書の作り方は「02_ランブックの書き方」のノートを参照してください。ランサムウェア対策は <a href="../71_セキュリティ基礎/50-4_脆弱性管理とランサムウェア対策.html">71 脆弱性管理とランサムウェア対策</a> でも扱っています。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>Shop の最終構成</h2>
+    <p>この章までで、Shop は次のような構成になりました。</p>
+    <figure>
+    <svg viewBox="0 0 720 470" role="img" aria-label="利用者はRoute 53（shop.example.com）を経てCloudFrontとWAFに入る。/assetsと/imagesはOAC付きのS3（複数AZに保存）へ、/api/*は2つのAZにまたがるALBへ。ALBはAZ aとAZ cのShop API ×Nに振り分ける。両AZのAPIはAZ aのRDSプライマリとRedisプライマリを使う。RDSプライマリはAZ cのRDSスタンバイへ同期複製し、RedisプライマリはAZ cのRedisレプリカへ複製する。RDSプライマリは別リージョンへコピーされる自動バックアップを持つ">
+      <defs>
+        <marker id="arw1505b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="15" width="120" height="44" rx="8" class="d-box"/>
+      <text x="80" y="42" text-anchor="middle" class="d-text">利用者</text>
+      <rect x="180" y="10" width="170" height="54" rx="8" class="d-box"/>
+      <text x="265" y="34" text-anchor="middle" class="d-text-bold">Route 53</text>
+      <text x="265" y="52" text-anchor="middle" class="d-text-sub">shop.example.com</text>
+      <rect x="390" y="10" width="190" height="54" rx="8" class="d-box-accent"/>
+      <text x="485" y="34" text-anchor="middle" class="d-text-bold">CloudFront + WAF</text>
+      <text x="485" y="52" text-anchor="middle" class="d-text-sub">エッジで冗長</text>
+      <path d="M140,37 L178,37" class="d-line" marker-end="url(#arw1505b)"/>
+      <path d="M350,37 L388,37" class="d-line" marker-end="url(#arw1505b)"/>
+
+      <rect x="560" y="95" width="150" height="54" rx="8" class="d-box"/>
+      <text x="635" y="119" text-anchor="middle" class="d-text-bold">S3（OAC）</text>
+      <text x="635" y="137" text-anchor="middle" class="d-text-sub">複数 AZ に保存</text>
+      <path d="M560,64 L620,93" class="d-line" marker-end="url(#arw1505b)"/>
+      <text x="715" y="80" text-anchor="end" class="d-text-sub">/assets, /images</text>
+
+      <rect x="250" y="100" width="200" height="44" rx="8" class="d-box-accent"/>
+      <text x="350" y="127" text-anchor="middle" class="d-text-bold">ALB（2 AZ）</text>
+      <path d="M440,64 L380,98" class="d-line" marker-end="url(#arw1505b)"/>
+      <text x="440" y="88" text-anchor="start" class="d-text-sub">/api/*</text>
+
+      <rect x="20" y="175" width="320" height="230" rx="10" class="d-box"/>
+      <text x="180" y="198" text-anchor="middle" class="d-text-sub">AZ a</text>
+      <rect x="380" y="175" width="320" height="230" rx="10" class="d-box"/>
+      <text x="540" y="198" text-anchor="middle" class="d-text-sub">AZ c</text>
+
+      <rect x="90" y="210" width="180" height="44" rx="8" class="d-box-accent"/>
+      <text x="180" y="237" text-anchor="middle" class="d-text">Shop API ×N</text>
+      <rect x="450" y="210" width="180" height="44" rx="8" class="d-box-accent"/>
+      <text x="540" y="237" text-anchor="middle" class="d-text">Shop API ×N</text>
+      <path d="M320,144 L220,208" class="d-line" marker-end="url(#arw1505b)"/>
+      <path d="M380,144 L500,208" class="d-line" marker-end="url(#arw1505b)"/>
+
+      <rect x="40" y="290" width="140" height="44" rx="8" class="d-box-good"/>
+      <text x="110" y="317" text-anchor="middle" class="d-text">RDS プライマリ</text>
+      <rect x="190" y="290" width="140" height="44" rx="8" class="d-box-good"/>
+      <text x="260" y="317" text-anchor="middle" class="d-text">Redis プライマリ</text>
+      <rect x="400" y="290" width="140" height="44" rx="8" class="d-box-warn"/>
+      <text x="470" y="317" text-anchor="middle" class="d-text">RDS スタンバイ</text>
+      <rect x="550" y="290" width="140" height="44" rx="8" class="d-box-warn"/>
+      <text x="620" y="317" text-anchor="middle" class="d-text">Redis レプリカ</text>
+
+      <path d="M150,254 L120,288" class="d-line" marker-end="url(#arw1505b)"/>
+      <path d="M210,254 L250,288" class="d-line" marker-end="url(#arw1505b)"/>
+      <path d="M470,254 L170,292" class="d-line-dash" marker-end="url(#arw1505b)"/>
+      <path d="M520,254 L310,290" class="d-line-dash" marker-end="url(#arw1505b)"/>
+
+      <path d="M110,334 Q290,385 468,336" class="d-line" marker-end="url(#arw1505b)"/>
+      <text x="290" y="378" text-anchor="middle" class="d-text-sub">同期</text>
+      <path d="M260,334 Q440,395 618,336" class="d-line" marker-end="url(#arw1505b)"/>
+      <text x="520" y="385" text-anchor="middle" class="d-text-sub">複製</text>
+
+      <rect x="20" y="420" width="260" height="40" rx="8" class="d-box"/>
+      <text x="150" y="445" text-anchor="middle" class="d-text-sub">バックアップ（別リージョンへコピー）</text>
+      <path d="M60,334 L60,418" class="d-line-dash" marker-end="url(#arw1505b)"/>
+    </svg>
+    <figcaption>図：Shop の最終構成。CloudFront の先で S3 と ALB に分かれ、API・RDS・Redis は 2 つの AZ に分散している</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>冗長化の方法</th><th>残るリスク</th></tr></thead>
+      <tbody>
+        <tr><td>DNS／CDN</td><td>マネージドで冗長</td><td>設定ミス（IaC とレビューで防ぐ）</td></tr>
+        <tr><td>LB</td><td>ALB を 2 AZ のサブネットに配置</td><td>—</td></tr>
+        <tr><td>API</td><td>ASG で最小 2 台・2 AZ、ヘルスチェックで自動入れ替え</td><td>全台共通のバグ → デプロイ戦略とロールバック</td></tr>
+        <tr><td>セッション</td><td>ElastiCache（レプリカ・自動フェイルオーバー）</td><td>切り替え中の数十秒</td></tr>
+        <tr><td>DB</td><td>RDS Multi-AZ、自動バックアップ + PITR</td><td>60〜120 秒の切り替え、誤操作（バックアップで対処）</td></tr>
+        <tr><td>ファイル</td><td>S3（バージョニング有効）</td><td>誤削除（バージョニングで復元）</td></tr>
+        <tr><td>リージョン</td><td>東京のみ</td><td>東京リージョン全体の障害 → 必要なら大阪へ DR 構成</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>DR（Disaster Recovery：災害復旧）構成</strong> とは、別の場所に復旧用の環境を用意しておくことです。マルチリージョンまで進むかは、「東京リージョン全体が止まったとき、Shop は何時間止まってよいか」という <strong>ビジネス側の判断</strong> で決めます。多くの EC サイトではマルチ AZ ＋別リージョンへのバックアップコピーで十分です。</p>
+    <p>この構成は Terraform でコード化し（<a href="40-3_Terraform入門.html">Terraform入門</a>）、次の章ではこのサーバー群を <strong>攻撃から守る</strong> 方法を学びます（<a href="60-1_サーバーセキュリティの基本.html">サーバーセキュリティの基本</a>）。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>冗長化すれば止まらない</td><td>フェイルオーバーの切り替え時間（RDS なら 1〜2 分）は止まります。アプリ側の再接続とリトライの設計が必要です。</td></tr>
+        <tr><td>バックアップを取っているから冗長化は不要（またはその逆）</td><td>冗長化は止まらないため（RTO）、バックアップは戻すため（RPO・誤操作対策）。両方必要です。</td></tr>
+        <tr><td>2 台にすれば可用性は 2 倍</td><td>同じ AZ・同じ電源・同じバグなら同時に落ちます。「独立して壊れる」ように分けることが重要です。</td></tr>
+        <tr><td>RDS Multi-AZ のスタンバイで読み取りを分散できる</td><td>Multi-AZ DB インスタンスのスタンバイは読めません。読み取り分散はリードレプリカか Multi-AZ DB クラスターです。</td></tr>
+        <tr><td>99.99% を目標にすれば安心</td><td>年 52 分しか止められず、デプロイやパッチも無停止が前提になります。費用と手間に見合う目標を選びます。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>発展：デフォルトゲートウェイの冗長化（FHRP：HSRP／VRRP／GLBP）</h2>
+    <p>ここまではサーバー・DB・AZ の冗長化を見てきましたが、ネットワークの入口である <strong>デフォルトゲートウェイ（ルーター）</strong> も SPOF になり得ます。この節では、複数のルーターで仮想 IP アドレスを共有してゲートウェイを冗長化する FHRP（HSRP／VRRP／GLBP）を扱います。ネットワークの基本は <a href="10-5_ネットワークの基本.html">ネットワークの基本</a>、ルーティングの基本は 11_コンピューターサイエンスの「28ルーティングの基本とスタティックルート」、デフォルトゲートウェイそのものは「05IPアドレスとサブネットとゲートウェイ」のノートを参照してください。</p>
+
+    <h3 id="sec-9-1">9.1 FHRP の目的</h3>
+    <p>PC に設定できるデフォルトゲートウェイ（サブネットの外へ出るときの出口ルーター）は通常 <strong>1 つだけ</strong> です。そのため、デフォルトゲートウェイのルーターが故障すると、PC はサブネットの外と通信できなくなります。</p>
+    <p><strong>FHRP（First Hop Redundancy Protocol、ファーストホップ冗長化プロトコル）</strong> は、<strong>デフォルトゲートウェイを冗長化</strong> するための仕組みです。複数のルーターで <strong>1 つの仮想ルーター</strong> を作り、<strong>仮想 IP アドレス</strong>（と仮想 MAC アドレス）を共有します。担当ルーターが故障すると、別のルーターが自動で引き継ぎます。</p>
+    <figure>
+    <svg viewBox="0 0 720 320" role="img" aria-label="インターネットや社内WANにR1とR2の2台のルーターがG0/0でつながる。R1はアクティブでプライオリティ110、IPは.1。R2はスタンバイでプライオリティ100、IPは.2。2台は192.168.1.0/24のLANで仮想IP 192.168.1.254と仮想MAC 0000.0c07.ac01を共有する。PC1からPC3はデフォルトゲートウェイに仮想IPの192.168.1.254を設定する">
+      <rect x="200" y="10" width="320" height="44" rx="8" class="d-box"/>
+      <text x="360" y="37" text-anchor="middle" class="d-text">インターネット／社内 WAN</text>
+      <rect x="140" y="90" width="170" height="60" rx="8" class="d-box-good"/>
+      <text x="225" y="115" text-anchor="middle" class="d-text-bold">R1（Active）</text>
+      <text x="225" y="136" text-anchor="middle" class="d-text-sub">Pri 110 ／ .1</text>
+      <rect x="410" y="90" width="170" height="60" rx="8" class="d-box-warn"/>
+      <text x="495" y="115" text-anchor="middle" class="d-text-bold">R2（Standby）</text>
+      <text x="495" y="136" text-anchor="middle" class="d-text-sub">Pri 100 ／ .2</text>
+      <path d="M260,54 L240,88" class="d-line"/>
+      <path d="M460,54 L480,88" class="d-line"/>
+      <text x="230" y="76" text-anchor="end" class="d-text-sub">G0/0</text>
+      <text x="490" y="76" text-anchor="start" class="d-text-sub">G0/0</text>
+      <path d="M225,150 L225,180 L495,180 L495,150" class="d-line"/>
+      <path d="M360,180 L360,195" class="d-line"/>
+      <rect x="150" y="195" width="420" height="50" rx="8" class="d-box-accent"/>
+      <text x="360" y="216" text-anchor="middle" class="d-text-bold">仮想 IP 192.168.1.254</text>
+      <text x="360" y="236" text-anchor="middle" class="d-text-sub">仮想 MAC 0000.0c07.ac01 ／ 192.168.1.0/24</text>
+      <path d="M360,245 L360,262 M170,262 L550,262 M170,262 L170,272 M360,262 L360,272 M550,262 L550,272" class="d-line"/>
+      <rect x="120" y="272" width="100" height="36" rx="8" class="d-box"/>
+      <text x="170" y="295" text-anchor="middle" class="d-text">PC1</text>
+      <rect x="310" y="272" width="100" height="36" rx="8" class="d-box"/>
+      <text x="360" y="295" text-anchor="middle" class="d-text">PC2</text>
+      <rect x="500" y="272" width="100" height="36" rx="8" class="d-box"/>
+      <text x="550" y="295" text-anchor="middle" class="d-text">PC3</text>
+    </svg>
+    <figcaption>図：2 台のルーターが仮想 IP・仮想 MAC を共有し、PC はゲートウェイに仮想 IP（192.168.1.254）を設定する</figcaption>
+    </figure>
+    <p>目的が似ていて混同しやすい技術との違いを整理します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>目的</th><th>技術</th></tr></thead>
+      <tbody>
+        <tr><td><strong>デフォルトゲートウェイの冗長化</strong></td><td><strong>FHRP</strong>（HSRP／VRRP／GLBP）</td></tr>
+        <tr><td>L2 ネットワークのループ防止</td><td>STP</td></tr>
+        <tr><td>端末への IP アドレス自動割り当て</td><td>DHCP（<a href="10-6_DHCPとNTP.html">DHCPとNTP</a>）</td></tr>
+        <tr><td>宛先までの最短経路の計算</td><td>OSPF などのルーティングプロトコル</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-2">9.2 HSRP の動作</h3>
+    <p><strong>HSRP（Hot Standby Router Protocol）</strong> は <strong>Cisco 独自</strong> の FHRP です。</p>
+    <ul>
+      <li>グループ内で <strong>アクティブルーター</strong> が仮想 IP アドレスと仮想 MAC アドレスで応答し、<strong>実際の転送</strong> を行う</li>
+      <li><strong>スタンバイルーター</strong> は普段は転送を担当しない。アクティブの故障時に引き継ぐ予備</li>
+      <li>アクティブルーターが故障すると、スタンバイルーターが <strong>仮想 IP／仮想 MAC を引き継ぐ</strong></li>
+      <li>PC から見ると、ゲートウェイの IP アドレスも MAC アドレスも変わらないので、<strong>設定を変えずに通信を続けられる</strong>（ARP キャッシュの更新も不要）</li>
+    </ul>
+    <p><strong>ARP</strong> は、IP アドレスから MAC アドレス（機器固有の番号）を調べる仕組みです。<strong>PC のデフォルトゲートウェイには HSRP の仮想 IP アドレスを設定</strong> します。ほかの値を設定してはいけない理由は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>設定しがちな値</th><th>なぜダメか</th></tr></thead>
+      <tbody>
+        <tr><td>アクティブルーターの実際の IP アドレス</td><td>アクティブが故障するとそのアドレスに届かなくなり、冗長化の意味がない</td></tr>
+        <tr><td>スタンバイルーターの実際の IP アドレス</td><td>スタンバイは普段は転送を担当しない</td></tr>
+        <tr><td>HSRP の仮想 MAC アドレス</td><td>デフォルトゲートウェイには IP アドレスを設定する。仮想 MAC は、PC が ARP で仮想 IP を問い合わせたときに返される</td></tr>
+      </tbody>
+    </table></div>
+    <p>HSRP の仮想 MAC アドレス：</p>
+    <ul>
+      <li>HSRPv1：<code>0000.0c07.acXX</code>（XX はグループ番号の 16 進数。グループ 1 なら <code>0000.0c07.ac01</code>）</li>
+      <li>HSRPv2：<code>0000.0c9f.fXXX</code></li>
+    </ul>
+
+    <h3 id="sec-9-3">9.3 アクティブルーターの選出</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>順番</th><th>比較する値</th><th>優先</th></tr></thead>
+      <tbody>
+        <tr><td>①</td><td><strong>HSRP プライオリティ</strong></td><td><strong>大きい方</strong>（デフォルト <strong>100</strong>、範囲 0〜255）</td></tr>
+        <tr><td>②</td><td>（同じなら）インターフェースの <strong>IP アドレス</strong></td><td><strong>大きい方</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>HSRP は <strong>ルーター ID</strong> を使いません（ルーター ID は OSPF の用語）。MAC アドレスも比較しません（MAC アドレスの小さい方が選ばれるのは、優先度が同じ場合の STP のルートブリッジ選出）。</p>
+<pre><code>R1(config)# interface GigabitEthernet0/1
+R1(config-if)# ip address 192.168.1.1 255.255.255.0
+R1(config-if)# standby version 2
+R1(config-if)# standby 1 ip 192.168.1.254      ← 仮想IPアドレス
+R1(config-if)# standby 1 priority 110          ← プライオリティ（デフォルト100）
+R1(config-if)# standby 1 preempt               ← プリエンプトを有効化
+
+R2(config)# interface GigabitEthernet0/1
+R2(config-if)# ip address 192.168.1.2 255.255.255.0
+R2(config-if)# standby version 2
+R2(config-if)# standby 1 ip 192.168.1.254</code></pre>
+<pre><code>R1# show standby brief
+                     P indicates configured to preempt.
+                     |
+Interface   Grp  Pri P State   Active          Standby         Virtual IP
+Gi0/1       1    110 P Active  local           192.168.1.2     192.168.1.254
+
+R2# show standby brief
+Interface   Grp  Pri P State   Active          Standby         Virtual IP
+Gi0/1       1    100   Standby 192.168.1.1     local           192.168.1.254</code></pre>
+    <p>ネットワーク機器への設定作業そのもの（管理アクセス）は <a href="60-6_ネットワーク機器への管理アクセス.html">ネットワーク機器への管理アクセス</a> を参照してください。</p>
+
+    <h3 id="sec-9-4">9.4 例題：HSRP のアクティブ選出</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ルーター</th><th>プライオリティ</th><th>IP アドレス</th></tr></thead>
+      <tbody>
+        <tr><td>R1</td><td>100（デフォルト）</td><td>192.168.1.1</td></tr>
+        <tr><td>R2</td><td>100（デフォルト）</td><td>192.168.1.2</td></tr>
+        <tr><td>R3</td><td>90</td><td>192.168.1.3</td></tr>
+      </tbody>
+    </table></div>
+    <ol class="steps">
+      <li>プライオリティを比較 → R1、R2 が 100 で最大（R3 は 90 で脱落）</li>
+      <li>同じなので IP アドレスを比較 → 192.168.1.2 &gt; 192.168.1.1 → <strong>R2 がアクティブ</strong>、次点の R1 がスタンバイ</li>
+      <li>ただし、すでに動作しているグループに後から加わった場合は、プリエンプトの有無で結果が変わる（次節）</li>
+    </ol>
+
+    <h3 id="sec-9-5">9.5 プリエンプト</h3>
+    <p><strong>プリエンプト（preempt）</strong> は、優先度の高いルーターがアクティブの役割を奪い返す機能です。<strong>HSRP のプリエンプトはデフォルトで無効</strong> です。そのため、一度アクティブが入れ替わると、プライオリティの高いルーターが故障から復旧して戻ってきても、<strong>アクティブの役割は交代しません</strong>。</p>
+    <p>意図したルーターを常にアクティブにしたい場合は、<strong>プライオリティを高くしたうえで <code>standby &lt;グループ&gt; preempt</code> も設定</strong> します。</p>
+<pre><code> 時刻   R1（Pri 110, preempt なし）     R2（Pri 100）
+ ──────────────────────────────────────────────────────
+  t0    Active                          Standby
+  t1    故障                            Active に昇格
+  t2    復旧 → Standby のまま           Active のまま   ← プリエンプトがないので戻らない
+ ──────────────────────────────────────────────────────
+        R1 に standby 1 preempt を設定していれば、t2 で R1 が Active を取り戻す</code></pre>
+    <p>「復旧したルーターをアクティブに戻したい」ときに、次のコマンドでは目的を果たせません。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>なぜダメか</th></tr></thead>
+      <tbody>
+        <tr><td><code>standby 1 priority 100</code></td><td>プライオリティをデフォルト値にするだけ。プリエンプトがなければ役割は交代しない</td></tr>
+        <tr><td><code>standby 1 ip 192.168.1.254</code></td><td>仮想 IP アドレスを設定するコマンド</td></tr>
+        <tr><td><code>spanning-tree portfast</code></td><td>STP の機能で、HSRP とは関係ない</td></tr>
+      </tbody>
+    </table></div>
+    <p>プリエンプトのデフォルト：</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロトコル</th><th>プリエンプトのデフォルト</th></tr></thead>
+      <tbody>
+        <tr><td>HSRP</td><td><strong>無効</strong></td></tr>
+        <tr><td>VRRP</td><td><strong>有効</strong></td></tr>
+        <tr><td>GLBP（AVG）</td><td>無効</td></tr>
+        <tr><td>OSPF の DR</td><td>そもそもプリエンプションの仕組みがない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-9-6">9.6 HSRP／VRRP／GLBP の比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>HSRP</th><th>VRRP</th><th>GLBP</th></tr></thead>
+      <tbody>
+        <tr><td>標準／独自</td><td><strong>Cisco 独自</strong></td><td><strong>IETF 標準</strong>（RFC 5798）</td><td><strong>Cisco 独自</strong></td></tr>
+        <tr><td>転送役</td><td><strong>アクティブ</strong>（1 台）</td><td><strong>マスター</strong>（1 台）</td><td><strong>AVF</strong>（複数台が同時に転送）</td></tr>
+        <tr><td>予備</td><td>スタンバイ</td><td>バックアップ</td><td>—</td></tr>
+        <tr><td>負荷分散</td><td>グループ内では不可（1 台のみ転送）</td><td>グループ内では不可（1 台のみ転送）</td><td><strong>可能</strong>（グループ内の複数ルーターで負荷分散）</td></tr>
+        <tr><td>デフォルトプライオリティ</td><td>100</td><td>100</td><td>100</td></tr>
+        <tr><td>プリエンプト</td><td>デフォルト無効</td><td>デフォルト有効</td><td>デフォルト無効</td></tr>
+        <tr><td>仮想 MAC</td><td>0000.0c07.acXX（v1）</td><td>0000.5e00.01XX</td><td>0007.b400.XXYY</td></tr>
+        <tr><td>マルチキャスト</td><td>224.0.0.2（v1）／224.0.0.102（v2）</td><td>224.0.0.18</td><td>224.0.0.102</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>GLBP（Gateway Load Balancing Protocol）</strong> は、1 つの仮想 IP アドレスに対して、<strong>ルーターごとに異なる仮想 MAC アドレス</strong> を ARP 応答で答えて、PC ごとに通信を振り分けます。</p>
+    <ul>
+      <li><strong>AVG</strong>（Active Virtual Gateway）：ARP に応答し、どの仮想 MAC を返すかを割り振る役（1 台）</li>
+      <li><strong>AVF</strong>（Active Virtual Forwarder）：実際に転送する役（最大 4 台）</li>
+    </ul>
+<pre><code> PC1 ─ARP「192.168.1.254 のMACは？」→ AVG ─応答→ 「0007.b400.0101（R1の仮想MAC）」 → PC1 は R1 経由
+ PC2 ─ARP「192.168.1.254 のMACは？」→ AVG ─応答→ 「0007.b400.0102（R2の仮想MAC）」 → PC2 は R2 経由</code></pre>
+    <p>HSRP や VRRP でも、<strong>VLAN ごとにアクティブ（マスター）のルーターを分ける</strong> ことで、ネットワーク全体として負荷を分散する設計はできます（例：VLAN10 は R1 がアクティブ、VLAN20 は R2 がアクティブ）。ただし 1 つのグループ内で同時に転送するのは 1 台だけです。</p>
+    <p>OSPF はルーティングプロトコルであり、デフォルトゲートウェイの冗長化（FHRP）ではありません（11_コンピューターサイエンスの「29OSPF（リンクステート型ルーティング）」のノート）。</p>
+
+    <h3 id="sec-9-7">9.7 ひっかけポイント・よくある誤解</h3>
+    <ul>
+      <li>FHRP の目的はデフォルトゲートウェイの冗長化。STP（ループ防止）、DHCP（アドレス割当）、OSPF（経路計算）と混同しない</li>
+      <li>PC のゲートウェイは <strong>仮想 IP</strong>。実 IP でも仮想 MAC でもない</li>
+      <li>HSRP のアクティブは <strong>プライオリティが大きい方</strong>（同じなら IP アドレスが大きい方）。ルーター ID や MAC は使わない</li>
+      <li>HSRP のプリエンプトは <strong>デフォルト無効</strong>。復旧後に戻すには <code>standby &lt;グループ&gt; preempt</code>。VRRP はデフォルト有効</li>
+      <li>グループ内で負荷分散できるのは <strong>GLBP</strong> だけ</li>
+      <li>HSRP＝アクティブ／スタンバイ、VRRP＝マスター／バックアップ（用語を取り違えない）</li>
+    </ul>
+
+    <h3 id="sec-9-8">9.8 押さえておくポイントと数値・コマンドの整理</h3>
+    <ul>
+      <li>FHRP＝仮想 IP／仮想 MAC を共有してデフォルトゲートウェイを冗長化</li>
+      <li>HSRP：Cisco 独自、アクティブ／スタンバイ、プライオリティ 100、大きい方が優先、preempt はデフォルト無効</li>
+      <li>VRRP：標準、マスター／バックアップ、preempt はデフォルト有効</li>
+      <li>GLBP：Cisco 独自、ルーターごとに異なる仮想 MAC で負荷分散</li>
+      <li>設定：<code>standby &lt;grp&gt; ip &lt;VIP&gt;</code>、<code>standby &lt;grp&gt; priority &lt;値&gt;</code>、<code>standby &lt;grp&gt; preempt</code>。確認：<code>show standby brief</code></li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>値・優先</th></tr></thead>
+      <tbody>
+        <tr><td>HSRP アクティブ：プライオリティ → IP</td><td><strong>大きい</strong> 方</td></tr>
+        <tr><td>HSRP／VRRP／GLBP のデフォルトプライオリティ</td><td>100</td></tr>
+        <tr><td>OSPF DR 選出（参考）</td><td>プライオリティ → ルーター ID の <strong>大きい</strong> 方。デフォルト 1、プリエンプションなし</td></tr>
+        <tr><td>STP ルートブリッジ（参考）</td><td>ブリッジ ID（プライオリティ → MAC）の <strong>小さい</strong> 方</td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コマンド</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>standby &lt;grp&gt; ip / priority / preempt</code></td><td>HSRP の仮想 IP／優先度／プリエンプト</td></tr>
+        <tr><td><code>show standby [brief]</code></td><td>HSRP の状態</td></tr>
+        <tr><td><code>spanning-tree portfast</code></td><td>STP 用（HSRP とは無関係）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li>可用性は年間停止時間に直して考える。99.9% は約 8.8 時間、99.99% は約 53 分</li>
+      <li>構成図をたどり、機械だけでなく人・手順・証明書も含めて SPOF を洗い出す</li>
+      <li>ステートレスな層はアクティブ-アクティブ＋N+1、DB はアクティブ-スタンバイ（Multi-AZ）が基本</li>
+      <li>まずはマルチ AZ。マルチリージョンは非同期複製と運用負担を理解したうえでビジネス判断で</li>
+      <li>冗長化は RTO を、バックアップは RPO と誤操作対策を担う。バックアップは冗長化ではない</li>
+      <li>Shop は CloudFront → ALB（2 AZ）→ API（ASG）→ RDS Multi-AZ ＋ Redis ＋ S3 の構成になった</li>
+      <li>（発展）デフォルトゲートウェイは FHRP で冗長化する。PC には仮想 IP を設定し、HSRP は preempt がデフォルト無効、負荷分散できるのは GLBP</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">11.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. ALB（99.99%）→ API 群（99.95%）→ RDS（99.95%）が直列につながっているとき、全体の可用性はおよそいくつですか。</summary>
+      <div class="body"><p>0.9999 × 0.9995 × 0.9995 ≈ 0.9989、つまり <strong>約 99.89%</strong> です。直列の部品が増えるほど全体の可用性は下がります。各部品を冗長化して個々の可用性を上げることが大切です。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 開発者が誤って本番 DB の <code>orders</code> テーブルを DROP しました。RDS は Multi-AZ 構成です。スタンバイから復旧できますか。</summary>
+      <div class="body"><p>できません。Multi-AZ は同期レプリケーションなので、DROP もスタンバイに即座に反映されます。自動バックアップのポイントインタイムリカバリ（PITR）で、DROP 直前の時点に復元する必要があります。これが「冗長化はバックアップではない」理由です。</p></div>
+    </details>
+    <details>
+      <summary>Q3. Shop の API は通常 4 台でピークをさばけます。2 AZ に分けて、1 AZ 全体が落ちてもピーク性能を保ちたい場合、何台必要ですか。3 AZ ならどうですか。</summary>
+      <div class="body"><p>2 AZ では、残る 1 AZ だけで 4 台必要なので各 AZ 4 台・合計 <strong>8 台</strong> です。3 AZ なら、1 AZ が落ちても残り 2 AZ で 4 台あればよいので各 AZ 2 台・合計 <strong>6 台</strong> で済みます。AZ を増やすほど予備の割合が小さくなります。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 可用性 99.99% は年間・月間でどれくらいの停止まで許されますか。目標にするときの注意点は？</summary>
+      <div class="body"><p>年間約 52.6 分、月間約 4.3 分です。計画停止も停止に数えるので、OS パッチ・DB のバージョンアップ・デプロイも無停止で行える必要があります。9 を 1 つ増やすごとに費用と手間は数倍になるので、見合う目標を選びます。</p></div>
+    </details>
+    <details>
+      <summary>Q5. RDS Multi-AZ のフェイルオーバーで、アプリ側が確認しておくべきことは何ですか。</summary>
+      <div class="body"><p>切り替えは DNS の向き先変更で行われ、通常 60〜120 秒かかります。アプリは既存の接続が切れたら再接続する必要があるので、接続プールの再接続設定と、DNS を長時間キャッシュしない設定（JVM なら TTL 60 秒以下）を確認します。さらに冪等な処理だけのリトライ、タイムアウト、エラー画面の文言まで設計しておきます。</p></div>
+    </details>
+    <details>
+      <summary>Q6. HSRP で、PC のデフォルトゲートウェイに設定すべき値は何ですか。アクティブルーターの実 IP ではいけない理由は？</summary>
+      <div class="body"><p>HSRP の仮想 IP アドレス（例：192.168.1.254）です。アクティブルーターの実 IP にすると、そのルーターが故障したときに届かなくなり、冗長化の意味がありません。仮想 IP ならスタンバイが引き継ぐので、PC は設定を変えずに通信を続けられます。</p></div>
+    </details>
+    <details>
+      <summary>Q7. HSRP で R1（プライオリティ 110）が故障し、R2 がアクティブになりました。R1 が復旧してもアクティブに戻りません。なぜで、どうすればよいですか。</summary>
+      <div class="body"><p>HSRP のプリエンプトはデフォルトで無効なので、復旧してもアクティブの役割は交代しません。R1 に <code>standby 1 preempt</code> を設定すれば、プライオリティの高い R1 がアクティブを取り戻します（VRRP はプリエンプトがデフォルト有効）。</p></div>
+    </details>
+    <details>
+      <summary>Q8. HSRP・VRRP・GLBP のうち、1 つのグループ内で複数のルーターが同時に転送して負荷分散できるのはどれですか。その仕組みは？</summary>
+      <div class="body"><p>GLBP です。AVG が ARP に応答するとき、PC ごとにルーターごとの異なる仮想 MAC アドレスを返し、PC1 は R1、PC2 は R2 というように振り分けます。実際に転送する AVF は最大 4 台です。HSRP／VRRP はグループ内で 1 台しか転送しませんが、VLAN ごとにアクティブを分けて全体として負荷を分散する設計はできます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/50_スケーリング・負荷分散/05_高可用性と冗長化</li>
+      <li>Multi-AZ DB instance deployments for Amazon RDS（AWS） https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html</li>
+      <li>Failing over a Multi-AZ DB instance for Amazon RDS（AWS） https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.Failover.html</li>
+      <li>Multi-AZ DB cluster deployments for Amazon RDS（AWS） https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html</li>
+      <li>AWS Well-Architected Framework – Reliability Pillar https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/welcome.html</li>
+      <li>Configuring DNS failover（Amazon Route 53） https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-configuring.html</li>
+      <li>Google SRE Book – Embracing Risk https://sre.google/sre-book/embracing-risk/</li>
+      <li>関連ページ：<a href="50-1_スケーリングの基本.html">スケーリングの基本</a>、<a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a>、<a href="50-3_オートスケーリング.html">オートスケーリング</a>、<a href="50-4_CDNによる負荷軽減.html">CDNによる負荷軽減</a>、<a href="30-6_データベースサーバーの運用.html">データベースサーバーの運用</a>、<a href="10-5_ネットワークの基本.html">ネットワークの基本</a>、<a href="../41_アーキテクチャ/12-1_品質特性と非機能要件.html">41 品質特性と非機能要件</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-4_CDNによる負荷軽減.html"><span class="lbl">← 前のページ</span>CDNによる負荷軽減</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-1_サーバーセキュリティの基本.html"><span class="lbl">次のページ →</span>サーバーセキュリティの基本</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

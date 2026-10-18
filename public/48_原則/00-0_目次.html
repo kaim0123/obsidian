@@ -323,13 +323,13 @@ figcaption{font-family:var(--mono);font-size:12px}
     <div class="hero">
       <span class="eyebrow">00 全体像</span>
       <h1>原則解説 — 目次</h1>
-      <p class="lead">Obsidian の「48_原則」ノートをもとにした解説ページの入口です。KISS・DRY・SOLID のような設計・プログラミングの原則そのもの——定義・背景・誤解・使いどころ——を、汎用原則・構造の原則・オブジェクト指向の原則・パッケージとアーキテクチャの原則・思想と美徳まで、全17ページで解説します。</p>
-      <p class="meta">もとにしたノート：MOC_原則体系 と、10〜60 の各フォルダのノート</p>
+      <p class="lead">Obsidian の「48_原則」ノートをもとにした解説ページの入口です。KISS・DRY・SOLID のような設計・プログラミングの原則そのもの——定義・背景・誤解・使いどころ——を、汎用原則・構造の原則・オブジェクト指向の原則・パッケージとアーキテクチャの原則・法則と経験則・思想と美徳・付録まで、全36ページで解説します。</p>
+      <p class="meta">もとにしたノート：MOC_原則体系 と、10〜90 の各フォルダのノート</p>
     </div>
 
     <h2 id="how"><span class="num">1.</span>このサイトの読み方</h2>
-    <p>ページは MOC のフォルダ構成（原則が効く範囲：汎用 → 構造 → オブジェクト指向 → パッケージ・アーキテクチャ、そのあとに思想・美徳）と同じ順番に並んでいます。各ページの下にある「前のページ／次のページ」で順に読み進められ、上部の「原則解説」からいつでもこの目次に戻れます。どのページも単体で読めるように書いてあるので、気になる原則から読んでもかまいません。</p>
-    <p>48 章は原則の一般論の本拠地です。それぞれの単位での使い方は、メソッドなら <a href="../46_メソッド設計/00-0_目次.html">メソッド設計解説</a>（46）、クラスなら <a href="../44_クラス設計・デザインパターン/00-0_目次.html">クラス設計・デザインパターン解説</a>（44）、モジュール・パッケージなら <a href="../43_モジュール設計/00-0_目次.html">モジュール設計解説</a>（43）、アーキテクチャなら <a href="../41_アーキテクチャ/00-0_目次.html">アーキテクチャ解説</a>（41）で扱います。50_法則・経験則（コンウェイの法則など）と 90_付録はノートがまだ無いため、ページもありません。</p>
+    <p>ページは MOC のフォルダ構成（原則が効く範囲：汎用 → 構造 → オブジェクト指向 → パッケージ・アーキテクチャ、そのあとに法則・経験則、思想・美徳、付録）と同じ順番に並んでいます。各ページの下にある「前のページ／次のページ」で順に読み進められ、上部の「原則解説」からいつでもこの目次に戻れます。どのページも単体で読めるように書いてあるので、気になる原則から読んでもかまいません。</p>
+    <p>48 章は原則の一般論の本拠地です。それぞれの単位での使い方は、メソッドなら <a href="../46_メソッド設計/00-0_目次.html">メソッド設計解説</a>（46）、クラスなら <a href="../44_クラス設計・デザインパターン/00-0_目次.html">クラス設計・デザインパターン解説</a>（44）、モジュール・パッケージなら <a href="../43_モジュール設計/00-0_目次.html">モジュール設計解説</a>（43）、アーキテクチャなら <a href="../41_アーキテクチャ/00-0_目次.html">アーキテクチャ解説</a>（41）で扱います。原則どうしがぶつかったときは <a href="90-2_原則同士の衝突と使い分け.html">原則同士の衝突と使い分け</a>、用語をさっと引きたいときは <a href="90-1_原則の用語集.html">原則の用語集</a> を使ってください。</p>
     <div class="grid c3">
       <div class="card accent"><h4>はじめて学ぶなら</h4><p>まず <a href="00-1_原則の全体像.html">全体像</a> で地図を手に入れ、<a href="10-1_DRY・KISS・YAGNI.html">DRY・KISS・YAGNI</a> から読み始めるのがおすすめです。</p></div>
       <div class="card good"><h4>歴史から理解したいなら</h4><p><a href="00-2_設計原則の変遷.html">設計原則の変遷</a> で、KISS（1960年頃）から SOLID（2000年）まで、各原則が何の課題を解決したかをたどります。</p></div>
@@ -339,11 +339,13 @@ figcaption{font-family:var(--mono);font-size:12px}
     <h3 id="order">おすすめの読む順</h3>
     <ol class="steps">
       <li><strong>00 全体像</strong> — <a href="00-1_原則の全体像.html">全体像</a> → <a href="00-2_設計原則の変遷.html">設計原則の変遷</a></li>
-      <li><strong>10 汎用原則</strong> — <a href="10-1_DRY・KISS・YAGNI.html">DRY・KISS・YAGNI</a> → <a href="10-2_DRY・YAGNIの落とし穴と実践的判断.html">落とし穴と実践的判断</a> → <a href="10-3_コードの重複とDRY原則違反.html">コードの重複</a></li>
-      <li><strong>20 構造の原則</strong> — <a href="20-1_関心の分離.html">関心の分離</a> → <a href="20-2_デメテルの法則.html">デメテルの法則</a></li>
-      <li><strong>30 オブジェクト指向の原則</strong> — <a href="30-1_SOLIDの全体像.html">SOLID の全体像</a> → <a href="30-2_単一責任の原則.html">SRP</a> → <a href="30-3_開放閉鎖の原則.html">OCP</a> → <a href="30-4_リスコフの置換原則.html">LSP</a> → <a href="30-5_インターフェース分離の原則.html">ISP</a> → <a href="30-6_依存性逆転の原則.html">DIP</a></li>
+      <li><strong>10 汎用原則</strong> — <a href="10-1_DRY・KISS・YAGNI.html">DRY・KISS・YAGNI</a> → <a href="10-2_DRY・YAGNIの落とし穴と実践的判断.html">落とし穴と実践的判断</a> → <a href="10-3_コードの重複とDRY原則違反.html">コードの重複</a> → <a href="10-4_驚き最小の原則.html">驚き最小の原則</a> → <a href="10-5_ボーイスカウトの規則.html">ボーイスカウトの規則</a></li>
+      <li><strong>20 構造の原則</strong> — <a href="20-1_関心の分離.html">関心の分離</a> → <a href="20-2_デメテルの法則.html">デメテルの法則</a> → <a href="20-3_高凝集・低結合.html">高凝集・低結合</a> → <a href="20-4_情報隠蔽.html">情報隠蔽</a> → <a href="20-5_コマンド・クエリ分離.html">CQS</a> → <a href="20-6_機構と方針の分離.html">機構と方針の分離</a></li>
+      <li><strong>30 オブジェクト指向の原則</strong> — <a href="30-1_SOLIDの全体像.html">SOLID の全体像</a> → <a href="30-2_単一責任の原則.html">SRP</a> → <a href="30-3_開放閉鎖の原則.html">OCP</a> → <a href="30-4_リスコフの置換原則.html">LSP</a> → <a href="30-5_インターフェース分離の原則.html">ISP</a> → <a href="30-6_依存性逆転の原則.html">DIP</a> → <a href="30-7_継承より合成.html">継承より合成</a> → <a href="30-8_ハリウッド原則・制御の反転.html">ハリウッド原則</a> → <a href="30-9_GRASPの原則としての位置づけ.html">GRASP</a></li>
       <li><strong>40 パッケージ・アーキテクチャの原則</strong> — <a href="40-1_パッケージ・アーキテクチャの原則への案内.html">43・41 章への案内</a></li>
-      <li><strong>60 思想・美徳</strong> — <a href="60-1_銀の弾丸はない.html">銀の弾丸はない</a> → <a href="60-2_情報隠蔽は正義.html">情報隠蔽は正義</a> → <a href="60-3_プログラマの三大美徳.html">プログラマの三大美徳</a></li>
+      <li><strong>50 法則・経験則</strong> — <a href="50-1_コンウェイの法則.html">コンウェイ</a> → <a href="50-2_ブルックスの法則・銀の弾丸はない.html">ブルックス</a> → <a href="50-3_ハイラムの法則.html">ハイラム</a> → <a href="50-4_ポステルの法則.html">ポステル</a> → <a href="50-5_90対90の法則・ホフスタッターの法則.html">90 対 90・ホフスタッター</a></li>
+      <li><strong>60 思想・美徳</strong> — <a href="60-1_銀の弾丸はない.html">銀の弾丸はない</a> → <a href="60-2_情報隠蔽は正義.html">情報隠蔽は正義</a> → <a href="60-3_プログラマの三大美徳.html">プログラマの三大美徳</a> → <a href="60-4_UNIX哲学.html">UNIX 哲学</a> → <a href="60-5_Worse_is_Better.html">Worse is Better</a> → <a href="60-6_Zen_of_Python.html">Zen of Python</a></li>
+      <li><strong>90 付録</strong> — <a href="90-1_原則の用語集.html">原則の用語集</a> → <a href="90-2_原則同士の衝突と使い分け.html">原則同士の衝突と使い分け</a></li>
     </ol>
 
     <h2 id="g00"><span class="num">2.</span>00 全体像</h2>
@@ -359,6 +361,8 @@ figcaption{font-family:var(--mono);font-size:12px}
       <a class="card idx-card" href="10-1_DRY・KISS・YAGNI.html"><span class="badge accent">10-1</span><h4>DRY・KISS・YAGNI</h4><p class="small muted">3原則の定義と必要な理由、悪い例と良い例、適用例、過度な抽象化と偶然の重複、3原則の関係と組み合わせた実践例</p></a>
       <a class="card idx-card" href="10-2_DRY・YAGNIの落とし穴と実践的判断.html"><span class="badge accent">10-2</span><h4>DRY・YAGNI の落とし穴と実践的判断</h4><p class="small muted">DRY の本来の意味（知識の重複）、偶然の重複と本質的な重複、DRY と SRP の衝突、間違った抽象化・Rule of Three・AHA、YAGNI の前提条件、ベテランの勘、判断フロー</p></a>
       <a class="card idx-card" href="10-3_コードの重複とDRY原則違反.html"><span class="badge accent">10-3</span><h4>コードの重複と DRY 原則違反</h4><p class="small muted">バリデーション・DB クエリ・エラーハンドリング・フォーマット処理・設定値の5つの重複パターンと集約先、DRY 原則チェックリスト</p></a>
+      <a class="card idx-card" href="10-4_驚き最小の原則.html"><span class="badge accent">10-4</span><h4>驚き最小の原則</h4><p class="small muted">名前と動きのズレ、副作用、戻り値・慣習・引数順のチェックポイント、驚きの基準は使う人の常識</p></a>
+      <a class="card idx-card" href="10-5_ボーイスカウトの規則.html"><span class="badge accent">10-5</span><h4>ボーイスカウトの規則</h4><p class="small muted">来たときよりも美しく、Robert C. Martin、ついでの小さな改善、きれいにする範囲の目安、割れ窓理論</p></a>
     </div>
 
     <h2 id="g20"><span class="num">4.</span>20 構造の原則</h2>
@@ -366,6 +370,10 @@ figcaption{font-family:var(--mono);font-size:12px}
     <div class="grid c2">
       <a class="card idx-card" href="20-1_関心の分離.html"><span class="badge accent">20-1</span><h4>関心の分離</h4><p class="small muted">「関心」とは何か、詰め込んだ関数と分けた関数の比較、レイヤー・機能・横断的関心事で分ける軸、SRP との関係、過剰分離への注意、Web アプリでの関心の置き場所</p></a>
       <a class="card idx-card" href="20-2_デメテルの法則.html"><span class="badge accent">20-2</span><h4>デメテルの法則</h4><p class="small muted">知り合いの知り合いと話さない、呼んでよい4種類の相手、メソッドチェーンを「頼む」形に書き直す例、ドットの数の目安と例外、実務でよくある違反パターン</p></a>
+      <a class="card idx-card" href="20-3_高凝集・低結合.html"><span class="badge accent">20-3</span><h4>高凝集・低結合</h4><p class="small muted">凝集度と結合度、Constantine（1974）、何でも屋 Utils、2つをセットで考える、結合ゼロ・分けすぎの誤解</p></a>
+      <a class="card idx-card" href="20-4_情報隠蔽.html"><span class="badge accent">20-4</span><h4>情報隠蔽</h4><p class="small muted">Parnas（1972）、変わりそうな決定を隠す、カプセル化との違い、何を隠すべきか、getter/setter の落とし穴</p></a>
+      <a class="card idx-card" href="20-5_コマンド・クエリ分離.html"><span class="badge accent">20-5</span><h4>コマンド・クエリ分離（CQS）</h4><p class="small muted">クエリとコマンド、Meyer と Eiffel、在庫チェックの例、pop・並行処理の例外、CQS と CQRS の違い</p></a>
+      <a class="card idx-card" href="20-6_機構と方針の分離.html"><span class="badge accent">20-6</span><h4>機構と方針の分離</h4><p class="small muted">機構と方針、Hydra・マイクロカーネル、リトライ処理の分離、sort・権限・Strategy などの身近な例、分けすぎない</p></a>
     </div>
 
     <h2 id="g30"><span class="num">5.</span>30 オブジェクト指向の原則</h2>
@@ -377,6 +385,9 @@ figcaption{font-family:var(--mono);font-size:12px}
       <a class="card idx-card" href="30-4_リスコフの置換原則.html"><span class="badge accent">30-4</span><h4>リスコフの置換原則（LSP）</h4><p class="small muted">定義と提唱者、契約（事前条件・事後条件・不変条件）、正方形と長方形・鳥・コレクションの例、違反パターン、判断基準</p></a>
       <a class="card idx-card" href="30-5_インターフェース分離の原則.html"><span class="badge accent">30-5</span><h4>インターフェース分離の原則（ISP）</h4><p class="small muted">太ったインターフェースの問題、労働者・プリンター・データベースの分離例、ロールインターフェースとアダプター、分けすぎの失敗</p></a>
       <a class="card idx-card" href="30-6_依存性逆転の原則.html"><span class="badge accent">30-6</span><h4>依存性逆転の原則（DIP）</h4><p class="small muted">高レベル・低レベル・抽象、直接依存の悪い例と抽象への依存、依存性注入の3パターン、DI コンテナとファクトリー、テストでのモック</p></a>
+      <a class="card idx-card" href="30-7_継承より合成.html"><span class="badge accent">30-7</span><h4>継承より合成</h4><p class="small muted">is-a と has-a、GoF の原文、ホワイトボックス／ブラックボックス再利用、継承の4つの問題、部品を持たせる書き方（Strategy）、継承を使ってよい場面</p></a>
+      <a class="card idx-card" href="30-8_ハリウッド原則・制御の反転.html"><span class="badge accent">30-8</span><h4>ハリウッド原則・制御の反転</h4><p class="small muted">ハリウッドの決まり文句、IoC・DI の用語整理、ライブラリとフレームワークの違い、Template Method と DI の例、IoC と DIP の違い、反転しすぎの副作用</p></a>
+      <a class="card idx-card" href="30-9_GRASPの原則としての位置づけ.html"><span class="badge accent">30-9</span><h4>GRASP の原則としての位置づけ</h4><p class="small muted">9パターンの一覧、目的・評価軸・具体的な手の3層、他の原則との対応、SOLID との役割分担、情報エキスパートの例、純粋人工物と貧血モデル</p></a>
     </div>
 
     <h2 id="g40"><span class="num">6.</span>40 パッケージ・アーキテクチャの原則</h2>
@@ -385,15 +396,35 @@ figcaption{font-family:var(--mono);font-size:12px}
       <a class="card idx-card" href="40-1_パッケージ・アーキテクチャの原則への案内.html"><span class="badge accent">40-1</span><h4>パッケージ・アーキテクチャの原則への案内</h4><p class="small muted">本体が 43・41 章にある理由、REP・CCP・CRP・ADP・SDP・SAP と高凝集・低結合・依存性のルールの対応表、各原則のひとこと説明</p></a>
     </div>
 
-    <h2 id="g60"><span class="num">7.</span>60 思想・美徳</h2>
+    <h2 id="g50"><span class="num">7.</span>50 法則・経験則</h2>
+    <p>観察から得られた法則。「〜すべき」ではなく、現場で何が起きがちか。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="50-1_コンウェイの法則.html"><span class="badge accent">50-1</span><h4>コンウェイの法則</h4><p class="small muted">法則の中身、Conway の論文（1967/1968）と Brooks、技術レイヤーごとのチーム分け、分割発注、分散モノリス、逆コンウェイ戦略、境界と組織の壁</p></a>
+      <a class="card idx-card" href="50-2_ブルックスの法則・銀の弾丸はない.html"><span class="badge accent">50-2</span><h4>ブルックスの法則・銀の弾丸はない</h4><p class="small muted">人月の神話、連絡経路 n(n−1)/2、人を足すときの付き合い方、No Silver Bullet、本質的な複雑さと偶有的な複雑さ、新技術への過度な期待</p></a>
+      <a class="card idx-card" href="50-3_ハイラムの法則.html"><span class="badge accent">50-3</span><h4>ハイラムの法則</h4><p class="small muted">Hyrum Wright と xkcd #1172、並び順やエラー文言への依存、見せるものを減らす、保証しない挙動を揺らす、エラーコード、使う側の心得</p></a>
+      <a class="card idx-card" href="50-4_ポステルの法則.html"><span class="badge accent">50-4</span><h4>ポステルの法則</h4><p class="small muted">堅牢性原則、RFC 760/793、入力の正規化、HTML の寛容すぎた例、RFC 9413 の批判、場面ごとの方針、境界で吸収する</p></a>
+      <a class="card idx-card" href="50-5_90対90の法則・ホフスタッターの法則.html"><span class="badge accent">50-5</span><h4>90 対 90 の法則・ホフスタッターの法則</h4><p class="small muted">Tom Cargill と Bentley、Hofstadter（GEB）、最後の10%が長い理由、パーキンソンの法則と学生症候群、完成の定義、小さな分割、実績で見積もる</p></a>
+    </div>
+
+    <h2 id="g60"><span class="num">8.</span>60 思想・美徳</h2>
     <p>考え方・哲学。どういう姿勢で作るか（動画「プリンシプルオブライフ」シリーズのノートから）。</p>
     <div class="grid c2">
       <a class="card idx-card" href="60-1_銀の弾丸はない.html"><span class="badge accent">60-1</span><h4>銀の弾丸はない</h4><p class="small muted">銀の弾丸の意味、ブルックスの論文（本質的困難と偶然の困難）、「王道はない。しかし道はある」、人生への読み替え、No Silver Bullet Refired</p></a>
       <a class="card idx-card" href="60-2_情報隠蔽は正義.html"><span class="badge accent">60-2</span><h4>情報隠蔽は正義</h4><p class="small muted">情報隠蔽の2つのメリット（経費精算の例）、パルナスの規則、ブラックボックスとの違い、API と REST、ステートレスと冪等性、提供情報の最小化</p></a>
       <a class="card idx-card" href="60-3_プログラマの三大美徳.html"><span class="badge accent">60-3</span><h4>プログラマの三大美徳</h4><p class="small muted">リファクタリング、コードの臭い、その場しのぎと any、命名は最重要課題、怠惰・短気・傲慢、傲慢をクリエイターの矜持として読む</p></a>
+      <a class="card idx-card" href="60-4_UNIX哲学.html"><span class="badge accent">60-4</span><h4>UNIX 哲学</h4><p class="small muted">McIlroy の4原則、Salus の3行要約、Gancarz の9定理、Raymond の17ルール、パイプの例、関数の合成、他原則との関係、現代での活かし方</p></a>
+      <a class="card idx-card" href="60-5_Worse_is_Better.html"><span class="badge accent">60-5</span><h4>Worse is Better</h4><p class="small muted">Gabriel の論考、The Right Thing と New Jersey 流の比較、PC loser-ing と EINTR、「悪いほう」が広まる理由、MVP、YAGNI・KISS との関係</p></a>
+      <a class="card idx-card" href="60-6_Zen_of_Python.html"><span class="badge accent">60-6</span><h4>Zen of Python</h4><p class="small muted">PEP 20 と Tim Peters、19行の原文・訳・解説、明示的 import、ガード節、例外を黙らせない、他原則との対応、レビューでの使い方</p></a>
     </div>
 
-    <h2 id="related"><span class="num">8.</span>関連するフォルダ</h2>
+    <h2 id="g90"><span class="num">9.</span>90 付録</h2>
+    <p>原則を横断して引くための一覧と、原則どうしがぶつかったときの判断。</p>
+    <div class="grid c2">
+      <a class="card idx-card" href="90-1_原則の用語集.html"><span class="badge accent">90-1</span><h4>原則の用語集</h4><p class="small muted">10〜60 の原則・法則・思想の略称、一言の意味、提唱者、解説ページへのリンク</p></a>
+      <a class="card idx-card" href="90-2_原則同士の衝突と使い分け.html"><span class="badge accent">90-2</span><h4>原則同士の衝突と使い分け</h4><p class="small muted">衝突10組と判断基準、DRY vs SRP、YAGNI vs OCP、デメテル vs 凝集、DRY vs 疎結合、迷ったときの順番</p></a>
+    </div>
+
+    <h2 id="related"><span class="num">10.</span>関連するフォルダ</h2>
     <div class="table-wrap"><table>
       <thead><tr><th>章</th><th>この章との関係</th></tr></thead>
       <tbody>

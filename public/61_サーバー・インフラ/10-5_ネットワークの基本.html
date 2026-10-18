@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ネットワークの基本（IP・ポート・DNS）｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 サーバーの基礎 › ネットワークの基本</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 サーバーの基礎</span>
+      <h1>ネットワークの基本（IP・ポート・DNS）</h1>
+      <p class="lead">サーバーを公開するときに最低限必要なネットワークの知識を、<strong>IP アドレス・ポート・DNS</strong> の 3 つに絞って解説します。IPv4／IPv6、グローバル／プライベート IP、CIDR、NAT、ポート番号と TCP／UDP、<code>0.0.0.0</code> と <code>127.0.0.1</code> で listen する違い、DNS レコードと名前解決の流れ、<code>shop.example.com</code> を自分のサーバーに向ける手順、そして「繋がらない」ときの疎通確認コマンドまでを扱います。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/10_サーバーの基礎/05_ネットワークの基本（IP・ポート・DNS）.md</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>ネットワークは <strong>郵便</strong> です。<strong>IP アドレス＝建物の住所</strong>（どのサーバーか）、<strong>ポート番号＝部屋番号</strong>（そのサーバーのどのプログラムか）、<strong>DNS＝住所録</strong>（名前から住所を調べる）。サーバー運用の「繋がらない」トラブルの大半は、この 3 つのどれかの設定ミスです。</p>
+    </div>
+
+    <p>このページは <a href="10-1_サーバーとは何か.html">10-1 サーバーとは何か</a> と <a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a> を読んでいると理解しやすいです。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>ネットワークは「郵便」</h2>
+    <div class="grid c3">
+      <div class="card">
+        <h4>IP アドレス＝住所</h4>
+        <p>どの建物（サーバー）宛てかを表します。例：<code>203.0.113.10</code></p>
+      </div>
+      <div class="card">
+        <h4>ポート番号＝部屋番号</h4>
+        <p>その建物の、どの部屋（プログラム）宛てかを表します。例：443 番＝HTTPS の Nginx</p>
+      </div>
+      <div class="card">
+        <h4>DNS＝住所録</h4>
+        <p><code>shop.example.com</code> という名前から、住所（IP）を調べます。</p>
+      </div>
+    </div>
+    <p><code>https://shop.example.com</code> を開くと、ブラウザは DNS で住所（IP）を調べ、その建物の 443 号室（HTTPS の Nginx）に手紙（リクエスト）を届けます。</p>
+    <p>OSI 参照モデル（通信の仕組みを 7 つの層に分けた考え方）やルーティング（経路の選び方）のような理論の深掘りは、11_コンピューターサイエンスのノート（コンピューターサイエンス体系の MOC）に譲ります。ここでは <strong>サーバーを公開するのに必要な最低限</strong> に絞ります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>IP アドレス</h2>
+
+    <h3 id="sec-2-1">2.1 IPv4 と IPv6</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>IPv4</th><th>IPv6</th></tr></thead>
+      <tbody>
+        <tr><td><strong>書き方</strong></td><td><code>203.0.113.10</code>（0〜255 の数を 4 つ）</td><td><code>2001:db8::10</code>（16 進数を <code>:</code> で区切る。連続する 0 は <code>::</code> で省略）</td></tr>
+        <tr><td><strong>数</strong></td><td>約 43 億個（枯渇している）</td><td>事実上無限</td></tr>
+        <tr><td><strong>現状</strong></td><td>まだ主流。クラウドのパブリック IPv4 は有料化が進んでいる</td><td>普及中。モバイル回線では多数派</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout tip">
+      <p class="callout-title">例に出てくるアドレス</p>
+      <p><code>203.0.113.0/24</code> や <code>2001:db8::/32</code> は <strong>ドキュメント用に予約された</strong> アドレスで、実在のサーバーには割り当てられません。このシリーズでは、例として使う Shop サービスのサーバーの IP を <code>203.0.113.10</code> とします。</p>
+    </div>
+
+    <h3 id="sec-2-2">2.2 グローバル IP とプライベート IP</h3>
+    <ul>
+      <li><strong>グローバル IP（パブリック IP）</strong>：インターネット上で一意（ほかと重ならない）な住所。外から直接届きます。</li>
+      <li><strong>プライベート IP</strong>：家庭や社内、クラウドの VPC（クラウド上に作る自分専用のネットワーク）の中だけで使う住所。インターネットからは直接届きません。</li>
+    </ul>
+    <p>プライベート IP として使える範囲は、RFC 1918（インターネットの標準を定めた文書の 1 つ）で決まっています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>範囲</th><th>CIDR</th><th>よく見る場所</th></tr></thead>
+      <tbody>
+        <tr><td>10.0.0.0 〜 10.255.255.255</td><td><code>10.0.0.0/8</code></td><td>AWS の VPC、社内ネットワーク</td></tr>
+        <tr><td>172.16.0.0 〜 172.31.255.255</td><td><code>172.16.0.0/12</code></td><td>Docker の既定ネットワーク（172.17.0.0/16）、AWS のデフォルト VPC（172.31.0.0/16）</td></tr>
+        <tr><td>192.168.0.0 〜 192.168.255.255</td><td><code>192.168.0.0/16</code></td><td>家庭のルーター</td></tr>
+      </tbody>
+    </table></div>
+    <p>特別なアドレスとして、<strong><code>127.0.0.1</code>（ループバック、localhost）</strong> は「自分自身」を指し、外には一切出ていきません。</p>
+
+    <h3 id="sec-2-3">2.3 CIDR 表記</h3>
+    <p><strong>CIDR（Classless Inter-Domain Routing、サイダー）</strong> は、IP アドレスの範囲を <code>アドレス/数字</code> で表す書き方です。<code>/</code> の後ろの数字は「先頭から何ビットが固定か（<strong>ネットワーク部</strong>）」を表し、残りのビットで個々のホスト（機器）を表します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>CIDR</th><th>固定ビット</th><th>アドレス数</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>203.0.113.10/32</code></td><td>32</td><td>1</td><td>その 1 つだけ（ファイアウォールで「自宅 IP だけ許可」など）</td></tr>
+        <tr><td><code>10.0.1.0/24</code></td><td>24</td><td>256</td><td><code>10.0.1.0</code>〜<code>10.0.1.255</code>（サブネットの典型）</td></tr>
+        <tr><td><code>10.0.0.0/16</code></td><td>16</td><td>65,536</td><td><code>10.0.0.0</code>〜<code>10.0.255.255</code>（VPC 全体の典型）</td></tr>
+        <tr><td><code>0.0.0.0/0</code></td><td>0</td><td>すべて</td><td>「どこからでも」</td></tr>
+      </tbody>
+    </table></div>
+    <p>計算のコツ：アドレス数は <code>2^(32 - 数字)</code> です。/24 なら 2^8 = 256 個です（AWS のサブネットでは、そのうち 5 個が予約されていて使えません）。</p>
+    <div class="callout warn">
+      <p class="callout-title">0.0.0.0/0 に SSH を開けない</p>
+      <p>セキュリティグループ（AWS のファイアウォール機能）で <code>0.0.0.0/0</code> を SSH（22 番）に許可するのは「全世界から SSH を受け付ける」という意味なので避けます。詳しくは <a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a> で扱います。</p>
+    </div>
+
+    <h3 id="sec-2-4">2.4 NAT</h3>
+    <p><strong>NAT（Network Address Translation）</strong> は、プライベート IP とグローバル IP を変換する仕組みです。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="家庭やVPCの中にある PC 192.168.1.5、スマホ 192.168.1.6、PC 192.168.1.7 の通信は、ルーターまたは NAT ゲートウェイで送信元を 198.51.100.7 に書き換えてインターネットのWebサイトへ出ていく。NAT は誰の通信かを記憶しておき、198.51.100.7 宛てに戻ってきた返事を元の端末に戻す">
+      <defs>
+        <marker id="arw6105a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="110" y="24" text-anchor="middle" class="d-text-bold">家庭 / VPC の中</text>
+      <rect x="20" y="40" width="180" height="44" rx="8" class="d-box"/>
+      <text x="110" y="67" text-anchor="middle" class="d-text">PC 192.168.1.5</text>
+      <rect x="20" y="100" width="180" height="44" rx="8" class="d-box"/>
+      <text x="110" y="127" text-anchor="middle" class="d-text">スマホ 192.168.1.6</text>
+      <rect x="20" y="160" width="180" height="44" rx="8" class="d-box"/>
+      <text x="110" y="187" text-anchor="middle" class="d-text">PC 192.168.1.7</text>
+
+      <rect x="280" y="80" width="180" height="84" rx="8" class="d-box-accent"/>
+      <text x="370" y="106" text-anchor="middle" class="d-text-bold">ルーター / NAT GW</text>
+      <text x="370" y="128" text-anchor="middle" class="d-text">198.51.100.7</text>
+      <text x="370" y="150" text-anchor="middle" class="d-text-sub">誰の通信かを記憶</text>
+
+      <rect x="560" y="80" width="140" height="84" rx="8" class="d-box"/>
+      <text x="630" y="118" text-anchor="middle" class="d-text-bold">Webサイト</text>
+      <text x="630" y="140" text-anchor="middle" class="d-text-sub">インターネット</text>
+
+      <path d="M200,62 L278,110" class="d-line" marker-end="url(#arw6105a)"/>
+      <path d="M200,122 L278,122" class="d-line" marker-end="url(#arw6105a)"/>
+      <path d="M200,182 L278,134" class="d-line" marker-end="url(#arw6105a)"/>
+      <path d="M460,108 L558,108" class="d-line" marker-end="url(#arw6105a)"/>
+      <path d="M558,140 L462,140" class="d-line-dash" marker-end="url(#arw6105a)"/>
+      <text x="370" y="200" text-anchor="middle" class="d-text-sub">送信元を 198.51.100.7 に書き換えて外へ</text>
+      <text x="510" y="236" text-anchor="middle" class="d-text-sub">返事は 198.51.100.7 宛てに戻り、NAT が元の端末へ</text>
+    </svg>
+    <figcaption>図：中から外へは NAT が送信元を書き換えて出ていく。外から中へいきなり話しかけることはできない</figcaption>
+    </figure>
+
+    <ul>
+      <li>中から外へ出る通信は、送信元を NAT のグローバル IP に書き換えて出ていきます。返事は、NAT が覚えている対応表を使って元の端末に戻します。</li>
+      <li>逆に、<strong>外から中の端末へ、いきなり通信を始めることはできません</strong>。これが「プライベート IP のサーバーには外から直接届かない」理由です。</li>
+      <li>AWS では、パブリック IP を持つ EC2（AWS の仮想サーバー）も、OS 上ではプライベート IP（例：<code>10.0.1.23</code>）しか見えません。インターネットゲートウェイが 1 対 1 で変換しているからです。<code>ip addr</code> にグローバル IP が出てこなくても正常です。</li>
+    </ul>
+    <p>Shop をステージ 2 以降でサーバーごとに分離するとき、DB サーバーには <strong>プライベート IP だけ</strong> を持たせ、インターネットから直接届かないようにするのが定石です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>ポートと TCP / UDP</h2>
+
+    <h3 id="sec-3-1">3.1 ポート番号</h3>
+    <p>1 台のサーバーでは、複数のプログラムが同時に通信します。どのプログラム宛てかを区別するのが <strong>ポート番号（0〜65535）</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>範囲</th><th>名前</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>0〜1023</td><td><strong>well-known ポート</strong></td><td>定番サービス用。Linux では使うのに root 権限（または特別な権限）が必要</td></tr>
+        <tr><td>1024〜49151</td><td>registered ポート</td><td>アプリ用（3000、5432、8080 など）</td></tr>
+        <tr><td>49152〜65535</td><td>dynamic / ephemeral ポート</td><td>クライアント側の送信元ポートとして OS が自動で割り当てる</td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ポート</th><th>プロトコル</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td>22</td><td>TCP</td><td>SSH</td></tr>
+        <tr><td>25 / 587</td><td>TCP</td><td>SMTP（メール送信）</td></tr>
+        <tr><td>53</td><td>UDP/TCP</td><td>DNS</td></tr>
+        <tr><td>80</td><td>TCP</td><td>HTTP</td></tr>
+        <tr><td>443</td><td>TCP（HTTP/3 は UDP）</td><td>HTTPS</td></tr>
+        <tr><td>3000</td><td>TCP</td><td>Node.js アプリの慣習（Shop API）</td></tr>
+        <tr><td>3306</td><td>TCP</td><td>MySQL</td></tr>
+        <tr><td>5432</td><td>TCP</td><td>PostgreSQL</td></tr>
+        <tr><td>6379</td><td>TCP</td><td>Redis</td></tr>
+      </tbody>
+    </table></div>
+    <p>Shop API が 80 番ではなく 3000 番で待つのは、1024 未満のポートを使うには特権が必要で、<strong>アプリを root で動かしたくない</strong> からです。80/443 は Nginx が受け、内側の 3000 番へ転送します（<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>）。</p>
+
+    <h3 id="sec-3-2">3.2 TCP と UDP</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>TCP（Transmission Control Protocol）</th><th>UDP（User Datagram Protocol）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>例え</strong></td><td>書留郵便（届いたか確認、順番保証）</td><td>普通のハガキ（送りっぱなし）</td></tr>
+        <tr><td><strong>接続</strong></td><td>最初に 3-way ハンドシェイク（3 回のやり取り）で接続を確立</td><td>接続なしでいきなり送る</td></tr>
+        <tr><td><strong>信頼性</strong></td><td>再送・順序保証あり</td><td>なし（アプリ側で対処）</td></tr>
+        <tr><td><strong>速さ</strong></td><td>オーバーヘッド（余分な手間）がある</td><td>軽くて速い</td></tr>
+        <tr><td><strong>用途</strong></td><td>HTTP/1.1・HTTP/2、SSH、DB 接続</td><td>DNS 問い合わせ、動画通話、ゲーム、HTTP/3（QUIC）</td></tr>
+      </tbody>
+    </table></div>
+    <p>ファイアウォールでポートを開けるときは、「443/<strong>tcp</strong>」のように TCP か UDP かも指定します。</p>
+
+    <h3 id="sec-3-3">3.3 <code>0.0.0.0</code> と <code>127.0.0.1</code> で listen する違い</h3>
+    <p>サーバープログラムは「どのアドレスの、どのポートで待つか」を指定して <strong>listen（待ち受け）</strong> します。ここは本番で頻出のつまずきポイントです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>listen アドレス</th><th>意味</th><th>誰が接続できるか</th></tr></thead>
+      <tbody>
+        <tr><td><code>127.0.0.1:3000</code></td><td>ループバックだけで待つ</td><td><strong>同じサーバー内のプログラムだけ</strong>（Nginx からは OK、外からは不可）</td></tr>
+        <tr><td><code>0.0.0.0:3000</code></td><td>すべての IPv4 アドレスで待つ</td><td>外部からも（ファイアウォールが許せば）接続できる</td></tr>
+        <tr><td><code>[::]:3000</code></td><td>すべての IPv6（設定により IPv4 も）</td><td>同上</td></tr>
+        <tr><td><code>10.0.1.23:5432</code></td><td>特定のプライベート IP で待つ</td><td>同じネットワーク内から</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// Shop API（Node.js）: Nginx の内側にいるので localhost だけで待つ
+app.listen(3000, "127.0.0.1");</code></pre>
+    <ul>
+      <li><strong>Shop API は <code>127.0.0.1:3000</code></strong> で待ちます。外から 3000 番に直接来られると、Nginx の HTTPS や制限をすり抜けてしまうからです。</li>
+      <li><strong>PostgreSQL も、同じサーバーに同居している間は <code>localhost</code> のみ</strong> で待ちます（<code>listen_addresses = 'localhost'</code> が既定値）。DB を別サーバーに分離したら、プライベート IP で待つよう変更し、<code>pg_hba.conf</code>（PostgreSQL の接続許可の設定ファイル）とファイアウォールで API サーバーからだけ許可します。</li>
+      <li>逆に、<strong>Docker コンテナの中では <code>0.0.0.0</code> で listen しないと、外（ホスト）から届きません</strong>。「手元では動くのにコンテナだと繋がらない」原因の定番です（53_コンテナの「Dockerとは」のノートも参照）。</li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>DNS</h2>
+
+    <h3 id="sec-4-1">4.1 DNS レコード</h3>
+    <p><strong>DNS（Domain Name System）</strong> は、ドメイン名と IP アドレスなどを対応付ける、世界規模の分散データベースです。登録する 1 行 1 行を <strong>レコード（record）</strong> と呼びます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>レコード</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>A</strong></td><td>名前 → IPv4 アドレス</td><td><code>shop.example.com. A 203.0.113.10</code></td></tr>
+        <tr><td><strong>AAAA</strong></td><td>名前 → IPv6 アドレス</td><td><code>shop.example.com. AAAA 2001:db8::10</code></td></tr>
+        <tr><td><strong>CNAME</strong></td><td>名前 → 別の名前（別名）</td><td><code>www.shop.example.com. CNAME shop.example.com.</code></td></tr>
+        <tr><td><strong>MX</strong></td><td>メールの配送先</td><td><code>example.com. MX 10 mail.example.com.</code></td></tr>
+        <tr><td><strong>TXT</strong></td><td>任意の文字列（ドメイン所有確認、SPF など）</td><td><code>example.com. TXT "v=spf1 include:amazonses.com ~all"</code></td></tr>
+        <tr><td><strong>NS</strong></td><td>このドメインを管理する DNS サーバー</td><td><code>example.com. NS ns1.example-dns.net.</code></td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>CNAME はゾーンの頂点（<code>example.com</code> そのもの）には置けず</strong>、同じ名前でほかのレコードと共存することもできません。ロードバランサーのように IP が変わる相手を頂点で指したいときは、Route 53（AWS の DNS サービス）の <strong>エイリアスレコード</strong> や、Cloudflare の CNAME フラットニングを使います。</li>
+      <li><strong>TTL（Time To Live）</strong>：その回答を何秒キャッシュ（一時保存）してよいか。<code>300</code> なら 5 分です。TTL が長いと、IP を変えても古い IP を見続ける人が TTL の間残ります。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">引っ越し前に TTL を下げる</p>
+      <p>サーバーの IP を変える予定があるなら、<strong>数日前に TTL を 300 秒程度に下げておき</strong>、切り替え後に元に戻します。これで切り替えが数分で全体に行き渡ります。</p>
+    </div>
+
+    <h3 id="sec-4-2">4.2 名前解決の流れ</h3>
+    <figure>
+    <svg viewBox="0 0 720 370" role="img" aria-label="ブラウザやOSがフルリゾルバーに shop.example.com の A レコードを問い合わせる。フルリゾルバーはキャッシュになければ、ルートサーバーに聞いて .com のサーバーを教わり、.com のサーバーに聞いて example.com の権威DNSを教わり、権威DNSから 203.0.113.10（TTL 300）を受け取ってブラウザに返す">
+      <defs>
+        <marker id="arw6105b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="130" height="50" rx="8" class="d-box"/>
+      <text x="75" y="40" text-anchor="middle" class="d-text-bold">ブラウザ/OS</text>
+      <rect x="155" y="10" width="130" height="50" rx="8" class="d-box-accent"/>
+      <text x="220" y="32" text-anchor="middle" class="d-text-bold">フルリゾルバー</text>
+      <text x="220" y="50" text-anchor="middle" class="d-text-sub">ISP・8.8.8.8 等</text>
+      <rect x="300" y="10" width="130" height="50" rx="8" class="d-box"/>
+      <text x="365" y="40" text-anchor="middle" class="d-text-bold">ルート</text>
+      <rect x="445" y="10" width="130" height="50" rx="8" class="d-box"/>
+      <text x="510" y="40" text-anchor="middle" class="d-text-bold">.com</text>
+      <rect x="590" y="10" width="125" height="50" rx="8" class="d-box"/>
+      <text x="652" y="32" text-anchor="middle" class="d-text-bold">権威DNS</text>
+      <text x="652" y="50" text-anchor="middle" class="d-text-sub">Route 53 等</text>
+      <path d="M75,60 L75,360" class="d-line-dash"/>
+      <path d="M220,60 L220,360" class="d-line-dash"/>
+      <path d="M365,60 L365,360" class="d-line-dash"/>
+      <path d="M510,60 L510,360" class="d-line-dash"/>
+      <path d="M652,60 L652,360" class="d-line-dash"/>
+
+      <text x="147" y="88" text-anchor="middle" class="d-text-sub">① A は？</text>
+      <path d="M75,98 L218,98" class="d-line" marker-end="url(#arw6105b)"/>
+      <text x="290" y="124" text-anchor="middle" class="d-text-sub">キャッシュにあれば即回答</text>
+
+      <text x="292" y="148" text-anchor="middle" class="d-text-sub">② 問い合わせ</text>
+      <path d="M220,158 L363,158" class="d-line" marker-end="url(#arw6105b)"/>
+      <text x="292" y="178" text-anchor="middle" class="d-text-sub">③ .com へ</text>
+      <path d="M365,188 L222,188" class="d-line" marker-end="url(#arw6105b)"/>
+
+      <text x="365" y="212" text-anchor="middle" class="d-text-sub">④ 問い合わせ</text>
+      <path d="M220,222 L508,222" class="d-line" marker-end="url(#arw6105b)"/>
+      <text x="365" y="242" text-anchor="middle" class="d-text-sub">⑤ 権威DNS（ns1...）へ</text>
+      <path d="M510,252 L222,252" class="d-line" marker-end="url(#arw6105b)"/>
+
+      <text x="436" y="276" text-anchor="middle" class="d-text-sub">⑥ 問い合わせ</text>
+      <path d="M220,286 L650,286" class="d-line" marker-end="url(#arw6105b)"/>
+      <text x="436" y="306" text-anchor="middle" class="d-text-sub">⑦ 203.0.113.10（TTL 300）</text>
+      <path d="M652,316 L222,316" class="d-line" marker-end="url(#arw6105b)"/>
+
+      <text x="147" y="336" text-anchor="middle" class="d-text-sub">⑧ 203.0.113.10</text>
+      <path d="M220,346 L77,346" class="d-line" marker-end="url(#arw6105b)"/>
+    </svg>
+    <figcaption>図：フルリゾルバーが利用者の代わりにルート → .com → 権威 DNS とたどって答えを探す</figcaption>
+    </figure>
+    <ul>
+      <li><strong>フルリゾルバー（キャッシュ DNS）</strong>：利用者の代わりに走り回って答えを探し、TTL の間キャッシュします。</li>
+      <li><strong>権威 DNS サーバー（authoritative）</strong>：そのドメインの「正解」を持っているサーバーです。Route 53 や Cloudflare、お名前.com の DNS など、<strong>あなたがレコードを登録する場所</strong> がこれです。</li>
+      <li>ブラウザ・OS・リゾルバーの各段にキャッシュがあるので、変更がすぐ反映されないのは TTL のせいです。</li>
+    </ul>
+    <p>DNS サーバー自体を運用する側の話（BIND の設定など）は <a href="10-7_非機能要件を支えるサーバー.html">10-7 非機能要件を支えるサーバー</a> で触れます。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>shop.example.com をサーバーに向ける手順</h2>
+    <ol class="steps">
+      <li><strong>ドメインを取得する</strong>：レジストラ（ドメインを販売・登録する事業者。お名前.com、Route 53、Cloudflare Registrar など）で <code>example.com</code> を購入します。</li>
+      <li><strong>権威 DNS を決める</strong>：レジストラ付属の DNS をそのまま使うか、Route 53 などにホストゾーン（ドメインのレコードをまとめる入れ物）を作り、レジストラ側で <strong>NS レコード（ネームサーバー）</strong> をそちらに向けます。</li>
+      <li><strong>サーバーの固定 IP を確認する</strong>：EC2 なら <strong>Elastic IP</strong>（固定のパブリック IP）を割り当てます。停止・起動でパブリック IP が変わるためです。VPS は通常、最初から固定です。</li>
+      <li><strong>レコードを登録する</strong>（下のコード）。</li>
+      <li><strong>反映を確認する</strong>（下のコード）。</li>
+      <li><strong>ファイアウォールで 80/443 を開け、Nginx で <code>server_name shop.example.com</code> を設定</strong> します（<a href="20-2_Nginx入門.html">20-2 Nginx入門</a>）。</li>
+      <li><strong>HTTPS 証明書を取得</strong> します。Let's Encrypt は、DNS が正しく向いていないと証明書を発行できません（<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>）。</li>
+    </ol>
+    <span class="code-label">手順 4：レコードを登録する</span>
+<pre><code>shop.example.com.      300  IN  A      203.0.113.10
+api.shop.example.com.  300  IN  A      203.0.113.10</code></pre>
+    <span class="code-label">手順 5：反映を確認する</span>
+<pre><code>dig +short shop.example.com          # 203.0.113.10 が返れば OK
+dig shop.example.com @8.8.8.8        # 特定のリゾルバーで確認</code></pre>
+
+    <h2 id="sec-6"><span class="num">6.</span>疎通確認コマンド</h2>
+    <p>「繋がらない」ときは、<strong>外側から順に</strong> 切り分けます。DNS → 経路 → ポートとアプリ → サーバー内、の順です。</p>
+<pre><code># ① 名前は正しく引けるか（DNS）
+dig shop.example.com +short
+dig shop.example.com            # ANSWER SECTION と TTL を確認
+
+# ② その IP に届くか（ネットワーク）
+ping -c 4 203.0.113.10          # ※ICMP を遮断しているサーバーも多いので、失敗＝停止とは限らない
+traceroute 203.0.113.10         # 途中のどこで止まるか（sudo apt install traceroute）
+
+# ③ ポートが開いていて HTTP が返るか（アプリ）
+curl -v https://shop.example.com/
+#   * Connected to shop.example.com (203.0.113.10) port 443   ← TCP 接続成功
+#   * SSL connection using TLSv1.3 ...                       ← TLS 成功
+#   &lt; HTTP/2 200                                             ← HTTP 応答
+curl -I http://127.0.0.1:3000/health   # サーバー内から API に直接（Nginx を介さず）
+
+# ④ サーバー側で、誰がどのアドレス:ポートで待っているか
+sudo ss -tlnp
+#   State  Local Address:Port  Process
+#   LISTEN 0.0.0.0:443         users:(("nginx",pid=812,...))
+#   LISTEN 127.0.0.1:3000      users:(("node",pid=1033,...))
+#   LISTEN 127.0.0.1:5432      users:(("postgres",pid=640,...))</code></pre>
+    <p><code>ss</code> のオプションは、<code>-t</code>（TCP）、<code>-l</code>（listen 中のみ）、<code>-n</code>（名前解決せず数字で表示）、<code>-p</code>（プロセスを表示）です。<code>ping</code> が使う <strong>ICMP</strong> は、通信の到達確認やエラー通知に使うプロトコルです。</p>
+
+    <h3 id="sec-6-1">6.1 症状別の原因と確認</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>症状</th><th>よくある原因</th><th>確認</th></tr></thead>
+      <tbody>
+        <tr><td><code>dig</code> で IP が返らない / 古い IP</td><td>レコード未登録、NS の向き先違い、TTL キャッシュ</td><td><code>dig @権威DNS</code>、<code>dig NS example.com</code></td></tr>
+        <tr><td><code>curl</code> がタイムアウト</td><td>ファイアウォール / セキュリティグループで閉じている</td><td><code>sudo ufw status</code>、クラウドのコンソール</td></tr>
+        <tr><td><code>curl</code> が <code>Connection refused</code></td><td>そのポートで誰も listen していない</td><td><code>sudo ss -tlnp</code>、<code>systemctl status nginx</code></td></tr>
+        <tr><td><code>502 Bad Gateway</code></td><td>Nginx は動いているが、裏の API が落ちている</td><td><code>curl 127.0.0.1:3000</code>、<code>journalctl -u shop-api</code></td></tr>
+        <tr><td>サーバー内からは繋がるが、外から繋がらない</td><td>アプリが <code>127.0.0.1</code> で listen している（意図どおりか確認）</td><td><code>ss -tlnp</code> の Local Address</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">タイムアウトと Connection refused の違い</p>
+      <p><strong>タイムアウトは途中で捨てられている（ファイアウォール）</strong>、<strong>refused はサーバーまで届いたが待ち受けがいない（プロセス未起動・ポート違い）</strong> というヒントになります。この違いは重要です。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td>DNS を変更したら、すぐ全員に反映される</td><td>TTL の間は各地のキャッシュが古い値を返す。変更前に TTL を短くしておく</td></tr>
+        <tr><td><code>ping</code> が通らない＝サーバーが落ちている</td><td>ICMP を遮断しているだけのことも多い（AWS のセキュリティグループは既定で ICMP を許可しない）。<code>curl</code> で実際のポートを確認する</td></tr>
+        <tr><td>アプリは <code>0.0.0.0</code> で listen しておけば安心</td><td>外部に公開されてしまう。Nginx の裏にいる API や同居の DB は <code>127.0.0.1</code> で待つ。逆にコンテナ内では <code>0.0.0.0</code> が必要</td></tr>
+        <tr><td>EC2 の <code>ip addr</code> にグローバル IP が出ないのは設定ミス</td><td>AWS は NAT で 1 対 1 変換しているので、OS にはプライベート IP しか見えないのが正常</td></tr>
+        <tr><td>CNAME で <code>example.com</code>（頂点）をロードバランサーに向ければいい</td><td>頂点には CNAME を置けない。エイリアスレコードなどを使う</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>IP アドレスは住所、ポートは部屋番号、DNS は住所録。</li>
+      <li>プライベート IP（10/8・172.16/12・192.168/16）は外から直接届かない。NAT で外に出る。CIDR の <code>/</code> の後の数字が大きいほど範囲は狭い。</li>
+      <li>1024 未満のポートは特権が必要。だから Nginx が 80/443 を受け、API は <code>127.0.0.1:3000</code> で内側に隠す。</li>
+      <li>DNS は A / AAAA / CNAME / TTL を押さえる。ドメインを向けるのは「権威 DNS に A レコードを登録」すること。</li>
+      <li>疎通確認は DNS（<code>dig</code>）→ 経路（<code>ping</code> <code>traceroute</code>）→ ポートとアプリ（<code>curl -v</code>）→ サーバー内（<code>ss -tlnp</code>）の順に切り分ける。</li>
+    </ul>
+    <p>次の <a href="10-6_DHCPとNTP.html">10-6 DHCPとNTP</a> では、IP アドレスの自動割り当てと時刻同期を扱います。80/443 で待ち受ける Web サーバーは <a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a> から始まります。</p>
+
+    <h2 id="sec-quiz"><span class="num">9.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. <code>10.0.1.0/24</code> には何個のアドレスが含まれますか？ また <code>0.0.0.0/0</code> は何を意味しますか？</summary>
+      <div class="body"><p><code>2^(32-24) = 256</code> 個（<code>10.0.1.0</code>〜<code>10.0.1.255</code>）です。<code>0.0.0.0/0</code> は固定ビットが 0 なので「すべての IPv4 アドレス」、つまり「どこからでも」を意味します。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 新しく立てたサーバーで <code>curl https://shop.example.com</code> が <code>Connection refused</code> になりました。タイムアウトの場合と比べて、まず何を疑いますか？</summary>
+      <div class="body"><p>パケットはサーバーまで届いているが、443 番で待ち受けているプロセスがいない可能性が高いです。<code>sudo ss -tlnp</code> で 443 の listen を確認し、<code>systemctl status nginx</code> で Nginx が起動しているか、HTTPS の設定が読み込まれているかを確認します。タイムアウトなら、まずファイアウォールやセキュリティグループを疑います。</p></div>
+    </details>
+    <details>
+      <summary>Q3. Shop API を <code>0.0.0.0:3000</code> で listen させ、ファイアウォールでも 3000 番を開けていました。何が問題ですか？</summary>
+      <div class="body"><p>インターネットから Nginx を経由せずに API へ直接アクセスできてしまいます。HTTPS（暗号化）や Nginx 側のアクセス制限・レート制限をすり抜けられるため危険です。API は <code>127.0.0.1:3000</code> で listen させ、3000 番は外に開けないようにします。</p></div>
+    </details>
+    <details>
+      <summary>Q4. サーバーの IP を変更する予定があります。DNS について事前にしておくとよいことは？</summary>
+      <div class="body"><p>数日前に A レコードの TTL を 300 秒程度に下げておきます。TTL の間は各地のキャッシュが古い IP を返し続けるため、短くしておくと切り替えが数分で行き渡ります。切り替え後は TTL を元に戻します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. EC2 で <code>ip addr</code> を実行したら、グローバル IP が表示されず <code>10.0.1.23</code> だけが出ました。設定ミスですか？</summary>
+      <div class="body"><p>設定ミスではありません。AWS ではインターネットゲートウェイがプライベート IP とパブリック IP を 1 対 1 で NAT 変換しているので、OS からはプライベート IP しか見えないのが正常です。</p></div>
+    </details>
+    <details>
+      <summary>Q6. Node.js アプリをコンテナに入れたら、ホストから繋がらなくなりました。listen アドレスの観点で考えられる原因は？</summary>
+      <div class="body"><p>コンテナ内で <code>127.0.0.1</code> で listen していると、コンテナの外（ホスト）からは届きません。コンテナ内では <code>0.0.0.0</code> で listen する必要があります。</p></div>
+    </details>
+    <details>
+      <summary>Q7. <code>example.com</code>（ゾーンの頂点）を、IP が変わるロードバランサーに向けたいとき、CNAME を使えますか？</summary>
+      <div class="body"><p>使えません。CNAME はゾーンの頂点には置けず、同じ名前でほかのレコードと共存もできません。Route 53 のエイリアスレコードや Cloudflare の CNAME フラットニングを使います。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：docs/61_サーバー・インフラ/10_サーバーの基礎/05_ネットワークの基本（IP・ポート・DNS）.md</li>
+      <li>RFC 1918: Address Allocation for Private Internets https://www.rfc-editor.org/rfc/rfc1918</li>
+      <li>RFC 5737: IPv4 Address Blocks Reserved for Documentation https://www.rfc-editor.org/rfc/rfc5737</li>
+      <li>IANA: Service Name and Transport Protocol Port Number Registry https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml</li>
+      <li>Amazon VPC: Subnet CIDR blocks https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html</li>
+      <li>Amazon Route 53: Choosing between alias and non-alias records https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resource-record-sets-choosing-alias-non-alias.html</li>
+      <li>PostgreSQL docs: Connections and Authentication (listen_addresses) https://www.postgresql.org/docs/current/runtime-config-connection.html</li>
+      <li>ss(8) — Linux manual page https://man7.org/linux/man-pages/man8/ss.8.html</li>
+      <li>関連ページ：<a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a>、<a href="10-6_DHCPとNTP.html">10-6 DHCPとNTP</a>、<a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a>、<a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>、<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>、<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a></li>
+      <li>関連ノート（HTML なし）：53_コンテナの「Dockerとは」、11_コンピューターサイエンスのコンピューターサイエンス体系（TCP/IP・ルーティングなどの深掘り）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="10-4_Linuxサーバーの基本.html"><span class="lbl">← 前のページ</span>Linuxサーバーの基本</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-6_DHCPとNTP.html"><span class="lbl">次のページ →</span>DHCPとNTP</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

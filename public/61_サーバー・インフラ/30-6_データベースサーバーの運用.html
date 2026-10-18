@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>データベースサーバーの運用｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 アプリ実行環境 › データベースサーバーの運用</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 アプリ実行環境</span>
+      <h1>データベースサーバーの運用</h1>
+      <p class="lead">データベース（DB）は、失ったら二度と戻らないデータそのものを預かるサーバーです。このページでは、DB サーバーをアプリサーバーと分ける理由、Ubuntu 24.04 に PostgreSQL を入れて <strong>外部接続・認証・最小権限のロール</strong> を設定する手順、メモリ設定の基本（<code>shared_buffers</code> など）と接続数の問題を解く <strong>PgBouncer</strong>、バックアップ・レプリカ・監視の要点、RDS / Aurora / Cloud SQL などマネージド DB の選び方、MySQL との運用面の違いを解説します。最後に「MySQL はセキュリティが弱いのか」という疑問を、動画メモをもとに整理します。</p>
+      <p class="meta">もとにしたノート：docs/61_サーバー・インフラ/30_アプリ実行環境/06_データベースサーバーの運用、docs/61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/MySQLはセキュリティが弱いのか（IT技術屋のボヤキ、動画 https://www.youtube.com/watch?v=atj_i_u0YaU）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>データベースサーバーは、お店の <strong>「金庫と帳簿を預かる倉庫」</strong> です。売り場（アプリサーバー）は壊れても建て直せますが、倉庫の中身（注文・顧客データ）は失ったら二度と戻りません。だから倉庫は売り場と別の建物にし、鍵を厳重にし（認証・最小権限）、出入りの人数を制限し（接続数）、毎日コピーを取って（バックアップ）、本当にそのコピーで復元できるかを確かめます。</p>
+    </div>
+
+    <p>このページでは、Shop の PostgreSQL を <strong>「アプリと同居」から「専用 DB サーバー」へ移し、安全に運用する</strong> までを扱います。<a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a> と <a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a> を読んでいると理解しやすいです。DB そのものの理論（トランザクション、インデックス、WAL など）は、データアーキテクチャ体系のノートで扱います。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>DB サーバーを分ける理由</h2>
+    <p>最初の Shop は 1 台に Nginx・Shop API・PostgreSQL が同居していました。成長に伴い、DB を別サーバー（またはマネージド DB）に分けます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>理由</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>性格の違い</strong></td><td>アプリはステートレス（いつでも作り直せる）、DB は <strong>ステートフル</strong>（データそのもの）。扱い方を分けたい</td></tr>
+        <tr><td><strong>リソースの奪い合い</strong></td><td>DB はメモリ（キャッシュ）とディスク I/O を大量に使う。アプリの負荷が上がると DB も遅くなり、逆もしかり</td></tr>
+        <tr><td><strong>スケールの方向が違う</strong></td><td>アプリは台数を増やす（水平）、DB は基本的に 1 台を強くする（垂直）＋読み取りレプリカ</td></tr>
+        <tr><td><strong>セキュリティ</strong></td><td>DB はインターネットから一切見えないプライベートサブネットに置ける</td></tr>
+        <tr><td><strong>運用の独立</strong></td><td>アプリの再起動・デプロイで DB を巻き込まない。DB のメンテナンス時間を別に計画できる</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="インターネットからパブリックサブネットのロードバランサーへ。ロードバランサーはプライベートサブネット 10.0.1.0/24 の Shop API #1 と #2 に振り分ける。各 Shop API は手元の PgBouncer を通り、5432/tcp だけ許可された経路で、DB 用プライベートサブネット 10.0.2.0/24 の PostgreSQL プライマリ 10.0.2.10 に接続する。プライマリはストリーミングレプリケーションでレプリカにデータを送る">
+      <defs>
+        <marker id="arrow-30-6a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="30" width="150" height="150" rx="8" class="d-box"/>
+      <text x="85" y="52" text-anchor="middle" class="d-text-sub">パブリックサブネット</text>
+      <rect x="25" y="80" width="120" height="56" rx="8" class="d-box-accent"/>
+      <text x="85" y="104" text-anchor="middle" class="d-text-bold">ロード</text>
+      <text x="85" y="124" text-anchor="middle" class="d-text-bold">バランサー</text>
+      <text x="85" y="18" text-anchor="middle" class="d-text-sub">Internet から</text>
+      <path d="M85,22 L85,78" class="d-line" marker-end="url(#arrow-30-6a)"/>
+
+      <rect x="200" y="10" width="290" height="230" rx="8" class="d-box"/>
+      <text x="345" y="32" text-anchor="middle" class="d-text-sub">プライベート（アプリ）10.0.1.0/24</text>
+      <rect x="215" y="50" width="120" height="50" rx="8" class="d-box-good"/>
+      <text x="275" y="80" text-anchor="middle" class="d-text-bold">Shop API #1</text>
+      <rect x="355" y="50" width="120" height="50" rx="8" class="d-box"/>
+      <text x="415" y="80" text-anchor="middle" class="d-text-bold">PgBouncer</text>
+      <rect x="215" y="150" width="120" height="50" rx="8" class="d-box-good"/>
+      <text x="275" y="180" text-anchor="middle" class="d-text-bold">Shop API #2</text>
+      <rect x="355" y="150" width="120" height="50" rx="8" class="d-box"/>
+      <text x="415" y="180" text-anchor="middle" class="d-text-bold">PgBouncer</text>
+      <path d="M145,100 L213,75" class="d-line" marker-end="url(#arrow-30-6a)"/>
+      <path d="M145,116 L213,175" class="d-line" marker-end="url(#arrow-30-6a)"/>
+      <path d="M335,75 L353,75" class="d-line" marker-end="url(#arrow-30-6a)"/>
+      <path d="M335,175 L353,175" class="d-line" marker-end="url(#arrow-30-6a)"/>
+
+      <rect x="530" y="10" width="180" height="310" rx="8" class="d-box"/>
+      <text x="620" y="32" text-anchor="middle" class="d-text-sub">プライベート（DB）</text>
+      <text x="620" y="48" text-anchor="middle" class="d-text-sub">10.0.2.0/24</text>
+      <rect x="545" y="90" width="150" height="60" rx="8" class="d-box-accent"/>
+      <text x="620" y="116" text-anchor="middle" class="d-text-bold">PostgreSQL</text>
+      <text x="620" y="136" text-anchor="middle" class="d-text-sub">primary 10.0.2.10</text>
+      <rect x="545" y="240" width="150" height="56" rx="8" class="d-box"/>
+      <text x="620" y="273" text-anchor="middle" class="d-text-bold">replica</text>
+      <path d="M475,75 L543,110" class="d-line" marker-end="url(#arrow-30-6a)"/>
+      <path d="M475,175 L543,135" class="d-line" marker-end="url(#arrow-30-6a)"/>
+      <text x="420" y="270" text-anchor="middle" class="d-text-sub">5432/tcp のみ許可</text>
+      <path d="M620,150 L620,238" class="d-line-dash" marker-end="url(#arrow-30-6a)"/>
+      <text x="615" y="190" class="d-text-sub">ストリーミング</text>
+      <text x="615" y="208" class="d-text-sub">レプリケーション</text>
+    </svg>
+    <figcaption>図：DB はインターネットから見えないプライベートサブネットに置き、アプリからの 5432/tcp だけを通す</figcaption>
+    </figure>
+
+    <h2 id="sec-2"><span class="num">2.</span>PostgreSQL のインストールと初期設定</h2>
+
+    <h3 id="sec-2-1">2.1 インストール</h3>
+    <p>Ubuntu 24.04 の標準リポジトリには PostgreSQL 16 が入っています（2026 年時点）。より新しいメジャーバージョンが必要なら、PostgreSQL 公式の apt リポジトリ（PGDG）を追加します。</p>
+<pre><code>sudo apt update
+sudo apt install -y postgresql          # Ubuntu 24.04 では 16 系が入る
+sudo systemctl status postgresql        # 自動で起動・enable される
+pg_lsclusters                           # クラスタ（16/main）の状態とポート</code></pre>
+    <p>Ubuntu（Debian 系）のパッケージでは、ファイルは次のように分かれています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>パス</th></tr></thead>
+      <tbody>
+        <tr><td>設定ファイル</td><td><code>/etc/postgresql/16/main/postgresql.conf</code></td></tr>
+        <tr><td>認証設定</td><td><code>/etc/postgresql/16/main/pg_hba.conf</code></td></tr>
+        <tr><td>データ（クラスタ本体）</td><td><code>/var/lib/postgresql/16/main/</code></td></tr>
+        <tr><td>ログ</td><td><code>/var/log/postgresql/postgresql-16-main.log</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>インストール直後、DB 管理者の <code>postgres</code> ロールにはパスワードがなく、<strong>同名の OS ユーザーからのローカル接続だけ</strong>（<strong>peer 認証</strong>：OS のユーザー名で本人確認する方式）が許可されています。管理作業は次のように行います。</p>
+<pre><code>sudo -u postgres psql</code></pre>
+
+    <h3 id="sec-2-2">2.2 listen_addresses：どこで待ち受けるか</h3>
+    <p>既定値は <code>localhost</code> で、同じサーバー内からしか接続できません。DB を別サーバーに分けたら、アプリから届くインターフェースで待ち受けるようにします。</p>
+<pre><code># /etc/postgresql/16/main/postgresql.conf
+listen_addresses = 'localhost,10.0.2.10'   # プライベート IP だけ。'*' は避ける
+port = 5432</code></pre>
+    <p><code>listen_addresses</code> の変更は <strong>再起動が必要</strong> です（<code>sudo systemctl restart postgresql</code>）。</p>
+    <div class="callout bad">
+      <p class="callout-title">DB ポートをインターネットに公開しない</p>
+      <p><code>listen_addresses = '*'</code> に加えてファイアウォールやクラウドのセキュリティグループで 5432 を <code>0.0.0.0/0</code> に開けてしまうのは、情報漏えい事故の典型パターンです。DB は <strong>待ち受けアドレス・pg_hba.conf・ファイアウォールの 3 重</strong> で守ります（<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>）。</p>
+    </div>
+
+    <h3 id="sec-2-3">2.3 pg_hba.conf：誰がどこから入れるか</h3>
+    <p><code>pg_hba.conf</code>（host-based authentication）は、<strong>接続の種類・DB・ユーザー・接続元アドレス・認証方式</strong> の組み合わせを上から順に照合し、最初にマッチした行を使います。</p>
+<pre><code># TYPE    DATABASE  USER       ADDRESS          METHOD
+local     all       postgres                    peer
+local     all       all                         peer
+host      all       all        127.0.0.1/32     scram-sha-256
+# Shop API サブネットから、shop DB へ、shop_app だけ、TLS 必須
+hostssl   shop      shop_app   10.0.1.0/24      scram-sha-256
+# マイグレーション用ユーザーは踏み台サーバーからだけ
+hostssl   shop      shop_owner 10.0.0.5/32      scram-sha-256</code></pre>
+    <ul>
+      <li><code>hostssl</code> は TLS で暗号化された接続だけにマッチします。Ubuntu のパッケージは自己署名証明書で <code>ssl = on</code> になっていますが、正式な証明書に差し替えるのが望ましいです。</li>
+      <li>認証方式は <code>scram-sha-256</code> を使います。PostgreSQL 14 以降は <code>password_encryption</code> の既定値が <code>scram-sha-256</code> で、<code>md5</code> は非推奨です。<code>trust</code>（パスワードなし）は本番では使いません。</li>
+      <li>変更は <strong>リロードで反映</strong> されます（<code>sudo systemctl reload postgresql</code> または <code>SELECT pg_reload_conf();</code>）。<code>SELECT * FROM pg_hba_file_rules;</code> で書式エラーを確認できます。</li>
+    </ul>
+
+    <h3 id="sec-2-4">2.4 ロール作成と最小権限</h3>
+    <p>アプリが <strong>スーパーユーザー（<code>postgres</code>）で接続するのは厳禁</strong> です。SQL インジェクションが 1 つあるだけで、全 DB の削除やサーバー上でのコマンド実行まで可能になります（<a href="../72_Web脆弱性対策/20-3_SQLインジェクション.html">72 SQLインジェクション</a>）。役割ごとに <strong>ロール</strong>（PostgreSQL ではユーザーとグループを合わせて「ロール」と呼ぶ）を分けます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ロール</th><th>用途</th><th>権限</th></tr></thead>
+      <tbody>
+        <tr><td><code>shop_owner</code></td><td>テーブルの所有者。マイグレーション（スキーマ変更）で使う</td><td><code>app</code> スキーマの所有者</td></tr>
+        <tr><td><code>shop_app</code></td><td>Shop API が普段使う</td><td>データの読み書き（SELECT/INSERT/UPDATE/DELETE）だけ。DROP や ALTER は不可</td></tr>
+        <tr><td><code>shop_readonly</code></td><td>分析・調査用</td><td>SELECT だけ</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>-- sudo -u postgres psql で実行
+CREATE ROLE shop_owner LOGIN PASSWORD '...';
+CREATE ROLE shop_app   LOGIN PASSWORD '...' CONNECTION LIMIT 50;
+CREATE ROLE shop_readonly LOGIN PASSWORD '...';
+
+CREATE DATABASE shop OWNER shop_owner ENCODING 'UTF8' TEMPLATE template0;
+
+\c shop
+-- 誰でも接続できる既定の権限を外す
+REVOKE ALL ON DATABASE shop FROM PUBLIC;
+GRANT CONNECT ON DATABASE shop TO shop_app, shop_readonly;
+
+-- アプリ用スキーマを shop_owner 所有で作る
+CREATE SCHEMA app AUTHORIZATION shop_owner;
+GRANT USAGE ON SCHEMA app TO shop_app, shop_readonly;
+
+-- 「今後 shop_owner が作るテーブル」にも自動で権限が付くようにする
+ALTER DEFAULT PRIVILEGES FOR ROLE shop_owner IN SCHEMA app
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO shop_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE shop_owner IN SCHEMA app
+  GRANT USAGE, SELECT ON SEQUENCES TO shop_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE shop_owner IN SCHEMA app
+  GRANT SELECT ON TABLES TO shop_readonly;
+
+-- アプリが使うスキーマの検索順
+ALTER ROLE shop_app SET search_path = app;</code></pre>
+    <ul>
+      <li>PostgreSQL 15 以降は、新規 DB の <code>public</code> スキーマに一般ユーザーがテーブルを作れなくなりました（以前は誰でも作れた）。古いバージョンから移行した DB では <code>REVOKE CREATE ON SCHEMA public FROM PUBLIC;</code> を実行しておきます。</li>
+      <li>パスワードは <a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a> の方法で保管し、<code>DATABASE_URL</code> としてアプリに渡します。</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>メモリ設定と接続数</h2>
+
+    <h3 id="sec-3-1">3.1 メモリ設定の基本</h3>
+    <p>既定値は「どんな小さなマシンでも起動できる」控えめな値なので、専用 DB サーバーでは調整します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パラメータ</th><th>既定値</th><th>意味</th><th>目安（公式ドキュメント等）</th></tr></thead>
+      <tbody>
+        <tr><td><code>shared_buffers</code></td><td>128MB</td><td>PostgreSQL 自身が持つ共有キャッシュ</td><td>RAM 1GB 以上の専用サーバーなら <strong>RAM の 25%</strong> から。40% を超えて効果が出ることはまれ（OS のページキャッシュにも頼るため）</td></tr>
+        <tr><td><code>effective_cache_size</code></td><td>4GB</td><td>「OS キャッシュも含めて使えそうなキャッシュ量」のヒント。実際には確保しない</td><td>RAM の 50〜75% 程度がよく使われる</td></tr>
+        <tr><td><code>work_mem</code></td><td>4MB</td><td>ソートやハッシュ 1 回あたりの作業メモリ</td><td><strong>接続数 × クエリ内の操作数</strong> 倍まで膨らみうるので、上げすぎに注意</td></tr>
+        <tr><td><code>maintenance_work_mem</code></td><td>64MB</td><td>VACUUM・インデックス作成用</td><td><code>work_mem</code> より大きくしてよい。autovacuum ワーカー数倍になる点に注意</td></tr>
+      </tbody>
+    </table></div>
+    <p>RAM 8GB の専用 DB サーバーの出発点の例です。</p>
+<pre><code># /etc/postgresql/16/main/conf.d/tuning.conf （conf.d に分けると管理しやすい）
+shared_buffers = 2GB              # 25%（変更は再起動が必要）
+effective_cache_size = 6GB
+work_mem = 16MB
+maintenance_work_mem = 512MB
+max_connections = 100</code></pre>
+    <p>これらは <strong>出発点</strong> にすぎません。PGTune のような計算ツールで初期値を出し、監視（キャッシュヒット率、一時ファイルの発生、メモリ使用量）を見ながら調整します。</p>
+
+    <h3 id="sec-3-2">3.2 接続数の問題とコネクションプーリング</h3>
+    <p>PostgreSQL は <strong>1 接続ごとに 1 つの OS プロセス</strong> を起動します。接続は「作るのが重く、維持するのにもメモリを使う」ため、<code>max_connections</code>（既定 100）を安易に 1000 などに増やすと、メモリ不足や性能低下を招きます。</p>
+    <p>一方アプリ側は、Shop API が 4 台 × ワーカー 4 プロセス × プール 10 接続 = 160 接続、のように台数を増やすだけで簡単に上限を超えます（<a href="30-1_アプリケーションサーバーとは.html">30-1</a> のコネクションプール参照）。そこで <strong>コネクションプーラー</strong>（多数のアプリ接続を少数の実接続にまとめる中継役）を間に入れます。</p>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="数百のクライアント接続を持つ Shop API が PgBouncer の 6432 番に BEGIN、INSERT、COMMIT を送る。PgBouncer は実接続 20 本を持つ PostgreSQL の 5432 番に、空いている実接続を一時的に割り当てる。結果が返り、トランザクションが終わると実接続はプールへ返される">
+      <defs>
+        <marker id="arrow-30-6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="200" height="56" rx="8" class="d-box"/>
+      <text x="110" y="34" text-anchor="middle" class="d-text-bold">Shop API</text>
+      <text x="110" y="54" text-anchor="middle" class="d-text-sub">数百のクライアント接続</text>
+      <rect x="260" y="10" width="200" height="56" rx="8" class="d-box-accent"/>
+      <text x="360" y="34" text-anchor="middle" class="d-text-bold">PgBouncer</text>
+      <text x="360" y="54" text-anchor="middle" class="d-text-sub">:6432</text>
+      <rect x="510" y="10" width="200" height="56" rx="8" class="d-box"/>
+      <text x="610" y="34" text-anchor="middle" class="d-text-bold">PostgreSQL :5432</text>
+      <text x="610" y="54" text-anchor="middle" class="d-text-sub">実接続 20 本</text>
+      <path d="M110,66 L110,250" class="d-line-dash"/>
+      <path d="M360,66 L360,250" class="d-line-dash"/>
+      <path d="M610,66 L610,250" class="d-line-dash"/>
+      <text x="235" y="98" text-anchor="middle" class="d-text-sub">① BEGIN; INSERT; COMMIT;</text>
+      <path d="M110,108 L358,108" class="d-line" marker-end="url(#arrow-30-6b)"/>
+      <text x="485" y="140" text-anchor="middle" class="d-text-sub">② 空き実接続を割り当て</text>
+      <path d="M360,150 L608,150" class="d-line" marker-end="url(#arrow-30-6b)"/>
+      <text x="485" y="182" text-anchor="middle" class="d-text-sub">③ 結果</text>
+      <path d="M610,192 L362,192" class="d-line-dash" marker-end="url(#arrow-30-6b)"/>
+      <text x="235" y="224" text-anchor="middle" class="d-text-sub">④ 結果（実接続はプールへ返却）</text>
+      <path d="M360,234 L112,234" class="d-line-dash" marker-end="url(#arrow-30-6b)"/>
+    </svg>
+    <figcaption>図：transaction モードでは、トランザクションの間だけ実接続を貸し出す</figcaption>
+    </figure>
+    <p><strong>PgBouncer</strong> は軽量なプーラーで、プールモードは 3 種類あります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>モード</th><th>実接続を占有する期間</th><th>注意</th></tr></thead>
+      <tbody>
+        <tr><td><code>session</code></td><td>クライアントが切断するまで</td><td>全機能が使えるが、節約効果は小さい</td></tr>
+        <tr><td><code>transaction</code></td><td>トランザクションの間だけ</td><td><strong>最もよく使われる</strong>。<code>SET</code> / <code>LISTEN</code> / セッション単位の advisory lock などセッション状態に依存する機能は使えない。プロトコルレベルのプリペアドステートメントは <code>max_prepared_statements</code> を設定すれば利用可</td></tr>
+        <tr><td><code>statement</code></td><td>1 文ごと</td><td>複数文のトランザクション不可。特殊用途</td></tr>
+      </tbody>
+    </table></div>
+<pre><code># /etc/pgbouncer/pgbouncer.ini（sudo apt install pgbouncer）
+[databases]
+shop = host=10.0.2.10 port=5432 dbname=shop
+
+[pgbouncer]
+listen_addr = 127.0.0.1
+listen_port = 6432
+auth_type = scram-sha-256
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = transaction
+max_client_conn = 500       # アプリから受け付ける接続数
+default_pool_size = 20      # DB への実接続数（ユーザー×DB ごと）</code></pre>
+    <p>Shop API の <code>DATABASE_URL</code> を <code>postgres://shop_app:...@127.0.0.1:6432/shop</code> に向けるだけで使えます。PgBouncer を各アプリサーバーに置く方式（1 章の図）と、DB の手前に 1 か所置く方式があります。AWS では <strong>RDS Proxy</strong> が同じ役割のマネージドサービスです。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>バックアップ・レプリカ・監視</h2>
+
+    <h3 id="sec-4-1">4.1 バックアップ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>ツール</th><th>特徴</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td>論理バックアップ</td><td><code>pg_dump</code> / <code>pg_dumpall</code></td><td>SQL レベルのダンプ。バージョン間の移行にも使える。大きな DB では時間がかかり、取得時点にしか戻せない</td><td>小〜中規模の日次バックアップ、移行</td></tr>
+        <tr><td>物理バックアップ＋WAL アーカイブ</td><td><code>pg_basebackup</code>、pgBackRest、WAL-G</td><td>データファイルのコピー＋変更履歴（<strong>WAL</strong>）。<strong>任意の時点に戻せる（PITR：Point-In-Time Recovery）</strong></td><td>本番の本命</td></tr>
+      </tbody>
+    </table></div>
+<pre><code># 論理バックアップ（カスタム形式 -Fc は圧縮され、pg_restore で部分復元も可能）
+sudo -u postgres pg_dump -Fc -d shop -f /var/backups/shop_$(date +%Y%m%d).dump
+
+# 別名の DB に復元して中身を確認する（本番 DB に直接上書きしない）
+sudo -u postgres createdb shop_restore_test
+sudo -u postgres pg_restore -d shop_restore_test /var/backups/shop_20261012.dump</code></pre>
+    <p>実務のポイントは次のとおりです。</p>
+    <ul>
+      <li><strong>バックアップは DB サーバーの外</strong>（S3 などのオブジェクトストレージ、別リージョン）に置く。同じディスクにあるとディスク故障で一緒に消えます。</li>
+      <li><strong>復元テストを定期的に行う</strong>。「バックアップは取れていたが復元できなかった」は非常によくある失敗です。</li>
+      <li>どこまで戻せればよいか（<strong>RPO</strong>：失ってよいデータの時間幅）、何時間で戻せばよいか（<strong>RTO</strong>：復旧までの目標時間）を先に決め、方式を選びます（DR 訓練と RTO・RPO のノート）。</li>
+      <li>PITR の仕組み（WAL とは何か、なぜ任意時点に戻せるのか）は、WAL とクラッシュリカバリのノートを参照してください。</li>
+    </ul>
+
+    <h3 id="sec-4-2">4.2 レプリカの概要</h3>
+    <p>PostgreSQL の <strong>ストリーミングレプリケーション</strong> は、プライマリの WAL をスタンバイ（レプリカ）に送り続けて、ほぼ同じ状態のコピーを保つ仕組みです。</p>
+    <ul>
+      <li><strong>読み取りの分散</strong>：レポートや検索などの重い SELECT をレプリカに逃がせる（ホットスタンバイ）。</li>
+      <li><strong>障害時の切り替え</strong>：プライマリが壊れたらレプリカを昇格（promote）させる。自動化には Patroni などを使う。</li>
+      <li><strong>注意</strong>：既定の非同期レプリケーションでは、レプリカは少し遅れる（レプリケーション遅延）。「書いた直後に読むとレプリカにはまだない」ことを考慮する。レプリカは <strong>バックアップの代わりにならない</strong>（誤って <code>DELETE</code> すればレプリカでも消える）。</li>
+    </ul>
+    <p>冗長化の全体像は <a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a> で扱います。</p>
+
+    <h3 id="sec-4-3">4.3 監視ポイント</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>何を見るか</th><th>確認方法の例</th></tr></thead>
+      <tbody>
+        <tr><td>接続数</td><td><code>max_connections</code> に対する使用率、<code>idle in transaction</code> の滞留</td><td><code>pg_stat_activity</code></td></tr>
+        <tr><td>遅いクエリ</td><td>実行時間・回数の多いクエリ</td><td><code>pg_stat_statements</code> 拡張、<code>log_min_duration_statement = 1000</code>（1 秒以上を記録）</td></tr>
+        <tr><td>キャッシュヒット率</td><td>低下していればメモリ不足やクエリの問題</td><td><code>pg_stat_database</code> の <code>blks_hit</code> / <code>blks_read</code></td></tr>
+        <tr><td>ロック・長時間トランザクション</td><td>他のクエリを待たせている処理、VACUUM を妨げる古いトランザクション</td><td><code>pg_locks</code>、<code>pg_stat_activity.xact_start</code></td></tr>
+        <tr><td>VACUUM</td><td>autovacuum が追いついているか、不要行（dead tuples）の増加</td><td><code>pg_stat_user_tables</code></td></tr>
+        <tr><td>レプリケーション遅延</td><td>レプリカがどれだけ遅れているか</td><td><code>pg_stat_replication</code></td></tr>
+        <tr><td>ディスク</td><td>空き容量（<strong>満杯になると書き込み停止</strong>）、I/O 待ち</td><td>OS の監視、node_exporter</td></tr>
+        <tr><td>バックアップ</td><td>最終成功時刻、復元テストの結果</td><td>バックアップツールのログ</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>-- 今どんなクエリがどれくらい動いているか
+SELECT pid, usename, state, now() - query_start AS duration, left(query, 60)
+FROM pg_stat_activity
+WHERE state &lt;&gt; 'idle'
+ORDER BY duration DESC;</code></pre>
+    <p>監視基盤への組み込み（postgres_exporter + Prometheus など）は、可観測性体系やサーバー監視とログ管理のノートを参照してください。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>マネージド DB との比較と選び方</h2>
+    <p>ここまでの作業（インストール、パッチ適用、バックアップ、レプリカ、フェイルオーバー、監視）の多くを、クラウド事業者に任せられるのが <strong>マネージド DB</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>自前（EC2 / VPS に PostgreSQL）</th><th>Amazon RDS for PostgreSQL</th><th>Amazon Aurora PostgreSQL</th><th>Google Cloud SQL</th></tr></thead>
+      <tbody>
+        <tr><td>OS・DB のパッチ</td><td>自分</td><td>メンテナンスウィンドウで自動</td><td>同左</td><td>同左</td></tr>
+        <tr><td>バックアップ・PITR</td><td>自分で構築</td><td>自動バックアップ＋PITR が標準</td><td>同左（ストレージ層で継続的）</td><td>自動バックアップ＋PITR</td></tr>
+        <tr><td>高可用性</td><td>Patroni 等を自分で</td><td>Multi-AZ（スタンバイへ自動フェイルオーバー）</td><td>ストレージが 3 AZ に 6 コピー、高速フェイルオーバー</td><td>HA 構成（リージョン内の別ゾーン）</td></tr>
+        <tr><td>読み取りレプリカ</td><td>自分で構築</td><td>数クリックで追加</td><td>最大 15 台、遅延が小さい</td><td>追加可能</td></tr>
+        <tr><td>自由度</td><td><strong>最大</strong>（拡張機能・OS 設定すべて）</td><td>一部制限（スーパーユーザー不可、パラメータグループ経由）</td><td>RDS とほぼ同じ制限</td><td>同様の制限</td></tr>
+        <tr><td>コスト</td><td>インスタンス代のみ（＋運用の人件費）</td><td>同スペックの EC2 より割高</td><td>RDS よりさらに高めになりやすい</td><td>RDS と同程度</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>選び方の目安（2026 年時点）</strong> は次のとおりです。</p>
+    <ul>
+      <li><strong>基本はマネージド DB</strong>。DB の運用（特にバックアップ・フェイルオーバー）は失敗したときの被害が大きく、少人数のチームが自前で同等の品質を出すのは大変です。Shop も本番構成では RDS を想定します。</li>
+      <li><strong>自前が向くのは</strong>、マネージドで使えない拡張機能や OS レベルの調整が必要な場合、オンプレミス、コストを極限まで抑えたい小規模・検証環境など。</li>
+      <li><strong>Aurora を選ぶのは</strong>、高い可用性・多数のリードレプリカ・ストレージの自動拡張が必要な場合。小規模ならまず RDS で十分なことが多いです。</li>
+      <li>マネージドでも <strong>責任共有モデル</strong>（クラウド事業者と利用者で守る範囲を分担する考え方）です。ロール設計・最小権限・セキュリティグループ・スロークエリ対策・メジャーバージョンアップの計画は利用者の仕事として残ります。</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>MySQL との違い（運用面）</h2>
+    <p>基本的な考え方（DB を分ける・最小権限・プーリング・バックアップ・監視）は MySQL でも同じです。名前と道具が違う点を押さえておけば、どちらの現場にも入れます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>PostgreSQL</th><th>MySQL（InnoDB）</th></tr></thead>
+      <tbody>
+        <tr><td>既定ポート</td><td>5432</td><td>3306</td></tr>
+        <tr><td>主な設定ファイル（Ubuntu）</td><td><code>/etc/postgresql/16/main/postgresql.conf</code></td><td><code>/etc/mysql/mysql.conf.d/mysqld.cnf</code></td></tr>
+        <tr><td>待ち受けアドレス</td><td><code>listen_addresses</code></td><td><code>bind-address</code></td></tr>
+        <tr><td>接続元の制御</td><td><code>pg_hba.conf</code></td><td>ユーザー定義の <code>'user'@'host'</code> 部分</td></tr>
+        <tr><td>初期の安全化</td><td>ロール設計、<code>public</code> スキーマの権限</td><td><code>mysql_secure_installation</code></td></tr>
+        <tr><td>接続の処理単位</td><td>1 接続 = 1 プロセス</td><td>1 接続 = 1 スレッド</td></tr>
+        <tr><td>主なメモリ設定</td><td><code>shared_buffers</code>（RAM の 25% 目安）</td><td><code>innodb_buffer_pool_size</code>（専用サーバーなら RAM の大部分、公式は最大 80% 程度を例示）</td></tr>
+        <tr><td>変更履歴ログ</td><td>WAL</td><td>binlog（レプリケーション用）＋ redo log</td></tr>
+        <tr><td>論理バックアップ</td><td><code>pg_dump</code></td><td><code>mysqldump</code>、MySQL Shell の dump ユーティリティ</td></tr>
+        <tr><td>物理バックアップ</td><td><code>pg_basebackup</code>、pgBackRest</td><td>Percona XtraBackup、MySQL Enterprise Backup</td></tr>
+        <tr><td>コネクションプーラー</td><td>PgBouncer</td><td>ProxySQL</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">バージョンのサポート期限に注意</p>
+      <p>MySQL 5.7 は 2023 年 10 月、MySQL 8.0 も 2026 年 4 月にサポートが終了しています（2026 年時点の移行先は 8.4 LTS）。PostgreSQL もメジャーバージョンごとに約 5 年でサポートが終わります。サポート切れの DB を使い続けるのは、どの製品でもセキュリティリスクです。「MySQL だから危ない／PostgreSQL だから安全」ではなく、<strong>設定と運用で決まる</strong> という話を、次の章でくわしく整理します。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>発展：MySQL はセキュリティが弱いのか</h2>
+    <p>「MySQL はセキュリティが弱い」とよく言われます。動画「MySQLはセキュリティが弱いのか」（IT技術屋のボヤキ）の結論は、<strong>弱いのは MySQL ではなく設定と運用</strong> だというものです。デフォルト設定のまま使う、権限を緩くする、サポート切れのバージョンを使い続ける——これらが事故の原因であり、PostgreSQL に乗り換えても使い方が同じなら同じ事故が起きます。</p>
+
+    <h3 id="sec-7-1">7.1 弱いと言われる理由</h3>
+    <ul>
+      <li>情報漏洩事故で「MySQL を使っていた」と報道されますが、直接の原因は <strong>設定ミスやアプリケーションの脆弱性</strong> であることが多いです。</li>
+      <li>MySQL は世界で最も使われる DB の 1 つなので、<strong>利用者が多いぶん事故が目立ちます</strong>。PostgreSQL や Oracle でも事故は起きていますが、話題になりにくいのです。</li>
+      <li>事故が起きるとツールのせいにしたくなります（責任転嫁しやすい）。</li>
+    </ul>
+
+    <h3 id="sec-7-2">7.2 弱いのは設定と運用</h3>
+    <p>MySQL のデフォルト設定には、セキュリティより利便性を優先している部分があります。</p>
+    <ul>
+      <li>古いバージョンでは <strong>root パスワードなし</strong> でインストールでき、直後はパスワードなしで root ログインできました（最近のバージョンでは改善）。</li>
+      <li><strong>bind-address</strong> の設定ミスで外部接続を許可してしまう（本来は localhost に限定すべき）。</li>
+      <li>クラウドで <strong>セキュリティグループ</strong> を誤り、MySQL のポートがインターネットに公開される。</li>
+    </ul>
+    <p>中でも <strong>権限設定</strong> が最も致命的です。「面倒だから」「動けばいいから」と全ユーザーに全権限を与えると、それがセキュリティホールになります。</p>
+
+    <h3 id="sec-7-3">7.3 MySQL 5.7 を使い続ける危険性</h3>
+    <ul>
+      <li>MySQL 5.7 は <strong>2023 年 10 月にサポート終了</strong>。以後はセキュリティパッチが出ず、新しい脆弱性が修正されません。</li>
+      <li>それでも本番で 5.7 を動かしている現場は多いです。理由は <strong>5.7 と 8.0 の互換性</strong> の問題（一部挙動が変わりアプリが動かなくなる可能性）と、大規模テスト・本番停止のリスクで、結果として「動いているから触らない」になります。</li>
+      <li>サポート切れソフトを使い続けるのは <strong>時限爆弾を抱えている状態</strong> です。これも MySQL ではなく運用の問題です。</li>
+    </ul>
+
+    <h3 id="sec-7-4">7.4 安全に使うための対策</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対策</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>初期設定</td><td>インストール直後に <strong><code>mysql_secure_installation</code></strong> を実行（root パスワード設定、不要ユーザー・匿名ユーザーの削除など）</td></tr>
+        <tr><td>最小権限の原則</td><td>アプリには SELECT・INSERT・UPDATE・DELETE など必要な権限だけ。DROP は与えない → SQL インジェクションが起きても被害を最小化</td></tr>
+        <tr><td>暗号化</td><td>通信は SSL/TLS、データは透過的データ暗号化（TDE）。個人情報を扱うなら必須</td></tr>
+        <tr><td>監査</td><td>誰がいつ何をしたかを記録し、問題発生時に追跡できるようにする</td></tr>
+        <tr><td>バージョンアップ</td><td>最も大事。最新のセキュリティパッチを適用し、サポート切れは使わない。これができないと他の設定は意味がない</td></tr>
+      </tbody>
+    </table></div>
+    <p>これらは 2 章で PostgreSQL に対して行った「待ち受けアドレス・pg_hba.conf・ファイアウォールの 3 重防御」「最小権限のロール」「TLS 必須」と同じ考え方です。</p>
+
+    <h3 id="sec-7-5">7.5 PostgreSQL なら安全なのか</h3>
+    <ul>
+      <li>答えは No です。デフォルト設定の甘さ、権限の設定ミス、古いバージョンの放置は PostgreSQL でも起きます。</li>
+      <li>「エンタープライズ向けだから」「設計思想が堅牢だから」という主張は、根拠が曖昧なことが多いです。</li>
+      <li>Oracle・SQL Server・PostgreSQL・MySQL のどれでも、設定を間違えれば危険、正しく設定すれば安全です。脆弱性の発見頻度や対応速度に差はありますが、<strong>設定と運用の影響の方が大きい</strong> のです。</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">DB を乗り換える前に</p>
+      <p>MySQL が弱いと言われるのは、利用者が多く事故が目立つからです。事故の多くは設定・権限・古いバージョン放置という運用ミスが原因で、対策は初期設定、最小権限、暗号化、監査、そして何よりバージョンアップです。ツールのせいにする前に、自分の設定と運用を見直しましょう。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ 誤解</th><th>◯ 実際</th></tr></thead>
+      <tbody>
+        <tr><td>アプリから <code>postgres</code> ユーザーで接続すれば権限エラーで悩まない</td><td>SQL インジェクション 1 つで全データ削除まで可能になります。アプリ用ロールには DML（SELECT/INSERT/UPDATE/DELETE）だけを与え、スキーマ変更は別ロールで行います。</td></tr>
+        <tr><td>接続数が足りないなら <code>max_connections</code> を増やせばよい</td><td>PostgreSQL は接続ごとにプロセスを作るため、増やしすぎるとメモリ不足や性能低下を招きます。まず PgBouncer / RDS Proxy でプーリングします。</td></tr>
+        <tr><td>レプリカがあるからバックアップは不要</td><td>誤操作の <code>DELETE</code> や <code>DROP</code> はレプリカにも即座に反映されます。過去の時点に戻せるのはバックアップ（PITR）だけです。</td></tr>
+        <tr><td>バックアップのジョブが成功していれば安心</td><td>実際に復元してみるまで、使えるかどうかは分かりません。定期的に別環境へ復元するテストを行います。</td></tr>
+        <tr><td>マネージド DB なら運用は何もしなくてよい</td><td>パッチやバックアップは任せられますが、権限設計・ネットワーク制御・クエリ性能・メジャーバージョンアップは利用者の責任です。</td></tr>
+        <tr><td>MySQL は弱いから PostgreSQL にすれば安全</td><td>どの DB でも、デフォルト設定のまま・権限が緩い・サポート切れのまま使えば危険です。安全さは製品より設定と運用で決まります。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>DB はステートフルで性格がアプリと違うため、別サーバー（またはマネージド DB）に分け、プライベートネットワークに置く</li>
+      <li>PostgreSQL は <code>listen_addresses</code>・<code>pg_hba.conf</code>（<code>hostssl</code> ＋ <code>scram-sha-256</code>）・ファイアウォールの 3 重で守り、アプリには最小権限のロールを使わせる</li>
+      <li>メモリは <code>shared_buffers</code> を RAM の 25% 程度から始め、<code>work_mem</code> は接続数倍に膨らむことに注意して監視しながら調整する</li>
+      <li>接続はプロセス単位で重いので、PgBouncer（transaction モード）や RDS Proxy でプーリングする</li>
+      <li>バックアップは外部保管と定期的な復元テストが必須。任意時点への復元は物理バックアップ＋WAL（PITR）。レプリカはバックアップの代わりにならない</li>
+      <li>少人数のチームでは基本的にマネージド DB（RDS / Aurora / Cloud SQL）を選び、権限設計や性能監視に集中する</li>
+      <li>「MySQL だから危ない」のではなく、どの DB でも初期設定・最小権限・暗号化・監査・バージョンアップという設定と運用で安全さが決まる</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. pg_hba.conf に hostssl shop shop_app 10.0.1.0/24 scram-sha-256 を追加したのに、アプリサーバー（10.0.1.20）から接続できません。listen_addresses は localhost のままです。何が原因で、どう直しますか？</summary>
+      <div class="body"><p>PostgreSQL が localhost でしか待ち受けていないため、そもそも外部からの TCP 接続が届いていません。<code>listen_addresses = 'localhost,10.0.2.10'</code> のようにプライベート IP を追加し、<strong>再起動</strong> します（<code>pg_hba.conf</code> はリロードで反映されますが、<code>listen_addresses</code> は再起動が必要）。ファイアウォールやセキュリティグループで 10.0.1.0/24 からの 5432/tcp が許可されているかも確認します。</p></div>
+    </details>
+    <details>
+      <summary>Q2. Shop API を 10 台に増やしたら FATAL: sorry, too many clients already が出るようになりました。max_connections を 1000 にする以外の対策は何ですか？</summary>
+      <div class="body"><p>PgBouncer（transaction モード）や RDS Proxy などのコネクションプーラーを導入し、多数のアプリ接続を少数の実接続に集約します。あわせて各アプリのプールサイズを見直し、<code>idle in transaction</code> のまま接続を握り続けるコードがないかも確認します。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 開発者が誤って本番の orders テーブルを DELETE しました。プライマリとレプリカの構成で、毎日深夜に pg_dump を取っています。この場合の問題点と、より望ましい構成は何ですか？</summary>
+      <div class="body"><p>レプリカにも削除が反映されているため役に立たず、<code>pg_dump</code> からの復元では前日深夜以降のデータが失われます。物理バックアップ＋WAL アーカイブ（pgBackRest など、またはマネージド DB の自動バックアップ）で PITR を可能にし、削除直前の時点に戻せるようにするのが望ましいです。</p></div>
+    </details>
+    <details>
+      <summary>Q4. アプリ用に shop_app、マイグレーション用に shop_owner とロールを分けるのはなぜですか？</summary>
+      <div class="body"><p>最小権限のためです。アプリが普段使うロールにはデータの読み書き（SELECT/INSERT/UPDATE/DELETE）だけを与え、DROP や ALTER はできないようにします。SQL インジェクションが起きても、テーブル削除やスキーマ変更まではされずに済みます。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 少人数のチームが本番の DB を用意するとき、基本的にマネージド DB を選ぶのはなぜですか？ 選んでも利用者に残る仕事は何ですか？</summary>
+      <div class="body"><p>バックアップ・PITR・フェイルオーバー・パッチ適用といった、失敗したときの被害が大きい作業を任せられるからです。ただし責任共有モデルなので、ロール設計・最小権限・セキュリティグループ・スロークエリ対策・メジャーバージョンアップの計画は利用者の仕事として残ります。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 「MySQL はセキュリティが弱いから PostgreSQL に乗り換えよう」という提案に、どう答えますか？</summary>
+      <div class="body"><p>乗り換えだけでは解決しません。事故の多くは、デフォルト設定のまま使う、権限を緩くする、サポート切れのバージョン（MySQL 5.7 など）を使い続けるといった設定・運用の問題で、PostgreSQL でも同じことが起きます。まず <code>mysql_secure_installation</code>、最小権限、TLS などの暗号化、監査、そして何よりバージョンアップを見直すべきです。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/30_アプリ実行環境/06_データベースサーバーの運用</li>
+      <li>ノート：61_サーバー・インフラ/60_サーバー・ネットワークセキュリティ/MySQLはセキュリティが弱いのか</li>
+      <li>動画：MySQLはセキュリティが弱いのか（IT技術屋のボヤキ） https://www.youtube.com/watch?v=atj_i_u0YaU</li>
+      <li>PostgreSQL Documentation — Resource Consumption（shared_buffers など） https://www.postgresql.org/docs/current/runtime-config-resource.html</li>
+      <li>PostgreSQL Documentation — Connections and Authentication https://www.postgresql.org/docs/current/runtime-config-connection.html</li>
+      <li>PostgreSQL Documentation — The pg_hba.conf File https://www.postgresql.org/docs/current/auth-pg-hba-conf.html</li>
+      <li>PostgreSQL 15 Release Notes（public スキーマの CREATE 権限の変更） https://www.postgresql.org/docs/release/15.0/</li>
+      <li>PostgreSQL Documentation — Backup and Restore https://www.postgresql.org/docs/current/backup.html</li>
+      <li>PostgreSQL Documentation — The Statistics Collector / Cumulative Statistics System https://www.postgresql.org/docs/current/monitoring-stats.html</li>
+      <li>PostgreSQL Versioning Policy https://www.postgresql.org/support/versioning/</li>
+      <li>PgBouncer — Features https://www.pgbouncer.org/features.html</li>
+      <li>Ubuntu Server docs — Install and configure PostgreSQL https://documentation.ubuntu.com/server/how-to/databases/install-postgresql/</li>
+      <li>Amazon RDS for PostgreSQL https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html</li>
+      <li>Amazon Aurora — Overview https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/CHAP_AuroraOverview.html</li>
+      <li>MySQL 8.4 Reference Manual — Configuring InnoDB Buffer Pool Size https://dev.mysql.com/doc/refman/8.4/en/innodb-buffer-pool-resize.html</li>
+      <li>関連ページ：<a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a>、<a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a>、<a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a>、<a href="../72_Web脆弱性対策/20-3_SQLインジェクション.html">72 SQLインジェクション</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-5_設定と環境変数・シークレット.html"><span class="lbl">← 前のページ</span>設定と環境変数・シークレット</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-1_サーバー構築の流れ.html"><span class="lbl">次のページ →</span>サーバー構築の流れ</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

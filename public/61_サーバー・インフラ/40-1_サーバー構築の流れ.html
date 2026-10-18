@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サーバー構築の流れ｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 構築・IaC › サーバー構築の流れ</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 構築・IaC</span>
+      <h1>サーバー構築の流れ</h1>
+      <p class="lead">これまでに学んだ部品（SSH・ファイアウォール・Nginx・Node.js・systemd・DNS・HTTPS など）を、ネットショップ「Shop」のサーバー 1 台に <strong>手作業で組み立てる順番</strong> にまとめます。各ステップの作業と <strong>確かめるコマンド</strong> を対にして示したうえで、手順書を書いても残る手作業の限界（<strong>スノーフレークサーバー</strong>・<strong>構成ドリフト</strong>）、<strong>ペットと家畜</strong>、<strong>イミュータブルインフラ</strong> を説明し、なぜ IaC（Infrastructure as Code）が必要になるのかを見ていきます。</p>
+      <p class="meta">もとにしたノート：40_構築・IaC/01_サーバー構築の流れ</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>サーバー構築は <strong>「安全を固める → 動かす → 公開する → 見守る」</strong> の順で進め、各ステップに <strong>確認方法</strong> をセットにします。1 台なら手作業でも作れますが、<strong>2 台目・作り直し・半年後の変更</strong> で手作業は破綻します。これが IaC へ進む理由です。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>サーバー構築を例えると</h2>
+    <p>サーバー構築は <strong>「引っ越し先の部屋を、住める状態にする作業」</strong> に似ています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>引っ越し</th><th>サーバー構築</th></tr></thead>
+      <tbody>
+        <tr><td>部屋を借りる</td><td>サーバー調達</td></tr>
+        <tr><td>鍵を替える</td><td>ユーザー／SSH の設定</td></tr>
+        <tr><td>戸締まり</td><td>ファイアウォール</td></tr>
+        <tr><td>家具を入れる</td><td>Nginx・ランタイム・アプリ</td></tr>
+        <tr><td>表札を出す</td><td>DNS</td></tr>
+        <tr><td>防犯カメラと保険</td><td>監視・バックアップ</td></tr>
+      </tbody>
+    </table></div>
+    <p>順番を間違えると、たとえば「鍵を替える前に荷物を運び込んで、その間に空き巣に入られる」ようなことが起きます。</p>
+    <ul>
+      <li>構築は <strong>「安全を固める → 動かす → 公開する → 見守る」</strong> の順で進める</li>
+      <li>各ステップには <strong>「できたことを確かめる方法」</strong> がセットで必要</li>
+      <li>1 台なら手作業でも作れるが、<strong>2 台目・作り直し・半年後の変更</strong> で手作業は破綻する。これが IaC へ進む理由</li>
+    </ul>
+    <p>このページは <a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a>、<a href="20-2_Nginx入門.html">20-2 Nginx入門</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> を読んでいると理解しやすくなります。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>Shop を 1 台構築する全体地図</h2>
+    <p>これまでの章で学んだ部品を、実際に組み立てる順番に並べると次のようになります。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="サーバー構築の11ステップ。安全を固める段階として1サーバー調達、2 OS初期設定、3ユーザーとSSH、4ファイアウォール。動かす段階として5 Nginx、6ランタイム、7アプリ配置、8 systemd。公開する段階として9 DNS、10 HTTPS。見守る段階として11監視・バックアップ。">
+      <defs>
+        <marker id="arw401a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="20" y="28" class="d-text-bold">安全を固める</text>
+      <rect x="20" y="40" width="150" height="54" rx="8" class="d-box"/>
+      <text x="95" y="63" text-anchor="middle" class="d-text-bold">1. 調達</text>
+      <text x="95" y="82" text-anchor="middle" class="d-text-sub">VPS / EC2</text>
+      <rect x="196" y="40" width="150" height="54" rx="8" class="d-box"/>
+      <text x="271" y="63" text-anchor="middle" class="d-text-bold">2. OS 初期設定</text>
+      <text x="271" y="82" text-anchor="middle" class="d-text-sub">更新・時刻・ホスト名</text>
+      <rect x="372" y="40" width="150" height="54" rx="8" class="d-box"/>
+      <text x="447" y="63" text-anchor="middle" class="d-text-bold">3. ユーザー/SSH</text>
+      <text x="447" y="82" text-anchor="middle" class="d-text-sub">鍵認証・root 禁止</text>
+      <rect x="548" y="40" width="150" height="54" rx="8" class="d-box"/>
+      <text x="623" y="63" text-anchor="middle" class="d-text-bold">4. FW</text>
+      <text x="623" y="82" text-anchor="middle" class="d-text-sub">22/80/443 のみ</text>
+      <path d="M170,67 L194,67" class="d-line" marker-end="url(#arw401a)"/>
+      <path d="M346,67 L370,67" class="d-line" marker-end="url(#arw401a)"/>
+      <path d="M522,67 L546,67" class="d-line" marker-end="url(#arw401a)"/>
+      <path d="M623,94 L623,108 L95,108 L95,128" class="d-line" marker-end="url(#arw401a)"/>
+
+      <text x="20" y="124" class="d-text-bold">動かす</text>
+      <rect x="20" y="130" width="150" height="54" rx="8" class="d-box-accent"/>
+      <text x="95" y="153" text-anchor="middle" class="d-text-bold">5. Nginx</text>
+      <text x="95" y="172" text-anchor="middle" class="d-text-sub">リバースプロキシ</text>
+      <rect x="196" y="130" width="150" height="54" rx="8" class="d-box-accent"/>
+      <text x="271" y="153" text-anchor="middle" class="d-text-bold">6. ランタイム</text>
+      <text x="271" y="172" text-anchor="middle" class="d-text-sub">Node.js / PostgreSQL</text>
+      <rect x="372" y="130" width="150" height="54" rx="8" class="d-box-accent"/>
+      <text x="447" y="153" text-anchor="middle" class="d-text-bold">7. アプリ配置</text>
+      <text x="447" y="172" text-anchor="middle" class="d-text-sub">/opt/shop</text>
+      <rect x="548" y="130" width="150" height="54" rx="8" class="d-box-accent"/>
+      <text x="623" y="153" text-anchor="middle" class="d-text-bold">8. systemd</text>
+      <text x="623" y="172" text-anchor="middle" class="d-text-sub">常駐・自動起動</text>
+      <path d="M170,157 L194,157" class="d-line" marker-end="url(#arw401a)"/>
+      <path d="M346,157 L370,157" class="d-line" marker-end="url(#arw401a)"/>
+      <path d="M522,157 L546,157" class="d-line" marker-end="url(#arw401a)"/>
+      <path d="M623,184 L623,198 L95,198 L95,226" class="d-line" marker-end="url(#arw401a)"/>
+
+      <text x="20" y="220" class="d-text-bold">公開する</text>
+      <rect x="20" y="228" width="150" height="54" rx="8" class="d-box"/>
+      <text x="95" y="251" text-anchor="middle" class="d-text-bold">9. DNS</text>
+      <text x="95" y="270" text-anchor="middle" class="d-text-sub">A レコード</text>
+      <rect x="196" y="228" width="150" height="54" rx="8" class="d-box"/>
+      <text x="271" y="251" text-anchor="middle" class="d-text-bold">10. HTTPS</text>
+      <text x="271" y="270" text-anchor="middle" class="d-text-sub">Let's Encrypt</text>
+      <path d="M170,255 L194,255" class="d-line" marker-end="url(#arw401a)"/>
+      <text x="460" y="220" class="d-text-bold">見守る</text>
+      <rect x="460" y="228" width="238" height="54" rx="8" class="d-box-good"/>
+      <text x="579" y="251" text-anchor="middle" class="d-text-bold">11. 監視・バックアップ</text>
+      <text x="579" y="270" text-anchor="middle" class="d-text-sub">外形監視・ログ・DB バックアップ</text>
+      <path d="M346,255 L458,255" class="d-line" marker-end="url(#arw401a)"/>
+    </svg>
+    <figcaption>図：構築は「安全を固める → 動かす → 公開する → 見守る」の順に 11 ステップで進める</figcaption>
+    </figure>
+
+    <div class="callout tip">
+      <p class="callout-title">DNS と HTTPS の順番</p>
+      <p>Let's Encrypt の <strong>HTTP-01 チャレンジ</strong>（証明書を出す前の本人確認）は「そのドメインが本当にこのサーバーを指しているか」を確認するため、<strong>DNS を先に向けておく必要があります</strong>。図では DNS → HTTPS の順にしています。</p>
+    </div>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>ステップ</th><th>主な作業</th><th>詳しくは</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>サーバー調達</td><td>Ubuntu Server 24.04 LTS のインスタンス作成、固定 IP 割当</td><td><a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a></td></tr>
+        <tr><td>2</td><td>OS 初期設定</td><td><code>apt upgrade</code>、タイムゾーン、ホスト名、自動更新</td><td><a href="10-4_Linuxサーバーの基本.html">10-4 Linuxサーバーの基本</a></td></tr>
+        <tr><td>3</td><td>ユーザー/SSH</td><td>作業ユーザー作成、公開鍵認証、パスワード・root ログイン禁止</td><td><a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a></td></tr>
+        <tr><td>4</td><td>ファイアウォール</td><td>ufw で 22/80/443 だけ許可</td><td><a href="60-3_ファイアウォールとネットワーク制御.html">60-3 ファイアウォールとネットワーク制御</a></td></tr>
+        <tr><td>5</td><td>Nginx</td><td>インストール、<code>proxy_pass</code> で 3000 番へ</td><td><a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a></td></tr>
+        <tr><td>6</td><td>ランタイム</td><td>Node.js LTS、PostgreSQL</td><td><a href="30-2_Node.jsアプリを本番で動かす.html">30-2 Node.jsアプリを本番で動かす</a>、<a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a></td></tr>
+        <tr><td>7</td><td>アプリ配置</td><td>専用ユーザー <code>shop</code>、ビルド、<code>.env</code></td><td><a href="30-5_設定と環境変数・シークレット.html">30-5 設定と環境変数・シークレット</a></td></tr>
+        <tr><td>8</td><td>systemd</td><td>unit ファイル、<code>enable --now</code></td><td><a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a></td></tr>
+        <tr><td>9</td><td>DNS</td><td><code>shop.example.com</code> → サーバーの IP</td><td><a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a></td></tr>
+        <tr><td>10</td><td>HTTPS</td><td>certbot で証明書取得・自動更新</td><td><a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a></td></tr>
+        <tr><td>11</td><td>監視・バックアップ</td><td>死活監視、ログ、DB の定期バックアップ</td><td>66_可観測性の「サーバー監視とログ管理の基本」、69_SRE・インシデント対応の「DR訓練とRTO・RPO」のノート</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-3"><span class="num">3.</span>各ステップの作業と確認方法</h2>
+    <p>ここでは「何を打つか」と「どう確かめるか」を対にして示します。細かい設定の意味は各ページに任せ、<strong>流れをつかむ</strong> ことを優先します。</p>
+
+    <h3 id="sec-3-1">3.1 OS 初期設定（ステップ 2）</h3>
+<pre><code>sudo apt update &amp;&amp; sudo apt upgrade -y
+sudo timedatectl set-timezone Asia/Tokyo
+sudo hostnamectl set-hostname shop-web-01
+sudo apt install -y unattended-upgrades   # セキュリティ更新の自動適用</code></pre>
+    <p>確認：</p>
+<pre><code>timedatectl            # Time zone: Asia/Tokyo になっているか
+hostnamectl            # Static hostname を確認
+cat /etc/os-release    # Ubuntu 24.04 であること</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">ロケールは英語のままが無難</p>
+      <p>サーバーの <strong>ロケール</strong>（表示言語や書式の設定）を <code>ja_JP.UTF-8</code> にすると、エラーメッセージが日本語になって検索しにくくなります。ログやエラーは <code>C.UTF-8</code> / <code>en_US.UTF-8</code> のまま、タイムゾーンだけ合わせるのが実務では一般的です。</p>
+    </div>
+
+    <h3 id="sec-3-2">3.2 ユーザーと SSH（ステップ 3）</h3>
+<pre><code># 作業用ユーザーを作り sudo を与える
+sudo adduser deploy
+sudo usermod -aG sudo deploy
+
+# 手元 PC から公開鍵を登録（手元で実行）
+ssh-copy-id deploy@&lt;サーバーIP&gt;
+
+# 鍵でログインできるのを確かめてから、パスワードと root ログインを禁止
+sudo tee /etc/ssh/sshd_config.d/10-hardening.conf &lt;&lt;'EOF'
+PermitRootLogin no
+PasswordAuthentication no
+EOF
+sudo sshd -t &amp;&amp; sudo systemctl reload ssh</code></pre>
+    <p>確認：<strong>今の SSH セッションを閉じずに</strong>、別ターミナルで <code>ssh deploy@&lt;IP&gt;</code> が通ることを確認します。設定ミスで締め出されても、開いているセッションから戻せます。</p>
+    <div class="callout warn">
+      <p class="callout-title">Ubuntu 24.04 のサービス名</p>
+      <p>Ubuntu では SSH サーバーの unit 名は <code>ssh</code>（<code>sshd</code> ではない）です。また 24.04 は <code>ssh.socket</code> による <strong>ソケット起動</strong>（接続が来たときに起動する方式）が既定なので、ポート番号を変える場合は socket 側の設定も関係します。詳しくは <a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a> を見てください。</p>
+    </div>
+
+    <h3 id="sec-3-3">3.3 ファイアウォール（ステップ 4）</h3>
+<pre><code>sudo ufw allow OpenSSH        # 先に SSH を許可しないと締め出される
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable</code></pre>
+    <p>確認：<code>sudo ufw status verbose</code> で 22/80/443 だけが ALLOW になっていること。クラウドでは <strong>セキュリティグループ（クラウド側のファイアウォール）も同じ方針</strong> にそろえます。3000 番（Node.js）や 5432 番（PostgreSQL）は <strong>外に開けません</strong>。</p>
+
+    <h3 id="sec-3-4">3.4 Nginx・ランタイム・アプリ・systemd（ステップ 5〜8）</h3>
+<pre><code>sudo apt install -y nginx postgresql
+# Node.js LTS は NodeSource などのリポジトリから（2026 年時点の LTS は 24 系）
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# アプリ専用ユーザー（ログイン不可）と配置先
+sudo useradd --system --home /opt/shop --shell /usr/sbin/nologin shop
+sudo mkdir -p /opt/shop &amp;&amp; sudo chown shop:shop /opt/shop
+# ここで git clone / ビルド成果物の転送、npm ci --omit=dev、.env の配置
+sudo systemctl enable --now shop.service   # unit ファイルは前章参照</code></pre>
+    <p>確認は <strong>内側から外側へ</strong> 順に行うのがコツです。どこで止まっているかがすぐ分かります。</p>
+<pre><code>systemctl status shop          # active (running) か
+curl -i http://127.0.0.1:3000/health   # アプリ単体が応答するか
+sudo nginx -t                  # Nginx 設定の文法
+curl -i http://127.0.0.1/health        # Nginx 経由で届くか
+ss -tlnp                       # 3000 番が 127.0.0.1 だけで待ち受けているか</code></pre>
+    <p>unit ファイルの書き方は <a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a> で扱っています。</p>
+
+    <h3 id="sec-3-5">3.5 DNS・HTTPS（ステップ 9〜10）</h3>
+<pre><code>dig +short shop.example.com        # サーバーの IP が返るか（手元で確認）
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d shop.example.com -d api.shop.example.com
+sudo certbot renew --dry-run       # 自動更新が通るか</code></pre>
+    <p>確認：<code>curl -I https://shop.example.com</code> で 200 系、ブラウザで鍵マーク、<code>systemctl list-timers | grep certbot</code> で更新タイマーがあること。</p>
+
+    <h3 id="sec-3-6">3.6 監視・バックアップ（ステップ 11）</h3>
+    <p>最低限、次の 3 つがないサーバーは「本番」と呼べません。</p>
+    <div class="grid c3">
+      <div class="card">
+        <h4>外形監視</h4>
+        <p>外部から <code>https://shop.example.com/health</code> を定期的に叩き、落ちたら通知します（UptimeRobot、CloudWatch Synthetics など）。</p>
+      </div>
+      <div class="card">
+        <h4>ログ</h4>
+        <p><code>journalctl -u shop</code>、Nginx のアクセスログを見られる・保管される状態にします（66_可観測性の「ログ集約基盤」のノート）。</p>
+      </div>
+      <div class="card">
+        <h4>バックアップ</h4>
+        <p><code>pg_dump</code> を毎日取り、<strong>別の場所</strong>（S3 など）に保存します。そして <strong>リストアを実際に試します</strong>（<a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a>）。</p>
+      </div>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>手順書（ランブック）にする</h2>
+    <p>ここまでの作業を、次の人（＝半年後の自分）が再現できるように書き残したものが <strong>手順書（Runbook、ランブック）</strong> です。良い手順書は次の形をしています。</p>
+<pre><code>## 手順 3: SSH のハードニング
+目的: パスワード総当たり攻撃を防ぐ
+前提: deploy ユーザーで鍵ログインできること
+作業:
+  1. /etc/ssh/sshd_config.d/10-hardening.conf を作成（内容は下記）
+  2. sudo sshd -t で文法チェック
+  3. sudo systemctl reload ssh
+確認: 別端末から ssh deploy@&lt;IP&gt; が通る / ssh root@&lt;IP&gt; が拒否される
+戻し方: 上記ファイルを削除して reload</code></pre>
+    <p><strong>目的・前提・作業・確認・戻し方</strong> の 5 点がそろっていると、他人が実行しても事故になりにくくなります（書き方の詳細は 69_SRE・インシデント対応の「ランブックの書き方」のノート）。</p>
+    <p>…ところが、手順書をどれだけ丁寧に書いても、次の問題は残ります。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>手作業構築の限界</h2>
+
+    <h3 id="sec-5-1">5.1 スノーフレークサーバー</h3>
+    <p><strong>スノーフレーク（Snowflake、雪の結晶）サーバー</strong> とは、「同じものが二つとない」サーバーのことです。手作業で作ると、</p>
+    <ul>
+      <li>手順書の 12 行目を飛ばした、<code>apt upgrade</code> のタイミングが違ってパッケージのバージョンがずれた</li>
+      <li>障害対応で <code>nginx.conf</code> を直接直したが、手順書に反映し忘れた</li>
+    </ul>
+    <p>といった小さな違いが積み重なり、「本番 1 号機だけで再現するバグ」「誰も作り直し方を知らないサーバー」が生まれます。</p>
+
+    <h3 id="sec-5-2">5.2 構成ドリフト</h3>
+    <p><strong>構成ドリフト（Configuration Drift）</strong> は、「あるべき姿（手順書・設計書）」と「実際のサーバーの状態」が時間とともにずれていく現象です。</p>
+<pre><code>構築直後            3 か月後                  1 年後
+手順書 = 実機   →  手順書 ≒ 実機          →  手順書 ≠ 実機
+                   (緊急パッチ・手動修正)     (誰も全体を知らない)</code></pre>
+    <p>ドリフトが進むと、2 台目を作ろうとしても <strong>1 号機と同じものが作れません</strong>。ロードバランサーの後ろに API を 2 台並べる（<a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a>）段階で、これは致命的になります。</p>
+
+    <h3 id="sec-5-3">5.3 再現できない・速くない・レビューできない</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>具体例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>再現性がない</strong></td><td>障害でサーバーが壊れた。作り直すのに手順書を見ながら 1 日かかり、しかも前と同じか分からない</td></tr>
+        <tr><td><strong>遅い</strong></td><td>API を 2 台 → 10 台にしたい。10 回手で打つ？</td></tr>
+        <tr><td><strong>レビューできない</strong></td><td>「ufw のルールを変えた」が口頭とチャットでしか残らず、誰がいつなぜ変えたか追えない</td></tr>
+        <tr><td><strong>人に依存する</strong></td><td>構築できるのは A さんだけ。A さんが休むと誰も触れない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>ペットと家畜、イミュータブルインフラ</h2>
+
+    <h3 id="sec-6-1">6.1 Pets vs Cattle</h3>
+    <p>クラウド時代のサーバー観を表す有名な例えが <strong>ペットと家畜（Pets vs Cattle）</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>ペット（Pets）</th><th>家畜（Cattle）</th></tr></thead>
+      <tbody>
+        <tr><td>名前</td><td><code>shop-main</code> のように愛称を付ける</td><td><code>web-0a1b2c</code> のように番号</td></tr>
+        <tr><td>病気になったら</td><td>手当てして治す（SSH して直す）</td><td>群れから外して新しい個体に入れ替える</td></tr>
+        <tr><td>作り方</td><td>一台ずつ手作業</td><td>同じ型から自動で量産</td></tr>
+        <tr><td>例</td><td>手作業の 1 号機</td><td>オートスケーリングの EC2、コンテナ</td></tr>
+      </tbody>
+    </table></div>
+    <p>手作業構築のサーバーは必然的にペットになります。「壊れても同じものをすぐ作れる」家畜にするには、<strong>作り方そのものをコード化</strong> する必要があります。</p>
+    <div class="callout tip">
+      <p class="callout-title">全部を家畜にする必要はない</p>
+      <p>DB サーバーのように状態（データ）を持つものは、簡単には「捨てて作り直す」ことができません。データはマネージド DB やバックアップで守り、<strong>状態を持たない Web/API サーバーから家畜化する</strong> のが現実的な順番です。</p>
+    </div>
+
+    <h3 id="sec-6-2">6.2 イミュータブルインフラ</h3>
+    <p><strong>イミュータブルインフラ（Immutable Infrastructure、不変のインフラ）</strong> は家畜の考え方を徹底したもので、<strong>一度作ったサーバーには変更を加えない</strong> というルールです。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="左はミュータブル（従来）。サーバーv1にSSHでapt upgradeや手での設定修正を重ね、中身が不明瞭なサーバーv1ダッシュになる。右はイミュータブル。イメージv1からサーバーv1を作り、変更はコードでイメージv2を作ってサーバーv2を立て、サーバーv1と置き換える。">
+      <defs>
+        <marker id="arw401b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="150" y="24" text-anchor="middle" class="d-text-bold">ミュータブル（従来）</text>
+      <rect x="70" y="40" width="160" height="50" rx="8" class="d-box"/>
+      <text x="150" y="70" text-anchor="middle" class="d-text-bold">サーバー v1</text>
+      <path d="M150,90 L150,170" class="d-line" marker-end="url(#arw401b)"/>
+      <text x="160" y="122" class="d-text-sub">SSH で apt upgrade</text>
+      <text x="160" y="140" class="d-text-sub">設定を手で修正</text>
+      <rect x="70" y="172" width="160" height="56" rx="8" class="d-box-warn"/>
+      <text x="150" y="196" text-anchor="middle" class="d-text-bold">サーバー v1'</text>
+      <text x="150" y="215" text-anchor="middle" class="d-text-sub">中身が不明瞭</text>
+
+      <path d="M330,20 L330,236" class="d-line-dash"/>
+
+      <text x="530" y="24" text-anchor="middle" class="d-text-bold">イミュータブル</text>
+      <rect x="370" y="40" width="140" height="50" rx="8" class="d-box"/>
+      <text x="440" y="70" text-anchor="middle" class="d-text-bold">イメージ v1</text>
+      <rect x="560" y="40" width="140" height="50" rx="8" class="d-box"/>
+      <text x="630" y="70" text-anchor="middle" class="d-text-bold">サーバー v1</text>
+      <path d="M510,65 L558,65" class="d-line" marker-end="url(#arw401b)"/>
+      <rect x="370" y="172" width="140" height="56" rx="8" class="d-box-accent"/>
+      <text x="440" y="196" text-anchor="middle" class="d-text-bold">イメージ v2</text>
+      <text x="440" y="215" text-anchor="middle" class="d-text-sub">コードで作成</text>
+      <rect x="560" y="172" width="140" height="56" rx="8" class="d-box-good"/>
+      <text x="630" y="205" text-anchor="middle" class="d-text-bold">サーバー v2</text>
+      <path d="M510,200 L558,200" class="d-line" marker-end="url(#arw401b)"/>
+      <path d="M630,172 L630,92" class="d-line-dash" marker-end="url(#arw401b)"/>
+      <text x="640" y="136" class="d-text-sub">置き換え</text>
+    </svg>
+    <figcaption>図：ミュータブルは同じサーバーを直し続け、イミュータブルは新しいイメージから作ったサーバーと入れ替える</figcaption>
+    </figure>
+
+    <p>変更したいときは、新しいイメージ（AMI＝AWS のサーバーの雛形、やコンテナイメージ）を作り、新しいサーバーを立てて <strong>古いものと入れ替え</strong> ます。ドリフトは原理的に起きず、問題があれば古いイメージに戻すだけです。入れ替え方は 65_リリース・デプロイの「Blue-Greenデプロイ」「ローリングアップデート」のノートで扱います。コンテナ（53_コンテナの「Dockerとは」のノート）はこの考え方を最も手軽に実現する手段です。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>そこで IaC へ</h2>
+    <p>ここまでの問題はすべて「サーバーの作り方が <strong>人の手と頭の中</strong> にある」ことが原因です。これを <strong>コード（テキストファイル）</strong> にしてしまうのが <strong>IaC（Infrastructure as Code）</strong> です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>手作業の問題</th><th>IaC での解決</th></tr></thead>
+      <tbody>
+        <tr><td>スノーフレーク</td><td>同じコードからは同じサーバーができる</td></tr>
+        <tr><td>ドリフト</td><td>コードと実機の差分を検出し、コードの状態に戻せる</td></tr>
+        <tr><td>再現できない</td><td><code>apply</code> 一発で作り直せる</td></tr>
+        <tr><td>レビューできない</td><td>Git でプルリクエスト・履歴・差分が残る</td></tr>
+      </tbody>
+    </table></div>
+    <p>この章の残りでは、次の順で学びます。</p>
+    <ol class="steps">
+      <li><a href="40-2_IaCとは.html">40-2 IaCとは</a> — 考え方とツールの全体像</li>
+      <li><a href="40-3_Terraform入門.html">40-3 Terraform入門</a> — EC2 やセキュリティグループなど「箱」を作る</li>
+      <li><a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a> — 箱の中（Nginx・Node・systemd）を整える</li>
+      <li><a href="40-5_CloudFormationとCDK.html">40-5 CloudFormationとCDK</a> — AWS 純正の IaC</li>
+    </ol>
+    <p>このページの手順 1（調達）と 4（クラウド側 FW）・9（DNS）は Terraform、手順 2〜8 と 10 は Ansible、という対応を覚えておくと後のページが読みやすくなります。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="callout warn">
+      <p class="callout-title">よくある誤解</p>
+      <ul>
+        <li><strong>✕ 手順書を丁寧に書けば手作業でも再現できる</strong><br>◯ 手順書は「実行されなかった変更」や「手順書に書かれなかった修正」を検出できません。ドリフトを防ぐには、手順そのものを実行可能なコードにする必要があります。</li>
+        <li><strong>✕ ファイアウォールを有効にしてから SSH を許可すればよい</strong><br>◯ <code>ufw enable</code> の時点で SSH が許可されていないと、その場で締め出されます。必ず <code>ufw allow OpenSSH</code> が先です。クラウドならコンソールから復旧できることもありますが、VPS では詰むこともあります。</li>
+        <li><strong>✕ 動作確認はブラウザで https を開けば十分</strong><br>◯ 失敗したときに原因が分かりません。<code>systemctl status</code> → <code>curl 127.0.0.1:3000</code> → <code>curl 127.0.0.1</code> → <code>curl https://...</code> と内側から順に確かめるのが近道です。</li>
+        <li><strong>✕ イミュータブルインフラなら SSH は一切不要</strong><br>◯ 調査のためにログインすることはあります。「ログインして <strong>変更しない</strong>」がルールです。最近は SSH 自体を閉じ、AWS Systems Manager Session Manager などで調査する構成も増えています。</li>
+      </ul>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>構築は「調達 → OS → SSH → FW → Nginx → ランタイム → アプリ → systemd → DNS → HTTPS → 監視・バックアップ」の順</li>
+      <li>各ステップに確認コマンドを対にし、確認は内側から外側へ</li>
+      <li>手順書は「目的・前提・作業・確認・戻し方」で書く</li>
+      <li>手作業はスノーフレークと構成ドリフトを生み、2 台目・作り直しで破綻する</li>
+      <li>サーバーはペットではなく家畜として扱い、変更は「入れ替え」で行うのがイミュータブルインフラ</li>
+      <li>その実現手段が IaC</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">10.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Let's Encrypt で証明書を取得する前に、DNS の設定を済ませておく必要があるのはなぜですか。</summary>
+      <div class="body"><p>HTTP-01 チャレンジでは、Let's Encrypt がそのドメイン名で HTTP アクセスしてきて、サーバーが所定の応答を返せるかを確認します。ドメインがまだこのサーバーの IP を指していないと検証に失敗するためです。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 「構成ドリフト」とは何で、なぜスケールアウトのときに問題になりますか。</summary>
+      <div class="body"><p>あるべき構成（手順書・コード）と実機の状態が、手動修正などによって時間とともにずれていく現象です。ずれた 1 号機と同じものを 2 台目として作れないため、台数を増やしたときに「特定のサーバーだけ挙動が違う」問題が起きます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. イミュータブルインフラで、Nginx の設定を変えたいときはどうしますか。</summary>
+      <div class="body"><p>稼働中のサーバーを直接編集せず、設定を変更した新しいイメージ（またはコンテナイメージ）を作り、新しいサーバーを立てて古いサーバーと入れ替えます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. ufw を有効にするとき、<code>ufw enable</code> より先に必ず実行すべきコマンドは何ですか。</summary>
+      <div class="body"><p><code>sudo ufw allow OpenSSH</code> です。SSH を許可しないまま有効にすると、その場で SSH が切れて締め出されます。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 動作確認を「内側から外側へ」行うとは、具体的にどんな順番ですか。</summary>
+      <div class="body"><p><code>systemctl status shop</code>（プロセス）→ <code>curl 127.0.0.1:3000</code>（アプリ単体）→ <code>nginx -t</code> と <code>curl 127.0.0.1</code>（Nginx 経由）→ <code>curl https://...</code>（外から）の順です。どこで止まっているかがすぐ分かります。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 良い手順書（ランブック）にそろえるべき 5 つの項目は何ですか。</summary>
+      <div class="body"><p>目的・前提・作業・確認・戻し方です。これがそろうと他人が実行しても事故になりにくくなります。ただし手順書では、書かれなかった修正（ドリフト）を検出できません。</p></div>
+    </details>
+    <details>
+      <summary>Q7. DB サーバーを最初から「家畜」として扱いにくいのはなぜですか。</summary>
+      <div class="body"><p>データという状態を持っていて、捨てて作り直すとデータが失われるからです。データはマネージド DB やバックアップで守り、状態を持たない Web/API サーバーから家畜化するのが現実的です。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/40_構築・IaC/01_サーバー構築の流れ</li>
+      <li>Ubuntu Server documentation https://documentation.ubuntu.com/server/</li>
+      <li>Let's Encrypt - Challenge Types https://letsencrypt.org/docs/challenge-types/</li>
+      <li>Certbot instructions (Nginx on Ubuntu) https://certbot.eff.org/</li>
+      <li>NodeSource distributions https://github.com/nodesource/distributions</li>
+      <li>Martin Fowler - SnowflakeServer https://martinfowler.com/bliki/SnowflakeServer.html</li>
+      <li>Martin Fowler - ImmutableServer https://martinfowler.com/bliki/ImmutableServer.html</li>
+      <li>関連ページ：<a href="40-2_IaCとは.html">40-2 IaCとは</a>、<a href="30-4_プロセス管理とsystemd.html">30-4 プロセス管理とsystemd</a>、<a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>、<a href="60-2_SSHの安全な運用.html">60-2 SSHの安全な運用</a></li>
+      <li>関連ノート（解説ページなし）：69_SRE・インシデント対応「ランブックの書き方」、65_リリース・デプロイ「Blue-Greenデプロイ」、53_コンテナ「本番向けベストプラクティス」</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-6_データベースサーバーの運用.html"><span class="lbl">← 前のページ</span>データベースサーバーの運用</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-2_IaCとは.html"><span class="lbl">次のページ →</span>IaCとは</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

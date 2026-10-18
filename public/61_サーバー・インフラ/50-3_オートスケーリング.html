@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>オートスケーリング｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 50 スケーリング・負荷分散 › オートスケーリング</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">50 スケーリング・負荷分散</span>
+      <h1>オートスケーリング</h1>
+      <p class="lead"><strong>オートスケーリング</strong> は、負荷に合わせてサーバーの台数を自動で増減する仕組みです。このページでは、何を指標（メトリクス）にするか、ターゲット追跡・ステップ・スケジュール・予測の 4 つのポリシーの使い分け、<strong>「混んだら増やす」が急な山に間に合わない理由（増えるまでの 4 つの時間）</strong> とその備え方、ウォームアップとクールダウン、最小・最大台数とスケールインの安全性、AWS Auto Scaling Group と Kubernetes HPA の設定例、コストとの関係、オートスケールで防げない障害を解説します。</p>
+      <p class="meta">もとにしたノート：61_サーバー・インフラ/50_スケーリング・負荷分散/03_オートスケーリング、61_サーバー・インフラ/50_スケーリング・負荷分散/混んだら増やす、が間に合わない — オートスケールの遅れ｜ねる前エンジニアリング（動画 https://www.youtube.com/watch?v=Q1W_ksNnMHs）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>オートスケールは「何を見て（メトリクス）」「どう増減するか（ポリシー）」を決め、最小・最大の枠の中で台数を変えます。ただし台が増えるまでには <strong>気づく・決める・起動する・温まる</strong> の 4 つの時間がかかり、急な山には間に合いません。<strong>余裕を残す・分かっている山の前に増やす・合図と起動を見直す</strong> で備え、<strong>増やすのは早く、減らすのはゆっくり</strong> にします。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>オートスケーリングとは</h2>
+    <p><strong>オートスケーリング（Auto Scaling：自動拡張・縮小）</strong> は、スーパーのレジ係のシフトを <strong>自動で組み替える店長</strong> です。レジ待ちの行列が長くなったら休憩中の店員を呼び、空いてきたら帰ってもらう。ただし呼ばれた店員がエプロンを着けてレジに立つまでには数分かかるので、行列が急に伸びる時間（夕方）が分かっていれば先に呼んでおきます。</p>
+    <ul>
+      <li>「何を見て」（メトリクス）「どう増減するか」（ポリシー）を決める</li>
+      <li>台数には <strong>最小</strong> と <strong>最大</strong> の枠を設ける</li>
+      <li>新しいサーバーが使えるようになるまでの <strong>起動時間</strong> が最大の敵</li>
+      <li>減らすとき（スケールイン）は処理中のリクエストを壊さないように</li>
+    </ul>
+    <p>台数を増やす前提（ステートレス化）は <a href="50-1_スケーリングの基本.html">スケーリングの基本</a>、増えたサーバーへの振り分けは <a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a> を参照してください。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>何を指標に増減させるか</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>指標</th><th>向いているもの</th><th>注意点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CPU 使用率</strong></td><td>計算が中心の API・Web サーバー</td><td>一番手軽。ただし DB 待ちが多いアプリでは CPU が上がらず、遅いのに増えない</td></tr>
+        <tr><td><strong>リクエスト数（1 台あたり）</strong></td><td>Web／API。ALB の <code>ALBRequestCountPerTarget</code></td><td>1 台がさばける RPS を負荷試験で測っておく必要がある</td></tr>
+        <tr><td><strong>キュー長（滞留メッセージ数）</strong></td><td>非同期ワーカー（画像変換、メール送信）</td><td>「1 台あたり何件まで溜まってよいか」で考える（SQS の <code>ApproximateNumberOfMessagesVisible</code> など）</td></tr>
+        <tr><td><strong>レイテンシ</strong></td><td>利用者体験に直結</td><td>原因が DB だと増やしても改善しないので、主指標にするのは慎重に</td></tr>
+        <tr><td><strong>メモリ</strong></td><td>メモリを多く使う処理</td><td>アプリが確保したメモリを返さないことが多く、減らす判断に向かない</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>キュー</strong> は、処理待ちの仕事を並べておく待ち行列です（SQS は AWS のキューサービス）。Shop の場合、<strong>API は「CPU 使用率」か「1 台あたりリクエスト数」</strong>、注文確定後にメールや在庫連携を行う <strong>ワーカーは「キュー長」</strong> で増減させるのが自然です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>スケーリングポリシー</h2>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="CloudWatchやmetrics-serverのメトリクスがポリシーに入り、目標値との差でターゲット追跡（CPU 50%を維持）、閾値の段階でステップ（70%超で+1、90%超で+3）が動く。時刻からスケジュール（毎日20:00に最小6台）、過去14日の履歴から予測（明日のピークに先回り）が動く。4つともAuto Scaling Groupの希望台数を変更する">
+      <defs>
+        <marker id="arw1503a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="50" width="150" height="56" rx="8" class="d-box"/>
+      <text x="85" y="74" text-anchor="middle" class="d-text">メトリクス</text>
+      <text x="85" y="94" text-anchor="middle" class="d-text-sub">CloudWatch 等</text>
+      <rect x="10" y="190" width="150" height="44" rx="8" class="d-box"/>
+      <text x="85" y="217" text-anchor="middle" class="d-text">時刻</text>
+      <rect x="10" y="260" width="150" height="56" rx="8" class="d-box"/>
+      <text x="85" y="284" text-anchor="middle" class="d-text">履歴</text>
+      <text x="85" y="304" text-anchor="middle" class="d-text-sub">過去 14 日</text>
+
+      <rect x="230" y="20" width="220" height="56" rx="8" class="d-box-accent"/>
+      <text x="340" y="44" text-anchor="middle" class="d-text-bold">ターゲット追跡</text>
+      <text x="340" y="64" text-anchor="middle" class="d-text-sub">CPU 50% を維持</text>
+      <rect x="230" y="96" width="220" height="56" rx="8" class="d-box"/>
+      <text x="340" y="120" text-anchor="middle" class="d-text-bold">ステップ</text>
+      <text x="340" y="140" text-anchor="middle" class="d-text-sub">70%超 +1、90%超 +3</text>
+      <rect x="230" y="184" width="220" height="56" rx="8" class="d-box"/>
+      <text x="340" y="208" text-anchor="middle" class="d-text-bold">スケジュール</text>
+      <text x="340" y="228" text-anchor="middle" class="d-text-sub">毎日 20:00 最小 6 台</text>
+      <rect x="230" y="260" width="220" height="56" rx="8" class="d-box"/>
+      <text x="340" y="284" text-anchor="middle" class="d-text-bold">予測</text>
+      <text x="340" y="304" text-anchor="middle" class="d-text-sub">明日のピークに先回り</text>
+
+      <path d="M160,72 L228,50" class="d-line" marker-end="url(#arw1503a)"/>
+      <path d="M160,86 L228,122" class="d-line" marker-end="url(#arw1503a)"/>
+      <path d="M160,212 L228,212" class="d-line" marker-end="url(#arw1503a)"/>
+      <path d="M160,288 L228,288" class="d-line" marker-end="url(#arw1503a)"/>
+
+      <rect x="530" y="130" width="180" height="70" rx="8" class="d-box-accent"/>
+      <text x="620" y="160" text-anchor="middle" class="d-text-bold">Auto Scaling Group</text>
+      <text x="620" y="182" text-anchor="middle" class="d-text-sub">希望台数を変更</text>
+      <path d="M450,48 L528,145" class="d-line" marker-end="url(#arw1503a)"/>
+      <path d="M450,124 L528,158" class="d-line" marker-end="url(#arw1503a)"/>
+      <path d="M450,212 L528,175" class="d-line" marker-end="url(#arw1503a)"/>
+      <path d="M450,288 L528,188" class="d-line" marker-end="url(#arw1503a)"/>
+    </svg>
+    <figcaption>図：メトリクス・時刻・履歴をもとに 4 種類のポリシーが動き、どれも Auto Scaling Group の希望台数を変える</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ポリシー</th><th>仕組み</th><th>例</th><th>向く場面</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ターゲット追跡（Target Tracking）</strong></td><td>「この値を保つ」と目標だけ指定。台数はクラウドが計算</td><td>平均 CPU 50% を維持</td><td><strong>まずはこれ</strong>。エアコンの温度設定のように簡単</td></tr>
+        <tr><td><strong>ステップ（Step）</strong></td><td>閾値ごとに増やす台数を段階的に決める</td><td>CPU 70〜90% で +1 台、90% 超で +3 台</td><td>急増時に一気に増やしたい、細かく制御したい</td></tr>
+        <tr><td><strong>スケジュール（Scheduled）</strong></td><td>決めた時刻に台数を変える</td><td>セール開始 30 分前に最小 10 台</td><td>予定されたイベント、平日昼と夜間の差</td></tr>
+        <tr><td><strong>予測（Predictive）</strong></td><td>過去の周期パターンから将来の負荷を予測して先回り</td><td>毎日 21 時のピーク前に増やす</td><td>日次・週次の波がはっきりしているサービス</td></tr>
+      </tbody>
+    </table></div>
+    <p>実務では <strong>ターゲット追跡を基本に、予定が分かっているイベントはスケジュールで最小台数を引き上げる</strong> 組み合わせが多いです。AWS では予測スケーリングとターゲット追跡を同時に使うこともできます。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>「混んだら増やす」が間に合わない</h2>
+    <p>オートスケールを設定してあるのに、混んだ瞬間にはつながらない――ということがよく起きます。設定が間違っているのではなく、<strong>仕組みとして急な混雑には間に合わない</strong> のです。時間を追って見てみます。</p>
+
+    <h3 id="sec-4-1">4.1 よくある場面</h3>
+    <p>スマホのサービスで、夜 8 時に全員へお知らせを送った直後から数分間、アプリがつながらなくなりました。翌朝グラフを見るとサーバーはちゃんと増えていましたが、増え切ったのは送信から 8 分後。つながらなかった時間とほぼ同じです。設定は間違っていません。</p>
+
+    <h3 id="sec-4-2">4.2 ふつうの動き（ゆっくり増える山）</h3>
+    <p>サーバー 1 台で毎秒 100 件さばけるとし、今は 4 台で毎秒 400 件までさばけます。決まりは「さばける量の 7 割を超えたら 1 台足す」です。平日の朝、利用者がゆっくり増えていくと、合図を超えてから実際に台が加わるまで <strong>いつも 5 分くらい遅れます</strong>。それでもゆっくり増える山なら、残りの 3 割の余裕でその 5 分を持ちこたえられます。台が加わるたびにさばける量と合図の線が 1 段上がり、9 時には 9 台、一度も溢れずに朝の山を乗り切りました。</p>
+
+    <h3 id="sec-4-3">4.3 急な山が来たとき</h3>
+    <p>同じ 4 台（毎秒 400 件）で、毎秒 250 件が来ている状態です。監視は CPU 使用率を <strong>直近 5 分の平均</strong> で見ていて、70% を超えたら増やす決まりです（今は 45%）。</p>
+    <ol class="steps">
+      <li><strong>8:05</strong>　お知らせが届いてみんなが一斉にアプリを開き、一気に毎秒 900 件近くへ跳ね上がる。さばける量を超えた分は長く待たされるか断られ、利用者には「つながらない」に見える</li>
+      <li><strong>8:05〜8:08</strong>　サーバーはもう手一杯なのに、平均はまだ 56%。山の前の暇な時間の数字が混ざっているので、ならした平均はゆっくりしか上がらない</li>
+      <li><strong>8:08</strong>　やっと平均が 70% を超え、混んでいることに気づく</li>
+      <li><strong>8:09</strong>　たまたまで増やさないよう 1 分後にもう一度確かめ、2 回続けて超えたので 6 台足すと決める</li>
+      <li><strong>8:09〜8:12</strong>　機械を用意し、OS が立ち上がり、アプリを置いて動かす。起動に約 3 分</li>
+      <li><strong>8:12〜8:13半</strong>　起動したがまだ温まっていない。キャッシュは空っぽ、DB とのつなぎもこれから作るので最初は遅い</li>
+      <li><strong>8:13半</strong>　6 台が加わって 10 台・毎秒 1000 件になり、溢れが止まる</li>
+    </ol>
+    <p>8:05 から 8:13 半まで <strong>8 分以上、およそ 25 万件が溢れました</strong>。オートスケールはちゃんと動きましたが、間に合わなかったのです。</p>
+
+    <h3 id="sec-4-4">4.4 増えるまでの 4 つの時間</h3>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="時間軸。8時5分に急な山が来る。8時5分から8時8分が気づく時間、8時8分から8時9分が決める時間、8時9分から8時12分が起動する時間、8時12分から8時13分半が温まる時間。この8分半の間ずっと依頼が溢れている">
+      <defs>
+        <marker id="arw1503b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <path d="M30,120 L700,120" class="d-line" marker-end="url(#arw1503b)"/>
+      <rect x="40" y="60" width="210" height="50" rx="6" class="d-box-warn"/>
+      <text x="145" y="83" text-anchor="middle" class="d-text-bold">① 気づく</text>
+      <text x="145" y="101" text-anchor="middle" class="d-text-sub">平均をならす</text>
+      <rect x="250" y="60" width="90" height="50" rx="6" class="d-box-warn"/>
+      <text x="295" y="83" text-anchor="middle" class="d-text-bold">② 決める</text>
+      <text x="295" y="101" text-anchor="middle" class="d-text-sub">再確認</text>
+      <rect x="340" y="60" width="220" height="50" rx="6" class="d-box-warn"/>
+      <text x="450" y="83" text-anchor="middle" class="d-text-bold">③ 起動する</text>
+      <text x="450" y="101" text-anchor="middle" class="d-text-sub">機械・OS・アプリ</text>
+      <rect x="560" y="60" width="110" height="50" rx="6" class="d-box-warn"/>
+      <text x="615" y="83" text-anchor="middle" class="d-text-bold">④ 温まる</text>
+      <text x="615" y="101" text-anchor="middle" class="d-text-sub">キャッシュ空</text>
+      <text x="40" y="142" text-anchor="middle" class="d-text-sub">8:05</text>
+      <text x="250" y="142" text-anchor="middle" class="d-text-sub">8:08</text>
+      <text x="340" y="142" text-anchor="middle" class="d-text-sub">8:09</text>
+      <text x="560" y="142" text-anchor="middle" class="d-text-sub">8:12</text>
+      <text x="670" y="142" text-anchor="middle" class="d-text-sub">8:13半</text>
+      <text x="40" y="40" text-anchor="middle" class="d-text-bold">山が来る</text>
+      <rect x="40" y="165" width="630" height="44" rx="8" class="d-box-bad"/>
+      <text x="355" y="192" text-anchor="middle" class="d-text">この間ずっと溢れている（約 25 万件）</text>
+    </svg>
+    <figcaption>図：4 つの時間を「山が来た後に」払っているので、その合計の間ずっと溢れが続く</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>時間</th><th>かかる理由</th></tr></thead>
+      <tbody>
+        <tr><td>1. <strong>気づく</strong></td><td>数字を何分かならして見るので、山の立ち上がりに遅れる。一瞬の数字はよく跳ね、それで増減すると落ち着かないので、ならすのは必要</td></tr>
+        <tr><td>2. <strong>決める</strong></td><td>たまたまの揺れで増やさないよう、何回か続けて確かめる</td></tr>
+        <tr><td>3. <strong>起動する</strong></td><td>機械を用意し、OS とアプリが立ち上がるまで。アプリが大きく準備が多いほど長い</td></tr>
+        <tr><td>4. <strong>温まる</strong></td><td>起動直後はキャッシュも DB とのつなぎも空っぽで、一人前に働けない</td></tr>
+      </tbody>
+    </table></div>
+    <p>どれもなくせない理由があります。大事なのは <strong>この時間を山が来た後に払っている</strong> ことです。この順番を覚えておくと、どこを縮めればよいかが見えてきます。</p>
+
+    <h3 id="sec-4-5">4.5 溢れている間に起きること</h3>
+    <p>増えるのを待っている 8 分の間、今いる 4 台は全員手一杯です。振り分け役（ロードバランサー）は <strong>ヘルスチェック</strong> で各サーバーの様子を見ていますが、2 号機は忙しすぎてその返事が間に合わず、2 回、3 回と続けて返事がないので「壊れた」と判断されて切り離されます。壊れてはいない、ただ忙しかっただけなのにです。</p>
+    <p>2 号機が受けていた依頼は残りの 3 台に回り、3 台はさらに苦しくなって、次は 3 号機が切り離されます。残りは 2 台、1 台あたりの重さは倍です。1 台倒れると隣も倒れやすくなる <strong>ドミノ</strong> で、溢れは待っていても自然には収まらず、むしろ広がることがあります。増えた頃には今いる台が減っている、ということも起きます（ヘルスチェックの仕組みは <a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a>）。</p>
+
+    <h3 id="sec-4-6">4.6 温まる前に流すと</h3>
+    <p>起動したばかりの 5 号機が加わると、振り分け役は他と同じだけ依頼を渡します。しかし 5 号機はキャッシュが空っぽなので毎回 DB まで取りに行き、1 件ずつが遅く、処理中の依頼がどんどん溜まります。5 号機に当たった人だけ待たされます。しかも新しい台が一斉に DB へ行くので DB も混み、<strong>増やした直後にかえって遅くなる</strong> ことがあります。</p>
+    <p>よくある手当ては 2 つです。</p>
+    <ul>
+      <li>加わったばかりの台には <strong>少しずつ流す</strong></li>
+      <li><strong>本当に温まってから「準備できた」と返す</strong>（起動しただけですぐ返さない）</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>急な山への 3 つの備え</h2>
+
+    <h3 id="sec-5-1">5.1 備え 1：余裕を残しておく</h3>
+    <p>4 台で足りるところを 8 台で動かしておくと、最初から毎秒 800 件までさばけます。同じように 8:05 に 900 件まで跳ねても、はみ出すのは 800 件を超えた細い部分だけで、溢れはおよそ 4 万件（さっきの 25 万件よりずっと少ない）で済みます。</p>
+    <p>その代わり、普段は半分以上のサーバーが暇をしているので費用は高くなります。余裕は保険のようなもので、<strong>増えるまでの時間にどれくらいの山が来るか</strong> で量を決めます。増えるまでの数分を余裕で持ちこたえる、という考え方です。</p>
+
+    <h3 id="sec-5-2">5.2 備え 2：前もって増やす</h3>
+    <p>お知らせを送るのは自分たちなので、山の時刻は分かっていました。そこで 7:50 から予定で 6 台を足し始めると、起動して温めて 7:58 半には 10 台が揃い、8:05 に山が来ても溢れはどこにも出ません。</p>
+    <p>4 つの時間は縮んでいません。<strong>払う時刻を山の前にずらしただけ</strong> です。セールの開始、ゲームのイベント、テレビで紹介される時刻など、分かっている山は意外と多いものです。山が過ぎたら予定どおり減らせば、費用もその時間分だけで済みます（3 章のスケジュールポリシー）。</p>
+
+    <h3 id="sec-5-3">5.3 備え 3：合図と起動を見直す</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>CPU の平均で見る</h4>
+        <ul>
+          <li>ならすので上がるのが遅れる</li>
+          <li>手一杯になると 100% で止まり、それ以上は上がらない</li>
+          <li>2 倍足りないのか 10 倍足りないのか分からない</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>来ている依頼の数で見る</h4>
+        <ul>
+          <li>来た瞬間に増える</li>
+          <li>サーバーが手一杯かどうかに関係なく数えられる</li>
+          <li>900 件来ていて 1 台 100 件なら 9 台必要、と一度に分かる（1 台あたりの量で割ると台数の計算がまっすぐになる）</li>
+        </ul>
+      </div>
+    </div>
+    <p>起動そのものを短くする工夫もあります。起動済みで温めた予備の台を止めて待たせておけば、起動の 3 分を飛ばせます（6.1 のウォームプール）。<strong>合図を早くして（前の 2 つの時間）、起動を短くする（後ろの 2 つの時間）</strong>、と 4 つの時間をそれぞれ縮めるわけです。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>起動時間・ウォームアップ・クールダウン</h2>
+
+    <h3 id="sec-6-1">6.1 起動時間の問題と短縮方法</h3>
+    <p>オートスケーリングの判断から「新しいサーバーが実際にリクエストを処理する」までには、これだけの時間がかかります。</p>
+<pre><code>メトリクス集計(1〜数分) → 判断 → EC2 起動(数十秒〜) → OS 起動
+ → セットアップ(apt install・npm ci…数分!) → アプリ起動
+ → LB のヘルスチェック合格(間隔×Healthy閾値) → ようやく処理開始</code></pre>
+    <p>急増に間に合わないと、増え終わる前に既存サーバーが倒れます。短縮する方法は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方法</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ゴールデン AMI（作り込み済みイメージ）</strong></td><td>Node.js・Nginx・アプリまで入れた AMI（EC2 の起動用ディスクイメージ）を Packer などで事前に作る。起動時はほぼ設定を読むだけ</td></tr>
+        <tr><td><strong>コンテナ化</strong></td><td>起動するのはコンテナだけなので数秒〜数十秒（53_コンテナの「Dockerとは」「本番向けベストプラクティス」のノート）</td></tr>
+        <tr><td><strong>user data を最小にする</strong></td><td>起動スクリプトで <code>apt upgrade</code> やビルドをしない</td></tr>
+        <tr><td><strong>ウォームプール</strong></td><td>停止状態のインスタンスを事前に用意しておく（ASG の Warm pools）</td></tr>
+        <tr><td><strong>余裕を持った目標値</strong></td><td>目標 CPU を 70% ではなく 50% にして、増え終わるまでの余裕を確保する</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-6-2">6.2 ウォームアップ（Warmup）とクールダウン（Cooldown）</h3>
+    <ul>
+      <li><strong>インスタンスウォームアップ</strong>：起動直後のサーバーは JIT コンパイル（実行しながらプログラムを最適化する処理）やキャッシュ作成で CPU が一時的に高く、その値で判断すると「さらに増やす」誤判定が起きます。ウォームアップ期間中のメトリクスは集計に入れません。AWS は既定インスタンスウォームアップの設定を強く推奨しており、迷ったら 300 秒から始めて調整するよう案内しています（既定では無効、2026 年時点）。</li>
+      <li><strong>クールダウン</strong>：あるスケーリング操作の直後に、次の操作をしばらく待つ期間です。シンプルスケーリングポリシーで使われ、ASG の既定は 300 秒です。ターゲット追跡やステップでは、代わりにウォームアップの考え方が使われます。</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>最小・最大台数とスケールインの安全性</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>設定</th><th>決め方</th></tr></thead>
+      <tbody>
+        <tr><td><strong>最小（min）</strong></td><td>可用性の下限。マルチ AZ なら <strong>最低 2</strong>（AZ ごとに 1 台）。深夜でも 1 台故障に耐えられる数</td></tr>
+        <tr><td><strong>最大（max）</strong></td><td>暴走ブレーキ。バグによる無限ループや攻撃で 100 台立ち上がって請求が跳ねるのを防ぐ。<strong>DB の最大接続数 ÷ 1 台あたりの接続プール数</strong> も上限の目安</td></tr>
+        <tr><td><strong>希望（desired）</strong></td><td>現在の目標台数。ポリシーが自動で変える。Terraform で管理するときは上書きに注意</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>AZ（Availability Zone）</strong> は、同じリージョン内で電源や建物が独立したデータセンター群です（<a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a>）。</p>
+
+    <h3 id="sec-7-1">7.1 スケールインは増やすより危険</h3>
+    <ol class="steps">
+      <li>ASG がインスタンスを終了対象に決める</li>
+      <li>ALB のターゲットグループから登録解除 → <strong>コネクションドレイニング</strong>（登録解除の遅延の間、処理中のリクエストを待つ）</li>
+      <li>インスタンスに SIGTERM が届く → アプリは新規受付を止め、処理中を片付けて終了</li>
+      <li>長いバッチ処理を行っているワーカーは、<strong>スケールイン保護</strong> やライフサイクルフック（終了前に処理を完了させる猶予）を使う</li>
+    </ol>
+    <p>減らすときに処理中の依頼を持ったまま止めると、その依頼は消えてしまいます。<strong>手元の依頼を終わらせてから止める</strong> のが原則です。</p>
+
+    <h3 id="sec-7-2">7.2 減らすのはゆっくり（フラッピング対策）</h3>
+    <p>夜 9 時、7 台で毎秒 500 件前後を行ったり来たりしているとします。9:04 に少し空いたのですぐ 2 台減らすと、9:10 にまた少し増えて溢れ、慌てて 2 台足しますが起動に時間がかかります。空いたらすぐ減らし、混んだら足す――を繰り返し、そのたびに細い溢れが出ます。</p>
+    <p>このように増減が頻繁に繰り返されることを <strong>フラッピング</strong> と呼びます。防ぐには、空いた状態がしばらく続いてから減らします。<strong>増やすのは早く、減らすのはゆっくり</strong>。この非対称が落ち着いた動きを作ります（Kubernetes HPA は既定でスケールダウンに 300 秒の安定化ウィンドウを持ちます）。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>設定例：AWS Auto Scaling Group と Kubernetes HPA</h2>
+
+    <h3 id="sec-8-1">8.1 AWS（Terraform）</h3>
+<pre><code>resource "aws_launch_template" "shop_api" {
+  name_prefix   = "shop-api-"
+  image_id      = data.aws_ami.shop_api.id   # Packer で作った作り込み済み AMI
+  instance_type = "t3.small"
+  vpc_security_group_ids = [aws_security_group.api.id]
+  user_data = base64encode(&lt;&lt;-EOT
+    #!/bin/bash
+    # 設定の取得とサービス起動だけ。ビルドはしない
+    systemctl start shop-api
+  EOT
+  )
+}
+
+resource "aws_autoscaling_group" "shop_api" {
+  name                = "shop-api-asg"
+  min_size            = 2
+  max_size            = 10
+  vpc_zone_identifier = [aws_subnet.private_a.id, aws_subnet.private_c.id] # 2 AZ
+  target_group_arns   = [aws_lb_target_group.shop_api.arn]  # ALB に自動登録
+  health_check_type         = "ELB"   # ALB のヘルスチェック結果で入れ替える
+  health_check_grace_period = 120
+  default_instance_warmup   = 120
+
+  launch_template {
+    id      = aws_launch_template.shop_api.id
+    version = "$Latest"
+  }
+
+  lifecycle {
+    ignore_changes = [desired_capacity] # ポリシーが変えた台数を Terraform が戻さない
+  }
+}
+
+# ターゲット追跡：平均 CPU 50% を維持
+resource "aws_autoscaling_policy" "cpu50" {
+  name                   = "cpu-target-50"
+  autoscaling_group_name = aws_autoscaling_group.shop_api.name
+  policy_type            = "TargetTrackingScaling"
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 50
+  }
+}
+
+# スケジュール：毎週金曜 19:30（JST）にセールに備えて最小 6 台
+resource "aws_autoscaling_schedule" "friday_sale" {
+  scheduled_action_name  = "friday-sale"
+  autoscaling_group_name = aws_autoscaling_group.shop_api.name
+  recurrence             = "30 19 * * FRI"
+  time_zone              = "Asia/Tokyo"
+  min_size               = 6
+  max_size               = 10
+  desired_capacity       = 6
+}</code></pre>
+    <p><code>health_check_type = "ELB"</code> にすると、ALB のヘルスチェックで不合格になったインスタンスを ASG が <strong>自動で作り直し</strong> ます（既定の <code>EC2</code> だとインスタンス自体が動いている限り入れ替えません）。Terraform の書き方は <a href="40-3_Terraform入門.html">Terraform入門</a> を参照してください。</p>
+
+    <h3 id="sec-8-2">8.2 Kubernetes HPA（Horizontal Pod Autoscaler）</h3>
+<pre><code>apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: shop-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: shop-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60   # Pod の requests.cpu に対する割合
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 減らす判断は 5 分様子を見る（既定値と同じ）
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60            # 1 分に最大 1 Pod ずつ減らす</code></pre>
+    <ul>
+      <li>HPA は既定で 15 秒ごとに <code>必要レプリカ数 = ceil(現在数 × 現在値 ÷ 目標値)</code> を計算します。</li>
+      <li>CPU の割合は <strong>Pod の <code>resources.requests.cpu</code> に対する比率</strong> なので、requests を書いていないと HPA は動きません。metrics-server も必要です。</li>
+      <li>Pod を増やしてもノード（VM）が足りなければ Pending のままです。ノードの自動増減は Cluster Autoscaler や Karpenter が担当します。詳しくは 53_コンテナの「10-Kubernetes」のノートを参照してください。</li>
+    </ul>
+
+    <h2 id="sec-9"><span class="num">9.</span>コストとの関係、オートスケールで防げない障害</h2>
+
+    <h3 id="sec-9-1">9.1 コスト</h3>
+    <ul>
+      <li>オートスケーリングの最大の利点の 1 つは <strong>夜間や閑散期に台数を減らして料金を下げられる</strong> ことです。常に最大台数を並べるより大幅に安くなります。</li>
+      <li>一方で、最大台数を高くしすぎると <strong>攻撃やバグで請求が爆発</strong> します。最大台数と AWS Budgets のアラートをセットにします。</li>
+      <li>最小台数ぶんはリザーブドインスタンス／Savings Plans（長期利用を約束して割引を受ける買い方）、変動分はオンデマンドやスポットインスタンス（余っている枠を安く使う買い方）、という組み合わせがよく使われます。</li>
+    </ul>
+
+    <h3 id="sec-9-2">9.2 オートスケールでは防げない障害</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>障害</th><th>なぜ防げないか</th><th>対策</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DB の限界</strong></td><td>API を増やすと DB 接続とクエリが増え、むしろ悪化</td><td>DB 側のスケール、接続プール、最大台数の制限（<a href="50-1_スケーリングの基本.html">スケーリングの基本</a>）</td></tr>
+        <tr><td><strong>アプリのバグ（全台共通）</strong></td><td>同じバグのサーバーが増えるだけ</td><td>ロールバック（65_リリース・デプロイの「03_ヘルスチェックと自動ロールバック」のノート）</td></tr>
+        <tr><td><strong>一瞬のスパイク</strong></td><td>起動が間に合わない</td><td>事前のスケジュール、余裕のある目標値、CDN やキューで受け止める</td></tr>
+        <tr><td><strong>外部 API の障害・遅延</strong></td><td>増やしても待ち時間は同じ</td><td>タイムアウト、リトライ制限、サーキットブレーカー（失敗が続く相手への呼び出しを一時的に止める仕組み）</td></tr>
+        <tr><td><strong>AZ・リージョン全体の障害</strong></td><td>同じ場所に増やしても意味がない</td><td>マルチ AZ・マルチリージョン（<a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a>）</td></tr>
+        <tr><td><strong>DDoS 攻撃</strong></td><td>攻撃に合わせて増やすとコストだけ増える</td><td>CDN・WAF・Shield（<a href="50-4_CDNによる負荷軽減.html">CDNによる負荷軽減</a>）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>AI に設定を書かせたときに見るところ</h2>
+    <p>AI に書かせたよくある形の設定には、次のような落とし穴があります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>よくある設定</th><th>何が問題か</th></tr></thead>
+      <tbody>
+        <tr><td>最小台数が 1 台</td><td>1 台倒れると 0 台。余裕もなく、少しの山ですぐ溢れる</td></tr>
+        <tr><td>増やす合図が CPU 平均 90% を 10 分ならす</td><td>使い切ってから、さらに遅れて気づく。急な山にはまず間に合わない</td></tr>
+        <tr><td>減らすまでの待ち時間が 0 秒</td><td>空いた瞬間に減らし、増減の繰り返しになる</td></tr>
+        <tr><td>準備確認が起動したらすぐ OK</td><td>温まる前に他と同じだけ依頼が流れてくる</td></tr>
+        <tr><td>起動のたびに真っさらな機械から作る</td><td>起動時間が最長になる</td></tr>
+        <tr><td>最大台数 50 台</td><td>これは問題ではない。上限を上げても、増えるのが遅ければ間に合わない</td></tr>
+      </tbody>
+    </table></div>
+    <p>見るのは「<strong>4 つの時間のどれかを長くしていないか</strong>」と「<strong>余裕があるか</strong>」です。クラウドごとの設定画面の項目名や料金は今は覚えなくてかまいません。使う道具が決まったら、4 つの時間をそれぞれどこで決めているかだけ調べれば十分です。</p>
+
+    <h3 id="sec-10-1">10.1 ケーススタディ：イベント開始の 8 分間</h3>
+    <p>ゲームのチームから相談が来ました。毎週土曜の夜 8 時にイベントが始まり、開始から約 8 分つながらない状態が続きます。グラフではサーバーは自動で増えていますが、増え切るのは 8:09 頃。台数の上限 20 台にはまだ届いていません。手当てとして一番良いのはどれでしょうか。</p>
+    <ul>
+      <li>A：増やす合図を CPU 90% から 60% に下げる</li>
+      <li>B：毎週 7:45 に前もって台数を増やしておく</li>
+      <li>C：台数の上限を 20 台から 50 台に上げる</li>
+    </ul>
+    <p>答えは <strong>B</strong> です。山が毎週土曜 8 時に来ると前もって分かっているので、起動と温めの時間を山の前に払っておけます（備え 2）。A は気づく時間が少し縮むだけで、起動と温めの数分はそのまま残り、山の後に払う形も変わりません（4 つの時間のうち 1 つ目しか縮まない）。C は、上限の 20 台にまだ届いておらず、「さばききれない」のではなく「増えるのが遅い」だけなので効果がありません。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>オートスケーリングを設定すればアクセス急増に必ず耐えられる</td><td>起動に数分かかるので、急なスパイクには間に合いません。スケジュールや余裕のある目標値と組み合わせます。</td></tr>
+        <tr><td>最小台数は 1 でよい</td><td>1 台が落ちると作り直すまでサービス停止です。可用性のため最低 2 台、2 AZ に分けます。</td></tr>
+        <tr><td>最大台数は大きいほど安心</td><td>DB 接続の上限を超えたり、請求が膨らんだりします。根拠を持って決めます。</td></tr>
+        <tr><td>HPA を作れば CPU で増える</td><td>Pod に <code>resources.requests.cpu</code> が無いと計算できず動きません。</td></tr>
+        <tr><td>Terraform で <code>desired_capacity</code> を書いておけば安心</td><td>apply のたびにポリシーが変えた台数を上書きしてしまいます。<code>ignore_changes</code> を使います。</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <ul>
+      <li>指標は API なら CPU か 1 台あたりリクエスト数、ワーカーならキュー長が基本</li>
+      <li>ポリシーはターゲット追跡を基本に、予定されたピークはスケジュール、周期的な波は予測で補う</li>
+      <li>台が増えるまでには気づく・決める・起動する・温まるの 4 つの時間がかかる。ゆっくりの山には間に合うが、急な山には間に合わず、その間溢れが続いてドミノのように倒れる台も出る</li>
+      <li>備えは、余裕を残す・分かっている山の前に増やす・合図を依頼の数のように早いものにする（起動も短く）</li>
+      <li>起動時間が最大の敵。作り込み済み AMI やコンテナで短縮し、ウォームアップ期間を正しく設定する。温まる前に全部の依頼を流さない</li>
+      <li>最小は可用性（2 台以上・2 AZ）、最大は DB とコストのブレーキとして決める</li>
+      <li>スケールインはドレイニングと graceful shutdown で安全に、ゆっくり減らす（増やすのは早く、減らすのはゆっくり）</li>
+      <li>DB の限界・全台共通のバグ・AZ 障害・DDoS はオートスケールでは防げない</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">13.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Shop の API は DB 待ちが多く、遅いときでも CPU 使用率が 30% 程度です。CPU 50% のターゲット追跡では何が起きますか。</summary>
+      <div class="body"><p>CPU が目標に達しないので台数が増えず、遅いままです。そもそも DB 待ちが原因なら API を増やしても改善しない可能性が高いので、まず DB のボトルネックを調べます。API 側の負荷で増やしたいなら 1 台あたりリクエスト数を指標にする方法もあります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 毎週金曜 20 時のセール開始直後に数分間だけエラーが多発します。ターゲット追跡は設定済みです。何を追加すべきでしょうか。</summary>
+      <div class="body"><p>スケジュールポリシーで、セール開始前（例えば 19:30）に最小台数を引き上げます。ターゲット追跡はメトリクスが上がってから増やすため、起動時間の分だけ間に合いません。</p></div>
+    </details>
+    <details>
+      <summary>Q3. ASG の <code>health_check_type</code> を <code>EC2</code> から <code>ELB</code> に変えると何が変わりますか。</summary>
+      <div class="body"><p><code>EC2</code> ではインスタンス自体が動いていれば健全扱いですが、<code>ELB</code> にすると ALB のヘルスチェック（例：<code>/healthz</code> が 200 を返すか）に不合格になったインスタンスも ASG が終了して作り直します。アプリだけが固まった場合も自動復旧できます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 台が増えるまでにかかる「4 つの時間」を順に挙げ、それぞれがなぜ必要かを答えてください。</summary>
+      <div class="body"><p>① 気づく（一瞬の数字は跳ねるので何分かならして見る）、② 決める（たまたまの揺れで増やさないよう何回か続けて確かめる）、③ 起動する（機械・OS・アプリの立ち上げ）、④ 温まる（起動直後はキャッシュも DB 接続も空）。どれもなくせない理由があり、問題はこれを山が来た後に払っていることです。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 急な山の最中、壊れていないサーバーまで次々にロードバランサーから切り離されました。なぜでしょうか。</summary>
+      <div class="body"><p>忙しすぎてヘルスチェックの返事が間に合わず、「壊れた」と判断されたからです。切り離されたサーバーの依頼が残りに回り、残りもさらに苦しくなって次々に切り離されるドミノが起きます。溢れは待っていても自然に収まらず、むしろ広がることがあります。</p></div>
+    </details>
+    <details>
+      <summary>Q6. 増やす合図として、CPU の平均より「来ている依頼の数」のほうが優れているのはなぜですか。</summary>
+      <div class="body"><p>CPU 平均はならすので上がるのが遅れ、さらに手一杯になると 100% で止まって、2 倍足りないのか 10 倍足りないのか分かりません。依頼の数なら来た瞬間に増え、サーバーの状態に関係なく数えられ、「900 件 ÷ 1 台 100 件 = 9 台」と必要台数が一度に分かります。</p></div>
+    </details>
+    <details>
+      <summary>Q7. 空いたらすぐ台数を減らす設定にしたところ、増減を繰り返して細かいエラーが出続けます。どう直しますか。</summary>
+      <div class="body"><p>フラッピングが起きています。空いた状態がしばらく続いてから減らすようにします（例：HPA の <code>stabilizationWindowSeconds: 300</code>）。増やすのは早く、減らすのはゆっくり、という非対称にします。減らすときは手元の依頼を終わらせてから止めます（コネクションドレイニング）。</p></div>
+    </details>
+    <details>
+      <summary>Q8. 毎週土曜 20 時のイベント開始から 8 分つながりません。台数は上限 20 台に届いていません。合図を下げる・前もって増やす・上限を上げる、のどれが最適ですか。</summary>
+      <div class="body"><p>前もって増やす（例：毎週 19:45 にスケジュールで台数を増やす）が最適です。山の時刻が分かっているので、起動と温めを山の前に払えます。合図を下げても気づく時間が少し縮むだけで、上限を上げても「増えるのが遅い」問題は解決しません。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/50_スケーリング・負荷分散/03_オートスケーリング</li>
+      <li>ノート：61_サーバー・インフラ/50_スケーリング・負荷分散/混んだら増やす、が間に合わない — オートスケールの遅れ｜ねる前エンジニアリング</li>
+      <li>ねる前エンジニアリング「混んだら増やす、が間に合わない — オートスケールの遅れ」 https://www.youtube.com/watch?v=Q1W_ksNnMHs</li>
+      <li>Target tracking scaling policies for Amazon EC2 Auto Scaling（AWS） https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scaling-target-tracking.html</li>
+      <li>Set the default instance warmup for an Auto Scaling group（AWS） https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-default-instance-warmup.html</li>
+      <li>Scaling cooldowns for Amazon EC2 Auto Scaling（AWS） https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-scaling-cooldowns.html</li>
+      <li>Predictive scaling for Amazon EC2 Auto Scaling（AWS） https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-predictive-scaling.html</li>
+      <li>Horizontal Pod Autoscaling（Kubernetes） https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/</li>
+      <li>Terraform: aws_autoscaling_group https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/autoscaling_group</li>
+      <li>関連ページ：<a href="50-1_スケーリングの基本.html">スケーリングの基本</a>、<a href="50-2_ロードバランサーの仕組み.html">ロードバランサーの仕組み</a>、<a href="50-4_CDNによる負荷軽減.html">CDNによる負荷軽減</a>、<a href="50-5_高可用性と冗長化.html">高可用性と冗長化</a>、<a href="40-3_Terraform入門.html">Terraform入門</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-2_ロードバランサーの仕組み.html"><span class="lbl">← 前のページ</span>ロードバランサーの仕組み</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-4_CDNによる負荷軽減.html"><span class="lbl">次のページ →</span>CDNによる負荷軽減</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

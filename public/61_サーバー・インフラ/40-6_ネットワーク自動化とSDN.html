@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ネットワーク自動化とSDN｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 構築・IaC › ネットワーク自動化とSDN</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 構築・IaC</span>
+      <h1>ネットワーク自動化とSDN</h1>
+      <p class="lead">IaC の考え方はサーバーだけでなく、ルータやスイッチなどの <strong>ネットワーク機器</strong> にも広がっています。このページでは、ネットワークを手作業で管理する問題点と自動化で得られること・得られないこと、ネットワーク機器の <strong>3 つのプレーン</strong>（コントロール・データ・管理）の見分け方、<strong>SDN</strong> のアーキテクチャと <strong>ノースバウンド API／サウスバウンド API</strong> の違い、Catalyst Center・<strong>インテントベースネットワーキング（IBN）</strong>・SD-Access の考え方、そして <strong>YANG・NETCONF・RESTCONF</strong> によるモデル駆動のプログラマビリティを解説します。</p>
+      <p class="meta">もとにしたノート：40_構築・IaC/06_ネットワーク自動化とSDN</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>従来のネットワークは機器 1 台 1 台が「頭脳」を持ち、人が 1 台ずつ CLI で設定していました。<strong>SDN</strong> は「どう転送するか」を決める <strong>コントロールプレーンをコントローラに集約</strong> し、ネットワーク全体をプログラムから制御できるようにする考え方です。コントローラと上のアプリの間が <strong>ノースバウンド（REST API）</strong>、コントローラと機器の間が <strong>サウスバウンド（NETCONF / RESTCONF / OpenFlow など）</strong> です。</p>
+    </div>
+
+    <p>このページは <a href="40-2_IaCとは.html">40-2 IaCとは</a>、<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a> を読んでいると理解しやすくなります。REST API・データ形式の詳細は <a href="../45_API設計/30-1_RESTの考え方.html">45 RESTの考え方</a>、<a href="../45_API設計/30-3_HTTPメソッドと操作の表現.html">45 HTTPメソッドと操作の表現</a>、<a href="../45_API設計/20-4_JSONとデータ形式.html">45 JSONとデータ形式</a> も参考になります（11_コンピューターサイエンスの「HTTPメソッドとRESTの考え方」「JSON・XML・YAMLの比較と読み方」のノートにも詳しくあります）。</p>
+
+    <h2 id="sec-1"><span class="num">1.</span>ネットワーク自動化の意義と従来型ネットワーク</h2>
+
+    <h3 id="sec-1-1">1.1 従来型（コントローラを使わない）ネットワークの姿</h3>
+    <p>ネットワークの自動化を理解する出発点は、「自動化しないとどうなっているか」を知ることです。従来型のネットワークでは、ルータやスイッチの <strong>1 台 1 台が独立した“頭脳”</strong> を持っています。</p>
+<pre><code>          従来型（分散型）ネットワーク
+
+   管理者 ──SSH──&gt; R1   管理者 ──SSH──&gt; R2   管理者 ──SSH──&gt; SW1
+                   │                    │                    │
+              [頭脳+転送]  &lt;--OSPF--&gt;  [頭脳+転送]  &lt;--STP--&gt;  [頭脳+転送]
+
+   ・設定は 1 台ずつ CLI（SSH/コンソール）で投入
+   ・経路の判断（コントロールプレーン）は各機器が隣接機器と情報交換して個別に実施</code></pre>
+    <ul>
+      <li><strong>経路などの判断（コントロールプレーン）が各機器に分散</strong> している。各ルータは OSPF（ルータ同士で経路情報を交換するプロトコル）などで隣接ルータと情報を交換し、自分でルーティングテーブルを作ります。</li>
+      <li><strong>設定も機器ごとに分散</strong> している。管理者は SSH やコンソールで 1 台ずつログインし、CLI でコマンドを入力します。</li>
+      <li>もちろん、パケットを実際に転送する <strong>データプレーンはどの機器にもあります</strong>（これはコントローラ型でも同じ）。</li>
+      <li>従来型の機器の設定手段は主に <strong>CLI（SSH/コンソール）</strong> であり、「REST API しか使えない」ということはありません。</li>
+    </ul>
+
+    <h3 id="sec-1-2">1.2 手作業による管理の問題点</h3>
+    <p>台数が少ないうちは CLI での手作業でも困りません。しかし数十〜数千台になると次の問題が顕在化します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問題</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>時間がかかる</td><td>台数に比例して作業時間が増える。メンテナンス時間内に終わらない</td></tr>
+        <tr><td>入力ミス</td><td>タイプミス、コピー&amp;ペーストの貼り間違い、対象機器の取り違え</td></tr>
+        <tr><td>不統一</td><td>同じ役割の機器でも担当者ごとに書き方がばらばら（→ 構成ドリフト。<a href="40-2_IaCとは.html">40-2 IaCとは</a> の「発展」節）</td></tr>
+        <tr><td>確認が大変</td><td>設定が標準どおりかを 1 台ずつ <code>show running-config</code> で目視確認</td></tr>
+        <tr><td>履歴が残らない</td><td>誰がいつ何を変えたのかが追えない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-3">1.3 自動化のメリット</h3>
+    <p>自動化（スクリプト、構成管理ツール、コントローラなど）を導入すると、次の効果があります。</p>
+    <ul>
+      <li><strong>手作業による設定ミスが減る</strong></li>
+      <li><strong>多数の機器に同じ設定を一貫して適用できる</strong></li>
+      <li>作業時間が短縮される</li>
+      <li>設定が標準どおりかを <strong>機械的に確認</strong> できる</li>
+      <li>変更履歴を管理しやすくなる（Git などと組み合わせる。<a href="40-2_IaCとは.html">40-2 IaCとは</a>）</li>
+    </ul>
+    <p>一方で、次のような「自動化で起きないこと」もはっきり区別しておきましょう。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>誤った期待</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>ルータやスイッチが不要になる</td><td>自動化は機器の設定・管理を効率化するもの。<strong>機器そのものは必要</strong></td></tr>
+        <tr><td>セキュリティ対策が不要になる</td><td>不要にはならない。むしろ <strong>自動化の仕組み自体（認証情報、API トークン、管理サーバ）を守る必要</strong> が生じる</td></tr>
+        <tr><td>回線の帯域幅が増える</td><td>帯域幅は回線契約や物理的な性能で決まる。自動化とは無関係</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-1-4">1.4 コントローラ型との比較（予告）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>従来型</th><th>コントローラ型（SDN）</th></tr></thead>
+      <tbody>
+        <tr><td>コントロールプレーン</td><td>各機器に分散</td><td>コントローラに集中</td></tr>
+        <tr><td>設定方法</td><td>1 台ずつ CLI</td><td>コントローラの GUI / API でまとめて</td></tr>
+        <tr><td>全体の把握</td><td>機器ごとにログインして確認</td><td>コントローラで一覧表示</td></tr>
+        <tr><td>データプレーン</td><td>各機器</td><td>各機器（変わらない）</td></tr>
+      </tbody>
+    </table></div>
+    <p>コントローラ型の詳細は 3 章・4 章で扱います。</p>
+
+    <h3 id="sec-1-5">1.5 ひっかけポイントと押さえておくポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ひっかけポイント・よくある誤解</h4>
+        <ul>
+          <li>「自動化すれば機器が要らなくなる」「セキュリティ対策が不要になる」「帯域が増える」はすべて誤り。</li>
+          <li>「コントローラがすべての機器の転送ルールを一元的に決める」は <strong>コントローラ型（SDN）</strong> の特徴であって、従来型ではない。</li>
+          <li>「従来型の機器は REST API でしか設定できない」は誤り。従来型は <strong>CLI（SSH/コンソール）</strong> が中心。</li>
+          <li>「従来型はデータプレーンを持たない」は誤り。<strong>データプレーンはどの方式でも各機器にある</strong>。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>押さえておくポイント</h4>
+        <ul>
+          <li>自動化の主なメリット ＝ <strong>ミスの削減と設定の一貫性</strong>、時間短縮、確認の機械化、履歴管理。</li>
+          <li>従来型 ＝ <strong>分散型コントロールプレーン ＋ 機器ごとの CLI 設定</strong>。</li>
+          <li>自動化しても機器・セキュリティ対策は必要。自動化基盤そのものの保護も課題になる。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>ネットワーク機器の 3 つのプレーン</h2>
+
+    <h3 id="sec-2-1">2.1 プレーンとは</h3>
+    <p>ネットワーク機器の中で行われる処理は、役割ごとに <strong>3 つのプレーン（層）</strong> に分けて考えます。SDN を理解するための必須の概念です。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 270" role="img" aria-label="ネットワーク機器の3つのプレーン。上から、管理プレーンは機器を管理する層で、SSHやTelnetのログイン、SNMP、Syslog、NTP、NETCONFやRESTCONFのAPIによる設定。コントロールプレーンは転送のルールを決める層で、OSPF、EIGRP、BGP、STPのBPDU、ARPによりルーティングテーブルやMACテーブルを作る。データプレーンはルールに従って転送する層で、パケット転送、フレームのスイッチング、ACLによる破棄、NATの変換、カプセル化を行う。コントロールプレーンが作ったルールをデータプレーンに渡す">
+      <defs>
+        <marker id="arw406a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="700" height="72" rx="8" class="d-box"/>
+      <text x="30" y="38" class="d-text-bold">管理プレーン（Management Plane）</text>
+      <text x="690" y="38" text-anchor="end" class="d-text-sub">機器を「管理」する</text>
+      <text x="30" y="64" class="d-text-sub">SSH/Telnet ログイン、SNMP、Syslog、NTP、API（NETCONF/RESTCONF）による設定</text>
+
+      <rect x="10" y="96" width="700" height="72" rx="8" class="d-box-accent"/>
+      <text x="30" y="124" class="d-text-bold">コントロールプレーン（Control Plane）</text>
+      <text x="690" y="124" text-anchor="end" class="d-text-sub">転送の「ルール」を決める</text>
+      <text x="30" y="150" class="d-text-sub">OSPF/EIGRP/BGP、STP（BPDU）、ARP → ルーティングテーブル / MAC テーブル等を作る</text>
+
+      <rect x="10" y="190" width="700" height="72" rx="8" class="d-box-good"/>
+      <text x="30" y="218" class="d-text-bold">データプレーン（Data Plane / Forwarding）</text>
+      <text x="690" y="218" text-anchor="end" class="d-text-sub">ルールに従って「転送」する</text>
+      <text x="30" y="244" class="d-text-sub">パケット転送、フレームのスイッチング、ACL による破棄、NAT の変換、カプセル化</text>
+      <path d="M600,168 L600,188" class="d-line" marker-end="url(#arw406a)"/>
+      <text x="590" y="183" text-anchor="end" class="d-text-sub">ルールを渡す</text>
+    </svg>
+    <figcaption>図：コントロール＝決める、データ＝転送する（破棄も含む）、管理＝機器を管理する</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>プレーン</th><th>一言でいうと</th><th>主な例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コントロールプレーン</strong></td><td>「どう転送するか」を決める</td><td>OSPF などのルーティングプロトコル（ネイバーとのルート情報・LSA 交換）、STP の BPDU 送受信とブロックポートの決定、ARP による MAC アドレスの学習</td></tr>
+        <tr><td><strong>データプレーン</strong>（フォワーディングプレーン）</td><td>決まったルールに従って実際に転送する</td><td>ルーティングテーブルに基づくパケット転送、MAC アドレステーブルに基づくフレーム転送、ACL の deny に一致したパケットの破棄、NAT のアドレス変換</td></tr>
+        <tr><td><strong>管理プレーン</strong></td><td>機器そのものを管理・監視する</td><td>SSH/Telnet でのログイン、SNMP による監視、Syslog の送信、NTP、API による設定</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-2-2">2.2 判断のコツ</h3>
+    <p>迷ったら次の質問で判定します。</p>
+    <ol class="steps">
+      <li><strong>ユーザーのパケット／フレーム 1 つ 1 つに対する処理か？</strong> → データプレーン。「転送する」だけでなく「<strong>破棄する</strong>」（ACL の deny）もパケットごとの判断なのでデータプレーン。</li>
+      <li><strong>転送ルール（テーブル）を作るための、機器同士の情報交換か？</strong> → コントロールプレーン。OSPF の LSA 交換、STP の BPDU、ARP。</li>
+      <li><strong>人や管理システムが機器を操作・監視するための通信か？</strong> → 管理プレーン。SSH ログイン、SNMP で CPU 使用率を送る、Syslog、NTP。</li>
+    </ol>
+<pre><code>例：ルータ R1 がパケットを受信した時の流れ
+
+  [コントロールプレーン] OSPF でルートを学習 ──&gt; ルーティングテーブル作成
+                                                     │（ルールを渡す）
+                                                     ▼
+  受信パケット ──&gt; [データプレーン] テーブルを引いて出力IFへ転送 ──&gt; 送信
+                                    （ACL deny ならここで破棄）
+
+  管理者 ──SSH──&gt; [管理プレーン] show コマンドで状態を確認</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">補足：ARP はどのプレーン？</p>
+      <p>ARP は「IP と MAC の対応表（ARP テーブル）を作る」処理なので、ネットワークの教材ではコントロールプレーンに分類されます。<strong>テーブル作成＝コントロール、テーブル参照による転送＝データ</strong>、と覚えるとぶれません。</p>
+    </div>
+
+    <h3 id="sec-2-3">2.3 SDN との関係</h3>
+    <p>SDN（3 章）では、このうち <strong>コントロールプレーンの処理をコントローラに集約</strong> します。データプレーンは引き続き各機器が担います。「アプリケーションプレーン」という言葉は SDN アーキテクチャの層（アプリケーション層）を指して使われることはありますが、<strong>一般的なネットワーク機器の 3 つのプレーンには含まれません</strong>。</p>
+
+    <h3 id="sec-2-4">2.4 ひっかけポイントと押さえておくポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ひっかけポイント・よくある誤解</h4>
+        <ul>
+          <li>「ACL の deny で破棄する」は <strong>データプレーン</strong>。「セキュリティのルールだからコントロール」と考えるのは誤り。</li>
+          <li>「スイッチが MAC アドレステーブルに従ってフレームを転送する」は <strong>データプレーン</strong>。MAC アドレスを「学習してテーブルを作る」ことと「テーブルを引いて転送する」ことを混同しない。</li>
+          <li>「SSH でログイン」は <strong>管理プレーン</strong>。</li>
+          <li>「STP の BPDU を送受信してブロックするポートを決める」は、どのポートを使うかというルールを決めるので <strong>コントロールプレーン</strong>。</li>
+          <li>「SNMP で CPU 使用率を監視マネージャへ送る」は <strong>管理プレーン</strong>。</li>
+          <li>「アプリケーションプレーン」は機器の 3 プレーンには含まれない。</li>
+          <li>データプレーンは「フォワーディングプレーン」とも呼ぶ。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>押さえておくポイント</h4>
+        <ul>
+          <li><strong>コントロール＝決める、データ＝転送する（破棄も含む）、管理＝管理する</strong>。</li>
+          <li>OSPF / STP / ARP → コントロール。転送 / ACL 破棄 / NAT → データ。SSH / SNMP / Syslog / NTP / API → 管理。</li>
+          <li>SDN はコントロールプレーンを集約する技術。</li>
+        </ul>
+      </div>
+    </div>
+    <p>ACL の書き方は <a href="60-8_ACL.html">60-8 ACL</a>、機器への管理アクセスは <a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a> で扱います。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>SDN のアーキテクチャとノースバウンド／サウスバウンド API</h2>
+
+    <h3 id="sec-3-1">3.1 SDN とは</h3>
+    <p><strong>SDN（Software-Defined Networking）</strong> は、ネットワークの制御をソフトウェア（<strong>コントローラ</strong>）に集約し、ネットワーク全体をプログラムから制御できるようにする考え方です。</p>
+    <ul>
+      <li>従来：各機器がコントロールプレーンを持ち、個別に判断（分散型）</li>
+      <li>SDN：<strong>コントローラがネットワーク全体を把握し、コントロールプレーンを集中して担う</strong>。各機器はコントローラの指示に従ってデータを転送する（データプレーン）</li>
+    </ul>
+    <p>Cisco の SDN コントローラの代表例が <strong>Catalyst Center（旧 DNA Center）</strong> です（4 章）。コントローラは、アクセススイッチ、ファイアウォール、無線アクセスポイントとは役割が異なります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>機器</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>コントローラ</strong></td><td>ネットワーク全体を把握し、各機器に指示を出す（制御の集中）</td></tr>
+        <tr><td>アクセススイッチ</td><td>端末をつなぐ層のスイッチ。SDN では主に <strong>データプレーン（転送）</strong> を担う</td></tr>
+        <tr><td>ファイアウォール</td><td>通信を許可・拒否してネットワークを守る</td></tr>
+        <tr><td>無線アクセスポイント（AP）</td><td>無線端末をネットワークにつなぐ。多数の AP を集中管理するのは <strong>WLC（無線 LAN コントローラ）</strong></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-2">3.2 SDN の 3 層構造と API の向き</h3>
+    <p>SDN の構成図は、上にアプリケーション、真ん中にコントローラ、下にネットワーク機器を描きます。地図と同じく <strong>上が北（North）、下が南（South）</strong> です。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="SDNの3層構造。上はアプリケーション層（管理ツール、Pythonスクリプト、監視やチケット）。真ん中はコントロール層のSDNコントローラ（Catalyst Centerなど）でネットワーク全体を把握する。下はインフラストラクチャ層のルータ、スイッチ、APで、データプレーンとして実際の転送をする。アプリとコントローラの間がノースバウンドAPIで、例はREST API（HTTPSとJSON）。コントローラと機器の間がサウスバウンドAPIで、例はNETCONF、RESTCONF、OpenFlow、CLI（SSH）、SNMP">
+      <defs>
+        <marker id="arw406b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="440" height="70" rx="8" class="d-box"/>
+      <text x="230" y="38" text-anchor="middle" class="d-text-bold">アプリケーション層</text>
+      <text x="230" y="62" text-anchor="middle" class="d-text-sub">管理ツール / Python スクリプト / 監視・チケット</text>
+      <rect x="10" y="130" width="440" height="70" rx="8" class="d-box-accent"/>
+      <text x="230" y="158" text-anchor="middle" class="d-text-bold">コントロール層：SDN コントローラ</text>
+      <text x="230" y="182" text-anchor="middle" class="d-text-sub">Catalyst Center など。ネットワーク全体を把握</text>
+      <rect x="10" y="250" width="440" height="70" rx="8" class="d-box-good"/>
+      <text x="230" y="278" text-anchor="middle" class="d-text-bold">インフラ層：ルータ / スイッチ / AP</text>
+      <text x="230" y="302" text-anchor="middle" class="d-text-sub">データプレーン＝実際の転送</text>
+      <path d="M230,82 L230,128" class="d-line" marker-start="url(#arw406b)" marker-end="url(#arw406b)"/>
+      <path d="M230,202 L230,248" class="d-line" marker-start="url(#arw406b)" marker-end="url(#arw406b)"/>
+      <rect x="480" y="78" width="230" height="54" rx="8" class="d-box-warn"/>
+      <text x="595" y="100" text-anchor="middle" class="d-text-bold">ノースバウンド API</text>
+      <text x="595" y="120" text-anchor="middle" class="d-text-sub">REST API（HTTPS + JSON）</text>
+      <rect x="480" y="190" width="230" height="70" rx="8" class="d-box-warn"/>
+      <text x="595" y="212" text-anchor="middle" class="d-text-bold">サウスバウンド API</text>
+      <text x="595" y="232" text-anchor="middle" class="d-text-sub">NETCONF, RESTCONF, OpenFlow</text>
+      <text x="595" y="250" text-anchor="middle" class="d-text-sub">CLI（SSH）, SNMP</text>
+      <path d="M478,105 L240,105" class="d-line-dash"/>
+      <path d="M478,225 L240,225" class="d-line-dash"/>
+    </svg>
+    <figcaption>図：上（北）向きがノースバウンド、下（南）向きがサウスバウンド。機器同士の通信はどちらでもない</figcaption>
+    </figure>
+
+    <div class="table-wrap"><table>
+      <thead><tr><th>API</th><th>どこの間か</th><th>代表的な技術</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ノースバウンド API</strong></td><td><strong>コントローラ ⇔ その上で動くアプリケーション</strong>（管理ツール、スクリプトなど）</td><td><strong>REST API</strong>（HTTPS + JSON）</td></tr>
+        <tr><td><strong>サウスバウンド API</strong></td><td><strong>コントローラ ⇔ ネットワーク機器</strong></td><td><strong>NETCONF、RESTCONF、OpenFlow</strong>、CLI（SSH）、SNMP</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>ノースバウンド API を使うと、アプリケーションがコントローラに指示を出したり、情報（機器一覧、障害情報など）を取得したりできます。</li>
+      <li><strong>機器同士</strong>（ルータとルータ）の通信は OSPF などのプロトコルで行われ、ノースバウンド／サウスバウンドという API の区分には入りません。</li>
+      <li>ユーザーの PC とインターネットの間の通信も SDN の API とは無関係です。</li>
+    </ul>
+
+    <h3 id="sec-3-3">3.3 サウスバウンドのプロトコル</h3>
+    <h4>OpenFlow</h4>
+    <ul>
+      <li><strong>ONF（Open Networking Foundation）</strong> が標準化した、初期の SDN を代表するサウスバウンドプロトコル。</li>
+      <li>コントローラがスイッチの <strong>フローテーブル</strong>（どのパケットをどう転送するかのルール）を <strong>直接書き換える</strong>。</li>
+      <li>コントロールプレーンを <strong>完全にコントローラへ移し</strong>、スイッチは受け取ったルールに従って転送するだけになる。</li>
+    </ul>
+<pre><code> コントローラ ──OpenFlow──&gt; スイッチのフローテーブル
+                           ┌─────────────────────────────┐
+                           │ 一致条件            │ 動作    │
+                           │ 宛先IP 10.1.1.0/24  │ port 2  │
+                           │ TCP 宛先ポート 23   │ drop    │
+                           └─────────────────────────────┘</code></pre>
+    <h4>NETCONF / RESTCONF</h4>
+    <ul>
+      <li>機器の <strong>設定や状態を取得・変更</strong> するためのプロトコル（詳細は 5 章）。</li>
+      <li><strong>NETCONF</strong>：SSH（TCP 830）＋ XML。</li>
+      <li><strong>RESTCONF</strong>：HTTPS ＋ JSON/XML。</li>
+      <li>どちらも <strong>YANG</strong> というデータモデルで設定項目の構造が定義されている。</li>
+    </ul>
+    <h4>CLI（SSH）・SNMP</h4>
+    <ul>
+      <li>従来の機器を扱うために、コントローラが SSH で CLI コマンドを投入したり、SNMP で情報を収集したりすることもある。</li>
+    </ul>
+
+    <h3 id="sec-3-4">3.4 サウスバウンドと間違えやすいプロトコル</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロトコル</th><th>実際の役割</th><th>SDN のサウスバウンド？</th></tr></thead>
+      <tbody>
+        <tr><td>HSRP</td><td>デフォルトゲートウェイを冗長化する FHRP の一つ</td><td>いいえ</td></tr>
+        <tr><td>DHCP</td><td>端末に IP アドレスを自動割り当て（<a href="10-6_DHCPとNTP.html">10-6 DHCPとNTP</a>）</td><td>いいえ</td></tr>
+        <tr><td>ARP</td><td>IP アドレスから MAC アドレスを調べる</td><td>いいえ</td></tr>
+        <tr><td>OSPF</td><td>ルータ同士がルート情報を交換するルーティングプロトコル</td><td>いいえ（コントローラが使うものではない）</td></tr>
+        <tr><td>LLDP</td><td>隣接機器の情報を取得する</td><td>いいえ</td></tr>
+        <tr><td>NETCONF / RESTCONF / OpenFlow</td><td>機器の設定・転送ルールを制御</td><td><strong>はい</strong></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-5">3.5 ひっかけポイントと押さえておくポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ひっかけポイント・よくある誤解</h4>
+        <ul>
+          <li>「コントローラとネットワーク機器の間」はノースバウンドではなく <strong>サウスバウンド</strong>。</li>
+          <li>「ネットワーク機器同士の間」は API 区分ではない。</li>
+          <li>「アクセススイッチが制御を担う」は誤り。SDN ではアクセススイッチは主に <strong>データプレーン</strong>。</li>
+          <li>多数の AP を集中管理する機器は <strong>WLC</strong>。AP 自体がコントローラではない。</li>
+          <li>HSRP / DHCP / ARP / OSPF / LLDP をサウスバウンドプロトコルと取り違えない。</li>
+          <li>OpenFlow は「フローテーブルを直接書き換える」。NETCONF は「設定を取得・変更する」。役割の言い回しで区別する。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>押さえておくポイント</h4>
+        <ul>
+          <li>SDN ＝ <strong>コントロールプレーンをコントローラに集約</strong>、機器はデータプレーンを担う。</li>
+          <li><strong>ノースバウンド＝コントローラとアプリ間（REST API）</strong>、<strong>サウスバウンド＝コントローラと機器間（NETCONF / RESTCONF / OpenFlow / CLI / SNMP）</strong>。</li>
+          <li>OpenFlow ＝ ONF 標準、フローテーブルを直接制御。</li>
+          <li>Cisco のコントローラ例 ＝ Catalyst Center（旧 DNA Center）。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>Catalyst Center・インテントベースネットワーキング・SD-Access</h2>
+
+    <h3 id="sec-4-1">4.1 Catalyst Center（旧 DNA Center）</h3>
+    <p><strong>Catalyst Center</strong> は Cisco のキャンパス（企業 LAN）ネットワーク向けコントローラです。以前は <strong>DNA Center</strong> と呼ばれていました。主な機能：</p>
+    <ul>
+      <li>多数の機器を <strong>1 か所から管理</strong> し、ポリシーや設定を <strong>まとめて適用</strong></li>
+      <li>機器の状態の監視（アシュアランス）、障害の分析</li>
+      <li>ソフトウェア（OS イメージ）の一括更新</li>
+      <li>GUI に加え、<strong>REST API（ノースバウンド API）</strong> を公開。スクリプトや他システムからも操作できる</li>
+      <li>SD-Access ファブリックの管理</li>
+    </ul>
+    <p>従来型との対比：</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>従来型の管理</th><th>コントローラ（Catalyst Center）による管理</th></tr></thead>
+      <tbody>
+        <tr><td>設定の確認</td><td><strong>機器ごとにログイン</strong> して確認</td><td>コントローラで <strong>一覧</strong> 確認</td></tr>
+        <tr><td>設定の適用</td><td>1 台ずつ CLI</td><td>ポリシーとしてまとめて適用</td></tr>
+        <tr><td>一貫性</td><td>担当者次第でばらつく</td><td>テンプレート・ポリシーで統一</td></tr>
+        <tr><td>障害対応</td><td>ログを機器ごとに収集</td><td>集中監視で原因を素早く特定</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">
+      <p class="callout-title">注意点</p>
+      <ul>
+        <li>コントローラで管理していても、<strong>必要に応じて SSH/CLI でのログインは可能</strong>。CLI が使えなくなるわけではありません。</li>
+        <li>コントローラは機器と <strong>IP で通信する</strong> ため、機器には <strong>管理用の IP アドレスが必要</strong> です。</li>
+      </ul>
+    </div>
+
+    <h3 id="sec-4-2">4.2 インテントベースネットワーキング（IBN）</h3>
+    <p><strong>インテント（Intent）＝意図、「何を実現したいか」</strong> のことです。</p>
+<pre><code> 従来：管理者が「どう設定するか(How)」を考え、機器ごとにコマンドを入力
+   管理者 → R1 : access-list 101 deny ip 10.50.0.0 0.0.255.255 10.10.0.0 0.0.255.255 ...
+          → SW1: ...
+          → SW2: ...
+
+ IBN：管理者は「何をしたいか(What)」= ポリシーを定義するだけ
+   管理者 →「来客用の端末は社内サーバにアクセスさせない」
+             │
+             ▼
+        コントローラ（Catalyst Center）
+             │ ① 意図を各機器の具体的な設定に変換（翻訳）
+             │ ② 各機器へ自動適用
+             │ ③ 意図どおりに動いているかを継続的に確認（アシュアランス）
+             ▼
+        R1 / SW1 / SW2 / WLC ...</code></pre>
+    <ul>
+      <li>IBN の代表的な製品が <strong>Catalyst Center（旧 DNA Center）</strong>。</li>
+      <li>「ポリシーを定義 → コントローラが変換・適用 → 継続的に確認」の流れが IBN の特徴です。サーバーの IaC でいう「宣言型」と同じ発想です（<a href="40-2_IaCとは.html">40-2 IaCとは</a>）。</li>
+    </ul>
+
+    <h3 id="sec-4-3">4.3 Cisco SD-Access</h3>
+    <p><strong>SD-Access</strong> は Catalyst Center が管理する、キャンパス向けの SDN ソリューションです。<strong>物理ネットワーク（アンダーレイ）の上に、仮想ネットワーク（オーバーレイ）を作る</strong> のが基本構造です。</p>
+<pre><code>   ┌───────────── オーバーレイ（仮想ネットワーク）──────────────┐
+   │  VN: 社員     VN: 来客     VN: IoT       ← 利用者/端末を   │
+   │                                           グループ分け    │
+   │      ═══════ VXLAN トンネル ═══════                      │
+   └──────────────────────────────────────────────────────────┘
+   ┌───────────── アンダーレイ（物理ネットワーク）──────────────┐
+   │  物理スイッチ・ルータを IP ルーティング（例：IS-IS）で接続   │
+   │   [Edge]──[Border]──[Edge]──[Control Plane Node]         │
+   └──────────────────────────────────────────────────────────┘
+          アンダーレイ ＋ オーバーレイ ＝ ファブリック
+                    管理：Catalyst Center</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>アンダーレイ</strong></td><td>物理的なスイッチ・ルータと、それらを <strong>IP ルーティングでつないだ</strong> 土台のネットワーク</td></tr>
+        <tr><td><strong>オーバーレイ</strong></td><td>アンダーレイの上に、<strong>トンネル（VXLAN）</strong> を使って作る仮想的なネットワーク</td></tr>
+        <tr><td><strong>ファブリック</strong></td><td>アンダーレイとオーバーレイを合わせた <strong>ネットワーク全体</strong></td></tr>
+      </tbody>
+    </table></div>
+    <p>利用者や端末はオーバーレイでグループ分けされるため、<strong>物理的な接続場所に関係なく同じポリシーを適用</strong> できます（例：社員はどのフロアのどのポートにつないでも「社員」のポリシー）。</p>
+
+    <h4>SD-Access の 3 つの要素</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>技術</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><strong>データプレーン</strong></td><td><strong>VXLAN</strong></td><td>元のフレームを <strong>UDP パケットで包んで（カプセル化）</strong>、アンダーレイ越しに運ぶ</td></tr>
+        <tr><td><strong>コントロールプレーン</strong></td><td><strong>LISP</strong></td><td>端末が <strong>どこ（どのエッジ）にいるか</strong> を管理する。データのカプセル化はしない</td></tr>
+        <tr><td><strong>ポリシー</strong></td><td><strong>Cisco TrustSec（SGT）</strong></td><td>セキュリティグループタグでグループ単位のアクセス制御</td></tr>
+      </tbody>
+    </table></div>
+    <p>VXLAN のカプセル化のイメージ：</p>
+<pre><code> ┌──────────┬────────┬────────┬─────────────────────────────────┐
+ │ 外側 IP   │ 外側UDP │ VXLAN  │ 元のEthernetフレーム（内側）       │
+ │(エッジ間) │ (4789) │ ヘッダ  │ 宛先MAC/送信元MAC/IP/データ ...    │
+ └──────────┴────────┴────────┴─────────────────────────────────┘
+   ↑ アンダーレイはこの外側IPだけを見てルーティングする</code></pre>
+    <p>VXLAN でカプセル化することで、<strong>物理ネットワーク（アンダーレイ）の構成に関係なく</strong> 仮想ネットワークを自由に作れます。</p>
+
+    <h4>間違えやすい技術</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>技術</th><th>実際の役割</th><th>SD-Access のオーバーレイのカプセル化？</th></tr></thead>
+      <tbody>
+        <tr><td>VXLAN</td><td>L2 フレームを UDP でカプセル化</td><td><strong>はい（データプレーン）</strong></td></tr>
+        <tr><td>LISP</td><td>端末の位置情報の管理</td><td>いいえ（コントロールプレーン）</td></tr>
+        <tr><td>802.1Q</td><td>トランクで VLAN タグを付ける</td><td>いいえ</td></tr>
+        <tr><td>NAT</td><td>IP アドレス変換</td><td>いいえ（カプセル化しない）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-4">4.4 ひっかけポイントと押さえておくポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ひっかけポイント・よくある誤解</h4>
+        <ul>
+          <li>「コントローラを使うと SSH/CLI でログインできなくなる」は誤り。</li>
+          <li>「機器ごとにログインして設定を確認する必要がある」は従来型の特徴。</li>
+          <li>「機器に IP アドレスが不要になる」は誤り。管理用 IP は必要。</li>
+          <li>物理的なネットワーク＝<strong>アンダーレイ</strong>。オーバーレイ（仮想）やファブリック（全体）と取り違えない。「ノースバウンド」は API の用語。</li>
+          <li>LISP は SD-Access で使われるが <strong>コントロールプレーン</strong>。カプセル化は VXLAN。</li>
+          <li>「ポリシーを定義するとコントローラが設定に変換」＝ <strong>IBN</strong>。構成ドリフト（設定のずれ）やロンゲストマッチ（ルート選択規則）とは無関係。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>押さえておくポイント</h4>
+        <ul>
+          <li>Catalyst Center（旧 DNA Center）＝ Cisco のキャンパス向けコントローラ。<strong>GUI ＋ REST API（ノースバウンド）</strong>。</li>
+          <li>IBN ＝「何をしたいか」を定義 → コントローラが変換・適用・継続確認。</li>
+          <li>SD-Access：<strong>アンダーレイ（物理）＋オーバーレイ（仮想）＝ファブリック</strong>。</li>
+          <li>SD-Access の要素：<strong>データ＝VXLAN、コントロール＝LISP、ポリシー＝TrustSec（SGT）</strong>。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>モデル駆動のプログラマビリティ：YANG・NETCONF・RESTCONF</h2>
+
+    <h3 id="sec-5-1">5.1 なぜ「モデル駆動」が必要か</h3>
+    <p>従来、プログラムで機器の情報を取るには <code>show</code> コマンドの出力（人間向けのテキスト）を解析（<strong>スクレイピング</strong>）していました。</p>
+<pre><code>R1# show ip interface brief
+Interface              IP-Address      OK? Method Status                Protocol
+GigabitEthernet0/0     10.1.1.1        YES manual up                    up</code></pre>
+    <ul>
+      <li>出力形式が <strong>機種・OS バージョンごとにばらばら</strong></li>
+      <li>バージョンアップで列がずれるとスクリプトが壊れる</li>
+    </ul>
+    <p>そこで、<strong>「どんなデータがあり、どんな型か」をあらかじめ定義（モデル化）し、その構造どおりにデータをやり取りする</strong> 方式が生まれました。これを <strong>モデル駆動のプログラマビリティ</strong> と呼びます。</p>
+
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="一番上はYANG（データモデル＝設計図）で、どんな項目と型があるかを決める。その構造に従ったデータを、NETCONFではXMLで書き、SSHのTCP 830で運ぶ。RESTCONFではJSONまたはXMLで書き、HTTPSで運ぶ">
+      <defs>
+        <marker id="arw406c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="110" y="10" width="440" height="56" rx="8" class="d-box-accent"/>
+      <text x="330" y="34" text-anchor="middle" class="d-text-bold">YANG（データモデル＝設計図）</text>
+      <text x="330" y="54" text-anchor="middle" class="d-text-sub">どんな項目・型があるか</text>
+      <path d="M250,66 L250,98" class="d-line" marker-end="url(#arw406c)"/>
+      <path d="M410,66 L410,98" class="d-line" marker-end="url(#arw406c)"/>
+      <text x="330" y="88" text-anchor="middle" class="d-text-sub">この構造に従ったデータを</text>
+
+      <rect x="110" y="100" width="210" height="50" rx="8" class="d-box"/>
+      <text x="215" y="130" text-anchor="middle" class="d-text-bold">エンコード：XML</text>
+      <rect x="340" y="100" width="210" height="50" rx="8" class="d-box"/>
+      <text x="445" y="130" text-anchor="middle" class="d-text-bold">エンコード：JSON / XML</text>
+      <text x="570" y="130" class="d-text-sub">実際の書き方</text>
+
+      <path d="M215,150 L215,178" class="d-line" marker-end="url(#arw406c)"/>
+      <path d="M445,150 L445,178" class="d-line" marker-end="url(#arw406c)"/>
+
+      <rect x="110" y="180" width="210" height="64" rx="8" class="d-box-good"/>
+      <text x="215" y="206" text-anchor="middle" class="d-text-bold">NETCONF</text>
+      <text x="215" y="228" text-anchor="middle" class="d-text-sub">SSH（TCP 830）</text>
+      <rect x="340" y="180" width="210" height="64" rx="8" class="d-box-good"/>
+      <text x="445" y="206" text-anchor="middle" class="d-text-bold">RESTCONF</text>
+      <text x="445" y="228" text-anchor="middle" class="d-text-sub">HTTPS（TCP 443）</text>
+      <text x="570" y="216" class="d-text-sub">やり取りの方法</text>
+    </svg>
+    <figcaption>図：YANG ＝ 設計図、XML / JSON ＝ 書き方、NETCONF / RESTCONF ＝ 運び方</figcaption>
+    </figure>
+
+    <h3 id="sec-5-2">5.2 YANG（データモデリング言語）</h3>
+    <ul>
+      <li><strong>YANG（Yet Another Next Generation）</strong> は <strong>データの構造を定義する言語（データモデリング言語）</strong> です。</li>
+      <li>インターフェースや VLAN などの設定項目に「どんな項目があり、それぞれどの型の値を取るか」を定義します。</li>
+      <li>YANG は「どんなデータがあるか」という <strong>設計図</strong>。それを実際にやり取りするときの <strong>書き方が XML や JSON</strong> です。</li>
+    </ul>
+    <p>YANG の例（簡略化）：</p>
+<pre><code>container interfaces {
+  list interface {
+    key "name";
+    leaf name    { type string; }
+    leaf enabled { type boolean; default true; }
+    leaf mtu     { type uint16; }
+  }
+}</code></pre>
+    <p>この構造に従ったデータを JSON で表すと（RESTCONF の場合）：</p>
+<pre><code>{
+  "ietf-interfaces:interfaces": {
+    "interface": [
+      {"name": "GigabitEthernet1", "enabled": true}
+    ]
+  }
+}</code></pre>
+    <p>比較：SNMP では <strong>MIB</strong> で管理項目を定義しました。YANG は NETCONF / RESTCONF における「MIB に相当するもの」とイメージすると理解しやすいです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>役割</th><th>SNMP の世界</th><th>モデル駆動の世界</th></tr></thead>
+      <tbody>
+        <tr><td>データ構造の定義</td><td>MIB</td><td><strong>YANG</strong></td></tr>
+        <tr><td>プロトコル</td><td>SNMP（Get/Set）</td><td><strong>NETCONF / RESTCONF</strong></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-3">5.3 NETCONF</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>トランスポート</td><td><strong>SSH（TCP 830）</strong></td></tr>
+        <tr><td>データ形式</td><td><strong>XML</strong></td></tr>
+        <tr><td>扱うデータ</td><td>YANG で定義されたデータ</td></tr>
+        <tr><td>操作</td><td><strong>RPC（リモートプロシージャコール）</strong> の形で要求：<code>get-config</code>（設定取得）、<code>edit-config</code>（設定変更）、<code>get</code>（状態取得）など</td></tr>
+        <tr><td>Cisco IOS XE での有効化</td><td><code>netconf-yang</code> コマンド</td></tr>
+        <tr><td>SDN での位置</td><td><strong>サウスバウンド</strong>（コントローラ → 機器）</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>R1(config)# netconf-yang</code></pre>
+    <p>NETCONF の RPC の例（設定取得）：</p>
+<pre><code>&lt;rpc message-id="101" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"&gt;
+  &lt;get-config&gt;
+    &lt;source&gt;&lt;running/&gt;&lt;/source&gt;
+  &lt;/get-config&gt;
+&lt;/rpc&gt;</code></pre>
+    <p>NETCONF は <strong>SSH で暗号化された接続の上</strong> で XML のメッセージをやり取りします。HTTPS（TCP 443）、SNMP（UDP 161）、Telnet（TCP 23）は NETCONF のトランスポートではありません。</p>
+
+    <h3 id="sec-5-4">5.4 RESTCONF</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>トランスポート</td><td><strong>HTTPS</strong>（TCP 443）</td></tr>
+        <tr><td>データ形式</td><td><strong>JSON または XML</strong></td></tr>
+        <tr><td>扱うデータ</td><td>YANG で定義されたデータ</td></tr>
+        <tr><td>操作</td><td><strong>REST API と同じ HTTP メソッド</strong>（GET、POST、PUT、PATCH、DELETE）</td></tr>
+        <tr><td>利点</td><td>Web API の知識で扱えるので、スクリプトから使いやすい</td></tr>
+      </tbody>
+    </table></div>
+    <p>RESTCONF のリクエスト例：</p>
+<pre><code>GET https://r1.example.com/restconf/data/ietf-interfaces:interfaces/interface=GigabitEthernet1
+Accept: application/yang-data+json
+Authorization: Basic YWRtaW46Q2lzY28xMjM=</code></pre>
+    <p>Cisco IOS XE では <code>restconf</code> コマンド（と HTTPS サーバ <code>ip http secure-server</code>）で有効にします。HTTP のヘッダー・ステータスコード・認証方式は <a href="../45_API設計/20-3_ステータスコード.html">45 ステータスコード</a>、<a href="../45_API設計/60-1_認証.html">45 認証</a> も参考になります。</p>
+
+    <h3 id="sec-5-5">5.5 NETCONF・RESTCONF・SNMP・OpenFlow の比較</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>プロトコル</th><th>トランスポート / ポート</th><th>データ形式</th><th>データ定義</th><th>主な用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>NETCONF</strong></td><td><strong>SSH / TCP 830</strong></td><td><strong>XML</strong></td><td>YANG</td><td>設定の取得・変更（RPC）</td></tr>
+        <tr><td><strong>RESTCONF</strong></td><td><strong>HTTPS / TCP 443</strong></td><td><strong>JSON / XML</strong></td><td>YANG</td><td>設定の取得・変更（HTTP メソッド）</td></tr>
+        <tr><td>SNMP</td><td>UDP 161（トラップは 162）</td><td>BER</td><td><strong>MIB</strong></td><td>監視（Get/Set）</td></tr>
+        <tr><td>OpenFlow</td><td>TCP（6653）</td><td>バイナリ</td><td>―</td><td>フローテーブルの直接制御</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-6">5.6 ひっかけポイントと押さえておくポイント</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ひっかけポイント・よくある誤解</h4>
+        <ul>
+          <li>データの構造を定義するのは <strong>YANG</strong>。JSON はエンコード方式であって構造の定義そのものではない。Python はプログラミング言語、SNMP は監視プロトコル（定義は MIB）。</li>
+          <li>「HTTPS で、GET/PUT などで YANG データを操作」＝ <strong>RESTCONF</strong>。NETCONF は SSH + XML、SNMP は MIB を Get/Set、OpenFlow はフローテーブル制御。</li>
+          <li>NETCONF ＝ <strong>SSH（TCP 830）</strong>。HTTPS 443 は RESTCONF、UDP 161 は SNMP、Telnet 23 は使わない。</li>
+          <li>NETCONF はサウスバウンド。データは XML、SSH で通信。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>押さえておくポイント</h4>
+        <ul>
+          <li><strong>YANG ＝ データモデル（設計図）</strong>、XML/JSON ＝ 書き方、NETCONF/RESTCONF ＝ 運び方。</li>
+          <li><strong>NETCONF：SSH・TCP 830・XML・RPC（get-config / edit-config）・<code>netconf-yang</code></strong>。</li>
+          <li><strong>RESTCONF：HTTPS・JSON/XML・HTTP メソッド</strong>。</li>
+        </ul>
+      </div>
+    </div>
+    <p>ネットワーク運用での AI 活用については、11_コンピューターサイエンスの「ネットワーク運用での機械学習と予測AI・生成AI」のノートで扱っています。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li>手作業のネットワーク管理は、時間・入力ミス・不統一・確認の手間・履歴なしが問題。自動化でミス削減と一貫性が得られるが、機器・セキュリティ対策は引き続き必要</li>
+      <li>機器の処理は <strong>コントロール（決める）・データ（転送・破棄）・管理（操作・監視）</strong> の 3 プレーンに分けて考える</li>
+      <li>SDN はコントロールプレーンをコントローラに集約する。<strong>ノースバウンド＝アプリとコントローラ間（REST API）</strong>、<strong>サウスバウンド＝コントローラと機器間（NETCONF / RESTCONF / OpenFlow / CLI / SNMP）</strong></li>
+      <li>Catalyst Center は Cisco のコントローラ。IBN は「何をしたいか」を定義してコントローラが変換・適用・継続確認する</li>
+      <li>SD-Access はアンダーレイ（物理）＋オーバーレイ（仮想）＝ファブリック。データ＝VXLAN、コントロール＝LISP、ポリシー＝TrustSec（SGT）</li>
+      <li>モデル駆動では YANG が設計図、XML / JSON が書き方、NETCONF（SSH 830・XML）/ RESTCONF（HTTPS・JSON/XML）が運び方</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">7.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. 「ACL の deny に一致したパケットを破棄する」処理は、どのプレーンに属しますか。</summary>
+      <div class="body"><p>データプレーンです。ユーザーのパケット 1 つ 1 つに対する処理（転送するか破棄するか）だからです。「セキュリティのルールだからコントロールプレーン」と考えるのは誤りです。</p></div>
+    </details>
+    <details>
+      <summary>Q2. SDN で、コントローラとネットワーク機器の間の API は何と呼ばれ、どんな技術が使われますか。</summary>
+      <div class="body"><p>サウスバウンド API です。NETCONF、RESTCONF、OpenFlow のほか、従来の機器向けに CLI（SSH）や SNMP も使われます。コントローラとその上のアプリケーションの間はノースバウンド API（主に REST API）です。</p></div>
+    </details>
+    <details>
+      <summary>Q3. ネットワークを自動化すると、セキュリティ対策は不要になりますか。</summary>
+      <div class="body"><p>なりません。むしろ自動化の仕組み自体（認証情報、API トークン、管理サーバ）を守る必要が生じます。機器そのものも必要で、帯域幅も増えません。</p></div>
+    </details>
+    <details>
+      <summary>Q4. インテントベースネットワーキング（IBN）の流れを説明してください。</summary>
+      <div class="body"><p>管理者は「来客用の端末は社内サーバにアクセスさせない」のように「何をしたいか」をポリシーとして定義します。コントローラ（Catalyst Center など）がそれを各機器の具体的な設定に変換し、自動適用し、意図どおりに動いているかを継続的に確認（アシュアランス）します。</p></div>
+    </details>
+    <details>
+      <summary>Q5. SD-Access で、データのカプセル化と端末の位置管理を担う技術はそれぞれ何ですか。</summary>
+      <div class="body"><p>カプセル化（データプレーン）は VXLAN、端末がどのエッジにいるかの管理（コントロールプレーン）は LISP です。ポリシーは Cisco TrustSec（SGT）が担います。</p></div>
+    </details>
+    <details>
+      <summary>Q6. NETCONF と RESTCONF の違いを、トランスポート・データ形式・操作の観点で答えてください。</summary>
+      <div class="body"><p>NETCONF は SSH（TCP 830）上で XML を使い、<code>get-config</code> / <code>edit-config</code> などの RPC で操作します。RESTCONF は HTTPS（TCP 443）上で JSON または XML を使い、GET / POST / PUT / PATCH / DELETE の HTTP メソッドで操作します。どちらも YANG で定義されたデータを扱います。</p></div>
+    </details>
+    <details>
+      <summary>Q7. YANG と JSON の関係を説明してください。</summary>
+      <div class="body"><p>YANG は「どんな項目があり、どの型か」というデータ構造を定義する設計図（データモデリング言語）です。JSON はその構造に従ったデータを実際に書き表すエンコード方式です。SNMP の世界でいえば、YANG は MIB に相当します。</p></div>
+    </details>
+    <details>
+      <summary>Q8. コントローラ（Catalyst Center）で機器を管理するようになったら、機器に SSH でログインできなくなりますか。</summary>
+      <div class="body"><p>なりません。必要に応じて SSH/CLI でログインできます。また、コントローラは機器と IP で通信するため、機器には管理用の IP アドレスが必要です。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/40_構築・IaC/06_ネットワーク自動化とSDN</li>
+      <li>関連ページ：<a href="40-2_IaCとは.html">40-2 IaCとは</a>、<a href="40-4_構成管理とAnsible.html">40-4 構成管理とAnsible</a>、<a href="60-6_ネットワーク機器への管理アクセス.html">60-6 ネットワーク機器への管理アクセス</a>、<a href="60-8_ACL.html">60-8 ACL</a>、<a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a></li>
+      <li>他章の関連ページ：<a href="../45_API設計/30-1_RESTの考え方.html">45 RESTの考え方</a>、<a href="../45_API設計/30-3_HTTPメソッドと操作の表現.html">45 HTTPメソッドと操作の表現</a>、<a href="../45_API設計/20-3_ステータスコード.html">45 ステータスコード</a>、<a href="../45_API設計/20-4_JSONとデータ形式.html">45 JSONとデータ形式</a>、<a href="../45_API設計/60-1_認証.html">45 認証</a></li>
+      <li>関連ノート（解説ページなし）：11_コンピューターサイエンス「HTTPメソッドとRESTの考え方」「HTTPヘッダー」「HTTPステータスコード」「JSON・XML・YAMLの比較と読み方」「ネットワーク運用での機械学習と予測AI・生成AI」</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-5_CloudFormationとCDK.html"><span class="lbl">← 前のページ</span>CloudFormationとCDK</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-1_スケーリングの基本.html"><span class="lbl">次のページ →</span>スケーリングの基本</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

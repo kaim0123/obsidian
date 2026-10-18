@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サーバーとは何か｜サーバー・インフラ解説</title>
+<link rel="stylesheet" href="../_解説HTML/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">サーバー・インフラ解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 10 サーバーの基礎 › サーバーとは何か</span>
+    <button class="toc-btn" type="button">目次</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc"><p class="toc-title">このページの目次</p><ol id="toc-list"></ol></nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">10 サーバーの基礎</span>
+      <h1>サーバーとは何か</h1>
+      <p class="lead">「サーバー」は特別な機械の名前ではなく、<strong>サービスを提供する役割</strong> の名前です。このページでは、クライアント/サーバーモデルとリクエスト・レスポンスの流れ、サーバー用ハードウェアと普通の PC の違い、<strong>物理サーバー / VPS / クラウド VM / コンテナ / サーバーレス</strong> という「サーバーの形」、Lambda・ECS・Cloud Run の得意・不得意、そしてブラウザで URL を開いてから画面が出るまでの全体の流れを解説します。前提は、Web アプリを手元（localhost）で動かしたことがあれば十分です。</p>
+      <p class="meta">もとにしたノート：10_サーバーの基礎/01_サーバーとは何か、30_アプリ実行環境/Cloud Runが強すぎる理由【LambdaとECSの良いとこどり】（りょうま@インフラ攻略）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>サーバーは <strong>「頼まれたら応える係」</strong> です。機械の種類ではなく役割の名前なので、ノート PC でも <code>npm run dev</code> すればその瞬間サーバーになります。ただし本番のサーバーには <strong>「24 時間止まらない」「大勢を同時にさばく」「壊れてもデータを失わない」</strong> ことが求められ、そのために専用のハードウェアや運用の工夫があります。</p>
+    </div>
+
+    <h2 id="sec-1"><span class="num">1.</span>サーバーは「頼まれたら応える係」</h2>
+    <p>レストランで例えると、お客さん（<strong>クライアント</strong>）が注文（<strong>リクエスト</strong>）を出し、厨房（<strong>サーバー</strong>）が料理（<strong>レスポンス</strong>）を返します。厨房は「料理を作る専用の建物」である必要はなく、<strong>注文を受けて応える役割を担っていればサーバー</strong> です。</p>
+    <ul>
+      <li>サーバー（server）＝「serve（仕える・提供する）するもの」。<strong>役割の名前</strong> であって機械の種類ではありません</li>
+      <li>あなたのノート PC でも <code>npm run dev</code> すれば、その瞬間それは「サーバー」です</li>
+      <li>ただし本番のサーバーには「24 時間止まらない」「大勢を同時にさばく」「壊れてもデータを失わない」ことが求められます。だから専用のハードウェアや運用の工夫が必要になります</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>クライアント/サーバーモデル</h2>
+
+    <h3 id="sec-2-1">2.1 役割の分担</h3>
+    <p><strong>クライアント/サーバーモデル（client-server model）</strong> は、「お願いする側」と「応える側」を分ける考え方です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>クライアント（client）</th><th>サーバー（server）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>例</strong></td><td>ブラウザ、スマホアプリ、<code>curl</code></td><td>Nginx、Shop API（Node.js）、PostgreSQL</td></tr>
+        <tr><td><strong>動き方</strong></td><td>必要なときに <strong>自分から</strong> 接続する</td><td>常に起動して <strong>接続を待ち受ける（listen）</strong></td></tr>
+        <tr><td><strong>数</strong></td><td>多数（数千〜数百万）</td><td>少数（1 台〜数十台）</td></tr>
+        <tr><td><strong>寿命</strong></td><td>ユーザーが閉じたら終わり</td><td>基本的に止まらない</td></tr>
+      </tbody>
+    </table></div>
+    <p>ポイントは「<strong>サーバーは待つ側</strong>」だということです。サーバーは <strong>ポート（port）</strong>（通信の窓口番号）を開けて待ち続け、そこにクライアントが接続してきます。ポートは <a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a> で詳しく扱います。</p>
+
+    <h3 id="sec-2-2">2.2 リクエストとレスポンス</h3>
+    <p>Web の世界では、クライアントとサーバーは <strong>HTTP（HyperText Transfer Protocol）</strong> という決まりごとで会話します。</p>
+<pre><code>クライアント → サーバー（リクエスト）
+  GET /api/products/42 HTTP/1.1
+  Host: shop.example.com
+  Accept: application/json
+
+サーバー → クライアント（レスポンス）
+  HTTP/1.1 200 OK
+  Content-Type: application/json
+
+  {"id":42,"name":"マグカップ","price":1200}</code></pre>
+    <ul>
+      <li><strong>リクエスト（request）</strong>：「何を（パス）」「どうしたいか（メソッド：GET/POST など）」を伝えます</li>
+      <li><strong>レスポンス（response）</strong>：「結果どうだったか（ステータスコード：200/404/500 など）」と中身を返します</li>
+      <li>1 往復で完結するのが基本です。サーバーは前回の会話を覚えていない（<strong>ステートレス</strong>）ので、ログイン状態などは Cookie やトークンで毎回伝えます（→ <a href="../74_セッション管理/20-1_HTTPとセッション管理.html">74 HTTPとセッション管理</a>、<a href="../74_セッション管理/10-1_Cookieの仕組み.html">74 Cookieの仕組み</a>）</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">サーバー同士もクライアント/サーバー</p>
+      <p>Shop API が PostgreSQL にクエリを投げるとき、Shop API は「DB のクライアント」です。1 つのプログラムが、ブラウザに対してはサーバー、DB に対してはクライアント、という二役を担うのはごく普通のことです。</p>
+    </div>
+
+    <h2 id="sec-3"><span class="num">3.</span>サーバーの中身と、PC との違い</h2>
+
+    <h3 id="sec-3-1">3.1 中身は PC と同じ 4 つの部品</h3>
+    <p>サーバーも中身はコンピューターです。主な部品は PC と同じです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>部品</th><th>役割</th><th>例え</th><th>足りないと起きること</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CPU</strong></td><td>計算・処理をする</td><td>料理人</td><td>リクエスト処理が遅くなる、応答待ちの行列ができる</td></tr>
+        <tr><td><strong>メモリ（RAM）</strong></td><td>作業中のデータを置く短期記憶</td><td>調理台</td><td>スワップ（ディスクで代用）が起きて激遅になる、OOM（Out Of Memory：メモリ切れ）でプロセスが強制終了</td></tr>
+        <tr><td><strong>ストレージ（SSD/HDD）</strong></td><td>電源を切っても消えない長期記憶</td><td>冷蔵庫・倉庫</td><td>ディスクフルでログや DB が書けなくなり停止</td></tr>
+        <tr><td><strong>NIC（Network Interface Card）</strong></td><td>ネットワークにつなぐ口</td><td>店の出入口</td><td>帯域不足で通信が詰まる</td></tr>
+      </tbody>
+    </table></div>
+    <p>実務でサーバーの性能を語るときは「<strong>vCPU 2 / メモリ 4GB / SSD 80GB / 帯域 〇Gbps</strong>」のようにこの 4 つで表します。それぞれの詳しい仕様は <a href="#sec-10">10 章の補足</a> で扱います。</p>
+
+    <h3 id="sec-3-2">3.2 サーバー用ハードウェアならではの工夫</h3>
+    <p>本番用の物理サーバーは「止まらない・壊れてもすぐ直せる」ために、PC にはない工夫がされています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>工夫</th><th>内容</th><th>なぜ必要か</th></tr></thead>
+      <tbody>
+        <tr><td><strong>常時稼働前提の設計</strong></td><td>24 時間 365 日動かす前提の部品・冷却</td><td>PC は「使うときだけ」動かす前提</td></tr>
+        <tr><td><strong>冗長電源（redundant PSU）</strong></td><td>電源ユニットを 2 つ載せ、片方が壊れても動き続ける</td><td>電源は壊れやすい部品の代表</td></tr>
+        <tr><td><strong>ECC メモリ（Error-Correcting Code）</strong></td><td>メモリのビット化けを検出・訂正する</td><td>長時間・大量データでは宇宙線などによるビット反転が無視できない。DB の値が化けたら大事故</td></tr>
+        <tr><td><strong>RAID</strong></td><td>複数ディスクに分散・複製して 1 本壊れても大丈夫にする</td><td>ディスクも消耗品</td></tr>
+        <tr><td><strong>ホットスワップ</strong></td><td>電源を入れたままディスク・電源を交換できる</td><td>交換のために止めなくて済む</td></tr>
+        <tr><td><strong>ラックマウント</strong></td><td>19 インチラックに薄い板状（1U ≒ 4.45cm）で積む</td><td>データセンターに高密度に並べ、配線・冷却を効率化</td></tr>
+        <tr><td><strong>リモート管理（BMC/IPMI）</strong></td><td>OS が固まっていても別回線で電源操作・画面確認</td><td>データセンターまで行かずに復旧できる</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">クラウドを使うならハードは意識しなくていい？</p>
+      <p>クラウドや VPS では、こうしたハードウェアの面倒は事業者が見てくれます。ただし「物理サーバーは壊れる」という事実は変わりません。クラウドの VM も、裏の物理マシンが壊れれば止まります。だから後の章で <strong>冗長化</strong>（<a href="50-5_高可用性と冗長化.html">50-5 高可用性と冗長化</a>）を学びます。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>サーバーの「形」：物理・VPS・クラウド VM・コンテナ・サーバーレス</h2>
+    <p>「サーバーを用意する」といっても、今は色々な形があります。下に行くほど <strong>自分で管理する範囲が狭く</strong>、手軽になりますが、自由度は下がります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>形</th><th>ざっくり言うと</th><th>自分で管理するもの</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>物理サーバー（ベアメタル）</strong></td><td>本物の機械を 1 台まるごと</td><td>ハード・OS・アプリ全部</td><td>自社データセンター、さくらの専用サーバ</td></tr>
+        <tr><td><strong>VPS（Virtual Private Server）</strong></td><td>物理サーバーを仮想的に分けた 1 区画を月額で借りる</td><td>OS・アプリ</td><td>さくらの VPS、ConoHa VPS、DigitalOcean、Amazon Lightsail</td></tr>
+        <tr><td><strong>クラウド VM</strong></td><td>VPS に近いが、API で秒単位に作成・削除・増減できる</td><td>OS・アプリ</td><td>Amazon EC2、Compute Engine、Azure Virtual Machines</td></tr>
+        <tr><td><strong>コンテナ</strong></td><td>OS の上で、アプリと依存物を箱詰めして動かす</td><td>アプリ＋コンテナイメージ</td><td>Docker、Kubernetes、Amazon ECS</td></tr>
+        <tr><td><strong>サーバーレス（FaaS）</strong></td><td>関数を置くだけ。呼ばれたときだけ動く</td><td>コード（関数）だけ</td><td>AWS Lambda、Cloud Run functions、Azure Functions</td></tr>
+      </tbody>
+    </table></div>
+    <p>自分で管理する範囲を層ごとに並べると、次のようになります（■＝自分で管理、□＝事業者が管理、△＝サービス次第）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>形</th><th>ハード</th><th>仮想化</th><th>OS</th><th>ランタイム</th><th>アプリ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>物理</strong></td><td>■</td><td>■</td><td>■</td><td>■</td><td>■</td></tr>
+        <tr><td><strong>VPS/VM</strong></td><td>□</td><td>□</td><td>■</td><td>■</td><td>■</td></tr>
+        <tr><td><strong>コンテナ</strong></td><td>□</td><td>□</td><td>△（ホスト OS はサービス次第）</td><td>■</td><td>■</td></tr>
+        <tr><td><strong>サーバーレス</strong></td><td>□</td><td>□</td><td>□</td><td>□</td><td>■</td></tr>
+      </tbody>
+    </table></div>
+    <p>「サーバーレス」でもサーバーが無いわけではなく、<strong>サーバーの存在を意識しなくていい</strong> という意味です。仕組みと選び方は <a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a> で、コンテナは 53_コンテナの「Dockerとは」のノートで詳しく扱います。設計の観点からのサーバーレスは <a href="../41_アーキテクチャ/40-6_サーバーレス.html">41 サーバーレス</a> も参考になります。</p>
+    <p>このシリーズでは、仕組みを理解しやすい <strong>Ubuntu の VPS / EC2 1 台</strong> からスタートします。一番「サーバーらしい」形で基礎を押さえておくと、コンテナやサーバーレスに進んだときも「裏で何が起きているか」が分かるからです。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>発展：Lambda・ECS・Cloud Run の得意・不得意</h2>
+    <p>サーバーレスやコンテナの具体的なサービスとして、AWS の <strong>Lambda</strong>（サーバーレス関数）と <strong>ECS</strong>（コンテナ実行サービス）、Google Cloud の <strong>Cloud Run</strong>（コンテナをサーバーレスのように動かすサービス）を比べてみます。技術選定では、サービスの得意・不得意をざっくり頭に入れておくと「こういうときは Cloud Run」「こういうときは ECS」とすぐ判断できます。ここはりょうま@インフラ攻略さんの動画「Cloud Runが強すぎる理由【LambdaとECSの良いとこどり】」の内容です。</p>
+    <div class="callout key">
+      <p class="callout-title">動画の結論</p>
+      <p>AWS で安く API を動かそうとすると、実質 <strong>Lambda（安いが制限が多い）か ECS（安定しているが高い）</strong> の二択になり、そのトレードオフに悩み続けることになります。Google Cloud の <strong>Cloud Run</strong> は「ゼロスケールできるのに ECS 並みのパワーがある」ため、両方の良いところを取れます。新規サービスを立ち上げるなら真っ先に検討したいほどおすすめ、という話です。</p>
+    </div>
+
+    <h3 id="sec-5-1">5.1 Lambda の強み</h3>
+    <ul>
+      <li><strong>ゼロスケール</strong>：イベント（リクエスト）があったときだけ起動し、終われば停止します。0 台から 1 台へ増やせることを「ゼロスケール」と呼びます。<strong>イベント駆動アーキテクチャ</strong>（何かが起きたときだけ処理が動く作り）を実現でき、ワークロード（処理量）の少ないサービスなら非常に安く運用できます。
+        <ul>
+          <li>事例：Lambda ＋ API Gateway ＋ EFS（Lambda にマウントできるファイルシステム。その上で SQLite を動かして DB 代わりにする）で、月額約 200 円の社内システムを作ったそうです。RDS（AWS のマネージド DB）だと月 5〜6 千円かかります。リクエストがあったときしかお金がかからないので、ほぼ無料で運用できます</li>
+        </ul>
+      </li>
+      <li><strong>スケーラビリティが優秀</strong>：リージョンあたりアカウント全体で同時実行数 1000 まで（申請で引き上げ可）。1 回の処理が 200ms なら 1 つの実行枠を 1 秒に約 5 回使えるので、1000 × 5 で秒間約 5000 リクエスト、100ms なら秒間約 1 万リクエストをさばけます</li>
+      <li>スケールアウト（台数を増やすこと）も速く、リクエスト量に応じて <strong>10 秒ごとに最大 1000 個の実行環境</strong> を階段状に自動で追加します。よほどのスパイク（急な負荷増）でない限り対応でき、テレビ局の数万同時接続規模の配信システム（API Gateway ＋ Lambda）にも使われています。社内システムに閉じず、大規模サービスにも耐えるスケーラビリティです</li>
+    </ul>
+
+    <h3 id="sec-5-2">5.2 Lambda の弱み</h3>
+    <p><strong>ハードクォータ</strong>（申請しても緩和できない上限）が多いのが辛いところです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>上限</th><th>値</th><th>実務での影響</th></tr></thead>
+      <tbody>
+        <tr><td><strong>タイムアウト</strong></td><td>15 分</td><td>前段に API Gateway を置くのが一般的で、そちらの上限（REST API か HTTP API かで多少違う）により実質 <strong>約 29〜30 秒</strong> 以内に返す必要がある</td></tr>
+        <tr><td><strong>リクエスト／レスポンスボディ</strong></td><td><strong>6MB</strong></td><td>特にきつい。大きめの JSON や CSV アップロードですぐ超える。CSV ファイルがだんだん大きくなって ECS へ移行した実体験が語られている</td></tr>
+        <tr><td><strong>ファイルディスクリプタ</strong>（同時に開けるファイルなどの数）</td><td>1024 個</td><td>—</td></tr>
+        <tr><td><strong>デプロイパッケージ（解凍後）</strong></td><td>250MB</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>Durable Functions</strong> で「最大 1 年実行」と発表されましたが、Step Functions のようにマルチステップで実行して合計 1 年という意味で、1 回の実行のタイムアウト 15 分は変わらないそうです</li>
+      <li><strong>コールドスタート</strong>：久しぶりにリクエストが来ると、コンテナの初期化から始めるため 3〜5 秒の遅延が出ます（昔は 10 秒ほどあった）。SSR（サーバーサイドレンダリング）を Lambda で行ったら、最初にブラウザを開いたユーザーは体感 10 秒待たされたこともあったそうです</li>
+      <li><strong>Provisioned Concurrency</strong> で常に温めておけばコールドスタートは解消できますが、常時課金になりゼロスケールのメリットが消えます（それなら ECS でよい、となる）。社内システムなど多少の待ちを許容できるなら Lambda で問題ありません</li>
+    </ul>
+
+    <h3 id="sec-5-3">5.3 ECS の強みと弱み</h3>
+    <ul>
+      <li>ECS は基本的に Lambda の逆です。<strong>パワーがあり安定</strong> していますが、ゼロスケールできず常時起動なので <strong>コストは高め</strong>（最小スペックでも月 5000〜7000 円程度）</li>
+      <li>タイムアウト・ファイル数・コールドスタートといった制約がなく、「迷ったら多少コストを払っても ECS にしておけ」と言えるほど安定しています</li>
+      <li>他の選択肢として、App Runner はゼロスケールできず ECS より少し安い程度で、新規受付も停止しています。EKS（AWS の Kubernetes）はさらに高くなります。結局「Lambda か ECS か」のトレードオフを考え続けるのが今の AWS の実態だ、と動画は述べています</li>
+    </ul>
+
+    <h3 id="sec-5-4">5.4 Cloud Run が強すぎる理由</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>Lambda</th><th>Cloud Run</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ゼロスケール</strong></td><td>可</td><td>可（最小インスタンス数を 0 にすれば、普段は落としておいて 1 円も払わない）</td></tr>
+        <tr><td><strong>パワー</strong></td><td>弱め</td><td>最大 8 vCPU / 32GB メモリ</td></tr>
+        <tr><td><strong>リクエスト／レスポンス上限</strong></td><td>6MB</td><td>32MB（ストリーミングならそれ以上）。Lambda の約 5 倍</td></tr>
+        <tr><td><strong>タイムアウト</strong></td><td>15 分（API Gateway 経由で約 30 秒）</td><td>最大 60 分</td></tr>
+      </tbody>
+    </table></div>
+    <p>例えるなら「<strong>Fargate（ECS のサーバー管理不要な実行環境）のコンテナを Lambda っぽく使える</strong>」のが Cloud Run です。</p>
+
+    <h3 id="sec-5-5">5.5 実務で Cloud Run に救われた事例</h3>
+    <ul>
+      <li><strong>要件</strong>：リモートデスクトップを立て、その中で Playwright（ブラウザ自動操作ツール）を使ってスクレイピング的な操作をし、<strong>WebSocket</strong>（つなぎっぱなしで双方向に通信する仕組み）でユーザーの画面からインタラクティブに操作できるようにする。ユーザーに一時的に認証・ログインしてもらい、認証情報を一時保存する機能</li>
+      <li><strong>Lambda が厳しかった理由</strong>：15 分タイムアウト。さらにリクエストが終わると停止する性質で、常駐する WebSocket サーバーと相性が悪い（API Gateway の WebSocket はあるが、リモートデスクトップのような常駐接続の維持には不向き）</li>
+      <li><strong>ECS が厳しかった理由</strong>：たまにしか使わない機能のためにタスクを常駐させるとコストが高い。リクエストのときだけ単発でタスクを起動すると約 1 分かかり、ユーザーを 30 秒〜1 分待たせるのは許容できない</li>
+      <li><strong>Cloud Run なら</strong>：使うときだけ起動するので安く、起動は 10〜20 秒程度。<strong>起動時の CPU ブースト</strong>（コールドスタートのときだけ一時的に CPU を増やす）でさらに改善でき、タイムアウト 60 分、WebSocket も使えたため要件を満たせました</li>
+    </ul>
+
+    <h3 id="sec-5-6">5.6 この比較から分かること</h3>
+    <ul>
+      <li>サービスの得意・不得意をざっくり頭に入れておくと、技術選定ですぐ判断できます</li>
+      <li><strong>Lambda</strong>＝安くてスケールに強いが、ハードクォータとコールドスタートがある。<strong>ECS</strong>＝安定・高パワーだが常時コストがかかる</li>
+      <li><strong>Cloud Run</strong> はゼロスケールとパワーを両立し、社内ツールやコミュニティ内だけで使うようなワークロードの少ないサービス、初期フェーズの選択肢として非常に有力です。EC2・ECS・Lambda・Kubernetes に加えて Cloud Run という手札を持っておくと、Cloud Run でしかできない要件に出会ったときに強い、と動画はまとめています</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">数値は動画時点のもの</p>
+      <p>上限値・料金・提供状況（App Runner の新規受付停止など）は動画（2026 年 10 月公開）時点の内容です。クラウドの制限は改定されるので、選定するときは各サービスの公式ドキュメントで最新値を確かめてください。</p>
+    </div>
+
+    <h2 id="sec-6"><span class="num">6.</span>Shop が 1 台で動く全体図</h2>
+    <p>このシリーズの題材である EC サイト「Shop」は、最初は 1 台のサーバーで動かします。</p>
+    <figure>
+    <svg viewBox="0 0 720 460" role="img" aria-label="インターネットから https://shop.example.com への通信が、Ubuntu Server 24.04 の1台のサーバーの 443番・80番ポートで Nginx に届く。Nginx は HTTPS を終端し静的ファイルを返し、API へのリクエストを http://127.0.0.1:3000 の Shop API に渡す。Shop API は localhost の 5432番ポートで PostgreSQL に接続する。外に開けるのは 22・80・443 だけで、3000 と 5432 は内側専用">
+      <defs>
+        <marker id="arw6101a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="250" y="10" width="220" height="48" rx="8" class="d-box"/>
+      <text x="360" y="32" text-anchor="middle" class="d-text-bold">インターネット</text>
+      <text x="360" y="50" text-anchor="middle" class="d-text-sub">https://shop.example.com</text>
+
+      <rect x="20" y="100" width="680" height="345" rx="10" class="d-box"/>
+      <text x="40" y="126" class="d-text-bold">Ubuntu Server 24.04（VPS / EC2 1台）</text>
+
+      <path d="M360,58 L360,148" class="d-line" marker-end="url(#arw6101a)"/>
+      <text x="372" y="92" class="d-text-sub">:443 / :80</text>
+
+      <rect x="270" y="150" width="180" height="64" rx="8" class="d-box-accent"/>
+      <text x="360" y="176" text-anchor="middle" class="d-text-bold">Nginx</text>
+      <text x="360" y="198" text-anchor="middle" class="d-text-sub">HTTPS終端・静的ファイル</text>
+      <text x="250" y="187" text-anchor="end" class="d-text">玄関係</text>
+
+      <path d="M360,214 L360,250" class="d-line" marker-end="url(#arw6101a)"/>
+      <text x="372" y="237" class="d-text-sub">http://127.0.0.1:3000</text>
+
+      <rect x="270" y="252" width="180" height="64" rx="8" class="d-box-accent"/>
+      <text x="360" y="278" text-anchor="middle" class="d-text-bold">Shop API</text>
+      <text x="360" y="300" text-anchor="middle" class="d-text-sub">Node.js / TypeScript</text>
+      <text x="250" y="289" text-anchor="end" class="d-text">店員</text>
+
+      <path d="M360,316 L360,350" class="d-line" marker-end="url(#arw6101a)"/>
+      <text x="372" y="338" class="d-text-sub">:5432（localhost）</text>
+
+      <rect x="270" y="352" width="180" height="50" rx="8" class="d-box-accent"/>
+      <text x="360" y="382" text-anchor="middle" class="d-text-bold">PostgreSQL</text>
+      <text x="250" y="382" text-anchor="end" class="d-text">倉庫番</text>
+
+      <text x="360" y="430" text-anchor="middle" class="d-text-sub">外に開けるのは 22(SSH)・80・443 だけ。3000 と 5432 は内側専用</text>
+    </svg>
+    <figcaption>図：1 台の Ubuntu サーバーの中で、Nginx・Shop API・PostgreSQL の 3 つの役割が分かれて動く</figcaption>
+    </figure>
+    <ul>
+      <li><strong>Nginx</strong>：玄関係。HTTPS の暗号を解き、画像などの静的ファイルは自分で返し、API へのリクエストは Shop API に渡します（→ <a href="20-3_リバースプロキシ.html">20-3 リバースプロキシ</a>）</li>
+      <li><strong>Shop API</strong>：店員。注文や商品検索などの処理（ビジネスロジック）を行います（→ <a href="30-1_アプリケーションサーバーとは.html">30-1 アプリケーションサーバーとは</a>）</li>
+      <li><strong>PostgreSQL</strong>：倉庫番。商品・注文・会員データを保存します（→ <a href="30-6_データベースサーバーの運用.html">30-6 データベースサーバーの運用</a>）</li>
+    </ul>
+    <p>1 台に全部載っていても、<strong>役割は 3 つに分かれている</strong> ことが大事です。この役割分担が、後で台数を増やすときの「切れ目」になります（→ <a href="10-2_サーバーの種類と役割.html">10-2 サーバーの種類と役割</a>）。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>URL を開いてから表示されるまで</h2>
+    <p>ブラウザで <code>https://shop.example.com/products/42</code> を開いたとき、裏では次のことが起きています。</p>
+    <figure>
+    <svg viewBox="0 0 720 470" role="img" aria-label="ブラウザが DNS に shop.example.com の IP を問い合わせ、203.0.113.10 が返る。ブラウザは Nginx の443番ポートに TCP 接続と TLS ハンドシェイクをして GET /products/42 を送る。Nginx は 127.0.0.1:3000 の Shop API に転送し、Shop API は PostgreSQL に SELECT を送って行データを受け取る。Shop API は 200 OK と HTML/JSON を Nginx に返し、Nginx が暗号化してブラウザに返す。続いてブラウザは CSS・JS・画像を取得し、Nginx が静的ファイルを返す">
+      <defs>
+        <marker id="arw6101b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="10" y="10" width="110" height="44" rx="8" class="d-box"/>
+      <text x="65" y="37" text-anchor="middle" class="d-text-bold">ブラウザ</text>
+      <rect x="155" y="10" width="110" height="44" rx="8" class="d-box"/>
+      <text x="210" y="37" text-anchor="middle" class="d-text-bold">DNS</text>
+      <rect x="300" y="10" width="120" height="44" rx="8" class="d-box-accent"/>
+      <text x="360" y="30" text-anchor="middle" class="d-text-bold">Nginx</text>
+      <text x="360" y="46" text-anchor="middle" class="d-text-sub">:443</text>
+      <rect x="455" y="10" width="120" height="44" rx="8" class="d-box-accent"/>
+      <text x="515" y="30" text-anchor="middle" class="d-text-bold">Shop API</text>
+      <text x="515" y="46" text-anchor="middle" class="d-text-sub">:3000</text>
+      <rect x="600" y="10" width="110" height="44" rx="8" class="d-box-accent"/>
+      <text x="655" y="30" text-anchor="middle" class="d-text-bold">PostgreSQL</text>
+      <text x="655" y="46" text-anchor="middle" class="d-text-sub">:5432</text>
+
+      <path d="M65,54 L65,460" class="d-line-dash"/>
+      <path d="M210,54 L210,460" class="d-line-dash"/>
+      <path d="M360,54 L360,460" class="d-line-dash"/>
+      <path d="M515,54 L515,460" class="d-line-dash"/>
+      <path d="M655,54 L655,460" class="d-line-dash"/>
+
+      <text x="137" y="82" text-anchor="middle" class="d-text-sub">① IP は？</text>
+      <path d="M65,90 L208,90" class="d-line" marker-end="url(#arw6101b)"/>
+      <text x="137" y="117" text-anchor="middle" class="d-text-sub">203.0.113.10</text>
+      <path d="M210,125 L67,125" class="d-line-dash" marker-end="url(#arw6101b)"/>
+
+      <text x="212" y="152" text-anchor="middle" class="d-text-sub">② TCP接続 + TLSハンドシェイク</text>
+      <path d="M65,160 L358,160" class="d-line" marker-end="url(#arw6101b)"/>
+      <text x="212" y="187" text-anchor="middle" class="d-text-sub">③ GET /products/42</text>
+      <path d="M65,195 L358,195" class="d-line" marker-end="url(#arw6101b)"/>
+
+      <text x="437" y="222" text-anchor="middle" class="d-text-sub">転送 127.0.0.1:3000</text>
+      <path d="M360,230 L513,230" class="d-line" marker-end="url(#arw6101b)"/>
+      <text x="585" y="257" text-anchor="middle" class="d-text-sub">SELECT … id=42</text>
+      <path d="M515,265 L653,265" class="d-line" marker-end="url(#arw6101b)"/>
+      <text x="585" y="292" text-anchor="middle" class="d-text-sub">行データ</text>
+      <path d="M655,300 L517,300" class="d-line-dash" marker-end="url(#arw6101b)"/>
+      <text x="437" y="327" text-anchor="middle" class="d-text-sub">200 OK + HTML/JSON</text>
+      <path d="M515,335 L362,335" class="d-line-dash" marker-end="url(#arw6101b)"/>
+      <text x="212" y="362" text-anchor="middle" class="d-text-sub">④ 200 OK（暗号化して返す）</text>
+      <path d="M360,370 L67,370" class="d-line-dash" marker-end="url(#arw6101b)"/>
+
+      <text x="212" y="397" text-anchor="middle" class="d-text-sub">⑤ CSS・JS・画像も取得</text>
+      <path d="M65,405 L358,405" class="d-line" marker-end="url(#arw6101b)"/>
+      <text x="212" y="432" text-anchor="middle" class="d-text-sub">静的ファイル</text>
+      <path d="M360,440 L67,440" class="d-line-dash" marker-end="url(#arw6101b)"/>
+    </svg>
+    <figcaption>図：名前解決 → 接続 → リクエスト → サーバー内の処理 → レスポンス → 追加の取得、と順に進む（実線＝依頼、点線＝応答）</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><strong>名前解決（DNS）</strong>：<code>shop.example.com</code> という名前を <code>203.0.113.10</code> のような IP アドレスに変換します（→ <a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a>）</li>
+      <li><strong>TCP 接続</strong>：その IP の 443 番ポートに接続します</li>
+      <li><strong>TLS ハンドシェイク</strong>：証明書でサーバーが本物か確認し、暗号化の鍵を決めます（→ <a href="20-4_HTTPSとTLS証明書.html">20-4 HTTPSとTLS証明書</a>）</li>
+      <li><strong>HTTP リクエスト</strong>：<code>GET /products/42</code> を送ります</li>
+      <li><strong>サーバー内の処理</strong>：Nginx → Shop API → PostgreSQL と順に処理が流れ、結果が戻ってきます</li>
+      <li><strong>HTTP レスポンス</strong>：HTML や JSON が返ります</li>
+      <li><strong>追加のリクエスト</strong>：HTML に書かれた CSS・JS・画像を、ブラウザがさらに取りに行きます</li>
+      <li><strong>描画</strong>：ブラウザが画面を組み立てて表示します</li>
+    </ol>
+    <p>「サイトが遅い」「繋がらない」というトラブルは、この <strong>どの段階で詰まっているか</strong> を切り分けるのが基本です。DNS が引けないのか、ポートが開いていないのか、API が遅いのか、DB が遅いのか。この流れを頭に入れておくと、後の章の内容がすべてこの地図のどこかに収まります。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解・つまずき</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>✕ よくある誤解</th><th>◯ 実際は</th></tr></thead>
+      <tbody>
+        <tr><td>サーバーは特別な高い機械のこと</td><td>サーバーは「役割」。ノート PC でも Raspberry Pi でもサーバーになれる。本番用は「止まらない工夫」がされているだけ</td></tr>
+        <tr><td>サーバーレスならサーバーは存在しない</td><td>サーバーはある。管理を事業者に任せられるので「意識しなくていい」という意味</td></tr>
+        <tr><td>1 台のサーバーにはアプリが 1 つだけ動いている</td><td>Shop の例のように、1 台の中で Nginx・API・DB など複数の「サーバーソフト」が同時に動くのが普通</td></tr>
+        <tr><td>localhost で動いたら本番でも同じように動く</td><td>本番では DNS・ファイアウォール・HTTPS・プロセスの常駐化など、手元にはなかった層が加わる。このシリーズはその層を一つずつ学ぶためのもの</td></tr>
+        <tr><td>クラウドなら壊れない</td><td>裏は物理サーバーなので壊れる。壊れても困らない構成（冗長化・バックアップ）は利用者側の仕事</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-9"><span class="num">9.</span>補足：サーバーの基本概念・種類・設置場所</h2>
+    <p>サーバーの役割、代表的なサーバーの種類、通信プロトコル、設置場所（オンプレミス / クラウド）を一覧できる形で整理します。</p>
+
+    <h3 id="sec-9-1">9.1 概要と基本概念</h3>
+    <p>サーバー（Server）とは、ネットワーク上で他のコンピュータ（クライアント）からの要求に応じて、サービスやリソースを提供するコンピュータのことです。</p>
+    <p><strong>クライアント・サーバーシステム</strong></p>
+    <ul>
+      <li><strong>クライアント</strong>：サービスを要求する側のコンピュータ</li>
+      <li><strong>サーバー</strong>：サービスを提供する側のコンピュータ</li>
+      <li>例：Web ブラウザ（クライアント）が Web サーバーに Web ページを要求</li>
+    </ul>
+    <p><strong>サーバーの役割</strong></p>
+    <ol>
+      <li><strong>リソースの共有</strong>：ファイル、プリンター、データベースなどを複数のクライアントで共有</li>
+      <li><strong>サービスの提供</strong>：Web ページ、メール、ファイル転送などのサービスを提供</li>
+      <li><strong>集中管理</strong>：ユーザー認証、セキュリティ、バックアップなどを一元管理</li>
+    </ol>
+
+    <h3 id="sec-9-2">9.2 サーバーの種類</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>役割</th><th>代表例</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. Web サーバー</strong></td><td>Web ページや Web アプリケーションを提供</td><td>Apache、Nginx、IIS</td><td>企業サイト、EC サイト、ブログなど</td></tr>
+        <tr><td><strong>2. データベースサーバー</strong></td><td>データの保存・管理・検索を提供</td><td>MySQL、PostgreSQL、Oracle Database</td><td>顧客情報管理、在庫管理、ログ管理など</td></tr>
+        <tr><td><strong>3. メールサーバー</strong></td><td>電子メールの送受信を管理</td><td>Postfix、Sendmail、Exchange Server</td><td>企業内メール、顧客対応メールなど</td></tr>
+        <tr><td><strong>4. ファイルサーバー</strong></td><td>ファイルの保存・共有を提供</td><td>Samba、NFS、Windows File Server</td><td>社内文書共有、バックアップ保存など</td></tr>
+        <tr><td><strong>5. DNS サーバー</strong></td><td>ドメイン名と IP アドレスの変換を提供</td><td>BIND、PowerDNS</td><td>インターネット上の名前解決</td></tr>
+      </tbody>
+    </table></div>
+    <p>それぞれの役割と構成の育て方は <a href="10-2_サーバーの種類と役割.html">10-2 サーバーの種類と役割</a> で詳しく扱います。</p>
+
+    <h3 id="sec-9-3">9.3 サーバーの特徴</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ハードウェア面</h4>
+        <ul>
+          <li><strong>高性能</strong>：大量の処理を安定して実行</li>
+          <li><strong>高信頼性</strong>：24 時間 365 日の稼働を前提</li>
+          <li><strong>拡張性</strong>：必要に応じてリソースを追加可能</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ソフトウェア面</h4>
+        <ul>
+          <li><strong>マルチユーザー対応</strong>：複数のユーザーが同時に利用可能</li>
+          <li><strong>セキュリティ</strong>：不正アクセスやデータ漏洩を防ぐ機能</li>
+          <li><strong>ログ管理</strong>：アクセス履歴やエラー情報を記録</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-9-4">9.4 サーバーとクライアントの通信</h3>
+    <p><strong>通信プロトコル</strong>（通信の決まりごと）</p>
+    <ul>
+      <li><strong>HTTP/HTTPS</strong>：Web ページの送受信</li>
+      <li><strong>SMTP/POP3/IMAP</strong>：メールの送受信</li>
+      <li><strong>FTP/SFTP</strong>：ファイルの転送</li>
+      <li><strong>SSH</strong>：セキュアなリモート接続</li>
+    </ul>
+    <p><strong>通信の流れ</strong></p>
+    <ol class="steps">
+      <li>クライアントがサーバーに要求を送信</li>
+      <li>サーバーが要求を処理</li>
+      <li>サーバーが結果をクライアントに返送</li>
+      <li>クライアントが結果を表示・利用</li>
+    </ol>
+
+    <h3 id="sec-9-5">9.5 サーバーの設置場所</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>オンプレミス（自社設置）</h4>
+        <ul>
+          <li><strong>メリット</strong>：完全な制御、カスタマイズ性</li>
+          <li><strong>デメリット</strong>：初期費用、保守コスト、専門知識が必要</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>クラウド（外部サービス）</h4>
+        <ul>
+          <li><strong>メリット</strong>：初期費用削減、スケーラビリティ、保守不要</li>
+          <li><strong>デメリット</strong>：月額費用、インターネット接続必須</li>
+        </ul>
+      </div>
+    </div>
+    <p>詳しい比較は <a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a> で扱います。</p>
+    <p>サーバーは現代の IT システムの中核となる重要なコンポーネントです。Web サイトの表示、メールの送受信、データの保存など、私たちが日常的に利用している多くのサービスがサーバーによって提供されています。サーバーの理解は、IT システム全体を理解するための基礎となります。</p>
+
+    <h2 id="sec-10"><span class="num">10.</span>補足：ハードウェアリソース（CPU・メモリ・ストレージ・NIC）</h2>
+    <p>3 章の「4 つの部品」それぞれについて、仕様・種類・性能指標・最適化・仮想化環境での割り当てまで掘り下げます。サーバーのハードウェアリソースは、システムの性能と機能を決定する重要な要素です。主要なリソースには、CPU（中央処理装置）、メモリ（主記憶装置）、ストレージ（補助記憶装置）、NIC（ネットワークインターフェースカード）があります。</p>
+
+    <h3 id="sec-10-1">10.1 CPU（Central Processing Unit：中央処理装置）</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>CPU の役割</h4>
+        <ul>
+          <li><strong>命令の実行</strong>：プログラムの命令を順次実行</li>
+          <li><strong>計算処理</strong>：数値計算、論理演算の実行</li>
+          <li><strong>制御</strong>：他のハードウェアの制御・管理</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>CPU の主要仕様</h4>
+        <ul>
+          <li><strong>コア数</strong>：同時に処理できる命令の数（シングルコア：1 つの処理／マルチコア：複数の処理を並列実行）</li>
+          <li><strong>クロック周波数</strong>：処理速度（GHz）</li>
+          <li><strong>キャッシュメモリ</strong>：高速アクセス用の一時記憶領域</li>
+          <li><strong>アーキテクチャ</strong>：x86、ARM、RISC-V など</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>サーバー向け CPU の特徴</h4>
+        <ul>
+          <li><strong>高信頼性</strong>：24 時間 365 日の稼働に対応</li>
+          <li><strong>高性能</strong>：大量の処理を安定して実行</li>
+          <li><strong>拡張性</strong>：複数 CPU の搭載が可能</li>
+          <li><strong>仮想化対応</strong>：仮想マシンの効率的な実行</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>CPU 性能指標</h4>
+        <ul>
+          <li><strong>IPC（Instructions Per Cycle）</strong>：1 クロックあたりの命令実行数</li>
+          <li><strong>スループット</strong>：単位時間あたりの処理量</li>
+          <li><strong>レイテンシ</strong>：処理開始から完了までの時間</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-2">10.2 メモリ（Memory：主記憶装置）</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>メモリの役割</h4>
+        <ul>
+          <li><strong>プログラムの実行</strong>：実行中のプログラムを格納</li>
+          <li><strong>データの一時保存</strong>：処理中のデータを高速アクセス</li>
+          <li><strong>OS の動作</strong>：オペレーティングシステムの動作領域</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>メモリの種類</h4>
+        <ul>
+          <li><strong>DRAM（Dynamic RAM）</strong>：主記憶として使用。DDR4、DDR5 が最新の規格。ECC（Error Correcting Code）はエラー訂正機能</li>
+          <li><strong>SRAM（Static RAM）</strong>：キャッシュメモリとして使用</li>
+          <li><strong>NVRAM（Non-Volatile RAM）</strong>：電源断でもデータ保持</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>メモリの仕様</h4>
+        <ul>
+          <li><strong>容量</strong>：GB、TB 単位で表現</li>
+          <li><strong>転送速度</strong>：メモリバスの速度</li>
+          <li><strong>レイテンシ</strong>：アクセス時間</li>
+          <li><strong>ECC 機能</strong>：エラー検出・訂正機能</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>メモリ管理</h4>
+        <ul>
+          <li><strong>仮想メモリ</strong>：物理メモリより大きな論理メモリ空間</li>
+          <li><strong>ページング</strong>：メモリの効率的な利用</li>
+          <li><strong>スワッピング</strong>：ストレージとのデータ交換</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-3">10.3 ストレージ（Storage：補助記憶装置）</h3>
+    <p><strong>ストレージの役割</strong>は、<strong>データの永続保存</strong>（電源断でもデータを保持）、<strong>プログラムの保存</strong>（アプリケーションの格納）、<strong>バックアップ</strong>（データの複製保存）です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>特徴</th><th>メリット</th><th>デメリット</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>HDD（Hard Disk Drive）</strong></td><td>磁気ディスクによる記録</td><td>大容量、低コスト</td><td>アクセス速度が遅い、物理的衝撃に弱い</td><td>大容量データ保存、バックアップ</td></tr>
+        <tr><td><strong>SSD（Solid State Drive）</strong></td><td>フラッシュメモリによる記録</td><td>高速アクセス、低消費電力、衝撃に強い</td><td>高コスト、書き込み回数制限</td><td>OS、アプリケーション、データベース</td></tr>
+        <tr><td><strong>NVMe SSD</strong></td><td>PCIe 接続による高速 SSD</td><td>極めて高速なアクセス</td><td>—</td><td>高性能サーバー、データベース</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid c2">
+      <div class="card">
+        <h4>ストレージの接続方式</h4>
+        <ul>
+          <li><strong>SATA</strong>：シリアル ATA 接続</li>
+          <li><strong>SAS</strong>：シリアル SCSI 接続</li>
+          <li><strong>PCIe</strong>：PCI Express 接続</li>
+          <li><strong>NVMe</strong>：高速 SSD 用プロトコル</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ストレージ管理</h4>
+        <ul>
+          <li><strong>RAID</strong>：複数ディスクによる冗長化</li>
+          <li><strong>LVM</strong>：論理ボリューム管理</li>
+          <li><strong>ファイルシステム</strong>：データの整理・管理</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-4">10.4 NIC（Network Interface Card：ネットワークインターフェースカード）</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>NIC の役割</h4>
+        <ul>
+          <li><strong>ネットワーク接続</strong>：サーバーとネットワークの接続</li>
+          <li><strong>データの送受信</strong>：ネットワーク経由でのデータ転送</li>
+          <li><strong>プロトコル処理</strong>：ネットワークプロトコルの実装</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>NIC の種類</h4>
+        <ul>
+          <li><strong>有線 NIC</strong>：イーサネット接続（10/100/1000BASE-T：ギガビットイーサネット、10GBASE-T：10 ギガビットイーサネット）</li>
+          <li><strong>無線 NIC</strong>：Wi-Fi 接続</li>
+          <li><strong>光ファイバー NIC</strong>：高速・長距離通信</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>NIC の仕様</h4>
+        <ul>
+          <li><strong>転送速度</strong>：Mbps、Gbps 単位</li>
+          <li><strong>ポート数</strong>：複数ポートによる冗長化</li>
+          <li><strong>オフロード機能</strong>：CPU 負荷軽減機能</li>
+          <li><strong>仮想化対応</strong>：SR-IOV、VMDq</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>ネットワーク性能</h4>
+        <ul>
+          <li><strong>スループット</strong>：単位時間あたりの転送量</li>
+          <li><strong>レイテンシ</strong>：データ送信から受信までの時間</li>
+          <li><strong>パケット損失率</strong>：転送エラーの発生率</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-10-5">10.5 ハードウェアリソースの最適化</h3>
+    <div class="grid c3">
+      <div class="card">
+        <h4>性能チューニング</h4>
+        <ul>
+          <li><strong>CPU</strong>：コア数、クロック周波数の最適化</li>
+          <li><strong>メモリ</strong>：容量、速度のバランス調整</li>
+          <li><strong>ストレージ</strong>：SSD 化、RAID 構成の最適化</li>
+          <li><strong>ネットワーク</strong>：帯域幅、レイテンシの改善</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>監視・管理</h4>
+        <ul>
+          <li><strong>リソース使用率</strong>：CPU、メモリ、ストレージ、ネットワークの使用状況</li>
+          <li><strong>性能指標</strong>：レスポンス時間、スループット</li>
+          <li><strong>アラート</strong>：閾値超過時の通知</li>
+          <li><strong>ログ分析</strong>：パフォーマンスの傾向分析</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>スケーリング</h4>
+        <ul>
+          <li><strong>垂直スケーリング</strong>：既存サーバーの性能向上</li>
+          <li><strong>水平スケーリング</strong>：サーバー台数の増加</li>
+          <li><strong>オートスケーリング</strong>：負荷に応じた自動調整</li>
+        </ul>
+        <p>詳しくは <a href="50-1_スケーリングの基本.html">50-1 スケーリングの基本</a>。</p>
+      </div>
+    </div>
+
+    <h3 id="sec-10-6">10.6 仮想化環境でのリソース管理</h3>
+    <div class="grid c2">
+      <div class="card">
+        <h4>リソース割り当て</h4>
+        <ul>
+          <li><strong>CPU</strong>：vCPU（仮想 CPU）の割り当て</li>
+          <li><strong>メモリ</strong>：仮想メモリの割り当て</li>
+          <li><strong>ストレージ</strong>：仮想ディスクの割り当て</li>
+          <li><strong>ネットワーク</strong>：仮想 NIC の割り当て</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>リソース共有</h4>
+        <ul>
+          <li><strong>オーバーコミット</strong>：物理リソースより多くの仮想リソースを割り当て</li>
+          <li><strong>動的割り当て</strong>：負荷に応じたリソースの再配分</li>
+          <li><strong>リソースプール</strong>：複数仮想マシンでのリソース共有</li>
+        </ul>
+      </div>
+    </div>
+    <p>ハードウェアリソースは、サーバーの性能と機能を決定する重要な要素です。CPU、メモリ、ストレージ、NIC それぞれが異なる役割を持ち、相互に連携してシステム全体の性能を実現しています。適切なリソースの選択と最適化により、効率的で信頼性の高いサーバーシステムを構築することができます。また、仮想化技術の普及により、リソースの柔軟な管理と効率的な利用が可能になっています（→ <a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a>）。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <ul>
+      <li>サーバーは「リクエストを待ち受けてレスポンスを返す」<strong>役割</strong> の名前</li>
+      <li>中身は CPU・メモリ・ストレージ・NIC。本番用ハードは冗長電源・ECC・RAID・ラックなどで「止まらない」ようにできている</li>
+      <li>サーバーの形は物理 → VPS → クラウド VM → コンテナ → サーバーレスと、管理範囲がだんだん狭くなる</li>
+      <li>Lambda は安くてスケールに強いがハードクォータとコールドスタートがあり、ECS は安定・高パワーだが常時コストがかかる。Cloud Run はゼロスケールとパワーを両立する</li>
+      <li>Shop は最初、1 台の Ubuntu サーバーに Nginx・Shop API・PostgreSQL を載せて動かす</li>
+      <li>URL を開くと DNS → TCP → TLS → HTTP → サーバー内処理 → 描画の順に進む。トラブル時はどこで詰まったかを切り分ける</li>
+    </ul>
+
+    <h2 id="sec-quiz"><span class="num">12.</span>理解度チェック</h2>
+    <details>
+      <summary>Q1. Shop API が PostgreSQL にデータを問い合わせるとき、Shop API はクライアントとサーバーのどちらですか？</summary>
+      <div class="body"><p><strong>クライアント</strong> です。ブラウザに対してはサーバーですが、DB に対しては「お願いする側」なのでクライアントになります。クライアント/サーバーは機械ではなく役割で決まります。</p></div>
+    </details>
+    <details>
+      <summary>Q2. 本番用サーバーで ECC メモリが使われる理由を説明してください。</summary>
+      <div class="body"><p>長時間・大量のデータを扱うと、メモリ上のビットが偶発的に反転する確率が無視できなくなるからです。ECC はそれを検出・訂正し、DB の値が気づかないうちに化けるといった事故を防ぎます。</p></div>
+    </details>
+    <details>
+      <summary>Q3. 「サイトが表示されない」と言われました。URL を開いてから表示までの流れのうち、最初に確認すべき段階は何ですか？</summary>
+      <div class="body"><p>最初は <strong>DNS（名前解決）</strong> です。名前が正しい IP に解決されていなければ、その後の段階には一切進めません。次に TCP 接続（ポートが開いているか）、TLS、HTTP 応答…と順に切り分けます。</p></div>
+    </details>
+    <details>
+      <summary>Q4. 「サーバーレスなのでサーバーは存在しない」という説明はどこが誤りですか？</summary>
+      <div class="body"><p>サーバーレスでも裏にはサーバーがあります。OS やハードの管理を事業者に任せられるので、利用者がサーバーの存在を「意識しなくていい」という意味です。</p></div>
+    </details>
+    <details>
+      <summary>Q5. 物理サーバー・VPS・コンテナ・サーバーレスのうち、OS の管理が自分の仕事にならないのはどれですか？</summary>
+      <div class="body"><p><strong>サーバーレス</strong> です。物理サーバーは全部、VPS／クラウド VM は OS から上が自分の管理です。コンテナはホスト OS の扱いがサービス次第で、サーバーレスでは自分が管理するのはコード（関数）だけになります。</p></div>
+    </details>
+    <details>
+      <summary>Q6. Lambda ＋ API Gateway で作った API で、ユーザーの CSV アップロードが大きくなって失敗するようになりました。何が原因と考えられ、どんな選択肢がありますか？</summary>
+      <div class="body"><p>Lambda のリクエスト／レスポンスボディの上限 <strong>6MB</strong>（緩和できないハードクォータ）に当たっていると考えられます。動画の事例では ECS へ移行しました。上限 32MB で、ゼロスケールもできる Cloud Run も候補になります。</p></div>
+    </details>
+    <details>
+      <summary>Q7. Lambda の Provisioned Concurrency でコールドスタートを消すと、どんなデメリットがありますか？</summary>
+      <div class="body"><p>常に温めておくため常時課金になり、「リクエストがあったときだけお金がかかる」というゼロスケールのメリットが消えます。それなら最初から ECS でよい、ということになりがちです。</p></div>
+    </details>
+    <details>
+      <summary>Q8. Shop を 1 台のサーバーで動かすとき、インターネットに開けるポートと内側専用のポートはそれぞれ何番ですか？</summary>
+      <div class="body"><p>外に開けるのは <strong>22（SSH）・80・443</strong> だけです。Shop API の 3000 と PostgreSQL の 5432 は localhost からだけ使う内側専用です。Nginx が玄関になり、内側に取り次ぎます。</p></div>
+    </details>
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：61_サーバー・インフラ/10_サーバーの基礎/01_サーバーとは何か</li>
+      <li>ノート：61_サーバー・インフラ/30_アプリ実行環境/Cloud Runが強すぎる理由【LambdaとECSの良いとこどり】</li>
+      <li>りょうま@インフラ攻略「Cloud Runが強すぎる理由【LambdaとECSの良いとこどり】」 https://www.youtube.com/watch?v=QGZmv0Dof6k</li>
+      <li>MDN: An overview of HTTP https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview</li>
+      <li>MDN: How the web works https://developer.mozilla.org/en-US/docs/Learn_web_development/Getting_started/Web_standards/How_the_web_works</li>
+      <li>AWS: What is serverless computing? https://aws.amazon.com/what-is/serverless-computing/</li>
+      <li>関連ページ：<a href="10-2_サーバーの種類と役割.html">10-2 サーバーの種類と役割</a>、<a href="10-3_仮想化とクラウド.html">10-3 仮想化とクラウド</a>、<a href="10-5_ネットワークの基本.html">10-5 ネットワークの基本</a>、<a href="20-1_Webサーバーとは.html">20-1 Webサーバーとは</a>、<a href="../41_アーキテクチャ/40-6_サーバーレス.html">41 サーバーレス</a>、<a href="../74_セッション管理/20-1_HTTPとセッション管理.html">74 HTTPとセッション管理</a></li>
+      <li>関連ノート（HTML なし）：53_コンテナ「Dockerとは」、11_コンピューターサイエンスの体系ノート（OS・ネットワークの理論）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_サーバー・インフラの全体像.html"><span class="lbl">← 前のページ</span>サーバー・インフラの全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-2_サーバーの種類と役割.html"><span class="lbl">次のページ →</span>サーバーの種類と役割</a>
+    </nav>
+  </main>
+</div>
+<script src="../_解説HTML/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Worse is Better — 完璧さより単純さが先に広まる｜原則解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">原則解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 思想・美徳 › Worse is Better</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 思想・美徳</span>
+      <h1>Worse is Better — 完璧さより単純さが先に広まる</h1>
+      <p class="lead">「完璧に正しく作られたソフトウェア」と「ところどころ雑だけれど、シンプルですぐ使えるソフトウェア」。広く使われるようになるのはどちらでしょうか。直感的には前者に思えますが、歴史を振り返ると、勝ち残ったのは後者であることが少なくありません。この逆説を言い表したのが <strong>Worse is Better（悪いほうが良い）</strong> という考え方です。</p>
+      <p class="meta">もとにしたノート：05_Worse_is_Better</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>「完璧さより単純さ。単純で 50% の出来のものが先に広まり、そのあと育っていく」</strong>。ただし手抜きの言い訳ではなく、<strong>何を優先するかのトレードオフ</strong> の話です。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <ol class="steps">
+      <li><strong>出典・背景</strong>：Richard P. Gabriel の論考と、本人による揺れ</li>
+      <li><strong>2つの設計スタイル</strong>：The Right Thing（MIT / Stanford 流）と Worse is Better（New Jersey 流）</li>
+      <li><strong>有名な例</strong>：PC 失敗（PC loser-ing）問題と <code>EINTR</code></li>
+      <li><strong>なぜ「悪いほう」が勝つのか</strong></li>
+      <li><strong>現代の開発での活かし方</strong> と <strong>よくある誤解</strong></li>
+    </ol>
+
+    <h2 id="sec-2"><span class="num">2.</span>出典・背景</h2>
+    <h3 id="sec-2-1">2.1 Richard P. Gabriel の論考</h3>
+    <p>提唱者は Lisp の研究者・実装者だった <strong>Richard P. Gabriel</strong> です。1989年に書いた講演原稿「Lisp: Good News, Bad News, How to Win Big」の中の一節で、「Worse is Better」という言葉を使いました。この節が1991年ごろに Jamie Zawinski によって抜き出されて広まり、独立した論考として知られるようになりました。</p>
+    <p>Gabriel が問題にしていたのは、<strong>「なぜ設計として優れた Lisp ではなく、UNIX と C が広まったのか」</strong> という疑問です。</p>
+    <h3 id="sec-2-2">2.2 その後の揺れ</h3>
+    <p>Gabriel 自身は、その後「Worse is Better は本当に良いのか」を何度も考え直しています。ペンネーム（Nickieben Bourbaki）で反論「Worse is Better is Worse」を書いたこともあり、本人の中でも結論が出ていない <strong>問いかけ</strong> として読むのがよいでしょう。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>2つの設計スタイル</h2>
+    <p>Gabriel は、設計の価値観を次の2つに分けて比べました。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th><strong>The Right Thing</strong>（MIT / Stanford 流）</th><th><strong>Worse is Better</strong>（New Jersey 流）</th></tr></thead>
+      <tbody>
+        <tr><td>単純さ</td><td>インターフェース（使う側）の単純さを最優先。実装は複雑でもよい</td><td><strong>実装の単純さ</strong> を最優先。インターフェースが多少複雑になってもよい</td></tr>
+        <tr><td>正しさ</td><td>あらゆる面で正しくなければならない</td><td>正しいほうがよいが、<strong>単純さのためなら少し譲る</strong></td></tr>
+        <tr><td>一貫性</td><td>一貫性を崩してはならない</td><td>単純さのためなら一貫性を少し譲る</td></tr>
+        <tr><td>完全性</td><td>想定される状況をすべてカバーする</td><td>カバーしたいが、<strong>単純さのためなら削る</strong></td></tr>
+        <tr><td>代表例</td><td>Lisp マシン、Common Lisp</td><td>UNIX、C</td></tr>
+      </tbody>
+    </table></div>
+    <p>「New Jersey 流」という呼び名は、UNIX と C を生んだ Bell 研究所がニュージャージー州にあったことに由来します。</p>
+
+    <h3 id="sec-3-1">3.1 有名な例：PC 失敗（PC loser-ing）問題</h3>
+    <p>論考では、<strong>システムコール</strong>（プログラムが OS に仕事を頼む呼び出し）の途中で割り込みが入ったときの扱いが例に挙がっています。</p>
+    <div class="grid c2">
+      <div class="card accent"><h4>MIT 流（ITS という OS）</h4><p>OS 側がきちんと状態を戻して、ユーザーのプログラムからは何も起きなかったように見せる。<strong>使う側は楽だが、OS の実装は複雑</strong>。</p></div>
+      <div class="card warn"><h4>New Jersey 流（UNIX）</h4><p>OS は「失敗した」というエラーを返すだけ。<strong>やり直しは呼び出す側のプログラムの責任</strong> にする。使う側は面倒だが、OS の実装は単純。</p></div>
+    </div>
+    <p>今でも UNIX 系 OS のシステムコールが <code>EINTR</code>（割り込みで中断された）を返し、呼び出し側がリトライするのは、この設計の名残です。</p>
+    <pre><code>// 呼び出し側が「中断されたらやり直す」を書く必要がある
+ssize_t n;
+do {
+    n = read(fd, buf, size);
+} while (n == -1 &amp;&amp; errno == EINTR);</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>なぜ「悪いほう」が勝つのか</h2>
+    <p>Gabriel の説明はこうです。</p>
+    <ol class="steps">
+      <li>実装が単純なので、<strong>すぐ作れて、いろいろな環境に移植しやすい</strong></li>
+      <li>完璧ではないが「だいたい動く」ので、<strong>先に広まる</strong></li>
+      <li>使う人が増えると、ユーザー自身が改良していく（ウイルスのように広がる、と Gabriel は表現しました）</li>
+      <li>気づいたときには、それが標準になっている</li>
+    </ol>
+    <p>一方「正しいもの」は、完成までに時間がかかり、実装が重く、移植しにくいため、広まる前に機会を逃しがちです。</p>
+
+    <figure>
+      <svg viewBox="0 0 640 220" role="img" aria-label="横軸が時間、縦軸が普及。Worse is Better の線は早い時点から立ち上がり、改良を重ねながら伸びていく。The Right Thing の線は完成までの長い準備期間のあとにようやく立ち上がるが、そのころには先行した側が標準になっている。" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arw48-605a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+        </defs>
+        <line x1="60" y1="180" x2="610" y2="180" class="d-line" marker-end="url(#arw48-605a)"/>
+        <line x1="60" y1="180" x2="60" y2="20" class="d-line" marker-end="url(#arw48-605a)"/>
+        <text x="600" y="205" text-anchor="end" class="d-text-sub">時間</text>
+        <text x="70" y="30" class="d-text-sub">普及</text>
+        <path d="M80,175 C160,160 200,110 300,80 S480,40 590,32" class="d-line-accent" fill="none"/>
+        <text x="300" y="65" text-anchor="middle" class="d-text-accent">Worse is Better：早く出して育つ</text>
+        <path d="M80,178 L380,178 C430,175 470,150 590,120" class="d-line d-line-dash" fill="none"/>
+        <text x="480" y="170" text-anchor="middle" class="d-text-sub">The Right Thing：完成を待つあいだに機会を逃しがち</text>
+      </svg>
+      <figcaption>図：単純なものが先に広まり、使われながら改良されていくイメージ（説明用の模式図）</figcaption>
+    </figure>
+
+    <h2 id="sec-5"><span class="num">5.</span>現代の開発での活かし方</h2>
+    <ul>
+      <li><strong>MVP（Minimum Viable Product、実用最小限の製品）</strong>：最小限の機能で早く出し、使われながら改善する。Worse is Better の考え方とよく重なる</li>
+      <li><strong>プロトタイプを先に出す</strong>：設計会議で完璧を目指すより、単純な実装を動かして反応を見るほうが早く正解に近づくことが多い</li>
+      <li><strong>普及するものの見極め</strong>：技術選定で「設計が美しいもの」と「広く使われているもの」がずれることがある。その理由を説明する手がかりになる</li>
+      <li><strong>YAGNI・KISS との関係</strong>：「今いらない完全性は捨てる」という点で YAGNI と、「単純さを最優先する」という点で KISS とつながっている（<a href="10-1_DRY・KISS・YAGNI.html">DRY・KISS・YAGNI</a>）</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「品質が低くてもいい」という意味だ</summary><div class="body"><p>違います。Worse is Better でも <strong>正しさは大事</strong> で、譲るのは「単純さとぶつかったとき、少しだけ」です。手抜きを正当化する言葉ではありません。</p></div></details>
+    <details open><summary>誤解2：「The Right Thing は間違っている」</summary><div class="body"><p>Gabriel は2つのスタイルの <strong>良し悪しではなく、広まりやすさ</strong> を論じています。安全性が最優先の領域（医療・航空・金融の勘定系など）では、The Right Thing 寄りの設計が求められます。</p></div></details>
+    <details open><summary>誤解3：「単純」＝「使う人にとって簡単」</summary><div class="body"><p>ここでいう単純さは <strong>実装の単純さ</strong> です。そのぶん、使う側に負担（例：<code>EINTR</code> のリトライ）が回ることがあります。KISS の「単純」とどちらの単純さを指しているのか、区別して考える必要があります。</p></div></details>
+
+    <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
+    <ul>
+      <li>Richard P. Gabriel が 1989年の講演原稿で提唱、1991年ごろから広まった</li>
+      <li><strong>The Right Thing（MIT 流）</strong>：正しさ・完全性・使う側の単純さを優先</li>
+      <li><strong>Worse is Better（New Jersey 流）</strong>：実装の単純さを最優先し、他は少しずつ譲る</li>
+      <li>単純なものは早く作れて移植しやすく、先に広まって育つ。UNIX と C が例</li>
+      <li>手抜きの言い訳ではなく、<strong>何を優先するかのトレードオフ</strong> の話</li>
+    </ul>
+    <p>関連ページ：<a href="60-4_UNIX哲学.html">UNIX 哲学</a>（Worse is Better の代表例として挙げられた UNIX の設計文化）、<a href="10-1_DRY・KISS・YAGNI.html">DRY・KISS・YAGNI</a>、<a href="60-1_銀の弾丸はない.html">銀の弾丸はない</a>（完璧な解決策はない、という点で通じる）、<a href="60-6_Zen_of_Python.html">Zen of Python</a>（「実用性は純粋さに勝る」）</p>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：05_Worse_is_Better</li>
+      <li>Richard P. Gabriel "Lisp: Good News, Bad News, How to Win Big"（1989）— 節「The Rise of Worse is Better」</li>
+      <li>Nickieben Bourbaki（Richard P. Gabriel）"Worse is Better is Worse"</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="60-4_UNIX哲学.html"><span class="lbl">← 前のページ</span>UNIX 哲学</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-6_Zen_of_Python.html"><span class="lbl">次のページ →</span>Zen of Python</a>
+    </nav>
+    <footer class="page-foot">48_原則 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>
