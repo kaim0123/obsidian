@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>オブジェクトの種類の整理 — 「〜オブジェクト」をどの観点で見分けるか｜クラス設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">クラス設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 責務の割り当て › オブジェクトの種類の整理</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 責務の割り当て</span>
+      <h1>オブジェクトの種類の整理 — 「〜オブジェクト」をどの観点で見分けるか</h1>
+      <p class="lead">値オブジェクト、エンティティ、DTO、ドメインオブジェクト、データベースモデル、設定オブジェクト、コレクションオブジェクト、サービスオブジェクト……。設計の話に出てくるこれらの名前は、同じ基準で並べた分類ではありません。「業務の何を表すか」「どの層の都合か」「どんな定石か」という3つの観点で整理し、それぞれの性質・コード例・使いどころ・迷ったときの判断フローをまとめます。</p>
+      <p class="meta">もとにしたノート：20_責務の割り当て/06_オブジェクトの種類の整理</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>「〜オブジェクト」という名前は、<strong>① 業務の何を表すか</strong>（エンティティ・値オブジェクト・ドメインサービス）、<strong>② どの層の境界の都合か</strong>（DTO・DB モデル）、<strong>③ どんな定石か</strong>（コレクション・設定・サービスオブジェクト）という <strong>別々の観点</strong> でつけられています。観点が違うので重なることもあります。最初から全部そろえず、困りごとが出たところで対応する種類を導入しましょう。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>設計の話をしていると、いろいろな「〜オブジェクト」が出てきます。</p>
+    <div class="callout">
+      <p>値オブジェクト、エンティティ、DTO、ドメインオブジェクト、データベースモデル、設定オブジェクト、コレクションオブジェクト、サービスオブジェクト</p>
+    </div>
+    <p>これらは <strong>同じ基準で並べた分類ではありません</strong>。混乱する一番の理由はここにあります。このページでは、それぞれを <strong>どの観点で見た名前なのか</strong> という軸で整理し、見分け方と使いどころをまとめます。</p>
+    <p>個別の詳しい解説は次のページにあります。</p>
+    <ul>
+      <li>エンティティと値オブジェクトの基本 → <a href="20-3_ドメインを表すクラス.html">ドメインを表すクラス</a></li>
+      <li>値オブジェクトの書き方 → <a href="20-4_値オブジェクトと完全コンストラクタ.html">値オブジェクトと完全コンストラクタ</a></li>
+      <li>サービスにロジックを寄せすぎる問題 → <a href="20-5_TellDontAskと貧血モデル.html">Tell, Don't Ask と貧血モデル</a></li>
+      <li>DDD での位置づけ → <a href="../42_ソフトウェア設計/30-6_エンティティと値オブジェクト.html">42章：エンティティと値オブジェクト</a> / <a href="../42_ソフトウェア設計/30-9_ドメイン層とユースケース.html">42章：ドメイン層とユースケース</a></li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>全体像：3つの観点で分ける</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>観点</th><th>問い</th><th>該当するもの</th></tr></thead>
+      <tbody>
+        <tr><td><strong>① 業務の何を表すか</strong>（ドメインの中の役割）</td><td>このオブジェクトは業務上の何か？</td><td>ドメインオブジェクト（総称）、エンティティ、値オブジェクト、ドメインサービス</td></tr>
+        <tr><td><strong>② どこを運ぶ・どこに置くか</strong>（層の境界）</td><td>どの層の都合で作った形か？</td><td>DTO、データベースモデル</td></tr>
+        <tr><td><strong>③ どんな定石か</strong>（汎用的なクラスの型）</td><td>どんな困りごとを解くための形か？</td><td>コレクションオブジェクト、設定オブジェクト、サービスオブジェクト</td></tr>
+      </tbody>
+    </table></div>
+    <p>ポイントは次の2つです。</p>
+    <ul>
+      <li><strong>分類どうしが重なる</strong> ことがあります。たとえば <code>OrderLines</code>（コレクションオブジェクト）は、同時に値オブジェクトであり、ドメインオブジェクトでもあります。</li>
+      <li><strong>「サービス」は①と③の両方に出てきます</strong>。業務ルールを担うドメインサービスと、処理の手順を組み立てるアプリケーションサービスは別物です（→ <a href="#sec-7">7. サービスオブジェクト</a>）。</li>
+    </ul>
+    <figure>
+    <svg viewBox="0 0 760 330" role="img" aria-label="上の大きな枠がドメインオブジェクト（総称）で、その中にエンティティ（例 Order）、値オブジェクト（例 Money）、ドメインサービス（例 TransferPolicy）があり、値オブジェクトの下に OrderLines があってコレクションオブジェクトでもあることを示す。下の段は左から 外の世界、DTO、アプリケーションサービス、ドメイン、DBモデル、DB が双方向の矢印でつながる。ドメインは上のドメインオブジェクトの枠を指す。アプリケーションサービスは下から設定オブジェクトを受け取る">
+      <defs><marker id="arr-20-6a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="150" y="15" width="460" height="150" rx="10" class="d-box-accent"/>
+      <text x="380" y="38" text-anchor="middle" class="d-text-bold">ドメインオブジェクト（総称）</text>
+      <rect x="165" y="52" width="135" height="55" rx="6" class="d-box"/>
+      <text x="232" y="74" text-anchor="middle" class="d-text">エンティティ</text>
+      <text x="232" y="94" text-anchor="middle" class="d-text-sub">Order</text>
+      <rect x="312" y="52" width="135" height="55" rx="6" class="d-box"/>
+      <text x="380" y="74" text-anchor="middle" class="d-text">値オブジェクト</text>
+      <text x="380" y="94" text-anchor="middle" class="d-text-sub">Money</text>
+      <rect x="460" y="52" width="135" height="55" rx="6" class="d-box"/>
+      <text x="527" y="74" text-anchor="middle" class="d-text">ドメインサービス</text>
+      <text x="527" y="94" text-anchor="middle" class="d-text-sub">TransferPolicy</text>
+      <rect x="240" y="117" width="280" height="38" rx="6" class="d-box-purple"/>
+      <text x="380" y="141" text-anchor="middle" class="d-text">OrderLines ← コレクションでもある</text>
+
+      <rect x="10" y="210" width="90" height="44" rx="6" class="d-box"/>
+      <text x="55" y="237" text-anchor="middle" class="d-text">外の世界</text>
+      <rect x="125" y="210" width="85" height="44" rx="6" class="d-box-warn"/>
+      <text x="167" y="237" text-anchor="middle" class="d-text-bold">DTO</text>
+      <rect x="240" y="210" width="150" height="44" rx="6" class="d-box"/>
+      <text x="315" y="230" text-anchor="middle" class="d-text">アプリケーション</text>
+      <text x="315" y="247" text-anchor="middle" class="d-text">サービス</text>
+      <rect x="420" y="210" width="90" height="44" rx="6" class="d-box-accent"/>
+      <text x="465" y="237" text-anchor="middle" class="d-text-bold">ドメイン</text>
+      <rect x="540" y="210" width="100" height="44" rx="6" class="d-box-warn"/>
+      <text x="590" y="237" text-anchor="middle" class="d-text-bold">DBモデル</text>
+      <rect x="670" y="210" width="80" height="44" rx="6" class="d-box"/>
+      <text x="710" y="237" text-anchor="middle" class="d-text">DB</text>
+      <line x1="102" y1="232" x2="123" y2="232" class="d-line" marker-start="url(#arr-20-6a)" marker-end="url(#arr-20-6a)"/>
+      <line x1="212" y1="232" x2="238" y2="232" class="d-line" marker-start="url(#arr-20-6a)" marker-end="url(#arr-20-6a)"/>
+      <line x1="392" y1="232" x2="418" y2="232" class="d-line" marker-start="url(#arr-20-6a)" marker-end="url(#arr-20-6a)"/>
+      <line x1="512" y1="232" x2="538" y2="232" class="d-line" marker-start="url(#arr-20-6a)" marker-end="url(#arr-20-6a)"/>
+      <line x1="642" y1="232" x2="668" y2="232" class="d-line" marker-start="url(#arr-20-6a)" marker-end="url(#arr-20-6a)"/>
+      <line x1="465" y1="208" x2="465" y2="167" class="d-line-dash" marker-end="url(#arr-20-6a)"/>
+      <rect x="245" y="285" width="140" height="36" rx="6" class="d-box-good"/>
+      <text x="315" y="308" text-anchor="middle" class="d-text">設定オブジェクト</text>
+      <line x1="315" y1="283" x2="315" y2="256" class="d-line" marker-end="url(#arr-20-6a)"/>
+    </svg>
+    <figcaption>図：ドメインの中の役割（上）と、層の境界をまたぐ流れ（下）。OrderLines のように複数の分類に属するものもある</figcaption>
+    </figure>
+
+    <h2 id="sec-3"><span class="num">3.</span>ドメインオブジェクト（総称）</h2>
+    <p><strong>業務の概念やルールを表すオブジェクト全般</strong> を指す言葉です。具体的な1つの種類ではありません。</p>
+    <p>Eric Evans は『ドメイン駆動設計』（2003）で、ドメインオブジェクトを次の3つに分類しました。Martin Fowler はこれを「Evans Classification」として紹介しています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>分類</th><th>Evans の定義（要約）</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>エンティティ</strong></td><td>時間や表現が変わっても続く <strong>固有の同一性</strong> を持つもの</td><td>顧客、注文、船、賃貸契約</td></tr>
+        <tr><td><strong>値オブジェクト</strong></td><td><strong>属性の組み合わせだけ</strong> に意味があるもの</td><td>日付、金額</td></tr>
+        <tr><td><strong>サービス</strong></td><td>ドメインの中で <strong>単独で成り立つ操作</strong></td><td>送金、料金計算</td></tr>
+      </tbody>
+    </table></div>
+    <p>Fowler 自身も、これらの用語は正確に定義するのが難しく、「見れば分かる」種類の分類だと書いています。大事なのは、厳密な定義を覚えることではなく、<strong>それぞれの性質を理解して見分けられるようになる</strong> ことです。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>エンティティ（Entity）</h2>
+    <h3 id="sec-4-1">4.1 性質</h3>
+    <ul>
+      <li><strong>ID で区別する</strong>。属性が全部同じでも ID が違えば別物、属性が変わっても ID が同じなら同じもの</li>
+      <li><strong>ライフサイクルがある</strong>。作成 → 変更 → 完了・削除と状態が移り変わる</li>
+      <li><strong>状態が変わる（ミュータブル）</strong>。ただし、変更はメソッドを通して、ルールを守りながら行う</li>
+    </ul>
+    <h3 id="sec-4-2">4.2 例</h3>
+<pre><code>class Order {
+  private status: 'DRAFT' | 'CONFIRMED' | 'SHIPPED' = 'DRAFT';
+
+  constructor(
+    readonly id: OrderId,        // 同一性の鍵
+    private lines: OrderLines,
+  ) {}
+
+  confirm(): void {
+    if (this.status !== 'DRAFT') throw new Error('確定済みの注文です');
+    if (this.lines.isEmpty()) throw new Error('明細がありません');
+    this.status = 'CONFIRMED';   // 状態の変更はメソッド経由のみ
+  }
+
+  equals(other: Order): boolean {
+    return this.id.equals(other.id);  // ID だけで比較する
+  }
+}</code></pre>
+    <h3 id="sec-4-3">4.3 よくある誤解</h3>
+    <ul>
+      <li><strong>「ID カラムがあるもの = エンティティ」ではありません</strong>。DB の都合で ID を振っているだけの明細行は、業務上は値オブジェクトであることもあります（→ <a href="#sec-9">9. データベースモデル</a>）。</li>
+      <li><strong>セッター（setter）を並べるだけのエンティティは「貧血モデル」</strong>（データの入れ物に、名前だけエンティティと付けた状態）になりがちです（→ <a href="20-5_TellDontAskと貧血モデル.html">Tell, Don't Ask と貧血モデル</a>）。</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>値オブジェクト（Value Object）</h2>
+    <h3 id="sec-5-1">5.1 性質</h3>
+    <p>Fowler の bliki「ValueObject」（2016）によると、値オブジェクトとは <strong>同一性ではなく、プロパティの値によって等しさが決まる複合オブジェクト</strong> です。例として座標、金額、日付の範囲が挙げられています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>性質</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>値で等価</strong></td><td>1000円と1000円は同じもの</td></tr>
+        <tr><td><strong>不変（イミュータブル）</strong></td><td>作った後で変えない。変えたいときは <strong>新しいオブジェクトに置き換える</strong></td></tr>
+        <tr><td><strong>自己検証</strong></td><td>不正な値ではそもそも作れない（完全コンストラクタ）</td></tr>
+        <tr><td><strong>振る舞いを持つ</strong></td><td>計算・比較・書式化などのロジックを、その値自身が持つ</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-5-2">5.2 なぜ不変にするのか：エイリアシングのバグ</h3>
+    <p>Fowler は不変にする理由として <strong>エイリアシング（別名参照）のバグ</strong> を挙げています。エイリアシングとは、1つのオブジェクトを複数の変数が指している状態のことです。</p>
+    <span class="code-label bad">✕ 可変な日付オブジェクトを2か所で共有してしまった例</span>
+<pre><code>const retirementDate = new MutableDate(2026, 10, 30);
+const partyDate = retirementDate;      // 同じオブジェクトを指している
+
+partyDate.setDay(31);                  // パーティーを1日後ろにずらしたつもり
+console.log(retirementDate.day);       // 31 ← 退職日まで変わってしまった！</code></pre>
+    <p>不変にしておけば「変更 = 新しいオブジェクトを作る」ことになるので、共有していても他方に影響しません。</p>
+    <h3 id="sec-5-3">5.3 例</h3>
+<pre><code>class Money {
+  private constructor(readonly amount: number, readonly currency: 'JPY' | 'USD') {}
+
+  static of(amount: number, currency: 'JPY' | 'USD'): Money {
+    if (!Number.isInteger(amount) || amount &lt; 0) throw new Error('金額が不正です');
+    return new Money(amount, currency);
+  }
+
+  add(other: Money): Money {
+    if (this.currency !== other.currency) throw new Error('通貨が違います');
+    return Money.of(this.amount + other.amount, this.currency);  // 新しい値を返す
+  }
+
+  equals(other: Money): boolean {
+    return this.amount === other.amount &amp;&amp; this.currency === other.currency;
+  }
+}</code></pre>
+    <h3 id="sec-5-4">5.4 何を値オブジェクトにするか</h3>
+    <p>Fowler は、文字列などの <strong>プリミティブ型</strong>（文字列・数値などの言語に組み込みの基本的な型）<strong>の代わりに</strong> 電話番号型のような型を作ることも勧めています。そうすると意味が明確になり、検証を1か所にまとめられ、「ID 番号どうしの足し算」のような無意味な操作もできなくなります。</p>
+    <p>候補になりやすいもの：金額、数量、メールアドレス、電話番号、郵便番号、住所、期間（開始〜終了）、割合、座標、ID 型（<code>OrderId</code> など）</p>
+    <h3 id="sec-5-5">5.5 用語の混乱に注意</h3>
+    <p>昔の J2EE（Java のエンタープライズ向け仕様。現在の Jakarta EE）の文献では、DTO のことを「Value Object」と呼んでいた時期がありました。Fowler はこれを「用語の混乱の元」と書いています。今ではこの使い方はほとんど見なくなりましたが、古い Java の資料を読むときは注意が必要です。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>エンティティと値オブジェクトの見分け方</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問い</th><th>Yes なら</th></tr></thead>
+      <tbody>
+        <tr><td>同じ値を持つ2つは <strong>区別する必要がある</strong> か？</td><td>エンティティ</td></tr>
+        <tr><td>中身が変わっても <strong>同じものとして追跡したい</strong> か？</td><td>エンティティ</td></tr>
+        <tr><td>中身が同じなら <strong>入れ替えても困らない</strong> か？</td><td>値オブジェクト</td></tr>
+        <tr><td>他の何かの <strong>属性・説明</strong> として使われるか？</td><td>値オブジェクト</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>同じ概念でも、文脈によって答えが変わります。</strong> Fowler は住所を例に挙げています。</p>
+    <div class="grid c2">
+      <div class="card good"><h4>通販システムの「配送先住所」</h4><p>中身が同じなら同じ扱いで構わないので <strong>値オブジェクト</strong></p></div>
+      <div class="card accent"><h4>郵便・地図システムの「住所」</h4><p>1件ずつ管理・更新するので <strong>エンティティ</strong></p></div>
+    </div>
+    <p>迷ったら <strong>まず値オブジェクトとして考え</strong>、ID による追跡がどうしても必要になったらエンティティにする、という進め方がおすすめです。値オブジェクトのほうが不変で扱いやすいからです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>サービスオブジェクト（Service）</h2>
+    <p>「サービス」は意味の広い言葉で、少なくとも次の3種類があります。混ぜて考えないことが大切です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>置き場所</th><th>役割</th><th>扱うデータ</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ドメインサービス</strong></td><td>ドメイン層</td><td>特定のエンティティに置くと不自然な <strong>業務ルール</strong></td><td>エンティティ・値オブジェクト</td><td>口座間の送金ルール、重複チェック</td></tr>
+        <tr><td><strong>アプリケーションサービス</strong></td><td>アプリケーション層</td><td>ユースケースの <strong>手順を組み立てる</strong>（業務ルールは持たない）</td><td>DTO を受け取り・返す</td><td>「注文を確定する」処理全体</td></tr>
+        <tr><td><strong>インフラサービス</strong></td><td>インフラ層</td><td>外部とのやりとりの <strong>技術的な詳細</strong></td><td>技術的なデータ</td><td>メール送信、決済 API の呼び出し</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-7-1">7.1 共通する性質</h3>
+    <ul>
+      <li><strong>状態を持たない（ステートレス）</strong>。何を渡されたかだけで結果が決まる</li>
+      <li><strong>名前は動詞的</strong> になる（<code>TransferService</code>、<code>ConfirmOrderUseCase</code>）</li>
+    </ul>
+    <h3 id="sec-7-2">7.2 例</h3>
+<pre><code>// ドメインサービス：2つの口座にまたがる業務ルール
+class TransferService {
+  transfer(from: Account, to: Account, amount: Money): void {
+    if (from.isFrozen() || to.isFrozen()) throw new Error('凍結口座には送金できません');
+    from.withdraw(amount);
+    to.deposit(amount);
+  }
+}
+
+// アプリケーションサービス：手順を組み立てるだけ
+class ConfirmOrderUseCase {
+  constructor(
+    private orders: OrderRepository,
+    private mailer: Mailer,            // インフラサービス（インターフェース経由）
+  ) {}
+
+  async execute(input: ConfirmOrderInput): Promise&lt;ConfirmOrderOutput&gt; {  // DTO
+    const order = await this.orders.findById(new OrderId(input.orderId));
+    order.confirm();                   // ルールはエンティティに任せる
+    await this.orders.save(order);
+    await this.mailer.sendConfirmation(order.id);
+    return { orderId: order.id.value, status: 'CONFIRMED' };
+  }
+}</code></pre>
+    <h3 id="sec-7-3">7.3 注意点：サービスにロジックを寄せすぎない</h3>
+    <p>Fowler は「貧血ドメインモデル」（2003）で、ロジックを全部サービスに置き、ドメインオブジェクトを <strong>getter と setter の詰め合わせ</strong> にしてしまう設計を批判しています。</p>
+    <div class="callout">
+      <p><strong>If all your logic is in services, you've robbed yourself blind.</strong></p>
+      <p>（ロジックが全部サービスにあるなら、自分で自分の得るものを奪っている）</p>
+    </div>
+    <p>Evans も、アプリケーション層は <strong>薄く保ち、業務ルールや知識は持たず、作業の調整と委譲だけを行う</strong> としています。</p>
+    <p>Rails の世界でよく使われる「Service Object」（<code>call</code> メソッドを1つだけ持つクラス）にも、同じ理由で批判があります。<code>call</code> の中に関係ない処理が膨らんでいく、サービスどうしが密に結びつく、モデルの設計の弱さを隠す逃げ道になる、といった点です。使うなら <strong>責務は1つ、公開メソッドは少なく、戻り値の形はそろえる</strong> というルールを守ります。</p>
+    <div class="callout tip">
+      <p class="callout-title">判断の目安</p>
+      <p><strong>「この処理はどのエンティティ／値オブジェクトの仕事か？」と考えて、どこにも自然に置けないときだけ</strong> ドメインサービスにする。</p>
+    </div>
+
+    <h2 id="sec-8"><span class="num">8.</span>DTO（Data Transfer Object）</h2>
+    <h3 id="sec-8-1">8.1 性質</h3>
+    <ul>
+      <li><strong>データを運ぶためだけの入れ物</strong>。ロジックは持たない（持ってもシリアライズ ＝ 送受信できる形式への変換 程度）</li>
+      <li>getter・setter、または public なフィールドだけの単純な構造</li>
+      <li>不変にしておくと扱いやすい</li>
+    </ul>
+    <h3 id="sec-8-2">8.2 もともとの目的</h3>
+    <p>Fowler の『エンタープライズアプリケーションアーキテクチャパターン（PoEAA）』（2002）での DTO の定義は、<strong>プロセス間でデータを運び、メソッド呼び出しの回数を減らすためのオブジェクト</strong> です。リモート呼び出しは1回ごとのコストが大きいので、細かく何度も呼ぶ代わりに、必要なデータを1つの箱にまとめて一度に送る、という発想です。</p>
+    <h3 id="sec-8-3">8.3 「ローカル DTO」への注意</h3>
+    <p>Fowler は bliki「LocalDTO」で、<strong>同じプロセスの中で DTO を使うことには、たいてい害がある</strong> と書いています。</p>
+    <ul>
+      <li>ドメインオブジェクトと DTO の間の詰め替えにかかるコストは大きく、<strong>O/R マッピングの次につらい</strong>（Randy Stafford の言葉）</li>
+      <li>「将来分散するかもしれないから」という理由で先に DTO を入れるべきではない。まずは <strong>ドメインオブジェクトをそのまま扱うサービス層</strong> から始めればよい</li>
+    </ul>
+    <p>ただし、次のような場合は DTO（に近いもの）を使う価値があると認めています。</p>
+    <ul>
+      <li><strong>画面の形とドメインの形が大きく違う</strong> とき（その画面に限って、画面専用の形に変換する）</li>
+      <li><strong>スレッドやキューの境界</strong> を越えてメッセージとして渡すとき</li>
+    </ul>
+    <h3 id="sec-8-4">8.4 現代の Web アプリでの使い方</h3>
+    <p>今の Web アプリでは、DTO は主に <strong>外部との境界</strong> で使われます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>使いどころ</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>API のリクエスト／レスポンス</td><td>内部構造を外に出さない。パスワードハッシュなど見せたくない項目を隠す</td></tr>
+        <tr><td>API のバージョン管理</td><td>内部の設計を変えても、外向きの形（契約）は保てる</td></tr>
+        <tr><td>ユースケースの入力と出力</td><td>アプリケーション層の外側にドメインオブジェクトを漏らさない（クリーンアーキテクチャ）</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>// レスポンス DTO：外に見せる形だけ
+type OrderResponseDto = {
+  readonly id: string;
+  readonly total: number;
+  readonly status: 'DRAFT' | 'CONFIRMED' | 'SHIPPED';
+};</code></pre>
+    <div class="callout tip">
+      <p class="callout-title">判断の目安</p>
+      <p><strong>境界（外部 API・画面・メッセージ）では DTO</strong>、<strong>同じ層の中ではドメインオブジェクトをそのまま渡す</strong>。全部の層の間に DTO を挟むと、詰め替えのコードばかり増える。</p>
+    </div>
+
+    <h2 id="sec-9"><span class="num">9.</span>データベースモデル（永続化モデル）</h2>
+    <h3 id="sec-9-1">9.1 性質</h3>
+    <ul>
+      <li><strong>DB のテーブル構造に合わせたオブジェクト</strong></li>
+      <li>ORM（Prisma、TypeORM、Rails の ActiveRecord、Django の Model、JPA など。テーブルとオブジェクトを対応づけるライブラリ）が扱う形</li>
+      <li>「保存しやすい形」であり、「業務的に正しい形」と一致するとは限らない</li>
+    </ul>
+    <h3 id="sec-9-2">9.2 2つの代表的なパターン（PoEAA）</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パターン</th><th>仕組み</th><th>例</th><th>向いているもの</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Active Record</strong></td><td>オブジェクト自身が保存・読み込みを行う（<code>user.save()</code>）</td><td>Rails、Laravel Eloquent、Django</td><td>CRUD 中心のシンプルな業務</td></tr>
+        <tr><td><strong>Data Mapper</strong></td><td>別のクラス（マッパー・リポジトリ）が、オブジェクトと DB の間を変換する</td><td>Hibernate/JPA、Doctrine、TypeORM の Data Mapper モード</td><td>業務ルールが複雑なドメイン、既存の DB 構造に合わせる必要があるとき</td></tr>
+      </tbody>
+    </table></div>
+    <p>Active Record では <strong>DB モデルとドメインオブジェクトが1つのクラス</strong> になります。手軽ですが、業務ロジックが DB の都合に引きずられやすくなります。</p>
+    <h3 id="sec-9-3">9.3 「JPA の @Entity」と「DDD のエンティティ」は別物</h3>
+    <p>Java の JPA では、DB に保存するクラスに <code>@Entity</code> を付けます。しかし、これは DDD のエンティティとは <strong>別の概念</strong> です。</p>
+    <ul>
+      <li>業務上は値オブジェクトである注文明細も、DB で行を識別するために ID が必要なので <code>@Entity</code> を付けることになる</li>
+      <li>集約（一緒に整合性を保つオブジェクトのまとまり）の境界を JPA で直接表す方法はない</li>
+    </ul>
+    <p>そのため、複雑なドメインでは <strong>ドメインモデルと永続化モデルを分けて、間に変換処理（マッピング）を置く</strong> 方法がよく推奨されます。ただし分けると、変換コードが増え、どこまで読み込むか（オブジェクトのつながりのどこまでを変換するか）の判断も必要になります。</p>
+    <div class="callout tip">
+      <p class="callout-title">判断の目安</p>
+      <p><strong>最初は1つのモデルで始め</strong>、DB の都合でドメインのコードが歪んできたら分ける。</p>
+    </div>
+    <p>増田本第6章の「オブジェクトはオブジェクトらしく、テーブルはテーブルらしく」の整理は 42_ソフトウェア設計 のノート『08_オブジェクトとテーブルの設計』、DB 側のコト中心設計は 68_データアーキテクチャ のノート『07_コトに注目するテーブル設計』にあります。</p>
+    <span class="code-label">分けた場合：リポジトリの中で変換する</span>
+<pre><code>class PrismaOrderRepository implements OrderRepository {
+  async findById(id: OrderId): Promise&lt;Order&gt; {
+    const row = await prisma.order.findUniqueOrThrow({   // DB モデル
+      where: { id: id.value },
+      include: { lines: true },
+    });
+    return OrderMapper.toDomain(row);                     // ドメインオブジェクトへ変換
+  }
+}</code></pre>
+
+    <h2 id="sec-10"><span class="num">10.</span>コレクションオブジェクト（ファーストクラスコレクション）</h2>
+    <h3 id="sec-10-1">10.1 性質</h3>
+    <p><strong>配列やリストを1つのクラスで包み、そのコレクションに関するルールと操作をまとめたもの</strong> です。Jeff Bay の「オブジェクト指向エクササイズ（Object Calisthenics）」（『ThoughtWorks アンソロジー』所収）の9つのルールの1つ、「<strong>ファーストクラスコレクションを使う</strong>」が出どころです。このルールでは、コレクションを持つクラスは <strong>他のインスタンス変数を持たない</strong> ことを求めています。増田亨『現場で役立つシステム設計の原則』では <strong>コレクションオブジェクト</strong> とも呼びます。9規則の一覧は <a href="10-6_ObjectCalisthenics.html">Object Calisthenics</a>。</p>
+    <h3 id="sec-10-2">10.2 なぜ配列やコレクションはコードを複雑にするか</h3>
+    <p>素の配列・リストをそのまま扱うと、次の関心事が <strong>使う側のコード各所</strong> に散らばります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>複雑さの源</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td>ループ処理</td><td>合計・絞り込み・変換がサービス層に並ぶ</td></tr>
+        <tr><td>要素数の変化</td><td>追加・削除のたびに上限チェックが重複する</td></tr>
+        <tr><td>個々の要素の状態</td><td>要素が可変だと、一覧全体の整合性が追い切れない</td></tr>
+        <tr><td>件数に関する業務ルール</td><td>「重要顧客だけ」「売れ筋だけ」が if と filter の山になる</td></tr>
+      </tbody>
+    </table></div>
+    <p>コレクション型の基本操作（add / remove）以上の <strong>業務上の操作</strong> が必要なときは、ロジックを専用クラスに閉じ込める判断をします。</p>
+    <h3 id="sec-10-3">10.3 何がうれしいか</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>素の配列だと</th><th>コレクションオブジェクトにすると</th></tr></thead>
+      <tbody>
+        <tr><td>「最大10件」のチェックが、追加する場所ごとに散らばる</td><td>ルールが1か所にまとまる</td></tr>
+        <tr><td>合計や絞り込みの処理が、使う場所ごとに書かれる</td><td><code>total()</code> <code>activeOnly()</code> のように名前付きのメソッドになる</td></tr>
+        <tr><td>外から <code>push</code> や <code>splice</code> で自由に書き換えられる</td><td>変更の入口を制限できる</td></tr>
+        <tr><td><code>Item[]</code> が何の集まりなのか型から分からない</td><td><code>OrderLines</code> という名前で意味が伝わる</td></tr>
+      </tbody>
+    </table></div>
+    <p>オブジェクト指向のコツは、<strong>使う側が簡単になるよう、使われる側（コレクションオブジェクト）に処理を寄せる</strong> ことです。呼び出し側でまたループを書きたくなったら、「その操作をコレクション側のメソッドに移せないか」を考えます。</p>
+    <h3 id="sec-10-4">10.4 例</h3>
+<pre><code>class OrderLines {
+  private static readonly MAX = 10;
+
+  private constructor(private readonly lines: readonly OrderLine[]) {}
+
+  static of(lines: OrderLine[]): OrderLines {
+    if (lines.length &gt; OrderLines.MAX) throw new Error(`明細は${OrderLines.MAX}件までです`);
+    return new OrderLines([...lines]);   // 防御的コピー
+  }
+
+  add(line: OrderLine): OrderLines {     // 不変：新しいコレクションを返す
+    return OrderLines.of([...this.lines, line]);
+  }
+
+  total(): Money {
+    return this.lines.reduce((sum, l) =&gt; sum.add(l.subtotal()), Money.of(0, 'JPY'));
+  }
+
+  isEmpty(): boolean {
+    return this.lines.length === 0;
+  }
+}</code></pre>
+    <p><strong>防御的コピー</strong> とは、受け取った配列をそのまま持たずにコピーしておき、外から元の配列を書き換えられても影響を受けないようにすることです。</p>
+    <h3 id="sec-10-5">10.5 コレクションオブジェクトを安定させる</h3>
+    <p>内部のリストへの参照を外に渡すと、呼び出し側の <code>push</code> / <code>splice</code> で中身が壊れます。安定させる定石は次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>やり方</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>操作ロジックを中に移す</strong></td><td>追加・削除・絞り込みはコレクションオブジェクトのメソッドにする</td></tr>
+        <tr><td><strong>同じ型を返す</strong></td><td><code>add</code> の結果も <code>OrderLines</code>（新しいインスタンス）として返す</td></tr>
+        <tr><td><strong>不変コレクションを渡す</strong></td><td>どうしても配列が必要ならコピーや <code>Object.freeze</code> / <code>readonly</code> で渡す</td></tr>
+        <tr><td><strong>要素も不変にする</strong></td><td>要素が可変だと一覧だけ不変でも安心できない → 値オブジェクトと組み合わせる</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ 悪い例：内部参照をそのまま返す</span>
+<pre><code>getLines(): OrderLine[] {
+  return this.lines; // 外から破壊できる
+}</code></pre>
+    <span class="code-label good">◯ 良い例：操作は自分で行い、新しいコレクションオブジェクトを返す</span>
+<pre><code>add(line: OrderLine): OrderLines {
+  return OrderLines.of([...this.lines, line]);
+}
+
+// 配列が必要なとき: コピーや readonly で渡す
+asReadonly(): readonly OrderLine[] {
+  return this.lines;
+}</code></pre>
+    <p>破壊的な配列操作の一般論は 46_メソッド設計 のノート『07_引数の破壊的変更とイミュータブル』を参照してください。</p>
+    <h3 id="sec-10-6">10.6 コレクションオブジェクトは業務の関心事</h3>
+    <p><code>List&lt;Customer&gt;</code> ではなく <code>Customers</code> / <code>ImportantCustomers</code> のように、<strong>業務で使う「〜の集まり」</strong> をクラス名にします。関心事とクラスが1対1だと、ルール変更時に開くファイルが直感的に決まります。</p>
+<pre><code>class Customers {
+  constructor(private readonly items: readonly Customer[]) {}
+
+  important(): Customers {
+    return new Customers(this.items.filter((c) =&gt; c.isImportant()));
+  }
+
+  count(): number {
+    return this.items.length;
+  }
+}</code></pre>
+    <p>中の配列をそのまま返す getter（<code>getLines(): OrderLine[]</code>）を作ると、外から書き換えられて意味がなくなります。返すなら <code>readonly</code> の型にするか、コピーを返します。</p>
+
+    <h2 id="sec-11"><span class="num">11.</span>設定オブジェクト（Configuration Object）</h2>
+    <h3 id="sec-11-1">11.1 性質</h3>
+    <p><strong>環境変数や設定ファイルの値を、型の付いた1つのオブジェクトにまとめたもの</strong> です。</p>
+    <ul>
+      <li>型が付いている（<code>string</code> のままではなく <code>number</code> や <code>URL</code> などに変換済み）</li>
+      <li><strong>起動時に検証</strong> する（必須項目の不足や形式の誤りを、最初に見つける）</li>
+      <li>作った後は不変</li>
+      <li>必要なクラスに <strong>コンストラクタで渡す</strong>（どこからでも <code>process.env</code> を読まない）</li>
+    </ul>
+    <p>ASP.NET Core の <strong>Options パターン</strong> が代表例です。.NET 6 で追加された <code>ValidateOnStart()</code> を使うと、設定の誤りがあればアプリが起動しません。これを付けないと、その設定を最初に使うリクエストまで誤りに気づけません。</p>
+    <h3 id="sec-11-2">11.2 例（TypeScript + zod）</h3>
+    <p><strong>zod</strong> は、データの形をスキーマとして書いて検証できる TypeScript のライブラリです。</p>
+<pre><code>import { z } from 'zod';
+
+const ConfigSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  MAIL_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+});
+
+export type AppConfig = Readonly&lt;z.infer&lt;typeof ConfigSchema&gt;&gt;;
+
+// 起動時に1回だけ読み込んで検証する。誤りがあればここで落ちる
+export const loadConfig = (): AppConfig =&gt; Object.freeze(ConfigSchema.parse(process.env));</code></pre>
+<pre><code>// 使う側は設定オブジェクトを受け取るだけ（テストでは差し替えられる）
+class SmtpMailer implements Mailer {
+  constructor(private readonly config: Pick&lt;AppConfig, 'MAIL_TIMEOUT_MS'&gt;) {}
+}</code></pre>
+    <h3 id="sec-11-3">11.3 似た言葉：「オプションオブジェクト」</h3>
+    <p>引数が多い関数で、引数を1つのオブジェクトにまとめるものも「設定オブジェクト」と呼ばれることがあります（<code>fetch(url, { method, headers })</code> の第2引数など）。リファクタリングの「引数オブジェクトの導入」と同じ考え方です。アプリ全体の設定とは役割が違うので、文脈で区別します。</p>
+
+    <h2 id="sec-12"><span class="num">12.</span>総まとめ</h2>
+    <h3 id="sec-12-1">12.1 比較表</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>一言で</th><th>同一性</th><th>ロジック</th><th>可変性</th><th>主な置き場所</th></tr></thead>
+      <tbody>
+        <tr><td><strong>ドメインオブジェクト</strong></td><td>業務を表すオブジェクトの総称</td><td>–</td><td>あり</td><td>–</td><td>ドメイン層</td></tr>
+        <tr><td><strong>エンティティ</strong></td><td>ID で追跡する業務上の主体</td><td>ID</td><td>あり（状態の遷移とルール）</td><td>可変（メソッド経由）</td><td>ドメイン層</td></tr>
+        <tr><td><strong>値オブジェクト</strong></td><td>意味とルールを持った値</td><td>値で比較</td><td>あり（計算・検証）</td><td>不変</td><td>ドメイン層</td></tr>
+        <tr><td><strong>ドメインサービス</strong></td><td>どこにも置けない業務ルール</td><td>なし</td><td>あり</td><td>状態なし</td><td>ドメイン層</td></tr>
+        <tr><td><strong>アプリケーションサービス</strong></td><td>ユースケースの手順書</td><td>なし</td><td>調整のみ</td><td>状態なし</td><td>アプリケーション層</td></tr>
+        <tr><td><strong>DTO</strong></td><td>境界を越えるための箱</td><td>なし</td><td>なし</td><td>不変にするのが望ましい</td><td>境界（API・ユースケースの入出力）</td></tr>
+        <tr><td><strong>DB モデル</strong></td><td>テーブルの写し</td><td>DB の主キー</td><td>少ない</td><td>可変</td><td>インフラ層</td></tr>
+        <tr><td><strong>コレクションオブジェクト</strong></td><td>ルール付きのリスト</td><td>値で比較が多い</td><td>あり（集計・制約）</td><td>不変が望ましい</td><td>主にドメイン層</td></tr>
+        <tr><td><strong>設定オブジェクト</strong></td><td>型付き・検証済みの設定</td><td>なし</td><td>検証程度</td><td>不変</td><td>起動処理 → 各クラスへ注入</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-12-2">12.2 迷ったときの判断フロー</h3>
+    <figure>
+    <svg viewBox="0 0 760 350" role="img" aria-label="判断フロー。最初の問いは、そのクラスは業務のルールや概念を表しているか。No の場合：外部（API・画面・キュー）とのやりとり用なら DTO、DB に保存するための形なら DB モデル、環境ごとの設定値なら設定オブジェクト、処理の手順を組み立てるだけならアプリケーションサービス。Yes の場合：ID で区別して追跡する必要があるならエンティティ、値が同じなら同じものなら値オブジェクト、さらにそれが「〜の集まり」なら値オブジェクトとしてのコレクションオブジェクト、どのオブジェクトにも自然に置けない操作ならドメインサービス">
+      <defs><marker id="arr-20-6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="170" y="10" width="420" height="42" rx="8" class="d-box-accent"/>
+      <text x="380" y="36" text-anchor="middle" class="d-text-bold">そのクラスは業務のルールや概念を表している？</text>
+      <line x1="280" y1="52" x2="280" y2="75" class="d-line"/>
+      <line x1="280" y1="75" x2="10" y2="75" class="d-line"/>
+      <line x1="10" y1="75" x2="10" y2="305" class="d-line"/>
+      <text x="150" y="70" text-anchor="middle" class="d-text-bold">No</text>
+      <line x1="480" y1="52" x2="480" y2="75" class="d-line"/>
+      <line x1="480" y1="75" x2="390" y2="75" class="d-line"/>
+      <line x1="390" y1="75" x2="390" y2="305" class="d-line"/>
+      <text x="530" y="70" text-anchor="middle" class="d-text-bold">Yes</text>
+
+      <line x1="10" y1="125" x2="18" y2="125" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="20" y="100" width="340" height="50" rx="6" class="d-box"/>
+      <text x="30" y="120" class="d-text">外部（API・画面・キュー）とのやりとり用？</text>
+      <text x="30" y="140" class="d-text-accent">→ DTO</text>
+      <line x1="10" y1="185" x2="18" y2="185" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="20" y="160" width="340" height="50" rx="6" class="d-box"/>
+      <text x="30" y="180" class="d-text">DB に保存するための形？</text>
+      <text x="30" y="200" class="d-text-accent">→ DB モデル</text>
+      <line x1="10" y1="245" x2="18" y2="245" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="20" y="220" width="340" height="50" rx="6" class="d-box"/>
+      <text x="30" y="240" class="d-text">環境ごとの設定値？</text>
+      <text x="30" y="260" class="d-text-accent">→ 設定オブジェクト</text>
+      <line x1="10" y1="305" x2="18" y2="305" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="20" y="280" width="340" height="50" rx="6" class="d-box"/>
+      <text x="30" y="300" class="d-text">処理の手順を組み立てるだけ？</text>
+      <text x="30" y="320" class="d-text-accent">→ アプリケーションサービス</text>
+
+      <line x1="390" y1="125" x2="398" y2="125" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="400" y="100" width="340" height="50" rx="6" class="d-box-good"/>
+      <text x="410" y="120" class="d-text">ID で区別して追跡する必要がある？</text>
+      <text x="410" y="140" class="d-text-accent">→ エンティティ</text>
+      <line x1="390" y1="185" x2="398" y2="185" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="400" y="160" width="340" height="50" rx="6" class="d-box-good"/>
+      <text x="410" y="180" class="d-text">値が同じなら同じもの？</text>
+      <text x="410" y="200" class="d-text-accent">→ 値オブジェクト</text>
+      <line x1="418" y1="210" x2="418" y2="245" class="d-line"/>
+      <line x1="418" y1="245" x2="428" y2="245" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="430" y="220" width="310" height="50" rx="6" class="d-box-purple"/>
+      <text x="440" y="240" class="d-text">それが「〜の集まり」なら</text>
+      <text x="440" y="260" class="d-text-accent">→ コレクションオブジェクト<tspan class="d-text-sub">（値オブジェクトとして）</tspan></text>
+      <line x1="390" y1="305" x2="398" y2="305" class="d-line" marker-end="url(#arr-20-6b)"/>
+      <rect x="400" y="280" width="340" height="50" rx="6" class="d-box-good"/>
+      <text x="410" y="300" class="d-text">どのオブジェクトにも自然に置けない操作？</text>
+      <text x="410" y="320" class="d-text-accent">→ ドメインサービス</text>
+    </svg>
+    <figcaption>図：迷ったときの判断フロー。まず「業務を表すか」で分け、それぞれの問いに当てはまる種類を選ぶ</figcaption>
+    </figure>
+
+    <h3 id="sec-12-3">12.3 実務の目安</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>規模・性質</th><th>おすすめの構成</th></tr></thead>
+      <tbody>
+        <tr><td>小さな CRUD アプリ</td><td>Active Record の DB モデルを中心にする。値オブジェクトは要所（金額など）だけ。DTO は API の境界だけ</td></tr>
+        <tr><td>業務ルールが多いアプリ</td><td>エンティティ・値オブジェクト・コレクションでドメインを厚くする。アプリケーションサービスは薄くする。DTO は境界に置く</td></tr>
+        <tr><td>大規模・複雑なドメイン</td><td>ドメインモデルと永続化モデルを分ける（Data Mapper／リポジトリ）。必要に応じて読み取り専用のモデルも分ける（<a href="../41_アーキテクチャ/23-4_CQRS.html">CQRS</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>最初から全部の種類をそろえる必要はありません。</strong> 困りごと（チェックが散らばる、DB の都合で業務コードが歪む、内部構造が API に漏れる、など）が出てきたところで、対応する種類を導入します。</p>
+
+    <h2 id="sec-13"><span class="num">13.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「ID カラムがあるものはエンティティ」</summary><div class="body"><p>DB の都合で ID を振っているだけの明細行は、業務上は値オブジェクトであることもあります。JPA の <code>@Entity</code> と DDD のエンティティも別の概念です。エンティティかどうかは「業務上、ID で追跡する必要があるか」で決めます。</p></div></details>
+    <details open><summary>誤解2：「サービスはどれも同じもの」</summary><div class="body"><p>「サービス」にはドメインサービス・アプリケーションサービス・インフラサービスの少なくとも3種類があり、置き場所も役割も違います。業務ルールを持つのはドメインサービスだけで、アプリケーションサービスは手順の調整だけを行います。</p></div></details>
+    <details open><summary>誤解3：「層の間には必ず DTO を挟むべき」</summary><div class="body"><p>DTO はもともとリモート呼び出しの回数を減らすためのものです。Fowler は同じプロセス内での DTO の多用はたいてい有害だとしています。DTO は外部 API・画面・メッセージなどの <strong>境界</strong> に置き、同じ層の中ではドメインオブジェクトをそのまま渡します。</p></div></details>
+
+    <h2 id="sec-14"><span class="num">14.</span>まとめ</h2>
+    <ul>
+      <li>「〜オブジェクト」は <strong>① 業務の何を表すか ② どの層の境界の都合か ③ どんな定石か</strong> という別々の観点の名前で、重なることもある</li>
+      <li><strong>エンティティ</strong> は ID で追跡し、状態の変更はメソッド経由。<strong>値オブジェクト</strong> は値で等価・不変・自己検証。迷ったらまず値オブジェクトとして考える</li>
+      <li><strong>サービス</strong> はドメイン・アプリケーション・インフラの3種類。ドメインサービスは「どこにも自然に置けない」ときだけ</li>
+      <li><strong>DTO</strong> は境界で使う。<strong>DB モデル</strong> は最初は1つで始め、ドメインが歪んだら分ける</li>
+      <li><strong>コレクションオブジェクト</strong> で配列のルールと操作を1か所に、<strong>設定オブジェクト</strong> で設定を型付き・起動時検証・不変に</li>
+      <li>全部を最初からそろえず、困りごとが出たところで導入する</li>
+    </ul>
+    <p>次は <a href="20-7_区分オブジェクトと状態遷移.html">区分オブジェクトと状態遷移</a> → <a href="20-8_業務ロジックをデータと一体にする.html">業務ロジックをデータと一体にする</a> に進みます。</p>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：44_クラス設計・デザインパターン/20_責務の割り当て/06_オブジェクトの種類の整理</li>
+      <li>Martin Fowler, <a href="https://martinfowler.com/bliki/ValueObject.html">ValueObject</a>（2016）（https://martinfowler.com/bliki/ValueObject.html）— 値オブジェクトの定義、不変性、エイリアシングのバグ、J2EE での用語の混乱</li>
+      <li>Martin Fowler, <a href="https://martinfowler.com/bliki/EvansClassification.html">Evans Classification</a>（https://martinfowler.com/bliki/EvansClassification.html）— エンティティ・値オブジェクト・サービスの3分類</li>
+      <li>Martin Fowler, <a href="https://martinfowler.com/bliki/LocalDTO.html">LocalDTO</a>（https://martinfowler.com/bliki/LocalDTO.html）— DTO はリモート呼び出しのためのもので、ローカルでの多用は有害</li>
+      <li>Martin Fowler, <a href="https://martinfowler.com/eaaCatalog/dataTransferObject.html">Data Transfer Object（PoEAA カタログ）</a>（https://martinfowler.com/eaaCatalog/dataTransferObject.html）</li>
+      <li>Martin Fowler, <a href="https://martinfowler.com/bliki/AnemicDomainModel.html">AnemicDomainModel</a>（2003）（https://martinfowler.com/bliki/AnemicDomainModel.html）— 貧血ドメインモデルと薄いアプリケーション層</li>
+      <li><a href="https://abp.io/docs/latest/framework/architecture/domain-driven-design/domain-services">Domain Services — ABP Framework</a>（https://abp.io/docs/latest/framework/architecture/domain-driven-design/domain-services）— ドメインサービスとアプリケーションサービスの違い</li>
+      <li>Matthias Noback, <a href="https://matthiasnoback.nl/2022/08/simple-solutions-1-active-record-versus-data-mapper/">Active Record versus Data Mapper</a>（https://matthiasnoback.nl/2022/08/simple-solutions-1-active-record-versus-data-mapper/）</li>
+      <li><a href="https://dzone.com/articles/domain-object-persistence">Domain Object Persistence（DZone）</a>（https://dzone.com/articles/domain-object-persistence）— ドメインモデルと永続化モデルを分けるかどうか</li>
+      <li>Jared White, <a href="https://jaredwhite-fullstackrubydev.statichost.eu/object-orientation/rails/2018/03/06/why-service-objects-are-an-anti-pattern/">Why Service Objects are an Anti-Pattern</a>（https://jaredwhite-fullstackrubydev.statichost.eu/object-orientation/rails/2018/03/06/why-service-objects-are-an-anti-pattern/）/ <a href="https://multithreaded.production.stitchfix.com/blog/2015/06/02/anatomy-of-service-objects-in-rails/">Anatomy of a Rails Service Object（Stitch Fix）</a>（https://multithreaded.production.stitchfix.com/blog/2015/06/02/anatomy-of-service-objects-in-rails/）</li>
+      <li>Milan Jovanović, <a href="https://milanjovanovic.tech/blog/adding-validation-to-the-options-pattern-in-asp-net-core">Adding Validation To The Options Pattern in ASP.NET Core</a>（https://milanjovanovic.tech/blog/adding-validation-to-the-options-pattern-in-asp-net-core）</li>
+      <li>Jeff Bay「Object Calisthenics」（『ThoughtWorks アンソロジー』所収）— ファーストクラスコレクション</li>
+      <li>Eric Evans『ドメイン駆動設計』（2003）、Martin Fowler『エンタープライズアプリケーションアーキテクチャパターン』（2002）、増田亨『現場で役立つシステム設計の原則』（本文で言及）</li>
+      <li>関連ページ：<a href="../42_ソフトウェア設計/30-6_エンティティと値オブジェクト.html">42章：エンティティと値オブジェクト</a>、<a href="../42_ソフトウェア設計/30-9_ドメイン層とユースケース.html">42章：ドメイン層とユースケース</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-5_TellDontAskと貧血モデル.html"><span class="lbl">← 前のページ</span>Tell, Don't Ask と貧血モデル</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-7_区分オブジェクトと状態遷移.html"><span class="lbl">次のページ →</span>区分オブジェクトと状態遷移</a>
+    </nav>
+    <footer class="page-foot">44_クラス設計・デザインパターン ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

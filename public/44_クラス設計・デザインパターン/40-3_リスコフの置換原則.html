@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>リスコフの置換原則（LSP） — 子クラスは親の代わりになれるか｜クラス設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">クラス設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 SOLIDの適用 › リスコフの置換原則</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 SOLIDの適用</span>
+      <h1>リスコフの置換原則（LSP） — 子クラスは親の代わりになれるか</h1>
+      <p class="lead">親クラスの変数に子クラスのオブジェクトを入れても、プログラムが正しく動き続けるか。リスコフの置換原則を、継承階層の契約（事前条件・事後条件・不変条件）、正方形と長方形などの典型的な違反、振る舞いの継承とデータの継承の注意点、LSP を守るための設計判断で解説します。</p>
+      <p class="meta">もとにしたノート：40_SOLIDの適用/03_リスコフの置換原則</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>リスコフの置換原則（LSP）</strong> は「子クラスは、親クラスの <strong>契約を守ったまま</strong> 親の代わりに使えなければならない」という原則です。守れないなら継承をやめ、<strong>インターフェース + 合成</strong> に切り替えます。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>このページでは <strong>リスコフの置換原則（Liskov Substitution Principle, LSP）</strong> を学び、継承階層の契約を守る設計判断を身につけます。違反の典型例と、振る舞い継承の注意点を押さえます。名前は、この考え方を示した計算機科学者バーバラ・リスコフに由来します。</p>
+    <ul>
+      <li><strong>子クラスは親の代わりになれる</strong></li>
+      <li><strong>継承階層の契約</strong>：事前条件・事後条件・不変条件</li>
+      <li><strong>LSP 違反の典型例</strong>：正方形と長方形、例外の変更</li>
+      <li><strong>振る舞いの継承とデータの継承</strong></li>
+      <li><strong>LSP を守るための設計判断</strong></li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">このページの範囲</p>
+      <p>このページは「<strong>クラス設計でどう使うか</strong>」を扱います。原則そのものの説明は 48_原則 のノート『03_LSP (リスコフの置換原則)』を参照してください。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>子クラスは親の代わりになれる</h2>
+    <p>LSP：<strong>親型の変数に子型のオブジェクトを代入しても</strong>、プログラムの正しさが保たれるべき。</p>
+<pre><code>function printArea(shape) {
+  console.log(shape.area());  // Rectangle でも Square でも動くべき
+}</code></pre>
+    <p>子が親の <strong>期待する振る舞いを壊す</strong> と LSP 違反です。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>継承階層の契約（Contract）</h2>
+    <p><strong>契約</strong> とは、メソッドを呼ぶ側と実装する側の間の約束ごとです。契約には次が含まれます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>要素</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>事前条件</td><td>呼び出し前に満たすべき条件（子は緩めてよい）</td></tr>
+        <tr><td>事後条件</td><td>呼び出し後に保証すること（子は強めてよい）</td></tr>
+        <tr><td>不変条件</td><td>常に真であるべき性質</td></tr>
+      </tbody>
+    </table></div>
+    <p>子が事前条件を厳しくしたり、事後条件を弱めたりすると、親を前提に書いた呼び出し側が困ります。</p>
+<pre><code>  親: withdraw(amount) — 残高以上は引き出せない
+  子: 無制限に引き出せる → 契約違反（LSP 破壊）</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>LSP 違反の典型例</h2>
+    <h3 id="sec-4-1">4.1 正方形と長方形</h3>
+    <span class="code-label bad">✕ 正方形が長方形を継承する</span>
+<pre><code>class Rectangle {
+  setWidth(w) { this.width = w; }
+  setHeight(h) { this.height = h; }
+}
+class Square extends Rectangle {
+  setWidth(w) { this.width = this.height = w; }  // 長方形の契約を破る
+}</code></pre>
+    <p><code>Rectangle</code> として使うと面積計算がおかしくなります。たとえば「幅を 5、高さを 4 にすれば面積は 20」と期待して書いたコードに <code>Square</code> を渡すと、幅を変えたときに高さも変わってしまい、期待どおりになりません。<strong>継承ではなく別の型 + 共通インターフェース</strong> が安全です。</p>
+    <h3 id="sec-4-2">4.2 例外の変更</h3>
+    <p>親は返す、子は例外を投げる — 呼び出し側の想定を壊します。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>振る舞いの継承とデータの継承</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>種類</th><th>リスク</th></tr></thead>
+      <tbody>
+        <tr><td>データ継承</td><td>フィールドの意図しない共有</td></tr>
+        <tr><td>振る舞い継承</td><td>メソッドのオーバーライドで契約破壊</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>継承は実装の共有手段ではなく、契約の特化手段</strong> と捉えます。コード再利用だけなら <strong>合成</strong> を選びます（<a href="30-2_継承と多態.html">継承と多態</a>、<a href="30-4_継承より合成.html">継承より合成</a>）。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>LSP を守るための設計判断</h2>
+    <ul>
+      <li>子を親の型として <strong>テストで置き換え</strong> てみる</li>
+      <li>「is-a」が言語レベルだけでなく <strong>振る舞いレベル</strong> でも成り立つか確認</li>
+      <li>疑わしい継承は <strong>インターフェース + 合成</strong> に変更</li>
+      <li>深い階層はフラット化を検討</li>
+    </ul>
+    <span class="code-label good">◯ 継承しない — 共通インターフェースで別々に実装</span>
+<pre><code>interface Shape { area(): number; }
+class Rectangle implements Shape { /* */ }
+class Square implements Shape { /* */ }  // 継承しない</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 210" role="img" aria-label="左の悪い例では Square が Rectangle を継承しており、幅と高さを別々に変えられるという長方形の契約を破る。右の良い例では、Rectangle と Square がそれぞれ Shape インターフェースを実装し、互いに継承しない">
+      <defs><marker id="arr-40-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="170" y="22" text-anchor="middle" class="d-text-bold">✕ 継承</text>
+      <rect x="70" y="36" width="200" height="44" rx="8" class="d-box"/>
+      <text x="170" y="63" text-anchor="middle" class="d-text">Rectangle</text>
+      <rect x="70" y="140" width="200" height="44" rx="8" class="d-box-bad"/>
+      <text x="170" y="167" text-anchor="middle" class="d-text">Square</text>
+      <line x1="170" y1="138" x2="170" y2="84" class="d-line" marker-end="url(#arr-40-3)"/>
+      <text x="182" y="115" class="d-text-sub">extends（契約を破る）</text>
+      <text x="530" y="22" text-anchor="middle" class="d-text-bold">◯ インターフェース</text>
+      <rect x="430" y="36" width="200" height="44" rx="8" class="d-box-accent"/>
+      <text x="530" y="63" text-anchor="middle" class="d-text">Shape</text>
+      <rect x="370" y="140" width="150" height="44" rx="8" class="d-box-good"/>
+      <text x="445" y="167" text-anchor="middle" class="d-text">Rectangle</text>
+      <rect x="545" y="140" width="150" height="44" rx="8" class="d-box-good"/>
+      <text x="620" y="167" text-anchor="middle" class="d-text">Square</text>
+      <line x1="445" y1="138" x2="505" y2="84" class="d-line-dash" marker-end="url(#arr-40-3)"/>
+      <line x1="620" y1="138" x2="555" y2="84" class="d-line-dash" marker-end="url(#arr-40-3)"/>
+      <text x="530" y="125" text-anchor="middle" class="d-text-sub">implements</text>
+    </svg>
+    <figcaption>図：Square を Rectangle の子にせず、どちらも Shape を実装する別の型にする</figcaption>
+    </figure>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「現実世界で is-a なら、継承してよい」</summary><div class="body"><p>数学では正方形は長方形の一種ですが、プログラムの <code>Square</code> は <code>Rectangle</code> の「幅と高さを別々に変えられる」という契約を守れません。is-a は言語や現実のレベルだけでなく、<strong>振る舞いのレベル</strong> で成り立つかを確かめます。</p></div></details>
+    <details open><summary>誤解2：「コードを使い回したいから継承する」</summary><div class="body"><p>継承は実装の共有手段ではなく、契約の特化手段です。再利用目的の継承は、オーバーライドで契約を壊したり、フィールドを意図せず共有したりする危険があります。コード再利用だけなら合成を検討します。</p></div></details>
+    <details open><summary>誤解3：「子クラスで例外を投げるのは自由」</summary><div class="body"><p>親が値を返す約束のメソッドで、子だけが例外を投げると、親を前提に書いた呼び出し側の想定が壊れます。これも典型的な LSP 違反です。</p></div></details>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>LSP = 子は親の代わりに使える（契約を守る）</li>
+      <li>事前・事後条件・不変条件を意識</li>
+      <li>正方形/長方形、例外の変更が典型違反</li>
+      <li>再利用目的の継承は危険。合成を検討</li>
+    </ul>
+    <p>次は <a href="40-4_インターフェース分離の原則.html">インターフェース分離の原則</a> に進みます。</p>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：44_クラス設計・デザインパターン/40_SOLIDの適用/03_リスコフの置換原則</li>
+      <li>関連ページ：<a href="../42_ソフトウェア設計/20-3_継承と合成.html">42章：継承と合成</a></li>
+      <li>関連ノート：48_原則 のノート『03_LSP (リスコフの置換原則)』</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-2_開放閉鎖の原則.html"><span class="lbl">← 前のページ</span>開放閉鎖の原則</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-4_インターフェース分離の原則.html"><span class="lbl">次のページ →</span>インターフェース分離の原則</a>
+    </nav>
+    <footer class="page-foot">44_クラス設計・デザインパターン ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

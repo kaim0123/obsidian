@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>疎結合・インターフェース・DIP・DI の整理 — 4つの関係を1枚で｜モジュール設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">モジュール設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 40 つなぎ方 › 疎結合・DIP・DIの整理</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">40 つなぎ方</span>
+      <h1>疎結合・インターフェース・DIP・DI の整理 — 4つの関係を1枚で</h1>
+      <p class="lead">「疎結合」「インターフェース」「依存性逆転の原則（DIP）」「依存性注入（DI）」は、いつもセットで語られるので混ざりやすい言葉です。このページでは4つの役割分担を1枚に整理し、同じコードを密結合から4段階で直しながら違いを確かめます。さらに、モジュール（ディレクトリ・パッケージ）単位での実現方法と、添付ファイルサービスを題材にした DI の具体例、そして「どこまでやるか」の目安までをまとめます。</p>
+      <p class="meta">もとにしたノート：40_つなぎ方/04_疎結合・インターフェース・DIP・DIの整理、40_つなぎ方/【入門】依存性注入とは何か（動画メモ）</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>疎結合</strong> が目的、<strong>インターフェース</strong> が道具、<strong>DIP</strong> が依存の向きの原則、<strong>DI</strong> が実物の渡し方です。インターフェースを作るだけ、DI するだけでは依存の矢印は逆転せず、<strong>使う側（上位）がインターフェースを所有</strong> して初めて DIP になります。そして DI は万能薬ではなく、<strong>変わりうる境界にだけ差し込み口を作る道具</strong> です。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>4つの言葉は、それぞれ別の本や記事で別々に説明されることが多く、「結局どれがどれ？」となりがちです。このページでは4つの関係を整理し、モジュール単位でどう実現するかまでをまとめます。各概念の詳しい説明は、41章のページにリンクします。</p>
+    <ul>
+      <li><strong>4つの概念の役割分担</strong>：目的・道具・原則・技法</li>
+      <li><strong>段階を追って見る</strong>：密結合のコードを4段階で直す</li>
+      <li><strong>「処理の流れ」と「依存の方向」は別物</strong></li>
+      <li><strong>モジュール単位での実現</strong>：インターフェースの置き場所、import ルール、モジュール間の DI</li>
+      <li><strong>DI を具体例で見る</strong>：添付ファイルサービスを if 文地獄から組み直す（動画の要点）</li>
+      <li><strong>どこまでやるか</strong>：やりすぎ注意と、差し込み口を作る3つのシグナル</li>
+      <li><strong>混同しやすいポイント</strong></li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>4つの概念の役割分担</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>役割</th><th>一言でいうと</th><th>詳細の本拠地</th></tr></thead>
+      <tbody>
+        <tr><td><strong>疎結合</strong></td><td>目的</td><td>部品同士が互いの中身をなるべく知らない状態</td><td><a href="20-2_結合度.html">結合度</a> / <a href="../41_アーキテクチャ/13-1_モジュール性と疎結合高凝集.html">41章：モジュール性と疎結合高凝集</a></td></tr>
+        <tr><td><strong>インターフェース</strong></td><td>手段（道具）</td><td>「何ができるか」だけを決め、「どうやるか」を隠す</td><td><a href="40-1_モジュール間インターフェース.html">モジュール間インターフェース</a> / <a href="../41_アーキテクチャ/24-3_インターフェースと抽象化.html">41章：インターフェースと抽象化</a></td></tr>
+        <tr><td><strong>DIP（依存性逆転の原則）</strong></td><td>設計原則</td><td>依存の矢印を、変わりにくい側（ビジネスロジック）に向ける</td><td><a href="40-2_依存関係の管理.html">依存関係の管理</a> / <a href="../41_アーキテクチャ/24-1_依存性逆転の原則.html">41章：依存性逆転の原則</a></td></tr>
+        <tr><td><strong>DI（依存性注入）</strong></td><td>実装の技法</td><td>使う部品を自分で <code>new</code> せず、外から渡してもらう</td><td><a href="../41_アーキテクチャ/24-2_DI・IoC・CompositionRoot.html">41章：DI・IoC・Composition Root</a></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">つながりで覚える</p>
+      <p><strong>疎結合</strong> にしたい → <strong>インターフェース</strong> で中身を隠す → その置き場所と矢印の向きを決めるのが <strong>DIP</strong> → 実物を外から渡す仕組みが <strong>DI</strong></p>
+    </div>
+    <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="目的である疎結合の下に、インターフェース（契約で隠す）、DIP（矢印を上位へ向ける。抽象は上位が所有）、DI（実物は外から渡す。new は Composition Root へ）の3つが並び、3つがそろうと差し替え可能・テスト容易・変更の影響範囲が小さいという効果につながる">
+      <defs><marker id="arw344a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="230" y="14" width="260" height="56" rx="8" class="d-box-accent"/>
+      <text x="360" y="38" text-anchor="middle" class="d-text-bold">目的：疎結合</text>
+      <text x="360" y="59" text-anchor="middle" class="d-text-sub">変更・テストに強くする</text>
+      <line x1="300" y1="70" x2="120" y2="106" class="d-line" marker-end="url(#arw344a)"/>
+      <line x1="360" y1="70" x2="360" y2="106" class="d-line" marker-end="url(#arw344a)"/>
+      <line x1="420" y1="70" x2="600" y2="106" class="d-line" marker-end="url(#arw344a)"/>
+      <rect x="20" y="110" width="200" height="80" rx="8" class="d-box"/>
+      <text x="120" y="138" text-anchor="middle" class="d-text-bold">インターフェース</text>
+      <text x="120" y="162" text-anchor="middle" class="d-text-sub">「契約で隠す」</text>
+      <rect x="260" y="110" width="200" height="80" rx="8" class="d-box"/>
+      <text x="360" y="138" text-anchor="middle" class="d-text-bold">DIP</text>
+      <text x="360" y="160" text-anchor="middle" class="d-text-sub">「矢印を上位へ向ける」</text>
+      <text x="360" y="180" text-anchor="middle" class="d-text-sub">抽象は上位が所有</text>
+      <rect x="500" y="110" width="200" height="80" rx="8" class="d-box"/>
+      <text x="600" y="138" text-anchor="middle" class="d-text-bold">DI</text>
+      <text x="600" y="160" text-anchor="middle" class="d-text-sub">「実物は外から渡す」</text>
+      <text x="600" y="180" text-anchor="middle" class="d-text-sub">new は Composition Root へ</text>
+      <line x1="120" y1="190" x2="250" y2="226" class="d-line" marker-end="url(#arw344a)"/>
+      <line x1="360" y1="190" x2="360" y2="226" class="d-line" marker-end="url(#arw344a)"/>
+      <line x1="600" y1="190" x2="470" y2="226" class="d-line" marker-end="url(#arw344a)"/>
+      <rect x="110" y="230" width="500" height="52" rx="8" class="d-box-good"/>
+      <text x="360" y="262" text-anchor="middle" class="d-text-bold">差し替え可能・テスト容易・変更の影響範囲が小さい</text>
+    </svg>
+    <figcaption>図：疎結合という目的を、3つの手段が分担して実現する</figcaption>
+    </figure>
+    <p><strong>Composition Root（コンポジションルート）</strong> とは、アプリの部品を <code>new</code> して組み立てる場所を1か所（たいていは起動処理の <code>main.ts</code>）に集めたものです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>段階を追って見る</h2>
+    <p>同じコードを、密結合から順に4段階で直していきます。注文を受け付ける <code>OrderService</code> が、注文を Postgres（データベース製品の1つ）に保存する例です。</p>
+
+    <h3 id="sec-3-1">3.1 段階0：密結合（具体クラスを直接 <code>new</code>）</h3>
+    <pre><code>// order/OrderService.ts
+import { PostgresOrderRepository } from '../infra/PostgresOrderRepository';
+
+export class OrderService {
+  private repo = new PostgresOrderRepository(); // 具体クラスを直接生成
+
+  async place(cmd: PlaceOrderCommand) {
+    const order = Order.create(cmd);
+    await this.repo.save(order);
+  }
+}</code></pre>
+    <ul>
+      <li>DB を替えると <code>OrderService</code> も直す必要がある</li>
+      <li>テストに本物の Postgres が必要</li>
+      <li><code>order</code> モジュールが <code>infra</code> モジュールの <strong>内部クラス名</strong> まで知っている（<a href="20-2_結合度.html">結合度</a> の内容結合に近い）</li>
+    </ul>
+
+    <h3 id="sec-3-2">3.2 段階1：インターフェースを導入しただけ</h3>
+    <pre><code>// infra/OrderRepository.ts   ← インターフェースを infra 側に置いてしまった
+export interface OrderRepository { save(order: Order): Promise&lt;void&gt;; }
+export class PostgresOrderRepository implements OrderRepository { /* ... */ }
+
+// order/OrderService.ts
+import { OrderRepository, PostgresOrderRepository } from '../infra/OrderRepository';
+
+export class OrderService {
+  private repo: OrderRepository = new PostgresOrderRepository(); // まだ new している
+}</code></pre>
+    <p>型はインターフェースになりましたが、<strong>疎結合にはなっていません</strong>。</p>
+    <ul>
+      <li><code>new</code> が残っているので、結局 Postgres 実装に依存している</li>
+      <li>インターフェースが <code>infra</code> にあるので、<code>order → infra</code> の矢印は消えていない</li>
+    </ul>
+
+    <h3 id="sec-3-3">3.3 段階2：DI を導入（外から渡す）</h3>
+    <pre><code>// order/OrderService.ts
+export class OrderService {
+  constructor(private readonly repo: OrderRepository) {} // 受け取るだけ
+}</code></pre>
+    <p><code>new</code> は消えました。テストではメモリ実装（データベースの代わりに、メモリ上の配列などに保存する簡易版）を渡せます。ただし <strong>インターフェースがまだ <code>infra</code> 側</strong> にあるなら、<code>order</code> は <code>infra</code> を import し続けます。</p>
+
+    <h3 id="sec-3-4">3.4 段階3：DIP を適用（インターフェースを上位側が所有）</h3>
+    <pre><code>// order/domain/OrderRepository.ts   ← 上位（使う側）が定義
+export interface OrderRepository {
+  save(order: Order): Promise&lt;void&gt;;
+  findById(id: OrderId): Promise&lt;Order | null&gt;;
+}
+
+// order/application/OrderService.ts
+import type { OrderRepository } from '../domain/OrderRepository';
+export class OrderService {
+  constructor(private readonly repo: OrderRepository) {}
+}
+
+// infra/PostgresOrderRepository.ts  ← 下位が上位の契約を実装しに行く
+import type { OrderRepository } from '../order/domain/OrderRepository';
+export class PostgresOrderRepository implements OrderRepository { /* ... */ }
+
+// main.ts（Composition Root）  ← new はここに集める
+const repo = new PostgresOrderRepository(pool);
+const service = new OrderService(repo);</code></pre>
+    <figure>
+    <svg viewBox="0 0 720 220" role="img" aria-label="段階0から2では order が infra に依存する矢印になっている。段階3では infra が order に依存する逆向きの矢印になり、main が両方を組み立てる">
+      <defs><marker id="arw344b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="180" y="28" text-anchor="middle" class="d-text-bold">段階0〜2</text>
+      <rect x="30" y="60" width="120" height="50" rx="8" class="d-box"/>
+      <text x="90" y="90" text-anchor="middle" class="d-text-bold">order</text>
+      <rect x="210" y="60" width="120" height="50" rx="8" class="d-box"/>
+      <text x="270" y="90" text-anchor="middle" class="d-text-bold">infra</text>
+      <line x1="150" y1="85" x2="206" y2="85" class="d-line" marker-end="url(#arw344b)"/>
+      <text x="180" y="140" text-anchor="middle" class="d-text-sub">業務が技術の詳細に依存</text>
+
+      <line x1="360" y1="20" x2="360" y2="200" class="d-line-dash"/>
+
+      <text x="550" y="28" text-anchor="middle" class="d-text-bold">段階3（DIP 適用後）</text>
+      <rect x="400" y="60" width="120" height="50" rx="8" class="d-box-accent"/>
+      <text x="460" y="90" text-anchor="middle" class="d-text-bold">order</text>
+      <rect x="580" y="60" width="120" height="50" rx="8" class="d-box"/>
+      <text x="640" y="90" text-anchor="middle" class="d-text-bold">infra</text>
+      <line x1="580" y1="85" x2="524" y2="85" class="d-line-accent" marker-end="url(#arw344b)"/>
+      <rect x="490" y="160" width="120" height="44" rx="8" class="d-box"/>
+      <text x="550" y="181" text-anchor="middle" class="d-text-bold">main</text>
+      <text x="550" y="198" text-anchor="middle" class="d-text-sub">組み立て</text>
+      <line x1="530" y1="160" x2="475" y2="114" class="d-line-dash" marker-end="url(#arw344b)"/>
+      <line x1="570" y1="160" x2="625" y2="114" class="d-line-dash" marker-end="url(#arw344b)"/>
+    </svg>
+    <figcaption>図：DIP を適用すると、order と infra の間の矢印の向きが逆になる</figcaption>
+    </figure>
+    <pre><code>  段階0〜2                         段階3（DIP 適用後）
+  ────────                         ─────────────────
+  order ──→ infra                  order ←── infra
+                                     ▲
+                                    main（組み立て）</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>インターフェース</th><th>DI</th><th>DIP</th><th>疎結合か</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>なし</td><td>なし</td><td>なし</td><td>✕</td></tr>
+        <tr><td>1</td><td>あり（infra 所有）</td><td>なし</td><td>なし</td><td>✕</td></tr>
+        <tr><td>2</td><td>あり（infra 所有）</td><td>あり</td><td>なし</td><td>△（テストは楽になるが矢印はそのまま）</td></tr>
+        <tr><td>3</td><td>あり（<strong>order 所有</strong>）</td><td>あり</td><td>あり</td><td>◯</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout key">
+      <p class="callout-title">ポイント</p>
+      <p>インターフェース・DI・DIP は <strong>3つそろって初めて</strong> モジュール間の矢印が逆転します。</p>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>「処理の流れ」と「依存の方向」は別物</h2>
+    <p>DIP の「逆転」がわかりにくいのは、2つの矢印を混同しやすいからです。</p>
+    <figure>
+    <svg viewBox="0 0 720 210" role="img" aria-label="処理の流れでは OrderService が PostgresOrderRepository を呼ぶ。ソースコードの依存では OrderService も PostgresOrderRepository もインターフェース OrderRepository に向かって矢印を向けている">
+      <defs><marker id="arw344c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <text x="20" y="26" class="d-text-bold">処理の流れ（実行時の呼び出し）</text>
+      <rect x="20" y="40" width="190" height="44" rx="8" class="d-box"/>
+      <text x="115" y="67" text-anchor="middle" class="d-text">OrderService</text>
+      <rect x="450" y="40" width="250" height="44" rx="8" class="d-box"/>
+      <text x="575" y="67" text-anchor="middle" class="d-text">PostgresOrderRepository</text>
+      <line x1="210" y1="62" x2="446" y2="62" class="d-line" marker-end="url(#arw344c)"/>
+      <text x="328" y="54" text-anchor="middle" class="d-text-sub">呼ぶ</text>
+
+      <text x="20" y="134" class="d-text-bold">ソースコードの依存（import の向き）</text>
+      <rect x="20" y="148" width="190" height="44" rx="8" class="d-box"/>
+      <text x="115" y="175" text-anchor="middle" class="d-text">OrderService</text>
+      <rect x="260" y="148" width="190" height="44" rx="8" class="d-box-accent"/>
+      <text x="355" y="175" text-anchor="middle" class="d-text-bold">«OrderRepository»</text>
+      <rect x="500" y="148" width="200" height="44" rx="8" class="d-box"/>
+      <text x="600" y="175" text-anchor="middle" class="d-text-sub">PostgresOrderRepository</text>
+      <line x1="210" y1="170" x2="256" y2="170" class="d-line" marker-end="url(#arw344c)"/>
+      <line x1="500" y1="170" x2="454" y2="170" class="d-line-accent" marker-end="url(#arw344c)"/>
+    </svg>
+    <figcaption>図：呼び出しの向きは同じまま、import の向きだけが逆になる</figcaption>
+    </figure>
+    <pre><code>  処理の流れ（実行時の呼び出し）
+    OrderService ───呼ぶ───▶ PostgresOrderRepository
+
+  ソースコードの依存（import の向き）
+    OrderService ──▶ «OrderRepository» ◀── PostgresOrderRepository</code></pre>
+    <ul>
+      <li><strong>処理の流れ</strong> は変わらない（業務ロジックが DB を呼ぶ）</li>
+      <li><strong>ソースコードの依存</strong> だけが、下位から上位へ逆向きになる</li>
+    </ul>
+    <p>依存の矢印は「<strong>どちらが変わったら、どちらが壊れるか</strong>」を表します。DIP 後は DB 側を変えても業務ロジックは壊れず、業務ロジック側の契約が変わったときだけ DB 側が追従します。<strong>変わりにくく重要な方</strong> が主導権を持つ構造です。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>モジュール単位での実現</h2>
+    <p>モジュール設計の視点で、ディレクトリ・パッケージにどう落とすかをまとめます。</p>
+
+    <h3 id="sec-5-1">5.1 インターフェースの置き場所</h3>
+    <pre><code>src/
+  order/                      ← 上位（業務）
+    domain/
+      Order.ts
+      OrderRepository.ts      ← ポート（インターフェース）はここ
+    application/
+      PlaceOrderUseCase.ts
+    index.ts                  ← 外部に公開する面
+  infra/                      ← 下位（技術的詳細）
+    postgres/
+      PostgresOrderRepository.ts   ← order/domain を import して実装
+  main.ts                     ← Composition Root</code></pre>
+    <p><strong>ポート</strong> は「業務側が外の世界に求める機能」を表すインターフェース、<strong>アダプタ</strong> はそのポートを特定の技術（Postgres など）で実装したものです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ルール</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>ポートは <strong>使う側のモジュール</strong> に置く</td><td>契約の形を業務の都合で決めるため</td></tr>
+        <tr><td>アダプタは <strong>infra 側</strong> に置く</td><td>技術の詳細を外側に閉じ込めるため</td></tr>
+        <tr><td><code>order/**</code> は <code>infra/**</code> を import しない</td><td>依存の矢印を内向きに保つため</td></tr>
+        <tr><td><code>new</code> は <code>main.ts</code>（または各モジュールの <code>composition.ts</code>）だけ</td><td>組み立てを1か所に集めるため</td></tr>
+      </tbody>
+    </table></div>
+    <p>詳しい構成例は <a href="60-3_ヘキサゴナルのモジュール構成.html">ヘキサゴナルのモジュール構成</a> を参照してください。</p>
+
+    <h3 id="sec-5-2">5.2 import ルールで矢印を守る</h3>
+    <p>DIP は「気をつける」だけでは崩れます。<strong>import 制約を CI で検査</strong> して守ります（<a href="70-6_依存ルールの自動検査.html">依存ルールの自動検査</a>）。CI（継続的インテグレーション）は、コードを共有リポジトリに入れるたびに自動でテストや検査を走らせる仕組みです。</p>
+    <pre><code>// .dependency-cruiser.js（イメージ）
+{
+  name: 'domain-must-not-depend-on-infra',
+  from: { path: '^src/order/domain' },
+  to:   { path: '^src/infra' },
+  severity: 'error',
+}</code></pre>
+
+    <h3 id="sec-5-3">5.3 モジュール間の DI</h3>
+    <p>モジュール A がモジュール B の機能を使う場合も、考え方は同じです。</p>
+    <pre><code>// order モジュールが「在庫を引き当てたい」
+// order/domain/InventoryPort.ts   ← order が必要な形で定義
+export interface InventoryPort {
+  reserve(items: OrderItem[]): Promise&lt;ReservationResult&gt;;
+}
+
+// inventory モジュールの公開 API を、order のポートに合わせるアダプタ
+// composition/InventoryAdapter.ts
+import { inventoryApi } from '../inventory';          // inventory の index.ts だけを使う
+import type { InventoryPort } from '../order/domain/InventoryPort';
+
+export const inventoryAdapter: InventoryPort = {
+  reserve: (items) =&gt; inventoryApi.reserve(items.map(toSku)),
+};</code></pre>
+    <ul>
+      <li><code>order</code> は <code>inventory</code> を一切 import しない</li>
+      <li><code>inventory</code> 側の API が変わっても、直すのはアダプタだけ</li>
+      <li>テストでは <code>InventoryPort</code> の偽物を渡せる</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>DI を具体例で見る — 添付ファイルサービス</h2>
+    <p>ここからは、動画「【入門】依存性注入とは何か」（直也テック）の要点を整理して紹介します。</p>
+    <p>依存性注入（Dependency Injection）は名前ほど難しくありません。<strong>あるコードが別のコードを使いたいとき、内部で直接作らず外から渡してもらう</strong>——この「渡すこと」を「注入」と呼びます。仕組みはこれだけです。「要するに関数に引数を渡しているだけ」と言う人もいるほどで、形としては古くからある <strong>Strategy パターン</strong>（処理のやり方を部品として差し替えられるようにするデザインパターン）とほぼ同じです。「プログラミングの大半は Builder と Strategy の2つのパターンでできている」と言うシニアエンジニアもいるほど、身近な考え方です。</p>
+
+    <h3 id="sec-6-1">6.1 題材：保存先が顧客ごとに違う</h3>
+    <p>舞台は同僚とやり取りするビジネスチャットアプリです。メッセージ本文はリアルタイム性が大事なチャットサービスへ送られ、画像やファイルなどの添付は専用の <strong>アタッチメントサービス</strong> にアップロードされます。受け取ったファイルは一時保存され、処理を経て最終的な保存先に送られます。</p>
+    <p>デフォルトの保存先は Amazon の <strong>S3</strong>（クラウドのファイル保存サービス）です。大半の顧客は S3 で問題ありませんが、一部の企業はデータの永続保存を嫌がるため、顧客の会社によって保存先を切り替える必要があります。多くは <strong>SFTP</strong> サーバーの指定ですが、1社だけ <strong>WebDAV</strong> を要求してきました（どちらもファイルを転送・保存するための通信方式です）。</p>
+
+    <h3 id="sec-6-2">6.2 if 文で拡張すると何が壊れるか</h3>
+    <p>まず思いつくのは、アップロード処理を if 文で拡張し、保存先の指定と接続情報を呼び出し側から引数で渡してもらう方法です。保存先ごとに必要な項目をユニオン型（「A または B または C」を表す型）で結びつけておけば、間違った組み合わせはコンパイラーが弾いてくれる、という意見もあり、それも有効な手です。ただ、分岐を足していくと次の問題が出てきます。</p>
+    <ol class="steps">
+      <li><strong>責任が肥大する</strong>：性質の違う AWS・SFTP・WebDAV のコードが1か所で絡み合い、分岐だらけで流れが追いにくくなる</li>
+      <li><strong>呼び出し側に不親切</strong>：保存先ごとに必要な情報が違うので引数は任意（省略可能）だらけになり、どれを埋めるべきかはコメント頼み。ミスに気づくのは実行時</li>
+      <li><strong>設定のバケツリレー</strong>：どの会社のファイルかを一番よく知っているのはリクエストの入口なのに、そこからゴールまで接続情報を引き回すことになる</li>
+    </ol>
+
+    <h3 id="sec-6-3">6.3 DI の導入</h3>
+    <ol class="steps">
+      <li>ストレージを表す <strong>インターフェース</strong> を作る。持つのは upload と download だけ＝呼ぶ側がやりたいことだけを表す</li>
+      <li>この差し込み口に合う実装クラスを3つ（S3・SFTP・WebDAV）作る。それぞれの接続設定はコンストラクタで受け取るので、任意引数だらけが消え、各クラスは必要な値だけを要求する。渡し忘れればその場でエラーになる</li>
+      <li>認証が終わって所属する会社が分かった瞬間に、使うべきストレージを作る。そしてリクエスト処理には <strong>完成したストレージだけ</strong> を渡す。これが注入</li>
+    </ol>
+    <p>設定情報をバケツリレーする必要はもうありません。リクエスト処理はファイルの行き先を知らず、「upload を呼べば保存される」ことだけを知っています。この組み立てコードは、入力＝会社の設定、出力＝ストレージなので、丸ごと <strong>ファクトリー</strong>（オブジェクトの作り方を引き受ける部品）に切り出せます。イメージをコードで書くと、たとえば次のようになります（考え方を示すための簡略な例です）。</p>
+    <pre><code>// 呼ぶ側がやりたいことだけを表す差し込み口
+interface Storage {
+  upload(file: File): Promise&lt;void&gt;;
+  download(id: string): Promise&lt;File&gt;;
+}
+
+class S3Storage implements Storage     { constructor(cfg: S3Config) {} /* ... */ }
+class SftpStorage implements Storage   { constructor(cfg: SftpConfig) {} /* ... */ }
+class WebDavStorage implements Storage { constructor(cfg: WebDavConfig) {} /* ... */ }
+
+// 入力＝会社の設定、出力＝ストレージ
+function createStorage(company: CompanySettings): Storage { /* 保存先に応じて new */ }
+
+// リクエスト処理は行き先を知らない
+async function handleUpload(file: File, storage: Storage) {
+  await storage.upload(file);
+}</code></pre>
+
+    <h3 id="sec-6-4">6.4 パイプライン：最終保存は最後の1歩</h3>
+    <p>実際のアップロードは、保存の前に次の4工程を通ります。どの工程も同じ考え方で注入できます。</p>
+    <ol class="steps">
+      <li><strong>ウイルススキャン</strong>：既知のウイルスを弾く。本番では ThreatProtect、乗り換え先の Synergy は性能が高いが契約の都合で開発環境でしか使えない → 2つに共通のインターフェースを被せ、<strong>起動時</strong> にどちらかを選んで注入する。処理側はスキャンするだけで、どちらが動いているかは知らない</li>
+      <li><strong>画像縮小</strong>：最大幅 2500 ピクセルに縮めて帯域を節約。ライブラリ Sharp を <code>ImageScaler</code> というインターフェースで包み、縮小に対応したファイルかどうかを返すメソッドも一緒に持たせる</li>
+      <li><strong>プレビュー</strong>：チャットに表示する小さなサムネイルを作る。文書用・動画用・画像用の3実装を用意し、画像用はさっきの <code>ImageScaler</code> を使い回す（同じ部品を別の場所にもう一度注入するだけ）。どれを使うかは MIME タイプ（ファイルの種類を表す文字列）次第だが、それは処理側の悩みではないので、<strong>選ぶ責任ごとファクトリーにして注入</strong> する</li>
+      <li><strong>暗号化</strong>：S3 に置くファイルを事前に暗号化して漏えいに備える。実装は AES の1つだけだが、鍵はユーザーごとに KeyService から取る → KeyService を暗号化クラスに注入し、その暗号化を StorageFactory に注入。S3 宛てのリクエストが来ると、ファクトリーが暗号化入りのストレージを組み立てる</li>
+    </ol>
+    <p>リクエスト処理は相変わらず upload を呼ぶだけで、裏にこれだけの連携が隠れていることを知りません。注目したいのは、<strong>構成のすべてが1か所で決まっている</strong> ことです。そのおかげで変更が局所化されます。</p>
+    <ul>
+      <li>Synergy との契約が通ったら、変更はたった2行</li>
+      <li>新しいファイル形式のプレビュー対応は、実装を1つ足すだけ</li>
+      <li>ローカル環境にキーサーバーがなければ、固定キーを差し込むだけ</li>
+    </ul>
+    <p>注入のタイミングは2種類あります。どちらも原理は同じで、<strong>コードは必要な依存を宣言し、外側がそれを満たす</strong> だけです。</p>
+    <ul>
+      <li>多くの依存は <strong>起動時</strong> に決まる（ウイルススキャナーなど）</li>
+      <li>一部は <strong>リクエストが来た瞬間</strong> に選ばれる（会社ごとのストレージなど）</li>
+    </ul>
+
+    <h3 id="sec-6-5">6.5 実装が1つでもインターフェースを使う理由：テスト</h3>
+    <p>暗号化のように実装が1つしかないものにまで、わざわざインターフェースを使う意味はあるのでしょうか。大きな利点が <strong>テスト</strong> です。</p>
+    <p>部品同士がすべてインターフェース越しにつながっていれば、接続点はすべて中身を差し替えられます。本物の代わりに <strong>偽物（フェイク）やスタブ</strong>（決まった値を返すだけの代役）を注入すれば、一部分だけを隔離してテストできます。</p>
+    <ul>
+      <li>例：S3 ストレージクラスのテストでは、本物のクラウドの代わりにローカルで動く偽の S3 を使い、upload を呼ぶとファイルが1件アップロードされたことを検証する</li>
+      <li>ただし暗号化のせいで中身が壊れていないかまでは検証できない → <strong>何もしない暗号化</strong> を注入すれば、アップロード機能だけを完全に隔離して検証できる</li>
+    </ul>
+    <p>これには「本物の通信も暗号化も走らず、エラーも起きない。それはテストと呼べるのか」という批判もあります。反論の一例は「テストしているのはあくまで自分のコード。S3 がちゃんと動くことを確かめるのは Amazon の仕事」というものです。</p>
+    <div class="grid c2">
+      <div class="card good">
+        <h4>良いモック（偽物）の見分け方</h4>
+        <ul>
+          <li><strong>本番でもそのまま使えそうな偽物</strong> なら価値がある（例：Postgres の代わりに SQLite）</li>
+          <li>本番では絶対にありえない偽物なら、そのテストは捨ててよい、という考え方もある</li>
+        </ul>
+      </div>
+      <div class="card accent">
+        <h4>モックが本領を発揮する場面</h4>
+        <ul>
+          <li>うまくいく場合ではなく <strong>わざと失敗させたいとき</strong>。通信の切断もサービス停止も、好きなタイミングで再現できる（本物相手ではこれが一番難しい）</li>
+          <li>どこで切るかを自由に選べる：暗号化をテストしたければキーストアだけを偽物に、暗号化と AWS のコードをまとめて試したければ本物をつないで統合テスト</li>
+        </ul>
+      </div>
+    </div>
+    <p>テストのしやすさは、構造をこじつけた結果ではなく、良い設計の自然な作用です。もし <strong>プライベートメソッドのテストに悩み始めたら</strong>、それはその部分を分離して注入すべきだというコードからのシグナル、という話もあります。テストの観点は <a href="70-1_テストしやすいモジュール設計.html">テストしやすいモジュール設計</a> も参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>どこまでやるか（やりすぎ注意）</h2>
+    <div class="grid c2">
+      <div class="card good">
+        <h4>効果が大きい場所</h4>
+        <ul>
+          <li>DB・外部 API・ファイル・メール・時刻・乱数など、<strong>外部・変わりやすい・テストしにくい</strong> もの</li>
+          <li>業務ロジックと技術的詳細の <strong>境界</strong></li>
+          <li>別チームが持つモジュールとの <strong>境界</strong></li>
+        </ul>
+      </div>
+      <div class="card warn">
+        <h4>やりすぎになりやすい場所</h4>
+        <ul>
+          <li>実装が1つしかなく、替わる見込みもテスト上の不便もないもの</li>
+          <li>同じモジュール内のクラス同士（モジュール内部は密でもよい＝高凝集）</li>
+          <li>すべてのクラスに <code>IFoo</code> / <code>FooImpl</code> を作る</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-7-1">7.1 現場の声：DI は万能ではない</h3>
+    <p>動画では、やりすぎたときの困りごととして次のような声が紹介されています。</p>
+    <ul>
+      <li>便利だからとあらゆるものを注入した結果、<strong>引数が6〜7個もある関数</strong> だらけになり、手に負えなくなった（そして書いていて楽しくない）</li>
+      <li>「定義へジャンプ」がいつもインターフェースで止まり、実装クラスを探すのに苦労する。これがつらくなり始めたらやりすぎのサイン、という人もいる（実装へ飛べるショートカットを持つエディタならそこまで困らない、という声もある）</li>
+      <li>より深刻なのは、初めてそのコードベースに入った人が、どの関数も少し処理しては依存に投げる連鎖を前に、<strong>読めば分かるコードが、動かさないと分からないコード</strong> に変わってしまうこと</li>
+      <li>デバッグでは、注入されたものにバグがあるのではなく <strong>注入するものを間違えていた</strong> ケースが厄介。まず依存が間違っていると気づくのに時間がかかり、どこから来たのかを探すと、ファクトリーの奥にまた別の注入が隠れている</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">現場の工夫</p>
+      <p><strong>インターフェース・その実装・どれを選ぶかのルール</strong>、この3つをなるべく同じ場所にまとめておきます。遠くからじわじわ引いてくる魔法ではなく、その場で読める設定にしておくだけで、追いかける負担はかなり軽くなります。</p>
+    </div>
+    <p>そして一番多く聞かれる批判が「<strong>早すぎる抽象化は、早すぎる最適化よりたちが悪い</strong>」です。「変わるかもしれない」という理由だけで作られた差し込み口は、たいてい使われないまま複雑さだけを残します。間違った抽象化を選ぶくらいなら、コードが重複していた方がまだましで、重複は3回目に気づいてからまとめれば十分、という意見もあります。</p>
+
+    <h3 id="sec-7-2">7.2 差し込み口を作る3つのシグナル</h3>
+    <ol class="steps">
+      <li>分岐が <strong>3つ以上</strong> に増えてきた</li>
+      <li>テストのためにその依存を用意するのが明らかに面倒</li>
+      <li>たまにしか使わないのに起動を重くしている部品がある</li>
+    </ol>
+    <p>どれにも当てはまらなければ、まだ作らなくてかまいません。そして一番大事な注意点は、<strong>最初の1行目から完璧に注入しようとしない</strong> ことです。動画の題材も、複雑になりすぎたコードを後から直す作業でした。まず素直に書いてみて、どこがつらいのかを理解してから、必要な場所だけを引き出します。どこまで疎結合にするかの判断軸は <a href="20-3_バランス結合.html">バランス結合</a> も参照してください。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>混同しやすいポイント</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>よくある誤解</th><th>実際</th></tr></thead>
+      <tbody>
+        <tr><td>DI と DIP は同じもの</td><td>別物。DIP は <strong>依存の向き</strong> の原則、DI は <strong>渡し方</strong> の技法。具体クラスを DI することもできる（その場合 DIP は満たさない）</td></tr>
+        <tr><td>インターフェースを作れば DIP</td><td>インターフェースを <strong>下位側に置いたら逆転しない</strong>。置き場所と所有者が重要</td></tr>
+        <tr><td>DI には DI コンテナが必要</td><td>不要。コンストラクタ引数で渡すだけで DI</td></tr>
+        <tr><td>IoC = DI</td><td>IoC（制御の反転）はより広い概念。DI はその一種（<a href="../41_アーキテクチャ/24-2_DI・IoC・CompositionRoot.html">41章：DI・IoC・Composition Root</a>）</td></tr>
+        <tr><td>疎結合なら結合はゼロにすべき</td><td>結合は <strong>なくせない</strong>。強さ・距離・変動性のバランスで決める（<a href="20-3_バランス結合.html">バランス結合</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>DI コンテナ</strong> は、どのインターフェースにどの実装を渡すかを登録しておくと自動で組み立ててくれるライブラリです。便利ですが、DI そのものに必須ではありません。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「実装が1つしかないなら、インターフェースは無駄」</summary><div class="body"><p>替わる見込みがなく、テストでも困らないなら、確かに作らなくてかまいません。ただし DB や暗号化・外部サービスのように、テストで偽物に差し替えたい・わざと失敗させたい部品なら、実装が1つでもインターフェース越しにしておく価値があります。判断は「替わるかも」ではなく、7.2 の3つのシグナルで行います。</p></div></details>
+    <details open><summary>誤解2：「最初から何でも注入しておくのが良い設計」</summary><div class="body"><p>何でも注入すると、引数だらけの関数や「動かさないと分からないコード」が生まれます。DI は変わりうる境界にだけ差し込み口を作る道具です。まず素直に書き、つらくなってから必要な場所だけ引き出します。</p></div></details>
+    <details open><summary>誤解3：「偽物を注入したテストは、本物を試していないので意味がない」</summary><div class="body"><p>テストの対象は自分のコードです。偽物を使えば、通信の切断のように本物では再現しにくい失敗も好きなタイミングで起こせます。本物との組み合わせは、どこで切るかを選んで統合テストで確かめれば十分です。</p></div></details>
+
+    <h2 id="sec-10"><span class="num">10.</span>まとめ</h2>
+    <ul>
+      <li><strong>疎結合</strong> が目的、<strong>インターフェース</strong> が道具、<strong>DIP</strong> が向きの原則、<strong>DI</strong> が渡し方</li>
+      <li>インターフェースを作るだけ、DI するだけでは矢印は逆転しない。<strong>上位側がインターフェースを所有</strong> して初めて DIP になる</li>
+      <li>処理の流れは変わらず、<strong>ソースコードの依存の向き</strong> だけが逆になる</li>
+      <li>モジュール単位では「ポートは使う側に置く」「<code>new</code> は Composition Root に集める」「import ルールを CI で検査する」</li>
+      <li>DI の正体は「依存は中で作らず外から渡す」「つながりはインターフェースに任せる」だけ。それで変更もテストもパズルのように自由になる</li>
+      <li>抽象化は <strong>境界とテストのため</strong> に絞り、早すぎる抽象化は避ける。差し込み口は3つのシグナルが出てから作る</li>
+    </ul>
+    <p>関連ページ：<a href="../41_アーキテクチャ/23-1_依存性のルールとクリーンアーキテクチャ.html">41章：依存性のルールとクリーンアーキテクチャ</a>（同心円での位置づけ）、<a href="../42_ソフトウェア設計/20-4_多態とインターフェース.html">42章：多態とインターフェース</a>（多態性との関係）。原則としての DIP・ISP（インターフェース分離の原則）の詳細は 48_原則、クラス単位の抽象化は 44_クラス設計・デザインパターン で扱います。</p>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：43_モジュール設計/40_つなぎ方/04_疎結合・インターフェース・DIP・DIの整理</li>
+      <li>ノート：43_モジュール設計/40_つなぎ方/【入門】依存性注入とは何か（動画メモ）</li>
+      <li><a href="https://www.youtube.com/watch?v=HxPbYvcNI_c&amp;t=570s">直也テック「【入門】依存性注入とは何か」</a>（https://www.youtube.com/watch?v=HxPbYvcNI_c&amp;t=570s）</li>
+      <li>書籍：『なぜ依存を注入するのか　DIの原理・原則とパターン』（動画の概要欄で紹介）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="40-3_データの受け渡しと共有.html"><span class="lbl">← 前のページ</span>データの受け渡しと共有</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="50-1_パッケージ設計の原則.html"><span class="lbl">次のページ →</span>パッケージ設計の原則</a>
+    </nav>
+    <footer class="page-foot">43_モジュール設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

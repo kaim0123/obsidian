@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>クラス設計の全体像 — 責務をどう割り当て、どう関係づけ、どんな定石で解くか｜クラス設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">クラス設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › クラス設計の全体像</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>クラス設計の全体像 — 責務をどう割り当て、どう関係づけ、どんな定石で解くか</h1>
+      <p class="lead">クラス設計とは何か、44章がどの本の流れを骨格にしているのか、フォルダをどの順に読めばよいのか、そして42章（ソフトウェア設計）・43章（モジュール設計）・48_原則など隣の章とどう分担しているのかをまとめた、44章の入口ページです。各ページへ進む前に、ここで全体の地図を持っておきましょう。</p>
+      <p class="meta">もとにしたノート：00_全体像/MOC_クラス設計体系</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>クラス設計は、<strong>クラス（型・オブジェクト）単位で「責務をどう割り当て、どう関係づけ、どんな定石で解くか」</strong> を決める設計です。44章は Larman『実践UML』の流れ ── <strong>GRASP で責務を割り当てる → 原則で確かめる → GoF パターンで解く</strong> ── を骨格にしています。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><a href="00-0_目次.html">目次</a>が「どこに何があるか」の一覧、<a href="00-2_クラス設計の変遷.html">クラス設計の変遷</a>が「どう発展してきたか」の歴史だとすれば、このページは <strong>「44章全体の地図」</strong> です。読み終えたときに、次の問いに答えられることを目標にします。</p>
+    <ol class="steps">
+      <li><strong>クラス設計とは何か</strong>。モジュール設計やメソッド設計とどう違うのか</li>
+      <li><strong>この章の骨格</strong>（Larman の流れ）と、パターン・アンチパターンの整理の仕方</li>
+      <li><strong>フォルダ構成と読む順</strong>。どのフォルダに何があり、どう進めばよいか（教材 全25章の学習順）</li>
+      <li><strong>他の章との分担</strong>。原則そのものや DDD はどこで学び、44章では何を書いているのか</li>
+    </ol>
+
+    <h2 id="sec-2"><span class="num">2.</span>クラス設計とは何か</h2>
+    <h3 id="sec-2-1">2.1 クラス単位で「責務・関係・定石」を決める設計</h3>
+    <p><strong>クラス</strong> はオブジェクトの設計図（型）で、<strong>オブジェクト</strong> はクラスから作られた実体です（詳しくは <a href="10-2_クラスとオブジェクトの基本.html">クラスとオブジェクトの基本</a>）。<strong>クラス設計</strong> とは、このクラス単位で次の3つを決めることです。</p>
+    <div class="grid c3">
+      <div class="card accent"><h4>責務をどう割り当てるか</h4><p><strong>責務</strong>（そのクラスが知っていること・やること）をどのクラスに置くか。<br><span class="small muted">→ 10・20 フォルダ（GRASP など）</span></p></div>
+      <div class="card accent"><h4>どう関係づけるか</h4><p>関連・集約・継承・インターフェースで、クラス同士をどうつなぐか。<br><span class="small muted">→ 30・40 フォルダ（SOLID など）</span></p></div>
+      <div class="card accent"><h4>どんな定石で解くか</h4><p>よくある問題を、名前の付いた解き方（デザインパターン）で解く。避けるべき形（アンチパターン）も知る。<br><span class="small muted">→ 50・60 フォルダ</span></p></div>
+    </div>
+
+    <h3 id="sec-2-2">2.2 設計の階層の中での位置</h3>
+    <p>モジュール設計が「部屋の役割分担」なら、クラス設計は <strong>「家具の配置と、家具同士のつなぎ方」</strong> に相当します。モジュールが境界を決め、クラスが <strong>境界の中の責務分担</strong> を決めます（詳しくは <a href="10-1_クラス設計を学ぶ理由.html">クラス設計を学ぶ理由</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="設計の階層。上から、アーキテクチャ（41章）は家全体の間取り、モジュール設計（43章）は部屋の役割分担、クラス設計（44章、この章）は家具の配置と家具同士のつなぎ方でクラス単位の責務・関係・定石を決める。その下にメソッド設計（46章）が家具の細部として続く">
+      <rect x="20" y="16" width="200" height="44" rx="8" class="d-box"/>
+      <text x="120" y="43" text-anchor="middle" class="d-text-bold">アーキテクチャ（41章）</text>
+      <text x="244" y="43" class="d-text-sub">家全体の間取り ／ システム全体の骨組み</text>
+
+      <rect x="20" y="70" width="200" height="44" rx="8" class="d-box"/>
+      <text x="120" y="97" text-anchor="middle" class="d-text-bold">モジュール設計（43章）</text>
+      <text x="244" y="97" class="d-text-sub">部屋の役割分担 ／ パッケージ・レイヤーの区切り</text>
+
+      <rect x="20" y="124" width="680" height="64" rx="8" class="d-box-accent"/>
+      <rect x="20" y="124" width="200" height="64" rx="8" class="d-box-accent"/>
+      <text x="120" y="150" text-anchor="middle" class="d-text-bold">クラス設計</text>
+      <text x="120" y="171" text-anchor="middle" class="d-text-accent">44章（この章）</text>
+      <text x="244" y="150" class="d-text-bold">家具の配置と、家具同士のつなぎ方</text>
+      <text x="244" y="171" class="d-text-sub">責務の割り当て・クラスの関係・デザインパターン</text>
+
+      <rect x="20" y="198" width="200" height="44" rx="8" class="d-box"/>
+      <text x="120" y="225" text-anchor="middle" class="d-text-bold">メソッド設計（46章）</text>
+      <text x="244" y="225" class="d-text-sub">家具の細部（引き出しの仕組み） ／ 関数・メソッド単位</text>
+    </svg>
+    <figcaption>図：設計の階層。44章は「モジュール・パッケージ」と「メソッド」の間、クラス単位を受け持つ</figcaption>
+    </figure>
+
+    <h2 id="sec-3"><span class="num">3.</span>この章の骨格 — Larman の流れ</h2>
+    <h3 id="sec-3-1">3.1 GRASP で割り当て → 原則で確かめ → GoF で解く</h3>
+    <p>44章の骨格は、Craig Larman『実践UML』（原題 <em>Applying UML and Patterns</em>）の流れです。まず <strong>GRASP</strong>（責務をどのクラスに置くかを決める9つの指針）で責務を割り当て、次に <strong>SOLID などの原則</strong> で設計を確かめ、最後に <strong>GoF のデザインパターン</strong>（Gamma ら4人がまとめた23の定番の解き方）で具体的な問題を解きます。</p>
+    <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="44章の骨格となる Larman の流れ。GRASP で責務を割り当て、SOLID などの原則で確かめ、GoF パターンで解く。それぞれ 20 責務の割り当て、30・40 クラスの関係と SOLID の適用、50 デザインパターンのフォルダに対応する">
+      <defs>
+        <marker id="arr-44-001a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="20" width="200" height="70" rx="8" class="d-box-accent"/>
+      <text x="120" y="48" text-anchor="middle" class="d-text-bold">① GRASP</text>
+      <text x="120" y="72" text-anchor="middle" class="d-text-sub">責務を割り当てる</text>
+      <rect x="260" y="20" width="200" height="70" rx="8" class="d-box-good"/>
+      <text x="360" y="48" text-anchor="middle" class="d-text-bold">② 原則（SOLID など）</text>
+      <text x="360" y="72" text-anchor="middle" class="d-text-sub">設計を確かめる</text>
+      <rect x="500" y="20" width="200" height="70" rx="8" class="d-box-purple"/>
+      <text x="600" y="48" text-anchor="middle" class="d-text-bold">③ GoF パターン</text>
+      <text x="600" y="72" text-anchor="middle" class="d-text-sub">定石で解く</text>
+      <path d="M220,55 L258,55" class="d-line" marker-end="url(#arr-44-001a)"/>
+      <path d="M460,55 L498,55" class="d-line" marker-end="url(#arr-44-001a)"/>
+      <text x="120" y="122" text-anchor="middle" class="d-text-sub">20 責務の割り当て</text>
+      <text x="360" y="122" text-anchor="middle" class="d-text-sub">30 クラスの関係 ／ 40 SOLIDの適用</text>
+      <text x="600" y="122" text-anchor="middle" class="d-text-sub">50 デザインパターン</text>
+    </svg>
+    <figcaption>図：44章の骨格（Larman『実践UML』の流れ）と、それぞれに対応するフォルダ</figcaption>
+    </figure>
+
+    <h3 id="sec-3-2">3.2 パターンとアンチパターンの整理の仕方</h3>
+    <div class="grid c2">
+      <div class="card good"><h4>パターン</h4><p><a href="https://refactoring.guru/">refactoring.guru</a> と同じ <strong>GoF の3分類</strong>（生成・構造・振る舞い）で整理します。生成＝オブジェクトの作り方、構造＝クラスやオブジェクトの組み合わせ方、振る舞い＝オブジェクト同士の役割分担と連携の仕方です。</p><p class="small">→ <a href="50-3_生成パターン.html">生成パターン</a>、<a href="50-4_構造パターン.html">構造パターン</a>、<a href="50-5_振る舞いパターン.html">振る舞いパターン</a></p></div>
+      <div class="card bad"><h4>アンチパターン</h4><p>「<strong>コードの臭い</strong>（設計に問題がありそうだと気づかせる兆候） → <strong>リファクタリング</strong>（振る舞いを変えずに内部構造を直すこと）」の形で整理します。</p><p class="small">→ <a href="60-1_アンチパターンの見分け方.html">アンチパターンの見分け方</a>、<a href="60-2_コードの臭いとリファクタリング.html">コードの臭いとリファクタリング</a></p></div>
+    </div>
+
+    <h2 id="sec-4"><span class="num">4.</span>フォルダ構成と読む順</h2>
+    <h3 id="sec-4-1">4.1 フォルダはテーマ別</h3>
+    <p>フォルダは <strong>テーマ別</strong> に分かれています。教材（旧 第01〜08部・全25章）を読む <strong>学習順</strong> は、次の <a href="#sec-4-3">4.3 学習順インデックス</a> で持ちます。旧「デザインパターン単体教材」（6本）は 50・60 フォルダに統合しました。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>役割</th><th>このサイトのページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>00 全体像</strong></td><td>本MOC・年表（クラス設計の変遷）・教材の目次と前書き</td><td><a href="00-1_クラス設計の全体像.html">00-1</a>、<a href="00-2_クラス設計の変遷.html">00-2</a></td></tr>
+        <tr><td><strong>10 クラスの基礎</strong></td><td>クラスとオブジェクト / カプセル化 / 凝集度と結合度（クラスレベル）</td><td><a href="10-1_クラス設計を学ぶ理由.html">10-1</a>〜<a href="10-6_ObjectCalisthenics.html">10-6</a></td></tr>
+        <tr><td><strong>20 責務の割り当て</strong></td><td>クラス分割のプロセス / GRASP / ドメインを表すクラス</td><td><a href="20-1_クラス分割の基本プロセス.html">20-1</a>〜<a href="20-8_業務ロジックをデータと一体にする.html">20-8</a></td></tr>
+        <tr><td><strong>30 クラスの関係</strong></td><td>関連・集約・コンポジション / 継承と多態 / インターフェースと抽象化（DIP）</td><td><a href="30-1_クラス間の関係.html">30-1</a>〜<a href="30-4_継承より合成.html">30-4</a></td></tr>
+        <tr><td><strong>40 SOLIDの適用</strong></td><td>SRP / OCP / LSP / ISP / 統合と判断（原則そのものは 48）</td><td><a href="40-1_単一責任の原則.html">40-1</a>〜<a href="40-5_SOLIDの統合と判断.html">40-5</a></td></tr>
+        <tr><td><strong>50 デザインパターン</strong></td><td>51 入門と概要 / 52 生成 / 53 構造 / 54 振る舞い / 55 GoF以外のパターン</td><td><a href="50-1_デザインパターン入門.html">50-1</a>〜<a href="50-7_関数型で置き換わるパターン.html">50-7</a></td></tr>
+        <tr><td><strong>60 アンチパターンとコードの臭い</strong></td><td>見分け方 / コードの臭い</td><td><a href="60-1_アンチパターンの見分け方.html">60-1</a>、<a href="60-2_コードの臭いとリファクタリング.html">60-2</a></td></tr>
+        <tr><td><strong>70 品質と運用</strong></td><td>テストしやすさ / 変更に強い / 命名 / チームで守る / 設計レビュー</td><td><a href="70-1_テストしやすいクラス設計.html">70-1</a>〜<a href="70-5_クラス設計レビュー.html">70-5</a></td></tr>
+        <tr><td><strong>80 ケーススタディ</strong></td><td>総合演習</td><td><a href="80-1_ケーススタディ.html">80-1</a></td></tr>
+        <tr><td><strong>90 付録</strong></td><td>用語集・チェックリスト・GRASP/SOLID 早見表・アンチパターン一覧・図解・推奨図書</td><td><a href="90-1_用語集と推奨図書.html">90-1</a>〜<a href="90-3_参考図解.html">90-3</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-2">4.2 ノートの運用ルール</h3>
+    <ul>
+      <li>ファイル名は各フォルダ内で <strong>読む順に <code>01_</code> から連番</strong>。本文には教材の章番号（第N章）を書かず、他ノートへの言及はリンクで行う</li>
+      <li>教材の元の章立て（第1〜25章）は、ノート「目次」と下の学習順インデックスにだけ残す</li>
+      <li>52〜54 は今は分類ごとに1本。1パターン1ノートに分けるときは、各フォルダに <code>02_FactoryMethod</code> のように足し、構成は「意図 / 問題 / 解決 / 構造 / 使いどころ / 長所・短所 / 関連パターン」にそろえる</li>
+      <li>原則そのもの・DDD などは兄弟フォルダが本拠地。44章では「クラス設計でどう使うか」だけを書き、詳細はリンクする（<a href="#sec-5">5章</a>の分担表）</li>
+    </ul>
+
+    <h3 id="sec-4-3">4.3 学習順インデックス（教材 全25章）</h3>
+    <p>教材は8部・25章で構成されています。下の順に読むと、「なぜ」→「土台」→「切り方」→「つなぎ方」→「原則」→「パターン」→「品質」→「チームと演習」と段階的に進めます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>部</th><th>章（このサイトのページ）</th><th>置き場</th></tr></thead>
+      <tbody>
+        <tr><td>前書き</td><td>ノート「00_はじめに」（教材の前書き） / ノート「目次」（教材の詳細な章立て）</td><td class="c">00</td></tr>
+        <tr><td>第1部 はじめに</td><td><a href="10-1_クラス設計を学ぶ理由.html">クラス設計を学ぶ理由</a> → <a href="10-2_クラスとオブジェクトの基本.html">クラスとオブジェクトの基本</a></td><td class="c">10</td></tr>
+        <tr><td>第2部 設計の土台</td><td><a href="10-3_カプセル化と情報隠蔽.html">カプセル化と情報隠蔽</a> → <a href="10-4_凝集度と結合度.html">凝集度と結合度</a> → <a href="40-1_単一責任の原則.html">単一責任の原則</a></td><td class="c">10 / 40</td></tr>
+        <tr><td>第3部 クラスの切り方</td><td><a href="20-1_クラス分割の基本プロセス.html">クラス分割の基本プロセス</a> → <a href="20-2_GRASP.html">GRASP</a> → <a href="20-3_ドメインを表すクラス.html">ドメインを表すクラス</a></td><td class="c">20</td></tr>
+        <tr><td>第4部 クラスのつなぎ方</td><td><a href="30-1_クラス間の関係.html">クラス間の関係</a> → <a href="30-2_継承と多態.html">継承と多態</a> → <a href="30-3_インターフェースと抽象化.html">インターフェースと抽象化</a></td><td class="c">30</td></tr>
+        <tr><td>第5部 SOLID</td><td><a href="40-2_開放閉鎖の原則.html">開放閉鎖の原則</a> → <a href="40-3_リスコフの置換原則.html">リスコフの置換原則</a> → <a href="40-4_インターフェース分離の原則.html">インターフェース分離の原則</a> → <a href="40-5_SOLIDの統合と判断.html">SOLIDの統合と判断</a></td><td class="c">40</td></tr>
+        <tr><td>第6部 デザインパターン</td><td><a href="50-1_デザインパターン入門.html">デザインパターン入門</a> → クラス設計でよく使うパターン（<a href="50-2_GoFパターンの概要.html">GoFパターンの概要</a>） → アンチパターンとの見分け（<a href="60-1_アンチパターンの見分け方.html">アンチパターンの見分け方</a>）</td><td class="c">51 / 60</td></tr>
+        <tr><td>第7部 品質を保つための実践</td><td><a href="70-1_テストしやすいクラス設計.html">テストしやすいクラス設計</a> → <a href="70-2_変更に強いクラス設計.html">変更に強いクラス設計の実践</a> → <a href="70-3_命名とクラス構成.html">命名とクラス構成</a></td><td class="c">70</td></tr>
+        <tr><td>第8部 チーム開発と演習</td><td><a href="70-4_チームでクラス設計を守る.html">チームでクラス設計を守る</a> → ケーススタディ 注文管理システム → ケーススタディ 課金・決済ロジック（どちらも <a href="80-1_ケーススタディ.html">ケーススタディ</a>） → <a href="70-5_クラス設計レビュー.html">クラス設計レビューの実践</a></td><td class="c">70 / 80</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip">
+      <p class="callout-title">歴史順に学びたい場合</p>
+      <p>ノートの各章末の「次の章」リンクは、新しいフォルダ順（10 → 20 → … → 80）でつないであります。50 では旧単体教材（概要・生成・構造・振る舞い）も流れに入れました。歴史順に学びたい場合は <a href="00-2_クラス設計の変遷.html">クラス設計の変遷</a> を読んでください。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>他の章との分担</h2>
+    <p>次のテーマは兄弟の章が <strong>本拠地</strong> です。44章では「クラス設計でどう使うか」だけを書き、詳細はリンクで渡します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地</th></tr></thead>
+      <tbody>
+        <tr><td>SOLID・DRY・デメテルの法則など原則そのもの</td><td>48_原則（解説ページは未作成。ノートを参照）</td></tr>
+        <tr><td>パラダイムとしてのオブジェクト指向</td><td>42_ソフトウェア設計 / 22_オブジェクト指向（<a href="../42_ソフトウェア設計/20-2_オブジェクト指向とクラス.html">オブジェクト指向とクラス</a> ほか）</td></tr>
+        <tr><td>エンティティ・値オブジェクト・集約（DDD）</td><td>42_ソフトウェア設計 / 32_戦術的設計（<a href="../42_ソフトウェア設計/30-6_エンティティと値オブジェクト.html">エンティティと値オブジェクト</a>、<a href="../42_ソフトウェア設計/30-7_集約とリポジトリ.html">集約とリポジトリ</a>）</td></tr>
+        <tr><td>依存性注入・DIP のアーキテクチャ面</td><td>41_アーキテクチャ / 24_依存性の管理（<a href="../41_アーキテクチャ/24-1_依存性逆転の原則.html">依存性逆転の原則</a>、<a href="../41_アーキテクチャ/24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root</a>）</td></tr>
+        <tr><td>モジュール・パッケージ単位の設計</td><td>43_モジュール設計（<a href="../43_モジュール設計/00-1_モジュール設計の全体像.html">モジュール設計の全体像</a>）</td></tr>
+        <tr><td>メソッド単位の設計</td><td>46_メソッド設計（解説ページは未作成。ノートを参照）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>フォルダごとのノートと補足</h2>
+    <p>MOC に書かれている各ノートの補足を、このサイトのページと対応させて並べます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>ノート（補足）</th><th>ページ</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="3">00</td><td>00_クラス設計の変遷 — オブジェクト・カプセル化から GoF・GRASP・SOLID・DDD までの変遷（年表）</td><td><a href="00-2_クラス設計の変遷.html">クラス設計の変遷</a></td></tr>
+        <tr><td>目次 — 教材の詳細な章立て</td><td>（<a href="#sec-4-3">4.3</a> に反映）</td></tr>
+        <tr><td>00_はじめに — 教材の前書き</td><td>—</td></tr>
+        <tr><td rowspan="6">10</td><td>01_クラス設計を学ぶ理由</td><td><a href="10-1_クラス設計を学ぶ理由.html">10-1</a></td></tr>
+        <tr><td>02_クラスとオブジェクトの基本 — パラダイムとしては 42 の「02_クラスとオブジェクト」</td><td><a href="10-2_クラスとオブジェクトの基本.html">10-2</a></td></tr>
+        <tr><td>03_クラスのカプセル化と情報隠蔽</td><td><a href="10-3_カプセル化と情報隠蔽.html">10-3</a></td></tr>
+        <tr><td>04_クラスの凝集度と結合度 — デメテルの法則を含む（原則は 48 の「02_デメテルの法則」）</td><td><a href="10-4_凝集度と結合度.html">10-4</a></td></tr>
+        <tr><td>05_クラスの種類の整理 — TypeScript 中心。言語の仕組み（抽象クラス・interface・enum・ミックスインなど）とロールステレオタイプ（Wirfs-Brock）、BCE、判断フロー</td><td><a href="10-5_クラスの種類の整理.html">10-5</a></td></tr>
+        <tr><td>06_Object_CalisthenicsでOOを体得する — 9規則のエクササイズ（増田本第10章）。学び方は 42 の「06_オブジェクト指向設計の学び方」</td><td><a href="10-6_ObjectCalisthenics.html">10-6</a></td></tr>
+        <tr><td rowspan="8">20</td><td>01_クラス分割の基本プロセス</td><td><a href="20-1_クラス分割の基本プロセス.html">20-1</a></td></tr>
+        <tr><td>02_GRASP — 早見表は 付録C_GRASP早見表</td><td><a href="20-2_GRASP.html">20-2</a></td></tr>
+        <tr><td>03_ドメインを表すクラス — エンティティ・値オブジェクト概要、狭い関心事のドメインオブジェクト。DDD の詳細は 42 の「03_エンティティと値オブジェクト」</td><td><a href="20-3_ドメインを表すクラス.html">20-3</a></td></tr>
+        <tr><td>04_値オブジェクトと完全コンストラクタ — プリミティブ型への執着、生焼けオブジェクト、完全コンストラクタ、不変性、振る舞いを持たせる</td><td><a href="20-4_値オブジェクトと完全コンストラクタ.html">20-4</a></td></tr>
+        <tr><td>05_Tell_Dont_Askと貧血モデルの回避 — Tell, Don't Ask、貧血／データクラスの問題、共通ライブラリの失敗、基本の2方針（増田本第3章前半）</td><td><a href="20-5_TellDontAskと貧血モデル.html">20-5</a></td></tr>
+        <tr><td>06_オブジェクトの種類の整理 — エンティティ・値オブジェクト・DTO・DBモデル・サービス・コレクションオブジェクト（複雑さの閉じ込め・安定化）・設定オブジェクトを「3つの観点」で整理、判断フロー付き</td><td><a href="20-6_オブジェクトの種類の整理.html">20-6</a></td></tr>
+        <tr><td>07_区分オブジェクトと状態遷移 — 区分クラス・同じ型・生成・列挙・状態遷移表（増田本第2章）</td><td><a href="20-7_区分オブジェクトと状態遷移.html">20-7</a></td></tr>
+        <tr><td>08_業務ロジックをデータと一体にする — メソッドへ移動・短く分ける・インスタンス変数・Extract Class・パッケージ（増田本第3章）</td><td><a href="20-8_業務ロジックをデータと一体にする.html">20-8</a></td></tr>
+        <tr><td rowspan="4">30</td><td>01_クラス間の関係</td><td><a href="30-1_クラス間の関係.html">30-1</a></td></tr>
+        <tr><td>02_継承と多態</td><td><a href="30-2_継承と多態.html">30-2</a></td></tr>
+        <tr><td>03_インターフェースと抽象化 — DIP のクラス設計での使い方</td><td><a href="30-3_インターフェースと抽象化.html">30-3</a></td></tr>
+        <tr><td>04_継承より合成 — GoF の原則、脆い基底クラス問題、委譲・Strategy・Decorator・インターフェースへの置き換え、継承してよい条件</td><td><a href="30-4_継承より合成.html">30-4</a></td></tr>
+        <tr><td rowspan="5">40</td><td>01_単一責任の原則</td><td><a href="40-1_単一責任の原則.html">40-1</a></td></tr>
+        <tr><td>02_開放閉鎖の原則</td><td><a href="40-2_開放閉鎖の原則.html">40-2</a></td></tr>
+        <tr><td>03_リスコフの置換原則</td><td><a href="40-3_リスコフの置換原則.html">40-3</a></td></tr>
+        <tr><td>04_インターフェース分離の原則</td><td><a href="40-4_インターフェース分離の原則.html">40-4</a></td></tr>
+        <tr><td>05_SOLIDの統合と判断 — 早見表は 付録D_SOLID早見表</td><td><a href="40-5_SOLIDの統合と判断.html">40-5</a></td></tr>
+        <tr><td rowspan="8">50</td><td>51 / 01_デザインパターン入門 — 教材（入門）</td><td><a href="50-1_デザインパターン入門.html">50-1</a></td></tr>
+        <tr><td>51 / 02_デザインパターンの概要 — GoF 23パターンの分類と一覧</td><td rowspan="2"><a href="50-2_GoFパターンの概要.html">50-2</a></td></tr>
+        <tr><td>51 / 03_クラス設計でよく使うパターン — 教材（Strategy・Factory・Observer など実務頻出）</td></tr>
+        <tr><td>52 / 01_生成に関するパターン — Factory Method / Abstract Factory / Builder / Prototype / Singleton</td><td><a href="50-3_生成パターン.html">50-3</a></td></tr>
+        <tr><td>53 / 01_構造に関するパターン — Adapter / Bridge / Composite / Decorator / Facade / Flyweight / Proxy</td><td><a href="50-4_構造パターン.html">50-4</a></td></tr>
+        <tr><td>54 / 01_振る舞いに関するパターン — Strategy / Observer / Iterator / Command / State / Template Method / Chain of Responsibility ほか</td><td><a href="50-5_振る舞いパターン.html">50-5</a></td></tr>
+        <tr><td>55 / 01_設計パターン_補足 — エンタープライズ・DDD・マイクロサービス・並行処理・関数型・React UI・API・テストのパターン一覧</td><td><a href="50-6_GoF以外のパターン.html">50-6</a></td></tr>
+        <tr><td>55 / 02_関数型で置き換わるパターン — Norvig の「23中16」、Strategy/Command/Observer→関数、Iterator→ジェネレータ、Visitor→パターンマッチ</td><td><a href="50-7_関数型で置き換わるパターン.html">50-7</a></td></tr>
+        <tr><td rowspan="4">60</td><td>01_アンチパターンとの見分け — 教材（神クラス・貧血モデル・継承の乱用など）</td><td rowspan="2"><a href="60-1_アンチパターンの見分け方.html">60-1</a></td></tr>
+        <tr><td>02_アンチパターンとコードの臭い — 詳細（見分け方の判断基準・コードの臭い・パターンを使わない勇気）</td></tr>
+        <tr><td>一覧は 付録E_よくあるアンチパターン一覧</td><td><a href="90-2_チェックリストとアンチパターン.html">90-2</a></td></tr>
+        <tr><td>03_コードの臭いとリファクタリング対応表 — 第2版の24の臭いと対処、臭いから原則への対応、安全な進め方</td><td><a href="60-2_コードの臭いとリファクタリング.html">60-2</a></td></tr>
+        <tr><td rowspan="5">70</td><td>01_テストしやすいクラス設計</td><td><a href="70-1_テストしやすいクラス設計.html">70-1</a></td></tr>
+        <tr><td>02_変更に強いクラス設計の実践</td><td><a href="70-2_変更に強いクラス設計.html">70-2</a></td></tr>
+        <tr><td>03_命名とクラス構成</td><td><a href="70-3_命名とクラス構成.html">70-3</a></td></tr>
+        <tr><td>04_チームでクラス設計を守る</td><td><a href="70-4_チームでクラス設計を守る.html">70-4</a></td></tr>
+        <tr><td>05_クラス設計レビューの実践</td><td><a href="70-5_クラス設計レビュー.html">70-5</a></td></tr>
+        <tr><td>80</td><td>01_ケーススタディ_注文管理システム / 02_ケーススタディ_課金・決済ロジック</td><td><a href="80-1_ケーススタディ.html">80-1</a></td></tr>
+        <tr><td rowspan="3">90</td><td>付録A_用語集 / 付録G_推奨図書</td><td><a href="90-1_用語集と推奨図書.html">90-1</a></td></tr>
+        <tr><td>付録B_クラス設計チェックリスト / 付録E_よくあるアンチパターン一覧（付録C・D は 20-2・40-5 に統合）</td><td><a href="90-2_チェックリストとアンチパターン.html">90-2</a></td></tr>
+        <tr><td>付録F_参考図解</td><td><a href="90-3_参考図解.html">90-3</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「クラス設計 = デザインパターンを覚えること」</summary><div class="body"><p>パターンは骨格の最後の段（「定石で解く」）です。44章は <strong>GRASP で責務を割り当て → 原則で確かめ → パターンで解く</strong> という順で組まれていて、その前に <strong>クラスの基礎</strong>（10）と <strong>責務の割り当て</strong>（20）があります。</p></div></details>
+    <details open><summary>誤解2：「SOLID や DDD の詳しい説明も44章に全部ある」</summary><div class="body"><p>原則そのものは 48_原則、エンティティ・値オブジェクト・集約は <a href="../42_ソフトウェア設計/30-6_エンティティと値オブジェクト.html">42章</a> が本拠地です。44章では <strong>「クラス設計でどう使うか」だけ</strong> を書き、詳細はリンクで渡します。</p></div></details>
+    <details open><summary>誤解3：「フォルダの番号順と教材の学習順は同じ」</summary><div class="body"><p>フォルダは <strong>テーマ別</strong> です。教材の学習順では、たとえば第2部で 10 フォルダのあとに 40 フォルダの「単一責任の原則」を読み、第8部では 70 と 80 を行き来します（<a href="#sec-4-3">4.3 学習順インデックス</a>）。</p></div></details>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>クラス設計は、クラス単位で <strong>「責務をどう割り当て、どう関係づけ、どんな定石で解くか」</strong> を決める設計。モジュール設計が部屋の役割分担なら、クラス設計は家具の配置とつなぎ方</li>
+      <li>骨格は Larman『実践UML』の流れ：<strong>GRASP で割り当て → 原則で確かめ → GoF パターンで解く</strong></li>
+      <li>パターンは GoF の3分類（生成・構造・振る舞い）、アンチパターンは「コードの臭い → リファクタリング」の形で整理する</li>
+      <li>フォルダはテーマ別（10〜90）、教材 全25章の学習順は学習順インデックスで持つ</li>
+      <li>原則そのもの（48）・オブジェクト指向パラダイムと DDD（42）・DI（41）・モジュール（43）・メソッド（46）は兄弟の章が本拠地</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：44_クラス設計・デザインパターン/00_全体像/MOC_クラス設計体系</li>
+      <li>Craig Larman『実践UML』（原題 <em>Applying UML and Patterns</em>）── 44章の骨格</li>
+      <li><a href="https://refactoring.guru/">refactoring.guru</a>（https://refactoring.guru/）── GoF の3分類による整理の参考</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="00-2_クラス設計の変遷.html"><span class="lbl">次のページ →</span>クラス設計の変遷</a>
+    </nav>
+    <footer class="page-foot">44_クラス設計・デザインパターン ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

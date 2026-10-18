@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>認証 — API で「あなたは誰か」を確かめる｜API設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">API設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 セキュリティと信頼性 › 認証</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 セキュリティと信頼性</span>
+      <h1>認証 — API で「あなたは誰か」を確かめる</h1>
+      <p class="lead">API が「このリクエストは誰から来たか」を確かめる認証の基本を学びます。API Key・Bearer Token（JWT）・Session Cookie・Basic 認証の使い分け、OAuth 2.0 / OpenID Connect の概要、認証情報を URL に載せない理由、401 Unauthorized の返し方、そして API セキュリティ全体の中での認証の位置づけを押さえます。</p>
+      <p class="meta">もとにしたノート：60_セキュリティと信頼性/01_認証、04_認証とセキュリティ</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>認証</strong> は <strong>本人確認</strong>（あなたは誰？）です。API では認証情報を <strong><code>Authorization</code> ヘッダで送り、URL には載せません</strong>。認証に失敗したら <strong>401</strong>、認証できたが権限がないなら <strong>403</strong>（認可）です。認証は API セキュリティの一層にすぎず、HTTPS・認可・レート制限・入力検証などと重ねる <strong>多層防御</strong> で守ります。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <ul>
+      <li><strong>認証（Authentication）とは何か</strong></li>
+      <li><strong>API Key・Bearer Token（JWT）・Session Cookie・Basic 認証</strong></li>
+      <li><strong>OAuth 2.0 / OpenID Connect の概要</strong></li>
+      <li><strong>認証情報の渡し方</strong>（ヘッダに載せる・URL に載せない）</li>
+      <li><strong>401 Unauthorized の返し方</strong></li>
+      <li><strong>API セキュリティの全体の中での認証</strong>（多層防御と最小権限）</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">このページの範囲</p>
+      <p>このページは「<strong>API で認証をどう扱うか</strong>」に絞ります。認証方式そのもの（ログイン方式、OAuth 2.0・OIDC・SAML など）は 73章の <a href="../73_認証認可/10-2_ログイン方式と認証の概念.html">ログイン方式と認証の概念</a>・<a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">OAuth2.0の仕組み</a>、Cookie・セッション・トークンは 74章の <a href="../74_セッション管理/10-1_Cookieの仕組み.html">Cookieの仕組み</a>・<a href="../74_セッション管理/30-1_セッション方式とトークン方式.html">セッション方式とトークン方式</a> を参照してください。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>認証（Authentication）とは何か</h2>
+    <p><strong>認証</strong> は <strong>本人確認</strong> です。「このリクエストは誰から来たか」をサーバーが判断します。似た言葉の <strong>認可</strong> と区別しましょう。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>概念</th><th>英語</th><th>問い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証</strong></td><td>Authentication</td><td>あなたは誰？</td></tr>
+        <tr><td><strong>認可</strong></td><td>Authorization</td><td>何ができる？</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="クライアントが認証情報を付けてサーバーにリクエストを送る。サーバーは認証が成功すればユーザー ID を特定し、失敗すれば 401 Unauthorized を返す">
+      <defs>
+        <marker id="arw5601a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="20" y="70" width="160" height="60" rx="8" class="d-box"/>
+      <text x="100" y="105" text-anchor="middle" class="d-text-bold">クライアント</text>
+      <rect x="290" y="70" width="160" height="60" rx="8" class="d-box-accent"/>
+      <text x="370" y="105" text-anchor="middle" class="d-text-bold">サーバー</text>
+      <path d="M180,100 L288,100" class="d-line" marker-end="url(#arw5601a)"/>
+      <text x="234" y="90" text-anchor="middle" class="d-text-sub">認証情報</text>
+      <rect x="520" y="20" width="180" height="60" rx="8" class="d-box-good"/>
+      <text x="610" y="46" text-anchor="middle" class="d-text-bold">認証 OK</text>
+      <text x="610" y="66" text-anchor="middle" class="d-text-sub">ユーザー ID を特定</text>
+      <rect x="520" y="120" width="180" height="60" rx="8" class="d-box-bad"/>
+      <text x="610" y="146" text-anchor="middle" class="d-text-bold">認証 NG</text>
+      <text x="610" y="166" text-anchor="middle" class="d-text-sub">401 Unauthorized</text>
+      <path d="M450,88 L518,52" class="d-line" marker-end="url(#arw5601a)"/>
+      <path d="M450,112 L518,148" class="d-line" marker-end="url(#arw5601a)"/>
+    </svg>
+    <figcaption>図：サーバーは認証情報から「誰か」を特定し、できなければ 401 を返す</figcaption>
+    </figure>
+    <p>認証が通っても、<strong>その操作をしてよいか（認可）は別にチェック</strong> します（<a href="60-2_認可.html">認可</a>）。両者の違いは <a href="../73_認証認可/10-1_認証と認可の違い.html">73章：認証と認可の違い</a> でも詳しく扱っています。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>API でよく使う認証方式</h2>
+    <h3 id="sec-3-1">3.1 API Key・Bearer Token（JWT）・Session Cookie</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>渡し方</th><th>向いている用途</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API Key</strong></td><td>ヘッダ <code>X-API-Key: ...</code></td><td>サーバー間連携。管理が簡単</td></tr>
+        <tr><td><strong>Bearer Token</strong></td><td>ヘッダ <code>Authorization: Bearer &lt;token&gt;</code></td><td>SPA・モバイル（JWT など）</td></tr>
+        <tr><td><strong>Session Cookie</strong></td><td>Cookie で自動送信</td><td>同一ドメインの Web アプリ</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Bearer Token</strong> は「持っている人（bearer）を本人とみなす」トークンです。<strong>JWT（JSON Web Token）</strong> は、トークン自体にユーザー ID や有効期限が入った、署名付きの文字列です。署名で改ざんを見抜けるので、複数のサーバーに分かれた分散システムでも各サーバーが検証でき、認証・認可の両方に使われます。</p>
+<pre><code>GET /v1/me HTTP/1.1
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...</code></pre>
+    <h3 id="sec-3-2">3.2 方式ごとの注意点</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>注意点</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API Key</strong></td><td>漏洩するとなりすまし可能 → ローテーション（定期的な差し替え）・権限最小化</td></tr>
+        <tr><td><strong>JWT</strong></td><td>有効期限・署名の検証が必須。ログアウトにはブラックリスト（無効化リスト）などが必要</td></tr>
+        <tr><td><strong>Cookie</strong></td><td>CSRF 対策（SameSite 属性など）が必要</td></tr>
+      </tbody>
+    </table></div>
+    <p>JWT の中身と検証の手順は <a href="../74_セッション管理/30-2_JWTの構造と検証.html">74章：JWTの構造と検証</a>、CSRF は <a href="../72_Web脆弱性対策/30-1_CSRF.html">72章：CSRF</a> で詳しく扱います。</p>
+    <h3 id="sec-3-3">3.3 Basic 認証</h3>
+    <p><strong>Basic 認証</strong> は、ユーザー名とパスワードを Base64（文字列を別の文字で表す符号化。暗号ではない）にして毎回送る、最も単純な方式です。Base64 は誰でも元に戻せるので、<strong>HTTPS が必須</strong> です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>OAuth 2.0 / OpenID Connect の概要</h2>
+    <p><strong>OAuth 2.0</strong> は、ユーザーが <strong>パスワードをアプリに渡さずに</strong>、限定的なアクセス権を与える仕組みです。外部サービスとの連携や、ユーザーの代わりにアプリが API を呼ぶ場面に向いています。</p>
+    <ol class="steps">
+      <li>ユーザーは <strong>認可サーバー</strong>（ログインとトークン発行を担当するサーバー）でログインする</li>
+      <li>認可サーバーがアプリに <strong>アクセストークン</strong> を発行する</li>
+      <li>アプリはアクセストークンを付けて <strong>API サーバー</strong> を呼ぶ</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>アクセストークン</strong></td><td>API を呼ぶための鍵</td></tr>
+        <tr><td><strong>リフレッシュトークン</strong></td><td>アクセストークンを更新する鍵</td></tr>
+        <tr><td><strong>OpenID Connect</strong></td><td>OAuth ＋「ユーザー情報（ID）」の標準</td></tr>
+      </tbody>
+    </table></div>
+    <p>初心者は <strong>Bearer Token をヘッダで渡す</strong> 流れを押さえれば十分で、OAuth の詳細は必要になったときに深掘りすれば大丈夫です。詳しくは <a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">73章：OAuth2.0の仕組み</a>、<a href="../73_認証認可/30-2_SAML・OAuth・OIDCの違い.html">73章：SAML・OAuth・OIDCの違い</a>、トークンの使い分けは <a href="../74_セッション管理/30-3_アクセストークンとリフレッシュトークン.html">74章：アクセストークンとリフレッシュトークン</a> を参照してください。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>認証情報の渡し方（ヘッダに載せる・URL に載せない）</h2>
+    <p>API Key をクエリで送る実装も見かけますが、<strong>認証情報は URL に載せません</strong>。理由は次の 3 つです。</p>
+    <ul>
+      <li>ブラウザの履歴に残る</li>
+      <li>サーバーのアクセスログに残る</li>
+      <li>Referer ヘッダ（どのページから来たかを伝えるヘッダ）で外部に漏れる</li>
+    </ul>
+    <span class="code-label bad">✕ 危険な例：URL に秘密を載せる</span>
+<pre><code>GET /v1/users?api_key=SECRET123</code></pre>
+    <span class="code-label good">◯ 安全な例：ヘッダで送る</span>
+<pre><code>GET /v1/users
+Authorization: Bearer SECRET123</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>情報</th><th>載せてよい場所</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API Key / Token</strong></td><td><code>Authorization</code> ヘッダ</td></tr>
+        <tr><td><strong>セッション ID</strong></td><td><code>HttpOnly</code> Cookie（Web のみ。JavaScript から読めない Cookie）</td></tr>
+        <tr><td><strong>公開してよいパラメータ</strong></td><td>クエリ（<code>page</code>、<code>limit</code> など）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>401 Unauthorized の返し方</h2>
+    <p>認証に失敗したときは <strong>401</strong> を返します（403 ではありません）。<code>WWW-Authenticate</code> ヘッダで「どの方式で認証してほしいか」を伝えます。</p>
+<pre><code>HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api"
+Content-Type: application/json
+
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "認証トークンが無効または期限切れです"
+  }
+}</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>状況</th><th>ステータス</th></tr></thead>
+      <tbody>
+        <tr><td>トークンなし・無効・期限切れ</td><td><strong>401</strong></td></tr>
+        <tr><td>認証済みだが権限不足</td><td><strong>403</strong>（<a href="60-2_認可.html">認可</a>）</td></tr>
+      </tbody>
+    </table></div>
+    <p>クライアントは 401 を受け取ったら、<strong>再ログイン</strong> や <strong>トークン更新</strong> の流れに入ります。エラー本文の形は <a href="40-1_エラー設計.html">エラー設計</a>、ステータスコード全般は <a href="20-3_ステータスコード.html">ステータスコード</a> を参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>API セキュリティの全体の中での認証</h2>
+    <p>認証は API を守る対策の <strong>一つの層</strong> にすぎません。API のセキュリティでは、複数の対策を重ねる <strong>多層防御</strong> と、必要な権限だけを与える <strong>最小権限の原則</strong> が重要です（<a href="../71_セキュリティ基礎/20-2_深層防御.html">71章：深層防御</a>、<a href="../71_セキュリティ基礎/20-1_最小権限とデータ最小化.html">71章：最小権限とデータ最小化</a>）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>層</th><th>主な対策</th><th>詳しく</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認可（アクセス制御）</strong></td><td>RBAC（ロール＝役割ごとに権限を設定）、ABAC（ユーザーやリソースの属性で柔軟に制御）</td><td><a href="60-2_認可.html">認可</a>、<a href="../73_認証認可/40-2_RBAC・ABAC・ACLの使い分け.html">73章：RBAC・ABAC・ACLの使い分け</a></td></tr>
+        <tr><td><strong>通信の安全性</strong></td><td>HTTPS で通信を暗号化（API は必ず HTTPS で公開）／CORS でブラウザからの利用を制御／セキュリティヘッダー（CSP、HSTS、X-Frame-Options、X-Content-Type-Options など）</td><td><a href="../72_Web脆弱性対策/10-2_CORSの仕組み.html">72章：CORSの仕組み</a>、<a href="../72_Web脆弱性対策/10-5_セキュリティヘッダ.html">72章：セキュリティヘッダ</a></td></tr>
+        <tr><td><strong>レートリミット・監査</strong></td><td>一定時間内のリクエスト数を制限（DoS/DDoS 対策）、IP 制限や API キーごとのリミット、監査ログで不正アクセスや障害を調査</td><td><a href="60-3_レート制限と冪等性.html">レート制限と冪等性</a></td></tr>
+        <tr><td><strong>入力値バリデーションと脅威対策</strong></td><td>サニタイズ・エスケープで SQL インジェクション／XSS／コマンドインジェクションを防ぐ、CSRF 対策（トークン、SameSite Cookie）、バリデーションエラー時は適切なエラーコード・メッセージを返す</td><td><a href="../72_Web脆弱性対策/20-3_SQLインジェクション.html">72章：SQLインジェクション</a>、<a href="../72_Web脆弱性対策/20-1_XSSの基本.html">72章：XSSの基本</a>、<a href="../72_Web脆弱性対策/30-1_CSRF.html">72章：CSRF</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>これらをまとめて眺めるページとして <a href="60-4_APIセキュリティの全体像.html">APIセキュリティの全体像</a>、API 特有の脆弱性は <a href="../72_Web脆弱性対策/50-2_WebAPIの脆弱性.html">72章：WebAPIの脆弱性</a> も参照してください。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「認証が通れば、その API は何でも呼んでよい」</summary><div class="body"><p>認証は「誰か」を確かめるだけです。「その操作をしてよいか」は <strong>認可</strong> で別にチェックします。認証済みでも権限がなければ 403 です。</p></div></details>
+    <details open><summary>誤解2：「HTTPS なら、API Key を URL のクエリに載せても安全」</summary><div class="body"><p>HTTPS は通信路を暗号化しますが、URL は <strong>ブラウザ履歴・サーバーのアクセスログ・Referer ヘッダ</strong> に残ります。認証情報は <code>Authorization</code> ヘッダで送ります。</p></div></details>
+    <details open><summary>誤解3：「認証に失敗したら 403 を返す」</summary><div class="body"><p>トークンがない・無効・期限切れは <strong>401</strong> です。403 は「認証済みだが権限がない」ときに使います。混同するとクライアントが再ログインすべきか諦めるべきか判断できません。</p></div></details>
+    <details open><summary>誤解4：「Basic 認証の Base64 は暗号化なので安全」</summary><div class="body"><p>Base64 は誰でも元に戻せる符号化で、暗号ではありません。Basic 認証は <strong>HTTPS が必須</strong> です。</p></div></details>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>認証は本人確認（あなたは誰？）、認可は権限チェック（何ができる？）</li>
+      <li>API Key はサーバー間、Bearer Token（JWT）は SPA・モバイル、Session Cookie は同一ドメインの Web アプリ向け。Basic 認証は HTTPS 必須</li>
+      <li>OAuth 2.0 はパスワードを渡さずに限定的な権限を与える仕組み。OIDC はそれに ID の標準を足したもの</li>
+      <li>認証情報は <code>Authorization</code> ヘッダで送り、URL には載せない</li>
+      <li>認証失敗は 401（<code>WWW-Authenticate</code> 付き）、権限不足は 403</li>
+      <li>認証は多層防御の一層。認可・HTTPS・レート制限・入力検証と組み合わせ、最小権限を守る</li>
+    </ul>
+    <p>次は <a href="60-2_認可.html">認可</a> です。</p>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：45_API設計/60_セキュリティと信頼性/01_認証</li>
+      <li>ノート：45_API設計/60_セキュリティと信頼性/04_認証とセキュリティ</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-4_発展性のあるAPI開発.html"><span class="lbl">← 前のページ</span>発展性のあるAPI開発</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-2_認可.html"><span class="lbl">次のページ →</span>認可</a>
+    </nav>
+    <footer class="page-foot">45_API設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

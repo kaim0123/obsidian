@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考図解 — モジュール設計でよく使う図を1ページで見渡す｜モジュール設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">モジュール設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 90 付録 › 参考図解</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">90 付録</span>
+      <h1>参考図解 — モジュール設計でよく使う図を1ページで見渡す</h1>
+      <p class="lead">モジュール設計でよく使う 9 つの図のテンプレートを集めたページです。設計の階層、高凝集・低結合、レイヤード、ヘキサゴナル、良い依存グラフと悪い依存グラフ、モジュール間のデータの渡し方、イベント連携、ドメイン主軸のディレクトリを、それぞれ詳しく説明しているページへのリンクと一緒に並べています。復習や、設計の打ち合わせで図を見せたいときに使ってください。</p>
+      <p class="meta">もとにしたノート：90_付録/付録D_参考図解</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>モジュール設計の図は、ほぼ<strong>「箱（モジュール）」と「矢印（依存）」</strong>だけで描けます。良い図では矢印が一方向に流れ、循環や共有 DB への矢印がありません。図を描くこと自体が、境界と依存の向きを点検する作業になります。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>モジュール設計でよく使う図のテンプレートです。ホワイトボードやノートに転記して使えます。</p>
+    <ul>
+      <li><strong>構造の図</strong>：設計の階層／高凝集・低結合／レイヤードアーキテクチャ／ヘキサゴナル（ポートとアダプタ）</li>
+      <li><strong>依存の図</strong>：依存グラフ（良い例）／依存グラフ（悪い例）</li>
+      <li><strong>つなぎ方と置き場所</strong>：モジュール間データの渡し方／イベント連携／ドメイン主軸のディレクトリ</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">使い方</p>
+      <p>図はどれも考え方を思い出すための手がかりです。意味があいまいなときは、各図の上にあるリンク先のページを読み直してください。図の中の矢印は「依存する（使う）」向き、点線の矢印は「実装する」または「良くない依存」を表します。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>構造の図</h2>
+
+    <h3 id="sec-2-1">2.1 設計の階層</h3>
+    <p>大きな単位から細かい単位へ、設計の階層が並びます。この教材（モジュール設計）は、ソフトウェア設計とクラス設計の間で「パッケージ・レイヤーをどう分けるか」を扱います（→ <a href="00-1_モジュール設計の全体像.html">モジュール設計の全体像</a>、<a href="../42_ソフトウェア設計/10-2_設計の階層と基本用語.html">設計の階層と基本用語（42章）</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 336" role="img" aria-label="設計の階層。上から、アーキテクチャ（システム全体）、ソフトウェア設計（パラダイム・DDD）、モジュール設計（パッケージ・レイヤー、本教材）、クラス設計（クラス・インターフェース）、メソッド設計（関数の中身）の順に、大きな単位から細かい単位へ下りていく">
+      <defs><marker id="arw393a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="120" y="10" width="480" height="44" rx="8" class="d-box"/>
+      <text x="140" y="37" class="d-text-bold">アーキテクチャ</text>
+      <text x="320" y="37" class="d-text-sub">システム全体</text>
+      <line x1="360" y1="54" x2="360" y2="74" class="d-line" marker-end="url(#arw393a)"/>
+      <rect x="120" y="78" width="480" height="44" rx="8" class="d-box"/>
+      <text x="140" y="105" class="d-text-bold">ソフトウェア設計</text>
+      <text x="320" y="105" class="d-text-sub">パラダイム・DDD（42章）</text>
+      <line x1="360" y1="122" x2="360" y2="142" class="d-line" marker-end="url(#arw393a)"/>
+      <rect x="120" y="146" width="480" height="44" rx="8" class="d-box-accent"/>
+      <text x="140" y="173" class="d-text-bold">モジュール設計</text>
+      <text x="320" y="173" class="d-text-sub">パッケージ・レイヤー（本教材）</text>
+      <line x1="360" y1="190" x2="360" y2="210" class="d-line" marker-end="url(#arw393a)"/>
+      <rect x="120" y="214" width="480" height="44" rx="8" class="d-box"/>
+      <text x="140" y="241" class="d-text-bold">クラス設計</text>
+      <text x="320" y="241" class="d-text-sub">クラス・インターフェース（44章）</text>
+      <line x1="360" y1="258" x2="360" y2="278" class="d-line" marker-end="url(#arw393a)"/>
+      <rect x="120" y="282" width="480" height="44" rx="8" class="d-box"/>
+      <text x="140" y="309" class="d-text-bold">メソッド設計</text>
+      <text x="320" y="309" class="d-text-sub">関数の中身（46章）</text>
+    </svg>
+    <figcaption>図1：設計の階層。上ほど大きな単位、下ほど細かい単位</figcaption>
+    </figure>
+    <p class="small muted">クラス設計（44_クラス設計・デザインパターン）とメソッド設計（46_メソッド設計）は別の章で扱います。</p>
+
+    <h3 id="sec-2-2">2.2 高凝集・低結合</h3>
+    <p>モジュールの中身は 1 つの目的にまとめ（高凝集）、モジュール同士はインターフェース（IF）という最小限の約束だけでつなぎます（低結合）（→ <a href="20-1_凝集度.html">凝集度</a>、<a href="20-2_結合度.html">結合度</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 170" role="img" aria-label="高凝集なModule Aから、インターフェースを通して高凝集なModule Bを使う。各モジュールの内部詳細は隠し、モジュール間は最小限の契約だけでつながる">
+      <defs><marker id="arw393b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="60" y="30" width="220" height="80" rx="8" class="d-box-good"/>
+      <text x="170" y="64" text-anchor="middle" class="d-text-bold">Module A</text>
+      <text x="170" y="88" text-anchor="middle" class="d-text-sub">高凝集</text>
+      <rect x="440" y="30" width="220" height="80" rx="8" class="d-box-good"/>
+      <text x="550" y="64" text-anchor="middle" class="d-text-bold">Module B</text>
+      <text x="550" y="88" text-anchor="middle" class="d-text-sub">高凝集</text>
+      <line x1="280" y1="70" x2="436" y2="70" class="d-line" marker-end="url(#arw393b)"/>
+      <text x="358" y="58" text-anchor="middle" class="d-text">IF</text>
+      <text x="358" y="96" text-anchor="middle" class="d-text-sub">最小限の契約だけ</text>
+      <text x="170" y="140" text-anchor="middle" class="d-text-sub">内部詳細は隠す</text>
+      <text x="550" y="140" text-anchor="middle" class="d-text-sub">内部詳細は隠す</text>
+    </svg>
+    <figcaption>図2：高凝集・低結合。中はまとめ、間は細くつなぐ</figcaption>
+    </figure>
+
+    <h3 id="sec-2-3">2.3 レイヤードアーキテクチャ</h3>
+    <p>関心ごとに水平に層を分け、依存は上から下へ向けます（→ <a href="60-2_レイヤードのモジュール構成.html">レイヤードのモジュール構成</a>、<a href="../41_アーキテクチャ/21-1_層化・三層・レイヤード.html">層化・三層・レイヤード（41章）</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="レイヤードアーキテクチャ。上からPresentation、Application、Domain、Infrastructureの4層が積み重なり、依存の向きは上から下">
+      <defs><marker id="arw393c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <rect x="140" y="10" width="400" height="48" class="d-box"/>
+      <text x="340" y="39" text-anchor="middle" class="d-text">Presentation</text>
+      <rect x="140" y="58" width="400" height="48" class="d-box"/>
+      <text x="340" y="87" text-anchor="middle" class="d-text">Application</text>
+      <rect x="140" y="106" width="400" height="48" class="d-box-accent"/>
+      <text x="340" y="135" text-anchor="middle" class="d-text-bold">Domain</text>
+      <rect x="140" y="154" width="400" height="48" class="d-box"/>
+      <text x="340" y="183" text-anchor="middle" class="d-text">Infrastructure</text>
+      <line x1="580" y1="20" x2="580" y2="190" class="d-line-accent" marker-end="url(#arw393c)"/>
+      <text x="596" y="100" class="d-text-accent">依存の</text>
+      <text x="596" y="120" class="d-text-accent">向き</text>
+      <text x="340" y="236" text-anchor="middle" class="d-text-sub">依存：上 → 下</text>
+    </svg>
+    <figcaption>図3：レイヤードアーキテクチャ。依存は上から下へ</figcaption>
+    </figure>
+    <div class="callout warn">
+      <p class="callout-title">伝統的なレイヤードとクリーンアーキテクチャの違い</p>
+      <p>この図は伝統的なレイヤードの並びで、Domain が Infrastructure に依存します。DIP（依存逆転の原則）を使うと、Infrastructure が Domain の定めたインターフェースを実装する形にでき、Domain を「いちばん内側」にできます。次の図4（ヘキサゴナル）と見比べてください（→ <a href="40-4_疎結合・DIP・DIの整理.html">疎結合・DIP・DIの整理</a>）。</p>
+    </div>
+
+    <h3 id="sec-2-4">2.4 ヘキサゴナル（ポートとアダプタ）</h3>
+    <p>中心のコア（業務ロジック）は、外と話す口（ポート）だけを持ちます。HTTP などの入口のアダプタは Driving Port を通してコアを呼び、コアは Driven Port を通して外部を使います。DB のアダプタは Driven Port を実装します（→ <a href="60-3_ヘキサゴナルのモジュール構成.html">ヘキサゴナルのモジュール構成</a>、<a href="../41_アーキテクチャ/23-2_ヘキサゴナルアーキテクチャ.html">ヘキサゴナルアーキテクチャ（41章）</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="ヘキサゴナル。HTTP AdapterがDriving Portを通してCoreを呼ぶ。CoreはDriven Portを使い、DB AdapterがDriven Portを実装する。依存はすべてCore側に向く">
+      <defs><marker id="arw393d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="8" y="40" width="124" height="60" rx="8" class="d-box"/>
+      <text x="70" y="66" text-anchor="middle" class="d-text-bold">HTTP</text>
+      <text x="70" y="86" text-anchor="middle" class="d-text-sub">Adapter</text>
+      <rect x="152" y="40" width="124" height="60" rx="8" class="d-box-good"/>
+      <text x="214" y="66" text-anchor="middle" class="d-text-bold">Driving Port</text>
+      <text x="214" y="86" text-anchor="middle" class="d-text-sub">入口</text>
+      <rect x="296" y="40" width="124" height="60" rx="8" class="d-box-accent"/>
+      <text x="358" y="76" text-anchor="middle" class="d-text-bold">Core</text>
+      <rect x="440" y="40" width="124" height="60" rx="8" class="d-box-good"/>
+      <text x="502" y="66" text-anchor="middle" class="d-text-bold">Driven Port</text>
+      <text x="502" y="86" text-anchor="middle" class="d-text-sub">コアが要求</text>
+      <rect x="584" y="40" width="124" height="60" rx="8" class="d-box"/>
+      <text x="646" y="66" text-anchor="middle" class="d-text-bold">DB</text>
+      <text x="646" y="86" text-anchor="middle" class="d-text-sub">Adapter</text>
+      <line x1="132" y1="70" x2="148" y2="70" class="d-line" marker-end="url(#arw393d)"/>
+      <line x1="276" y1="70" x2="292" y2="70" class="d-line" marker-end="url(#arw393d)"/>
+      <line x1="420" y1="70" x2="436" y2="70" class="d-line" marker-end="url(#arw393d)"/>
+      <line x1="584" y1="70" x2="568" y2="70" class="d-line-dash" marker-end="url(#arw393d)"/>
+      <text x="646" y="128" text-anchor="middle" class="d-text-sub">点線＝実装する</text>
+    </svg>
+    <figcaption>図4：ヘキサゴナル（ポートとアダプタ）。外側のアダプタはポートを通してだけコアとつながる</figcaption>
+    </figure>
+    <p class="small muted">ノートの図は縦向き（上に HTTP Adapter、下に DB Adapter）ですが、ここでは横向きに並べています。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>依存の図</h2>
+
+    <h3 id="sec-3-1">3.1 依存グラフ（良い例）</h3>
+    <p>web が各モジュールを使い、各モジュールは自分の domain と infra を持ちます。domain は infra に依存せず、循環もありません（→ <a href="40-2_依存関係の管理.html">依存関係の管理</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 290" role="img" aria-label="良い依存グラフ。webがorderとpaymentに依存する。orderはorder/domainとorder/infraに、paymentはpayment/infraに依存する。domainはinfraに依存せず、循環はない">
+      <defs><marker id="arw393e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="118" width="150" height="44" rx="8" class="d-box-accent"/>
+      <text x="95" y="145" text-anchor="middle" class="d-text-bold">web</text>
+      <rect x="250" y="60" width="150" height="44" rx="8" class="d-box"/>
+      <text x="325" y="87" text-anchor="middle" class="d-text-bold">order</text>
+      <rect x="250" y="196" width="150" height="44" rx="8" class="d-box"/>
+      <text x="325" y="223" text-anchor="middle" class="d-text-bold">payment</text>
+      <rect x="490" y="20" width="160" height="44" rx="8" class="d-box-good"/>
+      <text x="570" y="47" text-anchor="middle" class="d-text">order/domain</text>
+      <rect x="490" y="90" width="160" height="44" rx="8" class="d-box"/>
+      <text x="570" y="117" text-anchor="middle" class="d-text">order/infra</text>
+      <rect x="490" y="196" width="160" height="44" rx="8" class="d-box"/>
+      <text x="570" y="223" text-anchor="middle" class="d-text">payment/infra</text>
+      <line x1="170" y1="130" x2="246" y2="90" class="d-line" marker-end="url(#arw393e)"/>
+      <line x1="170" y1="150" x2="246" y2="210" class="d-line" marker-end="url(#arw393e)"/>
+      <line x1="400" y1="76" x2="486" y2="46" class="d-line" marker-end="url(#arw393e)"/>
+      <line x1="400" y1="90" x2="486" y2="108" class="d-line" marker-end="url(#arw393e)"/>
+      <line x1="400" y1="218" x2="486" y2="218" class="d-line" marker-end="url(#arw393e)"/>
+      <text x="360" y="276" text-anchor="middle" class="d-text-sub">※ domain は infra に依存しない　※ 循環なし</text>
+    </svg>
+    <figcaption>図5：依存グラフ（良い例）。矢印は一方向に流れる</figcaption>
+    </figure>
+
+    <h3 id="sec-3-2">3.2 依存グラフ（悪い例）</h3>
+    <p>order と payment が互いに import し合い（循環）、さらに同じ <code>orders</code> テーブルに直接 SQL を書いています（共有 DB）。どちらかを変えると、もう一方も壊れます（→ <a href="50-3_結合の3原則と循環依存.html">結合の3原則と循環依存</a>、<a href="40-3_データの受け渡しと共有.html">データの受け渡しと共有</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="悪い依存グラフ。orderとpaymentが互いに依存し合う循環がある。さらにorderとpaymentの両方がordersテーブルに直接SQLでアクセスしており、共有DBになっている">
+      <defs><marker id="arw393f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="100" y="30" width="160" height="50" rx="8" class="d-box-bad"/>
+      <text x="180" y="60" text-anchor="middle" class="d-text-bold">order</text>
+      <rect x="460" y="30" width="160" height="50" rx="8" class="d-box-bad"/>
+      <text x="540" y="60" text-anchor="middle" class="d-text-bold">payment</text>
+      <line x1="264" y1="55" x2="456" y2="55" class="d-line-dash" marker-start="url(#arw393f)" marker-end="url(#arw393f)"/>
+      <text x="360" y="44" text-anchor="middle" class="d-text">← 循環</text>
+      <rect x="240" y="170" width="240" height="60" rx="8" class="d-box-warn"/>
+      <text x="360" y="196" text-anchor="middle" class="d-text-bold">orders テーブル</text>
+      <text x="360" y="216" text-anchor="middle" class="d-text-sub">← 共有 DB（直接 SQL）</text>
+      <line x1="180" y1="80" x2="290" y2="166" class="d-line-dash" marker-end="url(#arw393f)"/>
+      <line x1="540" y1="80" x2="430" y2="166" class="d-line-dash" marker-end="url(#arw393f)"/>
+    </svg>
+    <figcaption>図6：依存グラフ（悪い例）。循環と共有 DB がある</figcaption>
+    </figure>
+
+    <h2 id="sec-4"><span class="num">4.</span>つなぎ方と置き場所</h2>
+
+    <h3 id="sec-4-1">4.1 モジュール間データの渡し方</h3>
+    <p>モジュールの間では、ID や必要最小限の DTO（モジュール間で渡すためのデータの入れ物）を渡します。内部の Entity や DB の行そのものを渡すと、内部の変更が相手に波及します（→ <a href="40-3_データの受け渡しと共有.html">データの受け渡しと共有</a>）。</p>
+    <div class="grid c2">
+      <div class="card good">
+        <h4>良い</h4>
+        <ul>
+          <li><code>OrderId</code></li>
+          <li><code>OrderSummaryDto</code></li>
+        </ul>
+      </div>
+      <div class="card bad">
+        <h4>悪い</h4>
+        <ul>
+          <li><code>OrderEntity</code>（内部）</li>
+          <li><code>RawDbRow</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="sec-4-2">4.2 イベント連携</h3>
+    <p>order は「注文が確定した」というイベント（<code>OrderPlacedEvent</code>）を発行（publish）するだけで、誰が受け取るかを知りません。在庫や通知のモジュールがそれを受け取って、それぞれの処理を行います（→ <a href="40-3_データの受け渡しと共有.html">データの受け渡しと共有</a>、<a href="../42_ソフトウェア設計/40-1_イベント駆動設計.html">イベント駆動設計（42章）</a>）。</p>
+    <figure>
+    <svg viewBox="0 0 720 220" role="img" aria-label="イベント連携。OrderがOrderPlacedEventを発行する。Inventoryはそれを受け取ってreserveで在庫を引き当て、NotificationはsendEmailでメールを送る">
+      <defs><marker id="arw393g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="82" width="130" height="56" rx="8" class="d-box"/>
+      <text x="85" y="115" text-anchor="middle" class="d-text-bold">Order</text>
+      <line x1="150" y1="110" x2="206" y2="110" class="d-line" marker-end="url(#arw393g)"/>
+      <text x="178" y="98" text-anchor="middle" class="d-text-sub">publish</text>
+      <rect x="210" y="82" width="200" height="56" rx="8" class="d-box-accent"/>
+      <text x="310" y="115" text-anchor="middle" class="d-text-bold">OrderPlacedEvent</text>
+      <line x1="410" y1="100" x2="476" y2="56" class="d-line" marker-end="url(#arw393g)"/>
+      <line x1="410" y1="120" x2="476" y2="164" class="d-line" marker-end="url(#arw393g)"/>
+      <rect x="480" y="20" width="220" height="64" rx="8" class="d-box"/>
+      <text x="590" y="48" text-anchor="middle" class="d-text-bold">Inventory</text>
+      <text x="590" y="70" text-anchor="middle" class="d-text-sub">reserve()</text>
+      <rect x="480" y="136" width="220" height="64" rx="8" class="d-box"/>
+      <text x="590" y="164" text-anchor="middle" class="d-text-bold">Notification</text>
+      <text x="590" y="186" text-anchor="middle" class="d-text-sub">sendEmail()</text>
+    </svg>
+    <figcaption>図7：イベント連携。発行する側は受け取る側を知らない</figcaption>
+    </figure>
+
+    <h3 id="sec-4-3">4.3 ドメイン主軸のディレクトリ</h3>
+    <p>トップレベルをドメイン名（order・payment・catalog）で分け、それぞれの中に層を持たせます。フォルダを見るだけで、何のシステムかが分かります（→ <a href="60-1_命名とディレクトリ構成.html">命名とディレクトリ構成</a>、<a href="30-5_ScreamingArchitecture.html">Screaming Architecture</a>）。</p>
+    <pre><code>src/
+  order/     domain/ application/ infra/
+  payment/   domain/ application/ infra/
+  catalog/   domain/ application/ infra/</code></pre>
+
+    <h2 id="sec-5"><span class="num">5.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「図3（レイヤード）と図4（ヘキサゴナル）は同じことを言っている」</summary><div class="body"><p>どちらも関心ごとに分ける点は同じですが、依存の向きが違います。伝統的なレイヤードでは Domain が Infrastructure に依存しますが、ヘキサゴナルでは DB のアダプタがコアの定めたポートを実装し、依存がすべてコアに向きます。</p></div></details>
+    <details open><summary>誤解2：「依存グラフは一度描けば十分」</summary><div class="body"><p>依存はコードが変わるたびに変わります。図6のような循環や共有 DB は少しずつ入り込むので、定期的に描き直す（またはツールで自動生成する）ことが大切です（→ <a href="70-6_依存ルールの自動検査.html">依存ルールの自動検査</a>）。</p></div></details>
+
+    <h2 id="sec-6"><span class="num">6.</span>まとめ</h2>
+    <ul>
+      <li>設計の階層の中で、モジュール設計は「パッケージ・レイヤー」を扱う</li>
+      <li>高凝集・低結合：中はまとめ、間はインターフェースで細くつなぐ</li>
+      <li>レイヤードは上から下へ、ヘキサゴナルはポートを通して依存をコアに向ける</li>
+      <li>良い依存グラフは一方向で循環なし。悪い依存グラフには循環と共有 DB がある</li>
+      <li>モジュール間は ID・DTO・イベントでつなぎ、ディレクトリはドメインを主軸にする</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：43_モジュール設計/90_付録/付録D_参考図解</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="90-2_チェックリストとアンチパターン.html"><span class="lbl">← 前のページ</span>チェックリストとアンチパターン</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <span class="empty"></span>
+    </nav>
+    <footer class="page-foot">43_モジュール設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

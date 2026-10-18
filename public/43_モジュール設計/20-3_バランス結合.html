@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>バランス結合 — 強度・距離・変動性で結合を判断する｜モジュール設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">モジュール設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 20 凝集と結合 › バランス結合</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">20 凝集と結合</span>
+      <h1>バランス結合 — 強度・距離・変動性で結合を判断する</h1>
+      <p class="lead">「結合度は低いほどよい」だけでは判断できない場面がたくさんあります。Vlad Khononov の『Balancing Coupling in Software Design』は、結合を「なくすもの」ではなく「バランスを取るもの」と捉え直しました。統合強度・距離・変動性という3つの次元、バランスの式、そして実務での優先順位の付け方を解説します。</p>
+      <p class="meta">もとにしたノート：20_凝集と結合/03_バランス結合_強度・距離・変動性</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>結合は <strong>なくすものではなく、バランスを取るもの</strong> です。<strong>強く結びつくもの（統合強度が高いもの）は近くに、弱く結びつくものは遠くに</strong> 置きます。ただし、<strong>変わらない部分ならアンバランスでも実害は小さい</strong>。式にすると <strong>BALANCE ＝（STRENGTH XOR DISTANCE）OR NOT VOLATILITY</strong> です。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><a href="20-2_結合度.html">結合度</a> では「結合度は低いほどよい」と学びました。しかし実際には、</p>
+    <ul>
+      <li>同じクラスの中のメソッド同士は、強く結びついていて当然</li>
+      <li>結合をなくそうとして層やインターフェースを増やしすぎると、かえって複雑になる</li>
+      <li>二度と変わらない部分なら、多少強く結びついていても問題は起きない</li>
+    </ul>
+    <p>という場面がたくさんあります。</p>
+    <p>Vlad Khononov は『Balancing Coupling in Software Design』（2024）で、結合を <strong>「なくすもの」ではなく「バランスを取るもの」</strong> として捉え直しました。このページは、そのモデル（<strong>バランス結合</strong>）の <strong>入口</strong> です。</p>
+    <ul>
+      <li>結合の3つの次元：<strong>統合強度・距離・変動性</strong>（概要。詳細は個別ページ）</li>
+      <li>バランスの式と、4つの組み合わせ</li>
+      <li>実務での使い方</li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">バランス結合のページ群（Khononov『ソフトウェア設計の結合バランス』）</p>
+      <p>概要とバランスの式（このページ）／ <a href="20-4_統合強度.html">統合強度</a> ／ <a href="20-5_距離と変動性.html">距離と変動性</a> ／ <a href="20-6_結合と複雑性.html">結合と複雑性</a> ／ <a href="20-7_結合の再均衡化と実践.html">結合の再均衡化と実践</a></p>
+      <p>邦訳：『<strong>ソフトウェア設計の結合バランス 持続可能な成長を支えるモジュール化の原則</strong>』（島田浩二 訳、インプレス impress top gear、2025）</p>
+    </div>
+
+    <h3 id="sec-1-1">1.1 本書の構成と、対応するページ</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>部</th><th>章</th><th>内容</th><th>対応ページ・節</th></tr></thead>
+      <tbody>
+        <tr><td><strong>第I部 結合</strong></td><td>第1章 結合とシステム設計</td><td>結合とは何か・結合の大きさ・知識の流れ・システム</td><td>このページ 2節</td></tr>
+        <tr><td></td><td>第2章 結合と複雑性：クネビン</td><td>複雑性とは何か・クネビンの各領域</td><td><a href="20-6_結合と複雑性.html">結合と複雑性</a> 1節</td></tr>
+        <tr><td></td><td>第3章 結合と複雑性：相互作用</td><td>階層的な複雑性・自由度・制約・複雑な相互作用</td><td><a href="20-6_結合と複雑性.html">結合と複雑性</a> 2節</td></tr>
+        <tr><td></td><td>第4章 結合とモジュール性</td><td>モジュールの3性質（機能・ロジック・コンテキスト）</td><td><a href="10-2_モジュールの基本概念.html">モジュールの基本概念</a></td></tr>
+        <tr><td><strong>第II部 次元</strong></td><td>第5章 構造化設計におけるモジュール結合</td><td>内容結合〜データ結合</td><td><a href="20-2_結合度.html">結合度</a></td></tr>
+        <tr><td></td><td>第6章 コナーセンス</td><td>静的・動的コナーセンス</td><td><a href="../41_アーキテクチャ/13-3_コナーセンス.html">41章：コナーセンス</a></td></tr>
+        <tr><td></td><td>第7章 統合強度</td><td>侵入・機能・モデル・契約、非同期実行との関係</td><td><a href="20-4_統合強度.html">統合強度</a></td></tr>
+        <tr><td></td><td>第8章 距離</td><td>カプセル化境界・距離に影響する追加要因・距離と近接</td><td><a href="20-5_距離と変動性.html">距離と変動性</a> 1節</td></tr>
+        <tr><td></td><td>第9章 変動性</td><td>ソフトウェアが変わる理由・変化率の評価・推測される変動性</td><td><a href="20-5_距離と変動性.html">距離と変動性</a> 2節</td></tr>
+        <tr><td><strong>第III部 バランス</strong></td><td>第10章 結合の均衡化</td><td>3次元の組み合わせ・数値スケール</td><td>このページ 4節</td></tr>
+        <tr><td></td><td>第11章 結合の再均衡化</td><td>回復力のある設計・変更のベクトル・再均衡化</td><td><a href="20-7_結合の再均衡化と実践.html">結合の再均衡化と実践</a> 1節</td></tr>
+        <tr><td></td><td>第12章 ソフトウェア設計のフラクタル幾何学的性質</td><td>成長・イノベーション・フラクタルなモジュール性</td><td><a href="20-7_結合の再均衡化と実践.html">結合の再均衡化と実践</a> 2節</td></tr>
+        <tr><td></td><td>第13章 均衡結合の実践</td><td>マイクロサービス・アーキテクチャパターン・ビジネスオブジェクト・メソッド</td><td><a href="20-7_結合の再均衡化と実践.html">結合の再均衡化と実践</a> 3節</td></tr>
+        <tr><td></td><td>第14章 結論／第15章 エピローグ</td><td>全体のまとめ</td><td><a href="20-7_結合の再均衡化と実践.html">結合の再均衡化と実践</a> 4節</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">※ 原著には付録として「結合のバラッド（The Ballad of Coupling）」「結合の用語集」「クイズの解答」があり、各章末には <strong>Key Takeaways（要点）とクイズ</strong> が付いています。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>結合はなくせない</h2>
+    <div class="callout key">
+      <p class="callout-title">結合の定義</p>
+      <p><strong>結合とは、システムの部品同士が相互作用するために、知識を共有している状態である。</strong></p>
+    </div>
+    <p>部品が協力して動く以上、何らかの知識（関数名・データの形・業務ルール…）は必ず共有されます。結合がゼロのシステムは、<strong>何もしないシステム</strong> です。</p>
+    <p>だから問うべきは「結合をどう減らすか」ではなく、</p>
+    <p><strong>「どの部品とどの部品が、どのくらいの知識を、どのくらいの距離で共有してよいか」</strong></p>
+    <p>です。これを判断するために、Khononov は結合を <strong>3つの次元</strong> で考えます。</p>
+
+    <h3 id="sec-2-1">2.1 知識は依存と逆向きに流れる（第1章「知識の流れ」）</h3>
+    <p>モジュール A が B を呼び出す（A → B に依存する）とき、<strong>知識は B から A へ流れます</strong>。B が自分の機能やデータ形式という知識を A に提供し、A はそれを前提にコードを書くからです。</p>
+    <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="下流（利用側）の A が上流（提供側）の B を呼ぶので、依存の向きは A から B。一方、知識は B から A へ、依存と逆向きに流れる">
+      <defs><marker id="arw323a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="arw323b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <rect x="40" y="50" width="200" height="100" rx="8" class="d-box"/>
+      <text x="140" y="92" text-anchor="middle" class="d-text-bold">A（下流）</text>
+      <text x="140" y="118" text-anchor="middle" class="d-text-sub">利用側・知識を受け取る</text>
+      <rect x="480" y="50" width="200" height="100" rx="8" class="d-box-accent"/>
+      <text x="580" y="92" text-anchor="middle" class="d-text-bold">B（上流）</text>
+      <text x="580" y="118" text-anchor="middle" class="d-text-sub">提供側・知識を提供する</text>
+      <line x1="240" y1="80" x2="476" y2="80" class="d-line" marker-end="url(#arw323a)"/>
+      <text x="360" y="70" text-anchor="middle" class="d-text">依存の向き：A が B を呼ぶ</text>
+      <line x1="480" y1="122" x2="244" y2="122" class="d-line-accent" marker-end="url(#arw323b)"/>
+      <text x="360" y="146" text-anchor="middle" class="d-text-accent">知識の流れ：B → A</text>
+      <text x="360" y="186" text-anchor="middle" class="d-text-sub">B が変わると、A が受け取った知識が古くなり A が壊れる</text>
+    </svg>
+    <figcaption>図：依存は下流から上流へ、知識は上流から下流へ流れる</figcaption>
+    </figure>
+    <ul>
+      <li><strong>上流（upstream）</strong>＝ 知識を <strong>提供する</strong> 側、<strong>下流（downstream）</strong>＝ 知識を <strong>受け取って依存する</strong> 側</li>
+      <li>上流が変わると、受け取った知識が古くなるので <strong>下流が壊れる</strong>。だから「どれだけの知識が流れているか」が結合の強さになる</li>
+      <li>第1章では、結合の <strong>大きさ（Magnitude）</strong> も扱います。「結合している・していない」の二択ではなく、<strong>どのくらいの知識を共有しているか</strong> という程度の問題として捉える、という第II部への導入です</li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>結合の3つの次元（概要）</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>次元</th><th>問い</th><th>要点</th><th>詳細</th></tr></thead>
+      <tbody>
+        <tr><td><strong>統合強度</strong></td><td>どれだけの知識を共有しているか</td><td>強い順に <strong>侵入的 → 機能的 → モデル → 契約</strong></td><td><a href="20-4_統合強度.html">統合強度</a></td></tr>
+        <tr><td><strong>距離</strong></td><td>一緒に変更するのにどれだけ手間がかかるか</td><td>コードの位置（メソッド → クラス → モジュール → サービス → システム）＋ 組織の距離</td><td><a href="20-5_距離と変動性.html">距離と変動性</a></td></tr>
+        <tr><td><strong>変動性</strong></td><td>どれくらい頻繁に変わるか</td><td><strong>コアサブドメイン</strong>（事業の競争力の源になる、よく変わる業務領域）ほど高い。変わらないなら強く結合しても実害は小さい</td><td><a href="20-5_距離と変動性.html">距離と変動性</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>サブドメインの考え方は <a href="../42_ソフトウェア設計/30-4_コアドメインとサブドメイン.html">42章：コアドメインとサブドメイン</a> を参照してください。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>バランスの式</h2>
+    <h3 id="sec-4-1">4.1 強度と距離は逆にする</h3>
+    <p>Khononov のモデルの核心は、次の関係です。</p>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="強度と距離の2×2表。強度が高く距離が近いと高凝集（良い）。強度が高く距離が遠いと分散した複雑さ（最悪）。強度が低く距離が近いと局所的な複雑さ（注意）。強度が低く距離が遠いと疎結合（良い）">
+      <text x="275" y="28" text-anchor="middle" class="d-text-bold">距離が近い</text>
+      <text x="555" y="28" text-anchor="middle" class="d-text-bold">距離が遠い</text>
+      <text x="70" y="96" text-anchor="middle" class="d-text-bold">強度が高い</text>
+      <text x="70" y="196" text-anchor="middle" class="d-text-bold">強度が低い</text>
+      <rect x="140" y="44" width="270" height="90" rx="8" class="d-box-good"/>
+      <text x="275" y="82" text-anchor="middle" class="d-text-bold">高凝集</text>
+      <text x="275" y="108" text-anchor="middle" class="d-text-sub">一緒に変わるものが近くにある</text>
+      <rect x="420" y="44" width="270" height="90" rx="8" class="d-box-bad"/>
+      <text x="555" y="82" text-anchor="middle" class="d-text-bold">分散した複雑さ（最悪）</text>
+      <text x="555" y="108" text-anchor="middle" class="d-text-sub">一緒に変わるものが遠くに散らばる</text>
+      <rect x="140" y="144" width="270" height="90" rx="8" class="d-box-warn"/>
+      <text x="275" y="182" text-anchor="middle" class="d-text-bold">局所的な複雑さ</text>
+      <text x="275" y="208" text-anchor="middle" class="d-text-sub">関係の薄いものが詰め込まれる</text>
+      <rect x="420" y="144" width="270" height="90" rx="8" class="d-box-good"/>
+      <text x="555" y="182" text-anchor="middle" class="d-text-bold">疎結合</text>
+      <text x="555" y="208" text-anchor="middle" class="d-text-sub">関係の薄いものが離れている</text>
+    </svg>
+    <figcaption>図：強度と距離の組み合わせ。対角線上（高凝集・疎結合）がバランスの取れた状態</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>距離が近い</th><th>距離が遠い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>強度が高い</strong></td><td>✅ <strong>高凝集</strong>（一緒に変わるものが近くにある）</td><td>❌ <strong>分散した複雑さ</strong>（一緒に変わるものが遠くに散らばる。最悪の状態）</td></tr>
+        <tr><td><strong>強度が低い</strong></td><td>⚠️ <strong>局所的な複雑さ</strong>（関係の薄いものが同じ場所に詰め込まれている）</td><td>✅ <strong>疎結合</strong>（関係の薄いものが離れている）</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>強く結びつくものは近くに置く</strong>（高凝集）</li>
+      <li><strong>弱く結びつくものは離して置く</strong>（疎結合）</li>
+      <li>つまり、<strong>高凝集と疎結合は、同じ原則の表と裏</strong> です</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">分散モノリス</p>
+      <p>「分散モノリス」（<a href="../41_アーキテクチャ/40-2_モノリスとマイクロサービス.html">41章：モノリスとマイクロサービス</a>）は、右上の <strong>強度が高いのに距離が遠い</strong> 状態の典型例です。サービスに分けた（距離を遠くした）のに、互いの内部データや業務ルールを共有している（強度が高い）ために、毎回一緒に変更・デプロイする必要が生まれます。</p>
+    </div>
+
+    <h3 id="sec-4-2">4.2 変動性で緩和する</h3>
+    <p>ただし、<strong>変わらないなら、アンバランスでも実害はない</strong> という例外があります。これを式で表すと次のようになります。</p>
+    <pre><code>BALANCE = (STRENGTH ⊕ DISTANCE) ∨ ¬VOLATILITY</code></pre>
+    <p><strong>バランスが取れている ＝（強度 XOR 距離）または（変動性が低い）</strong></p>
+    <ul>
+      <li><strong>XOR（排他的論理和）</strong>：強度と距離の <strong>どちらか一方だけが高い</strong> とき真。両方高い・両方低いときは偽</li>
+      <li><strong>OR NOT 変動性</strong>：変動性が低ければ、強度と距離がアンバランスでも許容できる</li>
+    </ul>
+
+    <h3 id="sec-4-3">4.3 具体例で判断する</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ケース</th><th>強度</th><th>距離</th><th>変動性</th><th>判断</th></tr></thead>
+      <tbody>
+        <tr><td>注文モジュール内の <code>Order</code> と <code>OrderLine</code></td><td>高（モデル・機能）</td><td>近（同じモジュール）</td><td>高</td><td>✅ 高凝集</td></tr>
+        <tr><td>注文サービスが配送サービスの DB を直接読む</td><td>最強（侵入的）</td><td>遠（別サービス）</td><td>高</td><td>❌ <strong>最優先で直す</strong></td></tr>
+        <tr><td>注文サービスが配送サービスの公開 API を呼ぶ</td><td>低（契約）</td><td>遠</td><td>高</td><td>✅ 疎結合</td></tr>
+        <tr><td><code>utils/</code> に日付処理と決済処理と画像変換が同居</td><td>低</td><td>近</td><td>中</td><td>⚠️ 局所的な複雑さ。分けた方が理解しやすい</td></tr>
+        <tr><td>全サービスが古い社内の住所マスタ DB を直接読む</td><td>最強（侵入的）</td><td>遠</td><td><strong>低</strong>（10年変わっていない）</td><td>✅ 変動性が低いので当面は許容。変わる予定が出たら見直す</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-4-4">4.4 式を分解して読む</h3>
+    <p>この式は、次のような段階を踏んで組み立てられています（第3章・第10章）。</p>
+    <pre><code>大域的な複雑さ  = STRENGTH AND DISTANCE          … 強く結びつくものが遠くに散らばる
+局所的な複雑さ  = NOT STRENGTH AND NOT DISTANCE  … 関係の薄いものが近くに詰め込まれる
+複雑さ          = 局所的な複雑さ OR 大域的な複雑さ
+モジュール性    = NOT 複雑さ = STRENGTH XOR DISTANCE
+バランス        = モジュール性 OR NOT VOLATILITY</code></pre>
+    <p><strong>バランス ＝ モジュール的である、または変わらない</strong> と読めます。</p>
+
+    <h3 id="sec-4-5">4.5 数値スケールで考える（第10章「数値スケールでの結合の均衡化」）</h3>
+    <p>真偽（高い／低い）だけでは粗すぎる場合、各次元を <strong>1〜10 の数値</strong> で表して比べます。以下は二次資料（Software Architecture Guild）による目安で、<strong>値の付け方そのものより、同じ物差しで一貫して比べること</strong> が大事です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>値</th><th>統合強度</th><th>距離</th><th>変動性</th></tr></thead>
+      <tbody>
+        <tr><td>1〜2</td><td>契約結合</td><td>同じクラス・オブジェクト</td><td>安定したレガシー</td></tr>
+        <tr><td>3〜5</td><td>モデル結合</td><td>同じモジュール・サービス</td><td>支援・汎用サブドメイン</td></tr>
+        <tr><td>7〜9</td><td>機能結合</td><td>共有ライブラリ・複数サービス</td><td>コア（よく変わる）</td></tr>
+        <tr><td>10</td><td>侵入結合</td><td>別製品・別ベンダー・別組織</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <pre><code>MODULARITY  = |STRENGTH − DISTANCE| + 1
+BALANCE     = max(|STRENGTH − DISTANCE|, 10 − VOLATILITY) + 1</code></pre>
+    <ul>
+      <li>強度と距離の <strong>差が大きいほど</strong> モジュール的</li>
+      <li>バランスが低い（＝モジュール的でなく、しかも変動性が高い）結合ほど、<strong>繰り返し痛みを生む場所</strong></li>
+    </ul>
+    <p>たとえば、注文サービスが配送サービスの DB を直接読む（強度 10・距離 8・変動性 8）なら、<code>max(|10 − 8|, 10 − 8) + 1 = 3</code> と低く、直すべき場所だと分かります。同じ連携を公開 API 経由（強度 2）にすると <code>max(6, 2) + 1 = 7</code> に上がります。</p>
+
+    <h3 id="sec-4-6">4.6 痛み（保守コスト）の目安</h3>
+    <pre><code>保守コスト（痛み） ≈ STRENGTH × DISTANCE × VOLATILITY</code></pre>
+    <ul>
+      <li>掛け算なので、<strong>どれか1つが 1 に近ければ全体が小さくなる</strong>。3つすべてが高い所が最優先（→ 5.1）</li>
+      <li>裏返すと、痛みを減らすには <strong>つまみを1つ回せばよい</strong> こともある（強度・距離・変動性のどれか）</li>
+      <li>※ 精密な計測式ではなく、考えるための <strong>メンタルモデル</strong> です</li>
+    </ul>
+
+    <h2 id="sec-5"><span class="num">5.</span>実務での使い方</h2>
+    <h3 id="sec-5-1">5.1 改善の優先順位を決める</h3>
+    <p>すべての結合を一度に直すことはできません。<strong>「強度が高い × 距離が遠い × 変動性が高い」</strong> の組み合わせから順に直します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>優先度</th><th>状態</th><th>対策の方向</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>強度高 × 距離遠 × 変動性高</td><td><strong>強度を下げる</strong>（契約を導入・腐敗防止層）か、<strong>距離を縮める</strong>（同じモジュール・サービスに統合）</td></tr>
+        <tr><td>2</td><td>強度高 × 距離遠 × 変動性低</td><td>監視する。変動性が上がりそうなら優先度を上げる</td></tr>
+        <tr><td>3</td><td>強度低 × 距離近</td><td>分けると理解しやすくなる。余裕があれば分割</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-2">5.2 「強度を下げる」か「距離を縮める」か</h3>
+    <p>アンバランスを直す方法は2つあります。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>強度を下げる</h4>
+        <p>相手の内部を直接使うのをやめ、公開 API・DTO・イベントを経由する（侵入的・モデル結合 → 契約結合）。</p>
+      </div>
+      <div class="card">
+        <h4>距離を縮める</h4>
+        <p>そもそも一緒に変わるものなら、同じモジュール・同じサービスにまとめる。</p>
+      </div>
+    </div>
+    <p>マイクロサービスの議論では「強度を下げる」ばかりが語られがちですが、<strong>サービスを統合して距離を縮める</strong> のも正当な選択です。<a href="../41_アーキテクチャ/13-4_アーキテクチャ量子と論理コンポーネント.html">41章：アーキテクチャ量子と論理コンポーネント</a> でいう「統合要因」がこれにあたります。</p>
+
+    <h3 id="sec-5-3">5.3 レビューでの問い</h3>
+    <ul>
+      <li>この依存は、相手の <strong>公開された契約</strong> に対するものか、<strong>内部の詳細</strong> に対するものか？</li>
+      <li>同じ業務ルールが、<strong>別の場所にも書かれていない</strong> か？</li>
+      <li>この2つが一緒に変わる頻度は？ それに対して、<strong>距離は適切</strong> か？</li>
+      <li>この部分は <strong>コアサブドメイン</strong>（よく変わる）か？</li>
+    </ul>
+
+    <h2 id="sec-6"><span class="num">6.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「結合はゼロにすべき」</summary><div class="body"><p><strong>誤りです。</strong> 結合は部品が協力するために必要です。目標はゼロではなく <strong>バランス</strong> です。</p></div></details>
+    <details open><summary>誤解2：「疎結合にするには、とにかく分ければよい」</summary><div class="body"><p><strong>誤りです。</strong> 強く結びつくものを分けると（距離を遠くすると）、<strong>分散した複雑さ</strong> という最悪の状態になります。分ける前に、強度を下げられるかを考えます。</p></div></details>
+    <details open><summary>誤解3：「インターフェースを挟めば結合は弱くなる」</summary><div class="body"><p><strong>半分だけ正しいです。</strong> インターフェースを挟んでも、そこに <strong>相手のドメインモデルがそのまま現れている</strong> ならモデル結合のままです。また、<strong>同じ業務ルールを両側で知っている</strong> なら機能的結合のままです（<a href="20-4_統合強度.html">統合強度</a>）。</p></div></details>
+
+    <h2 id="sec-7"><span class="num">7.</span>まとめ</h2>
+    <ul>
+      <li>結合は <strong>なくすものではなく、バランスを取るもの</strong></li>
+      <li>3つの次元
+        <ul>
+          <li><strong>統合強度</strong>：共有する知識の量。強い順に <strong>侵入的 → 機能的 → モデル → 契約</strong>
+            <ul>
+              <li>機能結合の度合いは弱い順に <strong>順序 → トランザクション → 対称</strong>。対称結合（同じルールの重複）が最も見えにくく強い</li>
+              <li>契約結合は、ファサード・OHS/PL・ACL・DTO で作る</li>
+            </ul>
+          </li>
+          <li><strong>距離</strong>：一緒に変更するコスト（コードの位置＋組織の距離）</li>
+          <li><strong>変動性</strong>：変更の頻度。コアサブドメインほど高い</li>
+        </ul>
+      </li>
+      <li><strong>強度と距離は逆にする</strong>：強いものは近くに（高凝集）、弱いものは遠くに（疎結合）</li>
+      <li><strong>BALANCE ＝（STRENGTH XOR DISTANCE）OR NOT VOLATILITY</strong></li>
+      <li>「強度高 × 距離遠 × 変動性高」から優先的に直す。直し方は <strong>強度を下げる</strong> か <strong>距離を縮める</strong> か</li>
+      <li>クネビンの視点：複雑さは <strong>部品同士のつながり方（制約）</strong> から生まれる。縛りすぎるともろく、縛りゼロでは成り立たない（<a href="20-6_結合と複雑性.html">結合と複雑性</a>）</li>
+      <li>相互作用の視点：設計のまずい結合は <strong>見えない経路の相互作用</strong> を生む。分割は複雑さを <strong>別の階層に移す</strong> だけのこともある（<a href="20-6_結合と複雑性.html">結合と複雑性</a>）</li>
+      <li><strong>再均衡化</strong>：戦略的な変更は強度・距離・変動性を変える。痛む所で <strong>つまみを1つ回して</strong> 再評価する（<a href="20-7_結合の再均衡化と実践.html">結合の再均衡化と実践</a>）</li>
+      <li><strong>フラクタル</strong>：複雑さは超線形に増え、認知容量は一定。<strong>抽象化の階層を足し、どの階層でも同じルールを当てはめる</strong> ことで成長を続けられる（<a href="20-7_結合の再均衡化と実践.html">結合の再均衡化と実践</a>）</li>
+    </ul>
+    <p>次は、3つの次元の詳細として <a href="20-4_統合強度.html">統合強度</a> と <a href="20-5_距離と変動性.html">距離と変動性</a> に進みます。結合の考え方を使って実際にモジュールを切る手順は <a href="30-1_モジュール分割の基本プロセス.html">モジュール分割の基本プロセス</a>、結合の種類を細かく見るなら <a href="../41_アーキテクチャ/13-3_コナーセンス.html">41章：コナーセンス</a> を参照してください。</p>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：43_モジュール設計/20_凝集と結合/03_バランス結合_強度・距離・変動性</li>
+      <li>Vlad Khononov『Balancing Coupling in Software Design: Universal Design Principles for Architecting Modular Software Systems』（Addison-Wesley, 2024）</li>
+      <li>Vlad Khononov 著、島田浩二 訳『ソフトウェア設計の結合バランス 持続可能な成長を支えるモジュール化の原則』（インプレス, 2025）</li>
+      <li><a href="https://www.informit.com/store/balancing-coupling-in-software-design-universal-design-9780137353484">Balancing Coupling in Software Design 目次（InformIT）</a>（https://www.informit.com/store/balancing-coupling-in-software-design-universal-design-9780137353484）</li>
+      <li><a href="https://coupling.dev/">Balanced Coupling — A Practical Model for Software Coupling（coupling.dev）</a>（https://coupling.dev/）</li>
+      <li><a href="https://coupling.dev/posts/core-concepts/balance/">Balancing Coupling: A Formula for Modular Design（coupling.dev）</a>（https://coupling.dev/posts/core-concepts/balance/）</li>
+      <li><a href="https://kalabro.tech/balancing-coupling-in-software-design-book/">“Balancing Coupling in Software Design” (book review)（kalabro.tech）</a>（https://kalabro.tech/balancing-coupling-in-software-design-book/）</li>
+      <li><a href="https://olano.dev/blog/balancing-coupling/">[tl;dr] Balancing Coupling in Software Design（olano.dev）</a>（https://olano.dev/blog/balancing-coupling/）</li>
+      <li><a href="https://www.infoq.com/podcasts/balancing-coupling-software-design/">Balancing Coupling in Software Design with Vlad Khononov（InfoQ ポッドキャスト）</a>（https://www.infoq.com/podcasts/balancing-coupling-software-design/）</li>
+      <li><a href="https://se-radio.net/2025/04/se-radio-662-vlad-khononov-on-balancing-coupling-in-software-design/">SE Radio 662: Vlad Khononov on Balancing Coupling in Software Design</a>（https://se-radio.net/2025/04/se-radio-662-vlad-khononov-on-balancing-coupling-in-software-design/）</li>
+      <li><a href="https://software-architecture-guild.com/guide/architecture/boundaries/balancing-coupling/">Balancing Coupling（Software Architecture Guild）</a>（https://software-architecture-guild.com/guide/architecture/boundaries/balancing-coupling/）</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="20-2_結合度.html"><span class="lbl">← 前のページ</span>結合度</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="20-4_統合強度.html"><span class="lbl">次のページ →</span>統合強度</a>
+    </nav>
+    <footer class="page-foot">43_モジュール設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アンチパターンの見分け方 — 一見よさそうな悪い解き方｜クラス設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">クラス設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 60 アンチパターンとコードの臭い › アンチパターンの見分け方</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">60 アンチパターンとコードの臭い</span>
+      <h1>アンチパターンの見分け方 — 一見よさそうな悪い解き方</h1>
+      <p class="lead">神クラス・スパゲッティ継承・貧血モデル・魔法の数字など、クラス設計でよく見るアンチパターンを症状・原因・脱出法で整理します。良いパターンとの見分け方、パターンを使うかどうかの判断基準、そして「パターンを使わない勇気」までを解説します。</p>
+      <p class="meta">もとにしたノート：60_アンチパターンとコードの臭い/01_アンチパターンとの見分け、02_アンチパターンとコードの臭い</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>アンチパターン（Anti-Pattern）</strong> は <strong>「一見よさそうだが、実は悪い結果を生む解き方」</strong> です。良いパターンとアンチパターンは見た目がよく似ていることがあるので、<strong>コードの形ではなく、意図と結果</strong> で見分けます。「パターンを使った」こと自体に価値はなく、<strong>問題を解いているかどうか</strong> がすべてです。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>このページでは、クラス設計でよくある <strong>アンチパターン</strong> を見分け、脱出の考え方を学びます。良いパターンとの対比で判断眼を養います。</p>
+    <ul>
+      <li><strong>アンチパターンとは何か</strong>、なぜ学ぶのか</li>
+      <li><strong>クラス設計の典型</strong>：神クラス・スパゲッティ継承・貧血モデル・魔法の数字</li>
+      <li><strong>その他の代表的なアンチパターン</strong>：スパゲッティコード・コピペ・早すぎる最適化・過剰設計・Singleton の誤用・Yo-Yo 問題・デッドコード</li>
+      <li><strong>良いパターンとアンチパターンの見分け方</strong>と判断基準</li>
+      <li><strong>コードの匂い</strong>（アンチパターンの一歩手前のサイン）</li>
+      <li><strong>アンチパターンからの脱出法</strong>と、パターンを使わない勇気</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>アンチパターンとは</h2>
+    <p><strong>デザインパターン</strong> が「繰り返し現れる設計問題の、良い解き方」なのに対し、<strong>アンチパターン（Anti-Pattern）</strong> は <strong>「一見よさそうだが、実は悪い結果を生む解き方」</strong> です。</p>
+    <p>良いパターンもアンチパターンも、<strong>見た目はよく似ていることがあります</strong>。大事なのは、<strong>コードの形ではなく、意図と結果</strong> を見極めることです。</p>
+    <h3 id="sec-2-1">2.1 なぜアンチパターンを学ぶのか</h3>
+    <ol class="steps">
+      <li><strong>やらかしを避けるため</strong></li>
+      <li><strong>「これパターンっぽいな」と思っても、実はアンチパターンだった</strong> ということを防ぐため</li>
+      <li><strong>他人のコードレビューで根拠を持って指摘</strong> できるようになるため</li>
+    </ol>
+
+    <h2 id="sec-3"><span class="num">3.</span>クラス設計の典型的なアンチパターン</h2>
+    <p>クラス設計では、次の <strong>神クラス・スパゲッティ継承・貧血モデル</strong> が三大典型です。これに魔法の数字を加えた4つを、症状・原因・脱出法で見ていきます。一覧は <a href="90-2_チェックリストとアンチパターン.html">チェックリストとアンチパターン</a>（付録E よくあるアンチパターン一覧）を参照してください。</p>
+
+    <h3 id="sec-3-1">3.1 神クラス（God Object）</h3>
+    <p><strong>神クラス</strong>（神オブジェクト）は、システムのあらゆる処理を抱えた巨大クラスです。<strong>1つのクラスが全てを知っている</strong> 状態で、<code>UserManager</code> や <code>AppController</code> のような名前になりがちです。</p>
+    <div class="table-wrap"><table>
+      <tbody>
+        <tr><th>症状</th><td><code>Application</code>, <code>Manager</code>, <code>Util</code> が数千行</td></tr>
+        <tr><th>原因</th><td>SRP（単一責任の原則）無視、とりあえず1か所に書く</td></tr>
+        <tr><th>脱出</th><td>変更理由で Extract Class（クラスの抽出）、<a href="40-1_単一責任の原則.html">単一責任の原則</a></td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ 神オブジェクト</span>
+    <pre><code>class AppController {
+  login() {}
+  logout() {}
+  register() {}
+  sendEmail() {}
+  processPayment() {}
+  generateReport() {}
+  backupDatabase() {}
+  // ...さらに50メソッド
+}</code></pre>
+    <p><strong>SRP 違反</strong> です。責任を分割するのが正解です。変更理由ごとにブロックを見つけ、別のクラスへ抽出します。</p>
+    <figure>
+    <svg viewBox="0 0 720 220" role="img" aria-label="God Object から、認証のブロックを Authenticator へ、注文のブロックを OrderService へ、通知のブロックを Notifier へ、それぞれ抽出する">
+      <defs><marker id="arr-60-1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <rect x="30" y="70" width="190" height="80" rx="8" class="d-box-bad"/>
+      <text x="125" y="105" text-anchor="middle" class="d-text-bold">God Object</text>
+      <text x="125" y="128" text-anchor="middle" class="d-text-sub">何でも知っている</text>
+      <line x1="220" y1="95" x2="470" y2="45" class="d-line-accent" marker-end="url(#arr-60-1a)"/>
+      <line x1="220" y1="110" x2="470" y2="110" class="d-line-accent" marker-end="url(#arr-60-1a)"/>
+      <line x1="220" y1="125" x2="470" y2="175" class="d-line-accent" marker-end="url(#arr-60-1a)"/>
+      <text x="340" y="58" text-anchor="middle" class="d-text-sub">認証ブロックを抽出</text>
+      <text x="340" y="102" text-anchor="middle" class="d-text-sub">注文ブロックを抽出</text>
+      <text x="340" y="168" text-anchor="middle" class="d-text-sub">通知ブロックを抽出</text>
+      <rect x="480" y="22" width="210" height="46" rx="8" class="d-box-good"/>
+      <text x="585" y="50" text-anchor="middle" class="d-text-bold">Authenticator</text>
+      <rect x="480" y="87" width="210" height="46" rx="8" class="d-box-good"/>
+      <text x="585" y="115" text-anchor="middle" class="d-text-bold">OrderService</text>
+      <rect x="480" y="152" width="210" height="46" rx="8" class="d-box-good"/>
+      <text x="585" y="180" text-anchor="middle" class="d-text-bold">Notifier</text>
+    </svg>
+    <figcaption>図：神クラスは、変更理由ごとのブロックを別クラスへ抽出して小さくする</figcaption>
+    </figure>
+
+    <h3 id="sec-3-2">3.2 スパゲッティ継承</h3>
+    <p><strong>深く絡み合った継承階層</strong> で、オーバーライド（親のメソッドの上書き）と <code>super</code>（親のメソッドの呼び出し）が追えなくなる状態です。</p>
+    <div class="table-wrap"><table>
+      <tbody>
+        <tr><th>症状</th><td>5層以上、兄弟クラスで挙動が矛盾</td></tr>
+        <tr><th>脱出</th><td>合成 + インターフェース、階層のフラット化</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ 危険 — 各層で speak() を上書き</span>
+    <pre><code>class A { speak() { return 'A'; } }
+class B extends A { speak() { return super.speak() + 'B'; } }
+// … さらに継続</code></pre>
+    <p><a href="40-3_リスコフの置換原則.html">リスコフの置換原則</a> と <a href="30-2_継承と多態.html">継承と多態</a> を復習しましょう。合成への置き換えは <a href="30-4_継承より合成.html">継承より合成</a> で扱います。</p>
+
+    <h3 id="sec-3-3">3.3 貧血モデル（Anemic Domain Model）</h3>
+    <p><strong>貧血ドメインモデル</strong> は、エンティティ（ドメインオブジェクト）が <strong>単なるデータの入れ物</strong> になっていて、<strong>ロジック（振る舞い）が外のサービスクラスに偏る</strong> 状態です。</p>
+    <span class="code-label bad">✕ ルールが全部サービスにある</span>
+    <pre><code>class Order { get lines() { return this._lines; } }
+class OrderService {
+  confirm(order) { /* ルールは全部ここ */ }
+}</code></pre>
+    <span class="code-label bad">✕ データだけの User</span>
+    <pre><code>class User {
+  constructor(email, password) { this.email = email; this.password = password; }
+}
+
+// 処理は全部ここ
+class UserService {
+  validateEmail(user) { /* ... */ }
+  hashPassword(user) { /* ... */ }
+  canLogin(user) { /* ... */ }
+}</code></pre>
+    <p>データと振る舞いが離れるので、<strong>カプセル化の意義が失われます</strong>。</p>
+    <div class="table-wrap"><table>
+      <tbody>
+        <tr><th>脱出</th><td>ルールを <code>Order.confirm()</code> へ Move Method（メソッドの移動）</td></tr>
+        <tr><th>関連</th><td><a href="20-1_クラス分割の基本プロセス.html">クラス分割の基本プロセス</a>、<a href="20-5_TellDontAskと貧血モデル.html">Tell, Don't Ask と貧血モデル</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-3-4">3.4 魔法の数字・魔法の文字列（Magic Number / Magic String）</h3>
+    <p>意味の分からない数値・文字列が直書きされ、定数がクラス内に散在している状態です。</p>
+    <span class="code-label bad">✕ 3 とは？ 'adm' は typo しやすい</span>
+    <pre><code>if (order.status === 3) { /* 3 とは？ */ }
+if (user.role === 'adm') { /*  typo しやすい */ }
+if (user.role === 3) { /* 3って何？ */ }
+if (status === 'AA23X') { /* 何これ？ */ }</code></pre>
+    <div class="table-wrap"><table>
+      <tbody>
+        <tr><th>脱出</th><td>値オブジェクト・列挙型（enum）・名前付き定数（定数化・enum 化する）</td></tr>
+        <tr><th>例</th><td><code>OrderStatus.CONFIRMED</code>, <code>Role.ADMIN</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>値オブジェクトについては <a href="20-4_値オブジェクトと完全コンストラクタ.html">値オブジェクトと完全コンストラクタ</a>、区分を型で表す方法は <a href="20-7_区分オブジェクトと状態遷移.html">区分オブジェクトと状態遷移</a> を参照してください。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>その他の代表的なアンチパターン</h2>
+    <div class="grid c2">
+      <div class="card">
+        <h4>Spaghetti Code（スパゲッティコード）</h4>
+        <p><strong>制御の流れが入り組んで</strong> 追えないコード。<code>goto</code>・深いネスト・多数のグローバル変数などが原因です。</p>
+      </div>
+      <div class="card">
+        <h4>Copy &amp; Paste Programming</h4>
+        <p>同じようなコードをコピペで増やす。DRY（同じ知識を繰り返さない）違反です。</p>
+      </div>
+      <div class="card">
+        <h4>Premature Optimization（早すぎる最適化）</h4>
+        <p><strong>計測せずに「速そうだから」という理由で難しいコードを書く</strong>。たいていは読みにくくなるだけで、本当のボトルネック（全体を遅くしている箇所）は別の場所にあります。</p>
+        <p class="small muted">「早すぎる最適化は諸悪の根源である」 — ドナルド・クヌース</p>
+      </div>
+      <div class="card">
+        <h4>Over Engineering（過剰設計）</h4>
+        <p><strong>将来のための拡張性</strong> や <strong>万能な抽象化</strong> を求めすぎて、今必要なものまで見えなくなる。YAGNI（今必要ないものは作らない）違反です。</p>
+      </div>
+      <div class="card">
+        <h4>Singleton の誤用</h4>
+        <p><strong>グローバル変数の置き換え</strong> として Singleton を乱用すると、テストが難しくなり、依存関係が見えなくなります。</p>
+      </div>
+      <div class="card">
+        <h4>Yo-Yo Problem</h4>
+        <p>継承階層が深すぎて、<strong>1つのメソッドの挙動を理解するのに何階層も上下に行き来</strong> する必要がある状態です。</p>
+      </div>
+      <div class="card">
+        <h4>Dead Code（デッドコード）</h4>
+        <p>使われていないコード。「念のため残しておく」が溜まると、読むコストばかり増えます。Git に残して削除するのが正解です。</p>
+      </div>
+    </div>
+    <span class="code-label bad">✕ 過剰設計：Hello World にファクトリーと戦略を盛り込む</span>
+    <pre><code>class GreetingStrategyFactory { /* ... */ }
+class JapaneseGreetingStrategy { /* ... */ }
+// 本来は console.log('こんにちは') で済む</code></pre>
+    <p>DRY・KISS・YAGNI の原則は 48_原則 のノート『01_DRY_KISS_YAGNI』で扱っています。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>良いパターンとアンチパターンの見分け方</h2>
+    <p>同じパターンでも、使う理由しだいで良いパターンにもアンチパターンにもなります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>対比</th><th>良い使い方</th><th>アンチパターン</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Singleton</strong> vs グローバル変数置き場</td><td>本当に1つしかあってはいけないもの（ハードウェア制御など）</td><td>単にどこからでもアクセスしたいから使う</td></tr>
+        <tr><td><strong>Strategy</strong> vs 過剰抽象化</td><td>本当にアルゴリズムを差し替える必要がある</td><td>1種類しか実装がないのに抽象化している</td></tr>
+        <tr><td><strong>Factory</strong> vs 新規関数の濫用</td><td>作るクラスを条件で切り替える必要がある</td><td><code>new Foo()</code> で済むものに Factory を噛ませる</td></tr>
+        <tr><td><strong>Observer</strong> vs カプセル化破り</td><td>疎結合に通知する</td><td>大量のリスナーが相互に依存し、結局追跡不能になる</td></tr>
+      </tbody>
+    </table></div>
+    <p>各パターンの本来の使い方は <a href="50-3_生成パターン.html">生成パターン</a>・<a href="50-4_構造パターン.html">構造パターン</a>・<a href="50-5_振る舞いパターン.html">振る舞いパターン</a> を参照してください。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>判断基準</h2>
+    <ol class="steps">
+      <li><strong>今、本当にそれが必要か？</strong>（YAGNI）</li>
+      <li><strong>パターンなしで書いたコードより、読みやすくなっているか？</strong></li>
+      <li><strong>テストしやすくなっているか？</strong></li>
+      <li><strong>将来の仕様変更に対して、変更範囲が狭くなるか？</strong></li>
+    </ol>
+    <div class="callout warn">
+      <p class="callout-title">自信を持って Yes と言えないなら</p>
+      <p>これらに <strong>自信を持って Yes</strong> と言えないなら、パターンを外すほうが良いことが多いです。</p>
+    </div>
+
+    <h2 id="sec-7"><span class="num">7.</span>コードの匂い（Code Smell）</h2>
+    <p>アンチパターンに陥る一歩手前のサインを <strong>コードの匂い（Code Smell）</strong> と呼びます。Martin Fowler『リファクタリング』に多数紹介されています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>匂い</th><th>説明</th></tr></thead>
+      <tbody>
+        <tr><td>Long Method</td><td>関数が長すぎる</td></tr>
+        <tr><td>Large Class</td><td>クラスが大きすぎる</td></tr>
+        <tr><td>Long Parameter List</td><td>引数が多すぎる</td></tr>
+        <tr><td>Duplicate Code</td><td>重複</td></tr>
+        <tr><td>Feature Envy</td><td>他のクラスのデータばかり触る</td></tr>
+        <tr><td>Data Clump</td><td>同じ引数群が何度も登場</td></tr>
+        <tr><td>Shotgun Surgery</td><td>1つの変更が多くの場所に影響</td></tr>
+        <tr><td>Divergent Change</td><td>1つのクラスが複数の理由で変わる</td></tr>
+      </tbody>
+    </table></div>
+    <p>匂いを見つけたら、<strong>リファクタリング</strong>（外から見た振る舞いを変えずに内部の構造を改善すること）<strong>で適切なパターンに置き換える</strong> のが定石です。24 の臭いと対処の一覧は <a href="60-2_コードの臭いとリファクタリング.html">コードの臭いとリファクタリング</a>、リファクタリングの考え方は <a href="../42_ソフトウェア設計/50-2_テストとリファクタリング.html">42章：テストとリファクタリング</a> を参照してください。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>アンチパターンからの脱出法</h2>
+    <ol class="steps">
+      <li><strong>名前で疑う</strong> — <code>Manager</code>, <code>Util</code>, <code>Helper</code> の肥大</li>
+      <li><strong>テストで露呈</strong> — モック地獄、セットアップが長い</li>
+      <li><strong>小さく切る</strong> — Extract Class / Extract Interface</li>
+      <li><strong>振る舞いを移す</strong> — Move Method で Expert（そのデータを持つ情報エキスパート、→ <a href="20-2_GRASP.html">GRASP</a>）に</li>
+      <li><strong>レビューで共有</strong> — <a href="70-5_クラス設計レビュー.html">クラス設計レビュー</a></li>
+    </ol>
+    <p>進め方の流れは次のとおりです。</p>
+    <p><span class="badge accent">気づく</span> → <span class="badge accent">原因を言語化</span> → <span class="badge accent">1つずつリファクタ</span> → <span class="badge accent">テストで守る</span></p>
+
+    <h2 id="sec-9"><span class="num">9.</span>パターンを使わない勇気</h2>
+    <ul>
+      <li><strong>問題がないのに使わない</strong>（YAGNI）</li>
+      <li><strong>1つしか実装がないのに抽象化しない</strong></li>
+      <li><strong>読みにくくなるならパターンを外す</strong></li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">問題を解いているかどうかがすべて</p>
+      <p>「パターンを使った」こと自体は価値ではありません。<strong>問題を解いているかどうか</strong> がすべてです。</p>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「パターンを使ったコードは良い設計だ」</summary><div class="body"><p>パターンを使ったこと自体に価値はありません。1種類しか実装がないのに Strategy を入れる、<code>new Foo()</code> で済むのに Factory を噛ませる、といった使い方はむしろアンチパターンです。<a href="#sec-6">判断基準</a> の4つの問いに自信を持って Yes と言えるかで判断します。</p></div></details>
+    <details open><summary>誤解2：「アンチパターンはコードの形で見分けられる」</summary><div class="body"><p>良いパターンとアンチパターンは見た目がよく似ていることがあります。同じ Singleton でも、ハードウェア制御のように本当に1つしかあってはいけないものなら良い使い方、単にどこからでもアクセスしたいだけならアンチパターンです。<strong>意図と結果</strong> を見ます。</p></div></details>
+    <details open><summary>誤解3：「念のため残しておいたコードは無害」</summary><div class="body"><p>使われていないコードは、読む人にとってのコストです。過去のコードは Git に残っているので、デッドコードは削除して構いません。</p></div></details>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <ul>
+      <li><strong>アンチパターン</strong> ＝ 一見よさそうだが、実は悪い結果を生む解き方。<strong>形ではなく意図と結果</strong> で見分ける</li>
+      <li><strong>神クラス・スパゲッティ継承・貧血モデル</strong> がクラス設計の三大典型</li>
+      <li>魔法の数値は <strong>値オブジェクト・列挙</strong> で置き換え</li>
+      <li><strong>SRP・合成・ドメインへのロジック移動</strong> が脱出の鍵</li>
+      <li>パターンを使うかは「今必要か・読みやすいか・テストしやすいか・変更範囲が狭くなるか」で判断する</li>
+      <li><strong>コードの匂い</strong> はアンチパターンの一歩手前のサイン。リファクタリングで対処する</li>
+      <li><strong>レビューとテストで早期発見</strong>。問題がないなら、パターンを使わない勇気も持つ</li>
+    </ul>
+    <p>次は、24 のコードの臭いとその対処を一覧にした <a href="60-2_コードの臭いとリファクタリング.html">コードの臭いとリファクタリング</a> に進みます。</p>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：44_クラス設計・デザインパターン/60_アンチパターンとコードの臭い/01_アンチパターンとの見分け</li>
+      <li>ノート：44_クラス設計・デザインパターン/60_アンチパターンとコードの臭い/02_アンチパターンとコードの臭い</li>
+      <li>Martin Fowler『リファクタリング』（コードの匂い）</li>
+      <li>関連ページ：<a href="90-2_チェックリストとアンチパターン.html">チェックリストとアンチパターン</a>、<a href="50-2_GoFパターンの概要.html">GoFパターンの概要</a>、<a href="../42_ソフトウェア設計/50-2_テストとリファクタリング.html">42章：テストとリファクタリング</a></li>
+      <li>関連ノート：48_原則/10_汎用原則/01_DRY_KISS_YAGNI</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="50-7_関数型で置き換わるパターン.html"><span class="lbl">← 前のページ</span>関数型で置き換わるパターン</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="60-2_コードの臭いとリファクタリング.html"><span class="lbl">次のページ →</span>コードの臭いとリファクタリング</a>
+    </nav>
+    <footer class="page-foot">44_クラス設計・デザインパターン ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

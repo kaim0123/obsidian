@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API設計の全体像 — 使いやすく・長く使える・安全な窓口｜API設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">API設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › API設計の全体像</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>API設計の全体像 — 使いやすく・長く使える・安全な窓口</h1>
+      <p class="lead">API 設計で押さえる 8 つの基本テーマ（一貫性・REST リソース設計・HTTP メソッド・エラー設計・バージョニング・後方互換性・ページネーション・認証認可）を 1 ページで見渡し、この章のどのページで詳しく学べるかを案内します。章全体の地図として、最初に読んでください。</p>
+      <p class="meta">もとにしたノート：00_全体像/00_API設計の概要、00_はじめに、目次、MOC_API設計体系</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p><strong>API 設計とは、「誰が使っても迷わない窓口」を、長く使える形で決めること</strong> です。良い API は <strong>名前・形式・エラー・権限</strong> が揃っていて、クライアント開発者がドキュメントを読まなくても「だいたい当たりがつく」状態を目指します。8 つのテーマは「使いやすい窓口の形」「長く使える窓口の寿命」「安全な窓口」の 3 つにまとまります。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <ul>
+      <li><strong>API と API 設計とは何か</strong>、この章（教材）の対象・目的・前提</li>
+      <li><strong>設計の階層</strong> の中で API 設計がどこにあるか</li>
+      <li><strong>8 つの基本テーマ</strong> の関係と、それぞれの要点</li>
+      <li><strong>この章の地図</strong>：フォルダごとのページ一覧と、おすすめの読む順</li>
+      <li>ほかの章が本拠地になっているテーマ（認証方式・セッション・脆弱性対策など）へのリンク</li>
+    </ul>
+
+    <h2 id="sec-2"><span class="num">2.</span>API 設計とは</h2>
+    <h3 id="sec-2-1">2.1 API はプログラム同士の「窓口」</h3>
+    <p><strong>API（Application Programming Interface）</strong> は、プログラム同士がデータをやり取りするための「窓口」です。<strong>Web API</strong> では、<strong>クライアント</strong>（ブラウザ・スマホアプリ・他のサーバーなど、サービスを使う側）が <strong>HTTP</strong>（Web の通信の決まりごと）を使ってサーバーにリクエストを送り、<strong>JSON</strong>（データを文字で表す形式）などでレスポンスを受け取ります。API そのものの説明は <a href="10-1_APIとは.html">APIとは</a> で詳しく扱います。</p>
+
+    <h3 id="sec-2-2">2.2 API 設計を一言で</h3>
+    <div class="callout tip">
+      <p class="callout-title">API 設計を一言で</p>
+      <p><strong>「誰が使っても迷わない窓口」を、長く使える形で決めること。</strong></p>
+    </div>
+    <p>この章では、このゴールを「使いやすく・長く使える・安全な Web API」と言いかえ、そこに必要な考え方を順に学びます（ゴールの詳しい説明は <a href="10-2_API設計を学ぶ理由とゴール.html">API設計を学ぶ理由とゴール</a>）。</p>
+
+    <h3 id="sec-2-3">2.3 この章（教材）について</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><strong>対象</strong></td><td>プログラミングの基礎はあるが、API 設計を体系的に学んだことがない人</td></tr>
+        <tr><td><strong>目的</strong></td><td>「使いやすく・長く使える・安全な Web API」を設計できるようになる</td></tr>
+        <tr><td><strong>前提</strong></td><td>Web の基本概念（クライアント・サーバー）と JSON の読み書きができること。設計の階層は <a href="../42_ソフトウェア設計/00-1_ソフトウェア設計の全体像.html">42章：ソフトウェア設計</a> の最初のほうを読んでいると理解が深まります</td></tr>
+        <tr><td><strong>このページと各ページの関係</strong></td><td>このページ（もとは「API設計の概要」ノート）は 8 テーマの <strong>要約ガイド</strong>、各ページは <strong>ゼロから順に学ぶ教科書</strong> です</td></tr>
+      </tbody>
+    </table></div>
+    <p>章の骨格は『Web API: The Good Parts』の流れ（エンドポイント → レスポンス → HTTP を活かす → 変更しやすく → 堅牢に）です。そこに Microsoft / Zalando / Google の API ガイドラインの項目（エラー形式・ページネーション・長時間処理・バージョニング）と、roadmap.sh の「API スタイル」（REST / GraphQL / gRPC / Webhook）を加えています。</p>
+
+    <h3 id="sec-2-4">2.4 設計の階層の中の API 設計</h3>
+    <p>設計にはいくつかの階層があります。API 設計は <strong>「プログラムの外側に向けた契約」</strong> の層で、モジュールの境界やドメインモデル（<a href="../42_ソフトウェア設計/30-1_DDDとは.html">DDDとは</a>）と連動しながら、クライアント開発者の体験を決めます。</p>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="設計の階層。上から順に、アーキテクチャ（建物全体の構造）、ソフトウェア設計（設計思想とパラダイム）、モジュール設計（部屋の役割分担）、API設計（外部との窓口、この章）、クラス設計（家具の配置とつなぎ方）、メソッド設計（家具の細部）と並び、API設計はモジュール設計とクラス設計のあいだにある">
+      <defs>
+        <marker id="arw5001a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="150" y="10" width="220" height="40" rx="8" class="d-box"/>
+      <text x="260" y="35" text-anchor="middle" class="d-text-bold">アーキテクチャ</text>
+      <text x="390" y="35" class="d-text-sub">建物全体の構造（システム・サービス・非機能）</text>
+      <path d="M260,50 L260,62" class="d-line" marker-end="url(#arw5001a)"/>
+      <rect x="150" y="64" width="220" height="40" rx="8" class="d-box"/>
+      <text x="260" y="89" text-anchor="middle" class="d-text-bold">ソフトウェア設計</text>
+      <text x="390" y="89" class="d-text-sub">設計思想とパラダイム</text>
+      <path d="M260,104 L260,116" class="d-line" marker-end="url(#arw5001a)"/>
+      <rect x="150" y="118" width="220" height="40" rx="8" class="d-box"/>
+      <text x="260" y="143" text-anchor="middle" class="d-text-bold">モジュール設計</text>
+      <text x="390" y="143" class="d-text-sub">部屋の役割分担</text>
+      <path d="M260,158 L260,170" class="d-line" marker-end="url(#arw5001a)"/>
+      <rect x="150" y="172" width="220" height="44" rx="8" class="d-box-accent"/>
+      <text x="260" y="199" text-anchor="middle" class="d-text-bold">API設計（この章）</text>
+      <text x="390" y="199" class="d-text-accent">外部との窓口・外側に向けた契約</text>
+      <path d="M260,216 L260,228" class="d-line" marker-end="url(#arw5001a)"/>
+      <rect x="150" y="230" width="220" height="40" rx="8" class="d-box"/>
+      <text x="260" y="255" text-anchor="middle" class="d-text-bold">クラス設計</text>
+      <text x="390" y="255" class="d-text-sub">家具の配置とつなぎ方</text>
+      <path d="M260,270 L260,282" class="d-line" marker-end="url(#arw5001a)"/>
+      <rect x="150" y="284" width="220" height="40" rx="8" class="d-box"/>
+      <text x="260" y="309" text-anchor="middle" class="d-text-bold">メソッド設計</text>
+      <text x="390" y="309" class="d-text-sub">家具の細部</text>
+    </svg>
+    <figcaption>図：API 設計は、モジュール設計で決めた境界のうち外に公開する部分を具体化する層</figcaption>
+    </figure>
+    <p>各層の章：<a href="../41_アーキテクチャ/00-1_アーキテクチャ全体像.html">41章：アーキテクチャ</a>、<a href="../42_ソフトウェア設計/00-1_ソフトウェア設計の全体像.html">42章：ソフトウェア設計</a>、<a href="../43_モジュール設計/00-1_モジュール設計の全体像.html">43章：モジュール設計</a>、<a href="../44_クラス設計・デザインパターン/00-1_クラス設計の全体像.html">44章：クラス設計</a>。この章を終えたら 44章（クラス設計）→ 46章（メソッド設計）へ進むのがおすすめです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>8 つの基本テーマの関係</h2>
+    <p>API を設計するときに押さえる基本テーマは次の 8 つです。バラバラに見えますが、目的ごとに 3 つのグループにまとまります。</p>
+    <figure>
+    <svg viewBox="0 0 720 370" role="img" aria-label="8つのテーマの関係。一貫性、RESTリソース設計、HTTPメソッド、エラー設計、Paginationの5つは「使いやすい窓口」の形を決める。バージョニングと後方互換性の2つは「長く使える窓口」の寿命を決める。認証認可は「安全な窓口」をつくる">
+      <defs>
+        <marker id="arw5001b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="40" y="16" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="37" text-anchor="middle" class="d-text">1. 一貫性</text>
+      <rect x="40" y="56" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="77" text-anchor="middle" class="d-text">2. RESTリソース設計</text>
+      <rect x="40" y="96" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="117" text-anchor="middle" class="d-text">3. HTTPメソッド</text>
+      <rect x="40" y="136" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="157" text-anchor="middle" class="d-text">4. エラー設計</text>
+      <rect x="40" y="176" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="197" text-anchor="middle" class="d-text">7. Pagination</text>
+      <rect x="40" y="236" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="257" text-anchor="middle" class="d-text">5. バージョニング</text>
+      <rect x="40" y="276" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="297" text-anchor="middle" class="d-text">6. 後方互換性</text>
+      <rect x="40" y="326" width="210" height="32" rx="6" class="d-box"/>
+      <text x="145" y="347" text-anchor="middle" class="d-text">8. 認証認可</text>
+
+      <rect x="440" y="82" width="250" height="60" rx="10" class="d-box-accent"/>
+      <text x="565" y="108" text-anchor="middle" class="d-text-bold">使いやすい窓口</text>
+      <text x="565" y="128" text-anchor="middle" class="d-text-sub">窓口の「形」</text>
+      <rect x="440" y="242" width="250" height="60" rx="10" class="d-box-good"/>
+      <text x="565" y="268" text-anchor="middle" class="d-text-bold">長く使える窓口</text>
+      <text x="565" y="288" text-anchor="middle" class="d-text-sub">窓口の「寿命」</text>
+      <rect x="440" y="318" width="250" height="46" rx="10" class="d-box-warn"/>
+      <text x="565" y="347" text-anchor="middle" class="d-text-bold">安全な窓口</text>
+
+      <path d="M250,32 L438,104" class="d-line" marker-end="url(#arw5001b)"/>
+      <path d="M250,72 L438,108" class="d-line" marker-end="url(#arw5001b)"/>
+      <path d="M250,112 L438,112" class="d-line" marker-end="url(#arw5001b)"/>
+      <path d="M250,152 L438,116" class="d-line" marker-end="url(#arw5001b)"/>
+      <path d="M250,192 L438,120" class="d-line" marker-end="url(#arw5001b)"/>
+      <path d="M250,252 L438,268" class="d-line" marker-end="url(#arw5001b)"/>
+      <path d="M250,292 L438,276" class="d-line" marker-end="url(#arw5001b)"/>
+      <path d="M250,342 L438,342" class="d-line" marker-end="url(#arw5001b)"/>
+    </svg>
+    <figcaption>図：5 つのテーマが窓口の形を、2 つが寿命を、1 つが安全を決める</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>テーマ</th><th>初心者が最初に決めること</th><th>詳しいページ</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>一貫性</strong></td><td>命名・日時・レスポンス形式のルールを 1 枚に</td><td><a href="10-3_一貫性.html">一貫性</a></td></tr>
+        <tr><td>2</td><td><strong>RESTリソース</strong></td><td>URL は名詞、複数形、浅い階層</td><td><a href="30-1_RESTの考え方.html">RESTの考え方</a>、<a href="30-2_URLとリソースの設計.html">URLとリソースの設計</a></td></tr>
+        <tr><td>3</td><td><strong>HTTPメソッド</strong></td><td>GET=取得、POST=作成、PATCH=更新、DELETE=削除</td><td><a href="30-3_HTTPメソッドと操作の表現.html">HTTPメソッドと操作</a></td></tr>
+        <tr><td>4</td><td><strong>エラー設計</strong></td><td>ステータス + 固定 <code>code</code> + <code>request_id</code></td><td><a href="40-1_エラー設計.html">エラー設計</a></td></tr>
+        <tr><td>5</td><td><strong>バージョニング</strong></td><td><code>/v1/</code> から始める</td><td><a href="50-1_バージョニング.html">バージョニング</a></td></tr>
+        <tr><td>6</td><td><strong>後方互換性</strong></td><td>追加 OK、削除・改名は v2</td><td><a href="50-2_後方互換性.html">後方互換性</a></td></tr>
+        <tr><td>7</td><td><strong>Pagination</strong></td><td>一覧は必ず分割、<code>limit</code> 上限</td><td><a href="40-2_ページネーション・フィルタ・ソート.html">ページネーション</a></td></tr>
+        <tr><td>8</td><td><strong>認証認可</strong></td><td>401 と 403 を分ける、HTTPS</td><td><a href="60-1_認証.html">認証</a>、<a href="60-2_認可.html">認可</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-4"><span class="num">4.</span>8 つのテーマの要点</h2>
+    <p>ここでは各テーマの「何か・なぜ大事か・最初に押さえる形」を要約します。詳しい説明と考え方は、各節の最後にあるページで学びます。</p>
+
+    <h3 id="sec-4-1">4.1 一貫性 — 同じ種類の操作は同じルールで</h3>
+    <p><strong>一貫性</strong> とは、同じ種類の操作を同じルールで表現することです。一貫性がない API は、エンドポイント（API の呼び出し先 URL）ごとに「命名が違う」「日付の形式が違う」「成功時の形が違う」などの混乱を生みます。</p>
+    <p><strong>なぜ重要か</strong></p>
+    <ul>
+      <li>クライアント側の共通処理（エラーハンドリング、ログ、<strong>SDK</strong>＝API を呼ぶための部品集）が書きやすい</li>
+      <li>新しいエンドポイントを追加するときの判断基準になる</li>
+      <li>チーム開発で「各自バラバラに作る」を防げる</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>項目</th><th>良い例（統一）</th><th>悪い例（バラバラ）</th></tr></thead>
+      <tbody>
+        <tr><td>命名</td><td><code>snake_case</code> または <code>camelCase</code> を全体で固定</td><td><code>/getUser</code> と <code>/orders/list</code> が混在</td></tr>
+        <tr><td>日時</td><td>常に ISO 8601（<code>2026-06-19T10:00:00Z</code>）</td><td><code>2026/06/19</code> と Unix 秒が混在</td></tr>
+        <tr><td>ID</td><td>常に文字列 UUID</td><td>数値 ID と UUID が混在</td></tr>
+        <tr><td>レスポンス</td><td>常に <code>{ "data": ... }</code> でラップ</td><td>配列を直返しする API とオブジェクト返しが混在</td></tr>
+        <tr><td>真偽値</td><td><code>true</code> / <code>false</code></td><td><code>1</code> / <code>0</code> や <code>"yes"</code> / <code>"no"</code></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>実践のコツ</strong></p>
+    <ol class="steps">
+      <li><strong>API 設計ガイドラインを 1 枚にまとめる</strong>（命名、日時、エラー形式など）</li>
+      <li><strong>OpenAPI（Swagger）</strong>（API の仕様を機械が読める形で書く標準形式）などでスキーマを定義し、レビュー時の基準にする</li>
+      <li>既存 API があるなら、<strong>新規だけ直すのではなく</strong>、段階的に揃える計画を立てる</li>
+    </ol>
+    <span class="code-label good">◯ 一貫した成功レスポンスの例</span>
+<pre><code>{
+  "data": {
+    "id": "usr_01HXYZ",
+    "name": "田中太郎",
+    "created_at": "2026-06-19T10:00:00Z"
+  }
+}</code></pre>
+    <p>→ 詳しくは <a href="10-3_一貫性.html">一貫性</a>、<a href="10-4_API設計の原則.html">API設計の原則</a>。</p>
+
+    <h3 id="sec-4-2">4.2 RESTリソース設計 — URL は名詞、操作は HTTP メソッド</h3>
+    <p><strong>REST（Representational State Transfer）</strong> は Web API でよく使われる設計スタイルです。中心となる考え方は <strong>「URL は名詞（リソース）、操作は HTTP メソッドで表現する」</strong> ことです。<strong>リソース</strong> とは操作の対象のことで、「ユーザー」「注文」「商品」など、ビジネス上の「もの」を URL で表します。</p>
+<pre><code>/users              … ユーザー一覧（コレクション）
+/users/{id}         … 特定のユーザー（単一リソース）
+/orders/{id}/items  … 注文に紐づく明細（ネストしたリソース）</code></pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原則</th><th>良い例</th><th>悪い例</th></tr></thead>
+      <tbody>
+        <tr><td>名詞を使う</td><td><code>GET /users</code></td><td><code>GET /getUsers</code></td></tr>
+        <tr><td>複数形でコレクション</td><td><code>/orders</code></td><td><code>/order</code></td></tr>
+        <tr><td>階層は浅く</td><td><code>/users/{id}/orders</code></td><td><code>/api/v1/company/department/team/user/order</code></td></tr>
+        <tr><td>動詞は URL に入れない</td><td><code>DELETE /users/{id}</code></td><td><code>POST /deleteUser</code></td></tr>
+        <tr><td>小文字・ハイフン</td><td><code>/order-items</code></td><td><code>/OrderItems</code></td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>リソース設計の手順（初心者向け）</strong></p>
+    <ol class="steps">
+      <li><strong>ドメインの名詞を洗い出す</strong>（ユーザー、商品、カート、注文…）</li>
+      <li><strong>URL パスに落とす</strong>（<code>/products</code>, <code>/carts</code>, <code>/orders</code>）</li>
+      <li><strong>関連はネストで表現</strong>（<code>/orders/{order_id}/items</code>）</li>
+      <li><strong>検索・フィルタはクエリパラメータ</strong>（<code>GET /products?category=book&amp;sort=price</code>）</li>
+    </ol>
+    <p><strong>REST 以外も知っておく</strong></p>
+    <ul>
+      <li><strong>RPC 風</strong>（<code>/users/search</code> のように操作名を URL にする形）は便利な場面もありますが、乱用すると一貫性が崩れやすい</li>
+      <li><strong>GraphQL</strong> は「1 つのエンドポイントで必要なデータだけ取得」向き</li>
+      <li>小規模プロジェクトでも <strong>REST の基本（名詞 + HTTP メソッド）</strong> は最初の土台として有効</li>
+    </ul>
+    <p>→ 詳しくは <a href="30-1_RESTの考え方.html">RESTの考え方</a>、<a href="30-2_URLとリソースの設計.html">URLとリソースの設計</a>、<a href="80-1_REST以外のAPIスタイル.html">REST以外のスタイル</a>。</p>
+
+    <h3 id="sec-4-3">4.3 HTTPメソッド — 「何をしたいか」を表す動詞</h3>
+    <p>HTTP メソッドは <strong>「リソースに対して何をしたいか」</strong> を表す動詞です。REST では、URL（名詞）とメソッド（動詞）の組み合わせで操作を表現します。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>メソッド</th><th>意味</th><th>典型用途</th><th>冪等性</th><th>安全</th></tr></thead>
+      <tbody>
+        <tr><td><strong>GET</strong></td><td>取得</td><td>一覧・詳細の参照</td><td>○</td><td>○</td></tr>
+        <tr><td><strong>POST</strong></td><td>作成</td><td>新規リソース作成、非冪等な処理</td><td>×</td><td>×</td></tr>
+        <tr><td><strong>PUT</strong></td><td>置換</td><td>リソース全体の更新（存在しなければ作成も可）</td><td>○</td><td>×</td></tr>
+        <tr><td><strong>PATCH</strong></td><td>部分更新</td><td>一部フィールドだけ変更</td><td>△</td><td>×</td></tr>
+        <tr><td><strong>DELETE</strong></td><td>削除</td><td>リソース削除</td><td>○</td><td>×</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>冪等性</strong>（べきとうせい）：同じリクエストを何度送っても結果が同じになること（POST は通常 ×）</li>
+      <li><strong>安全</strong>：サーバー側の状態を変えないこと（GET は ○）</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>操作</th><th>成功時</th><th>失敗例</th></tr></thead>
+      <tbody>
+        <tr><td>GET 一覧</td><td><code>200 OK</code></td><td><code>404</code>（存在しないコレクション）</td></tr>
+        <tr><td>GET 詳細</td><td><code>200 OK</code></td><td><code>404 Not Found</code></td></tr>
+        <tr><td>POST 作成</td><td><code>201 Created</code> + <code>Location</code> ヘッダ</td><td><code>400 Bad Request</code>, <code>409 Conflict</code></td></tr>
+        <tr><td>PUT / PATCH 更新</td><td><code>200 OK</code> または <code>204 No Content</code></td><td><code>404</code>, <code>409</code></td></tr>
+        <tr><td>DELETE 削除</td><td><code>204 No Content</code></td><td><code>404</code></td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label bad">✕ よくある間違い</span>
+<pre><code>GET /users/123/delete     … 削除を GET で行う（副作用あり・危険）
+POST /users/123/update    … 更新を POST + 動詞 URL で行う</code></pre>
+    <span class="code-label good">◯ メソッドで意図を表現する</span>
+<pre><code>DELETE /users/123         … 削除
+PATCH /users/123          … 部分更新</code></pre>
+    <p><strong>GET は副作用を持たせない</strong> のが鉄則です。キャッシュや <strong>prefetch</strong>（ブラウザが先回りしてリンク先を読み込むこと）で意図せず実行されるためです。削除・更新・作成は必ず POST / PUT / PATCH / DELETE を使います。</p>
+    <p>→ 詳しくは <a href="30-3_HTTPメソッドと操作の表現.html">HTTPメソッドと操作</a>、<a href="20-3_ステータスコード.html">ステータスコード</a>。</p>
+
+    <h3 id="sec-4-4">4.4 エラー設計 — 失敗も予測可能な形で返す</h3>
+    <p>API は <strong>成功だけでなく失敗も、予測可能な形で返す</strong> 必要があります。クライアントはエラー内容を見て、再試行・ユーザーへの表示・ログ送信を判断します。</p>
+    <ol class="steps">
+      <li><strong>HTTP ステータスコード</strong> で大分類（4xx = クライアントの問題、5xx = サーバーの問題）</li>
+      <li><strong>レスポンスボディ</strong> で詳細（機械可読なコード + 人間向けメッセージ）</li>
+      <li><strong>一貫した JSON 形式</strong> で返す</li>
+    </ol>
+    <div class="table-wrap"><table>
+      <thead><tr><th>コード</th><th>意味</th><th>使う場面</th></tr></thead>
+      <tbody>
+        <tr><td>400</td><td>Bad Request</td><td>バリデーションエラー、形式不正</td></tr>
+        <tr><td>401</td><td>Unauthorized</td><td>認証されていない（ログインが必要）</td></tr>
+        <tr><td>403</td><td>Forbidden</td><td>認証済みだが権限がない</td></tr>
+        <tr><td>404</td><td>Not Found</td><td>リソースが存在しない</td></tr>
+        <tr><td>409</td><td>Conflict</td><td>重複、楽観ロック競合</td></tr>
+        <tr><td>422</td><td>Unprocessable Entity</td><td>形式は正しいが業務ルール違反</td></tr>
+        <tr><td>429</td><td>Too Many Requests</td><td>レート制限超過</td></tr>
+        <tr><td>500</td><td>Internal Server Error</td><td>サーバー内部エラー</td></tr>
+        <tr><td>503</td><td>Service Unavailable</td><td>メンテナンス、過負荷</td></tr>
+      </tbody>
+    </table></div>
+    <span class="code-label good">◯ エラーレスポンスの例</span>
+<pre><code>{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "入力内容に誤りがあります",
+    "details": [
+      {
+        "field": "email",
+        "code": "INVALID_FORMAT",
+        "message": "メールアドレスの形式が正しくありません"
+      }
+    ],
+    "request_id": "req_abc123"
+  }
+}</code></pre>
+    <ul>
+      <li><strong><code>code</code> は固定文字列</strong>（<code>VALIDATION_ERROR</code> など）。クライアントが分岐しやすい</li>
+      <li><strong><code>message</code> は人間向け</strong>。多言語化するなら <code>message_key</code> + クライアント側翻訳も可</li>
+      <li><strong><code>request_id</code></strong> を付けると、サポート・ログ調査が楽になる</li>
+      <li><strong>5xx の詳細（スタックトレース）は本番レスポンスに含めない</strong></li>
+      <li>バリデーションエラーは <strong>フィールド単位</strong> で返すとフォーム UI と相性が良い</li>
+    </ul>
+    <p>→ 詳しくは <a href="40-1_エラー設計.html">エラー設計</a>、<a href="90-3_ステータスコード早見表とOpenAPI記述例.html">ステータスコード早見表</a>。</p>
+
+    <h3 id="sec-4-5">4.5 バージョニング — 古いクライアントを動かし続ける</h3>
+    <p>API は公開すると <strong>クライアントが依存し始める</strong> ため、<strong>破壊的変更</strong>（既存のクライアントが動かなくなる変更）をいきなり入れられません。<strong>バージョニング</strong> は、古いクライアントを動かし続けながら新しい仕様を提供する仕組みです。</p>
+    <p><strong>なぜ必要か</strong></p>
+    <ul>
+      <li>モバイルアプリはユーザーが古いバージョンを長期間使う</li>
+      <li>外部連携先はすぐに改修できない</li>
+      <li>「フィールド名を変えただけ」がクライアント側の大量修正につながる</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>例</th><th>メリット</th><th>デメリット</th></tr></thead>
+      <tbody>
+        <tr><td>URL パス</td><td><code>/v1/users</code>, <code>/v2/users</code></td><td>分かりやすい、キャッシュしやすい</td><td>URL が長くなる</td></tr>
+        <tr><td>ヘッダ</td><td><code>Accept: application/vnd.myapi.v2+json</code></td><td>URL を汚さない</td><td>初心者にはやや難</td></tr>
+        <tr><td>クエリ</td><td><code>/users?version=2</code></td><td>実装が簡単</td><td>あまり推奨されない</td></tr>
+      </tbody>
+    </table></div>
+    <p>初心者・チーム開発では <strong>URL パス方式（<code>/v1/</code>）が最も理解しやすい</strong> ことが多いです。</p>
+<pre><code>https://api.example.com/v1/users
+https://api.example.com/v2/users</code></pre>
+    <ul>
+      <li><strong>v1 をいつまで維持するか</strong>（非推奨 → 廃止日）をドキュメントで明示する</li>
+      <li>変更は <strong>CHANGELOG</strong>（変更履歴）に記録する</li>
+      <li>内部 API（自社フロント専用）なら、バージョンなし + 同時デプロイも選択肢</li>
+    </ul>
+    <p>→ 詳しくは <a href="50-1_バージョニング.html">バージョニング</a>。</p>
+
+    <h3 id="sec-4-6">4.6 後方互換性 — 変更後も既存のクライアントが壊れない</h3>
+    <p><strong>後方互換性</strong> とは、既存のクライアントが、変更後も壊れずに動き続けることです。バージョニングとセットで考えるのが基本です。</p>
+    <div class="grid c2">
+      <div class="card good">
+        <h4>安全な変更（後方互換を保てる）</h4>
+        <ul>
+          <li><strong>新フィールドの追加</strong>：レスポンスに <code>nickname</code> を追加（クライアントは無視できる）</li>
+          <li><strong>新エンドポイント追加</strong>：<code>GET /users/{id}/preferences</code> を新設</li>
+          <li><strong>オプショナルなクエリ追加</strong>：<code>?include=orders</code> を追加</li>
+          <li><strong>新しいエラーコード追加</strong>：既存コードはそのまま</li>
+        </ul>
+      </div>
+      <div class="card bad">
+        <h4>破壊的変更（後方互換が崩れる）</h4>
+        <ul>
+          <li><strong>フィールド削除・リネーム</strong>：<code>user_name</code> → <code>name</code></li>
+          <li><strong>型の変更</strong>：<code>price: "1000"</code> → <code>price: 1000</code></li>
+          <li><strong>必須化</strong>：任意だった <code>email</code> を必須に</li>
+          <li><strong>ステータスコード変更</strong>：404 → 403</li>
+          <li><strong>URL 変更</strong>：<code>/users</code> → <code>/members</code></li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>破壊的変更は新バージョン（v2）で行い、v1 は一定期間維持</strong> するのが定石です。</p>
+<pre><code>小さな追加     → 同じ v1 で OK
+形を変える変更 → v2 を切る + v1 に非推奨マーク</code></pre>
+    <p>レスポンスに <strong><code>deprecated</code> フィールド</strong> や <strong><code>Sunset</code> HTTP ヘッダ</strong> で「いつ消えるか」を伝えると、クライアント側の移行がスムーズです。</p>
+    <p>→ 詳しくは <a href="50-2_後方互換性.html">後方互換性</a>、<a href="50-3_APIの進化と運用.html">APIの進化と運用</a>。</p>
+
+    <h3 id="sec-4-7">4.7 Pagination — 一覧は分割して返す</h3>
+    <p>一覧 API（<code>GET /users</code>, <code>GET /orders</code> など）は、データが増えると <strong>一度に全部返すと遅く・重く</strong> なります。<strong>Pagination（ページネーション）</strong> は、結果を <strong>分割して返す</strong> 仕組みです。レスポンスサイズと DB 負荷を抑え、モバイル回線でも扱いやすくし、タイムアウトを防ぎます。</p>
+    <div class="grid c2">
+      <div class="card">
+        <h4>オフセット方式（page / limit）</h4>
+<pre><code>GET /users?page=2&amp;limit=20</code></pre>
+        <ul>
+          <li>リクエスト：<code>page</code>（何ページ目）, <code>limit</code>（1 ページ件数）</li>
+          <li>レスポンス例：<code>{ "data": [...], "meta": { "page": 2, "limit": 20, "total": 150 } }</code></li>
+          <li>メリット：実装・理解が簡単、「N ページ目へジャンプ」しやすい</li>
+          <li>デメリット：データ追加・削除で <strong>重複や取りこぼし</strong> が起きやすい</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>カーソル方式（cursor）</h4>
+<pre><code>GET /users?limit=20&amp;cursor=eyJpZCI6MTIzfQ</code></pre>
+        <ul>
+          <li>リクエスト：<code>limit</code>, <code>cursor</code>（前回レスポンスの続き位置）</li>
+          <li>レスポンス例：<code>{ "data": [...], "meta": { "next_cursor": "...", "has_more": true } }</code></li>
+          <li>メリット：リアルタイム更新に強い、大量データ向き</li>
+          <li>デメリット：任意ページへのジャンプが難しい</li>
+        </ul>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用途</th><th>おすすめ</th></tr></thead>
+      <tbody>
+        <tr><td>管理画面の表、件数が少〜中</td><td>オフセット</td></tr>
+        <tr><td>SNS タイムライン、ログ、無限スクロール</td><td>カーソル</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong><code>limit</code> に上限</strong> を設ける（例：最大 100）</li>
+      <li><strong><code>total</code>（総件数）</strong> は DB コストが高い場合、省略または概算を検討</li>
+      <li>ソート順を固定する（例：<code>created_at desc, id desc</code>）</li>
+      <li>レスポンスに <strong><code>has_more</code> や <code>next_cursor</code></strong> を含め、クライアントの実装を単純にする</li>
+    </ul>
+    <p>→ 詳しくは <a href="40-2_ページネーション・フィルタ・ソート.html">ページネーション・フィルタ・ソート</a>。</p>
+
+    <h3 id="sec-4-8">4.8 認証認可 — 「誰か」と「何ができるか」</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th><th>例</th></tr></thead>
+      <tbody>
+        <tr><td><strong>認証（Authentication）</strong></td><td>「あなたは誰か」を確認</td><td>ログイン、API キー、JWT</td></tr>
+        <tr><td><strong>認可（Authorization）</strong></td><td>「何ができるか」を確認</td><td>管理者のみ削除可、自分の注文のみ閲覧可</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>認証 → 認可</strong> の順で確認します。ログインしていない（401）と、ログイン済みだが権限不足（403）を混同しないことが大切です。用語の違いは <a href="../73_認証認可/10-1_認証と認可の違い.html">73章：認証と認可の違い</a> で詳しく扱っています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>方式</th><th>概要</th><th>向いている場面</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API Key</strong></td><td>固定文字列をヘッダに付与</td><td>サーバー間連携、シンプルな内部 API</td></tr>
+        <tr><td><strong>Bearer Token（JWT 等）</strong></td><td><code>Authorization: Bearer &lt;token&gt;</code></td><td>モバイル・SPA、ステートレス</td></tr>
+        <tr><td><strong>OAuth 2.0 / OpenID Connect</strong></td><td>第三者 IdP（ログインを担当する外部サービス）経由の委任</td><td>Google ログイン、SaaS 連携</td></tr>
+        <tr><td><strong>Session Cookie</strong></td><td>サーバー側セッション + Cookie</td><td>伝統的な Web アプリ</td></tr>
+      </tbody>
+    </table></div>
+<pre><code>GET /v1/users/me HTTP/1.1
+Host: api.example.com
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...</code></pre>
+    <p><strong>認可の設計</strong></p>
+    <ol class="steps">
+      <li><strong>リソース所有者チェック</strong> — <code>GET /orders/{id}</code> で、注文の <code>user_id</code> が本人か</li>
+      <li><strong>ロールベース（RBAC）</strong> — <code>admin</code>, <code>editor</code>, <code>viewer</code> など役割で権限を決める</li>
+      <li><strong>スコープ</strong> — OAuth の <code>read:orders</code>, <code>write:products</code> など、許可する操作の範囲</li>
+    </ol>
+<pre><code>認証 OK + 注文の所有者 → 200
+認証 OK + 他人の注文   → 403 Forbidden
+認証 NG                → 401 Unauthorized</code></pre>
+    <p><strong>セキュリティの基本</strong></p>
+    <ul>
+      <li><strong>HTTPS 必須</strong>（平文 HTTP でトークンを送らない）</li>
+      <li>トークン・API キーを <strong>URL クエリに載せない</strong>（ログに残りやすい）</li>
+      <li><strong>レート制限</strong>（429）で <strong>brute force</strong>（総当たり攻撃）を抑える</li>
+      <li>本番と開発で <strong>キーを分ける</strong></li>
+      <li><strong>最小権限の原則</strong> — 必要なスコープだけ付与</li>
+    </ul>
+    <p>→ 詳しくは <a href="60-1_認証.html">認証</a>、<a href="60-2_認可.html">認可</a>、<a href="60-3_レート制限と冪等性.html">レート制限と冪等性</a>。方式そのものは <a href="../73_認証認可/30-1_OAuth2.0の仕組み.html">73章：OAuth2.0の仕組み</a>、<a href="../74_セッション管理/30-2_JWTの構造と検証.html">74章：JWTの構造と検証</a>、<a href="../73_認証認可/40-2_RBAC・ABAC・ACLの使い分け.html">73章：RBAC・ABAC・ACLの使い分け</a> を見てください。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>この章の地図</h2>
+    <h3 id="sec-5-1">5.1 学習のすすめ方</h3>
+    <ol class="steps">
+      <li>まず <strong>「API とは何か」</strong> と <strong>HTTP の基本</strong> で通信の仕組みを掴む</li>
+      <li>次に <strong>一貫性・REST・HTTP メソッド</strong> で「使いやすい窓口」の形を決める</li>
+      <li><strong>エラー・ページネーション・バージョニング・認証</strong> で実務に耐える設計を身につけ、<strong>ケーススタディ</strong> で手を動かして統合する</li>
+    </ol>
+    <p>初心者がつまずきやすい <strong>HTTP の基本・一貫性・REST リソース・401/403 の区別・後方互換性</strong> を前半に置き、抽象論だけで終わらないよう <strong>ケーススタディ</strong> で締めくくる構成です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>段階</th><th>目的</th><th>フォルダ</th></tr></thead>
+      <tbody>
+        <tr><td>はじめに・通信の土台</td><td>「なぜ」「HTTP とは何か」を理解する</td><td>10・20</td></tr>
+        <tr><td>設計の土台・リソース設計</td><td>一貫性と REST による「窓口の形」を決める</td><td>10・30</td></tr>
+        <tr><td>実践的な設計・寿命と互換性</td><td>エラー・一覧・寿命など実務で必須の設計</td><td>40・50</td></tr>
+        <tr><td>セキュリティと信頼性</td><td>安全で信頼できる API</td><td>60</td></tr>
+        <tr><td>ドキュメント・スタイル・チーム運用</td><td>ドキュメント・テスト・スタイルの発展、チーム・長期運用の視点</td><td>70・80</td></tr>
+        <tr><td>総合演習</td><td>手を動かして統合する</td><td>85</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="sec-5-2">5.2 フォルダごとのページ一覧</h3>
+    <p>フォルダは <strong>テーマ別</strong> に並んでいて、番号順に読めば上の学習順になります。全ページの一覧は <a href="00-0_目次.html">目次</a> にもあります。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>役割</th><th>ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>00 全体像</strong></td><td>章の入口・8 テーマの要約</td><td><a href="00-0_目次.html">目次</a>、このページ</td></tr>
+        <tr><td><strong>10 APIの基礎</strong></td><td>API とは / 学ぶ理由とゴール / 一貫性 / 設計原則</td><td><a href="10-1_APIとは.html">APIとは</a>、<a href="10-2_API設計を学ぶ理由とゴール.html">学ぶ理由とゴール</a>、<a href="10-3_一貫性.html">一貫性</a>、<a href="10-4_API設計の原則.html">API設計の原則</a></td></tr>
+        <tr><td><strong>20 HTTPの土台</strong></td><td>HTTP / リクエストとレスポンス / ステータスコード / JSON</td><td><a href="20-1_HTTPの基本.html">HTTPの基本</a>、<a href="20-2_リクエストとレスポンス.html">リクエストとレスポンス</a>、<a href="20-3_ステータスコード.html">ステータスコード</a>、<a href="20-4_JSONとデータ形式.html">JSONとデータ形式</a></td></tr>
+        <tr><td><strong>30 リソース設計</strong></td><td>REST の考え方 / URL / HTTP メソッド / ボディ / ドメインとの対応</td><td><a href="30-1_RESTの考え方.html">RESTの考え方</a>、<a href="30-2_URLとリソースの設計.html">URLとリソースの設計</a>、<a href="30-3_HTTPメソッドと操作の表現.html">HTTPメソッドと操作</a>、<a href="30-4_ボディの設計.html">ボディの設計</a>、<a href="30-5_APIとドメイン設計.html">APIとドメイン設計</a></td></tr>
+        <tr><td><strong>40 実践的な設計</strong></td><td>エラー設計 / ページネーション・フィルタ・ソート / 検索と複合操作</td><td><a href="40-1_エラー設計.html">エラー設計</a>、<a href="40-2_ページネーション・フィルタ・ソート.html">ページネーション</a>、<a href="40-3_検索と複合操作.html">検索と複合操作</a></td></tr>
+        <tr><td><strong>50 互換性と進化</strong></td><td>バージョニング / 後方互換性 / 進化と運用 / 発展性</td><td><a href="50-1_バージョニング.html">バージョニング</a>、<a href="50-2_後方互換性.html">後方互換性</a>、<a href="50-3_APIの進化と運用.html">進化と運用</a>、<a href="50-4_発展性のあるAPI開発.html">発展性のあるAPI開発</a></td></tr>
+        <tr><td><strong>60 セキュリティと信頼性</strong></td><td>認証 / 認可 / レート制限と冪等性 / セキュリティ全体像</td><td><a href="60-1_認証.html">認証</a>、<a href="60-2_認可.html">認可</a>、<a href="60-3_レート制限と冪等性.html">レート制限と冪等性</a>、<a href="60-4_APIセキュリティの全体像.html">APIセキュリティ</a></td></tr>
+        <tr><td><strong>70 ドキュメントとテスト</strong></td><td>OpenAPI / テスト / チームで守る / 設計レビュー</td><td><a href="70-1_OpenAPIとドキュメント.html">OpenAPIとドキュメント</a>、<a href="70-2_APIのテスト.html">APIのテスト</a>、<a href="70-3_チームでAPI設計を守る.html">チームで守る</a>、<a href="70-4_API設計レビューの実践.html">設計レビュー</a></td></tr>
+        <tr><td><strong>80 APIスタイル</strong></td><td>スタイルの比較 / GraphQL</td><td><a href="80-1_REST以外のAPIスタイル.html">REST以外のスタイル</a>、<a href="80-2_GraphQLの基本.html">GraphQLの基本</a>、<a href="80-3_RESTとGraphQLの違い.html">RESTとGraphQL</a>、<a href="80-4_GraphQLをはじめよう.html">GraphQLをはじめよう</a></td></tr>
+        <tr><td><strong>85 ケーススタディ</strong></td><td>TODO API / EC 注文 API / Google Calendar API</td><td><a href="85-1_TODO_APIのケーススタディ.html">TODO API</a>、<a href="85-2_EC注文APIのケーススタディ.html">EC注文API</a>、<a href="85-3_GoogleCalendarAPIの仕様とリソース.html">Calendar API 仕様</a>、<a href="85-4_GoogleCalendarAPIを実装する.html">Calendar API 実装</a></td></tr>
+        <tr><td><strong>90 付録</strong></td><td>用語集・チェックリスト・早見表・アンチパターン・OpenAPI 記述例・図解・推奨図書</td><td><a href="90-1_用語集と推奨図書.html">用語集と推奨図書</a>、<a href="90-2_チェックリストとアンチパターン.html">チェックリスト</a>、<a href="90-3_ステータスコード早見表とOpenAPI記述例.html">早見表と記述例</a>、<a href="90-4_参考図解.html">参考図解</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>まだ作っていないテーマ：RFC 9457 Problem Details（エラー形式の標準）、部分更新（PATCH・フィールドマスク）、長時間処理（202 Accepted・非同期ジョブ）と一括操作、非推奨化と廃止（Deprecation / Sunset ヘッダ）、デザインファースト（OpenAPI から書く）と API リンター（Spectral 等）、gRPC、Webhook・WebSocket・SSE。</p>
+
+    <h3 id="sec-5-3">5.3 ほかの章が本拠地のテーマ</h3>
+    <p>この章では「API としてどう設計するか」だけを書き、次のテーマは本拠地の章へリンクします。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地</th></tr></thead>
+      <tbody>
+        <tr><td>認証方式（OAuth 2.0・OIDC・SAML・パスキー）・権限モデル</td><td><a href="../73_認証認可/00-1_認証認可の全体像.html">73章：認証認可</a></td></tr>
+        <tr><td>Cookie・セッション・トークンの仕組み</td><td><a href="../74_セッション管理/00-1_セッション管理の全体像.html">74章：セッション管理</a></td></tr>
+        <tr><td>CORS・XSS・CSRF などの脆弱性対策</td><td><a href="../72_Web脆弱性対策/00-1_Web脆弱性の全体像.html">72章：Web脆弱性対策</a></td></tr>
+        <tr><td>ドメインモデル・境界づけられたコンテキスト</td><td><a href="../42_ソフトウェア設計/30-3_境界づけられたコンテキスト.html">42章：境界づけられたコンテキスト</a></td></tr>
+        <tr><td>マイクロサービス間通信・イベント駆動</td><td><a href="../41_アーキテクチャ/40-3_同期API・メッセージ・イベント駆動.html">41章：同期API・メッセージ・イベント駆動</a></td></tr>
+        <tr><td>API を呼ぶ側（fetch・Axios・リトライ）</td><td>37章：HTTPクライアント・ユーティリティ（解説ページは未作成）</td></tr>
+        <tr><td>サーバー側での実装（ルーティング・DB 連携）</td><td>34章：Backend（解説ページは未作成）</td></tr>
+        <tr><td>API テストの技法全般</td><td>81章：テスト戦略（解説ページは未作成）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-6"><span class="num">6.</span>次に学ぶとよいこと</h2>
+    <p>8 テーマの次に押さえたい発展的な話題です。どれもこの章の後半で扱います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>話題</th><th>内容</th><th>ページ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>OpenAPI（Swagger）</strong></td><td>スキーマ定義とドキュメント自動生成</td><td><a href="70-1_OpenAPIとドキュメント.html">OpenAPIとドキュメント</a></td></tr>
+        <tr><td><strong>HATEOAS</strong></td><td>レスポンスにリンクを含め、クライアントの探索を助ける REST の発展形</td><td><a href="30-1_RESTの考え方.html">RESTの考え方</a></td></tr>
+        <tr><td><strong>Idempotency-Key</strong></td><td>POST の二重送信防止（決済 API など）</td><td><a href="60-3_レート制限と冪等性.html">レート制限と冪等性</a></td></tr>
+        <tr><td><strong>レート制限設計</strong></td><td><code>X-RateLimit-*</code> ヘッダの返し方</td><td><a href="60-3_レート制限と冪等性.html">レート制限と冪等性</a></td></tr>
+      </tbody>
+    </table></div>
+    <p>API 設計は一度決めて終わりではなく、<strong>利用者のフィードバックと利用状況を見ながら少しずつ改善</strong> していくものです。まずは 8 項目をガイドラインにし、小さな API から試してみるのがおすすめです。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「動いていれば API 設計は後回しでよい」</summary><div class="body"><p>API は公開した瞬間からクライアントが依存し始めます。命名やレスポンス形式・エラー形式を後から変えると <strong>破壊的変更</strong> になり、全クライアントの修正が必要になります。最初に一貫性のルールを 1 枚決めておくだけで、後の手戻りが大きく減ります。</p></div></details>
+    <details open><summary>誤解2：「401 も 403 も『だめ』という意味だから同じ」</summary><div class="body"><p>401 は <strong>認証されていない</strong>（ログインが必要）、403 は <strong>認証済みだが権限がない</strong> という別の意味です。クライアントは 401 ならログイン画面へ、403 なら「権限がありません」の表示へと、対応を変えます。</p></div></details>
+    <details open><summary>誤解3：「8 テーマを最初から全部完璧にしなければならない」</summary><div class="body"><p>最初に決めるべきなのは表の「初心者が最初に決めること」の列だけです。ページネーションの方式やバージョニングの細部は、利用状況を見ながら育てていけます。ただし一貫性・エラー形式・認証と HTTPS は後から直すと影響が大きいので、最初に決めます（優先順位は <a href="10-4_API設計の原則.html">API設計の原則</a>）。</p></div></details>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>API 設計は「誰が使っても迷わない窓口」を、長く使える形で決めること</li>
+      <li>API 設計は設計階層の中で「プログラムの外側に向けた契約」の層</li>
+      <li>一貫性・REST リソース・HTTP メソッド・エラー・Pagination が <strong>使いやすい窓口の形</strong> を決める</li>
+      <li>バージョニング・後方互換性が <strong>長く使える窓口の寿命</strong> を決める</li>
+      <li>認証認可（401 と 403 の区別、HTTPS）が <strong>安全な窓口</strong> をつくる</li>
+      <li>章は 10 → 20 → … → 85 の順に読めば、基礎から実践まで順に学べる</li>
+    </ul>
+    <p>次は <a href="10-1_APIとは.html">APIとは</a> です。</p>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：45_API設計/00_全体像/00_API設計の概要</li>
+      <li>ノート：45_API設計/00_全体像/00_はじめに</li>
+      <li>ノート：45_API設計/00_全体像/目次</li>
+      <li>ノート：45_API設計/00_全体像/MOC_API設計体系</li>
+      <li>書籍：水野貴明『Web API: The Good Parts』（オライリー・ジャパン）— 章の骨格</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-1_APIとは.html"><span class="lbl">次のページ →</span>APIとは</a>
+    </nav>
+    <footer class="page-foot">45_API設計 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

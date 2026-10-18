@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考図解 — クラス図・関係図・継承階層のテンプレート｜クラス設計解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">クラス設計解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 90 付録 › 参考図解</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">90 付録</span>
+      <h1>参考図解 — クラス図・関係図・継承階層のテンプレート</h1>
+      <p class="lead">クラス設計の議論で使える図のテンプレート集です。クラス図の基本、関連と多重度、依存、継承と実装、パッケージ内の配置、Strategy パターンの構造を、図と、そのまま転記できる ASCII 図（文字だけで描いた図）のセットで並べました。設計レビューやホワイトボードでの打ち合わせに使ってください。</p>
+      <p class="meta">もとにしたノート：90_付録/付録F_参考図解</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>クラスの図は <strong>箱（クラス）</strong> と <strong>線の種類</strong> で読みます。実線は関連、黒い菱形はコンポジション、<strong>点線矢印は依存（一時利用）</strong>、<strong>白い三角は実装・継承</strong> です。継承は浅く保ち、迷ったらインターフェース + 実装にします。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>クラス設計の議論で使える <strong>ASCII 図のテンプレート</strong> です。Obsidian のコードブロックやホワイトボードにそのまま転記できます。各節では、まず図で形を確認し、その下に転記用の ASCII 図を置いています。</p>
+    <ul>
+      <li><strong>クラス図（基本）</strong>：クラス名・属性・操作と、可視性の記号</li>
+      <li><strong>関連（Association）</strong>：多重度の読み方</li>
+      <li><strong>依存（Dependency）</strong>：点線矢印と、実線 + 三角</li>
+      <li><strong>継承と実装</strong>：浅い継承と、インターフェース + 実装</li>
+      <li><strong>パッケージ（モジュール内配置）</strong></li>
+      <li><strong>Strategy パターン（構造）</strong></li>
+    </ul>
+    <div class="callout tip">
+      <p class="callout-title">使い方</p>
+      <p>これらの図は UML（統一モデリング言語：設計を図で表すための共通の書き方）のクラス図を簡略にしたものです。関係の種類そのものは <a href="30-1_クラス間の関係.html">クラス間の関係</a>、クラスの基本は <a href="10-2_クラスとオブジェクトの基本.html">クラスとオブジェクトの基本</a> で説明しています。DDD 寄りの図は <a href="../42_ソフトウェア設計/90-3_DDD早見表と参考図解.html">DDD早見表と参考図解（42章）</a> にもあります。</p>
+    </div>
+
+    <h2 id="sec-2"><span class="num">2.</span>クラス図（基本）</h2>
+    <p>1つのクラスを3段の箱で表します。上からクラス名、属性（フィールド）、操作（メソッド）です。</p>
+    <figure>
+    <svg viewBox="0 0 720 230" role="img" aria-label="Order クラスのクラス図。3段の箱で、上段にクラス名 Order、中段に private の属性 id: OrderId、status、lines: Line[]、下段に public の操作 addLine()、confirm()、total() が並ぶ">
+      <rect x="260" y="10" width="220" height="200" rx="4" class="d-box-accent"/>
+      <line x1="260" y1="50" x2="480" y2="50" class="d-line"/>
+      <line x1="260" y1="130" x2="480" y2="130" class="d-line"/>
+      <text x="370" y="36" text-anchor="middle" class="d-text-bold">Order</text>
+      <text x="280" y="76" class="d-text">- id: OrderId</text>
+      <text x="280" y="100" class="d-text">- status</text>
+      <text x="280" y="124" class="d-text">- lines: Line[]</text>
+      <text x="280" y="156" class="d-text">+ addLine()</text>
+      <text x="280" y="180" class="d-text">+ confirm()</text>
+      <text x="280" y="204" class="d-text">+ total()</text>
+      <text x="240" y="36" text-anchor="end" class="d-text-sub">クラス名</text>
+      <text x="240" y="100" text-anchor="end" class="d-text-sub">属性（フィールド）</text>
+      <text x="240" y="180" text-anchor="end" class="d-text-sub">操作（メソッド）</text>
+      <text x="500" y="100" class="d-text-sub">- は private</text>
+      <text x="500" y="180" class="d-text-sub">+ は public</text>
+    </svg>
+    <figcaption>図1：クラス図の基本。クラス名・属性・操作の3段で描く</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <thead><tr><th>記号</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><code>-</code></td><td>private（クラスの中だけで使える）</td></tr>
+        <tr><td><code>+</code></td><td>public（外から使える）</td></tr>
+        <tr><td><code>#</code></td><td>protected（自分と子クラスで使える）</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label">転記用テンプレート</p>
+    <pre><code>┌─────────────────┐
+│     Order       │
+├─────────────────┤
+│ - id: OrderId   │
+│ - status        │
+│ - lines: Line[] │
+├─────────────────┤
+│ + addLine()     │
+│ + confirm()     │
+│ + total()       │
+└─────────────────┘</code></pre>
+    <p>属性はすべて private（<code>-</code>）で、外からは public（<code>+</code>）の操作だけを使う、というカプセル化の形が図から読み取れます（<a href="10-3_カプセル化と情報隠蔽.html">カプセル化と情報隠蔽</a>）。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>関連（Association）</h2>
+    <p><strong>関連</strong> は、あるクラスが別のクラスを継続的に知っている（参照を持っている）関係です。線の両端に、相手がいくつあるかを表す <strong>多重度</strong> を書きます。</p>
+    <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="Customer と Order は実線の関連でつながり、Customer 側の多重度は 1、Order 側は *（0以上）。Order と OrderLine はコンポジションで、Order 側に黒い菱形があり、Order 側の多重度は 1、OrderLine 側は *">
+      <defs><marker id="dia-903" viewBox="0 0 12 8" refX="0" refY="4" markerWidth="12" markerHeight="8" orient="auto"><path d="M0,4 L6,0 L12,4 L6,8 z" class="d-arrowhead"/></marker></defs>
+      <rect x="20" y="40" width="160" height="56" rx="4" class="d-box"/>
+      <text x="100" y="74" text-anchor="middle" class="d-text-bold">Customer</text>
+      <rect x="280" y="40" width="160" height="56" rx="4" class="d-box-accent"/>
+      <text x="360" y="74" text-anchor="middle" class="d-text-bold">Order</text>
+      <rect x="560" y="40" width="140" height="56" rx="4" class="d-box"/>
+      <text x="630" y="74" text-anchor="middle" class="d-text-bold">OrderLine</text>
+      <line x1="180" y1="68" x2="280" y2="68" class="d-line"/>
+      <text x="188" y="60" class="d-text-sub">"1"</text>
+      <text x="258" y="60" class="d-text-sub">"*"</text>
+      <line x1="440" y1="68" x2="560" y2="68" class="d-line" marker-start="url(#dia-903)"/>
+      <text x="462" y="60" class="d-text-sub">1</text>
+      <text x="540" y="60" class="d-text-sub">"*"</text>
+      <text x="230" y="120" text-anchor="middle" class="d-text-sub">関連</text>
+      <text x="500" y="120" text-anchor="middle" class="d-text-sub">コンポジション</text>
+    </svg>
+    <figcaption>図2：関連と多重度。1人の顧客は0件以上の注文を持ち、注文は明細を部品として持つ</figcaption>
+    </figure>
+    <p>黒い菱形の <strong>コンポジション</strong> は、部分（OrderLine）が全体（Order）の寿命に従属する関係です。注文が消えれば明細も消えます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>多重度</th><th>読み方</th></tr></thead>
+      <tbody>
+        <tr><td><code>1</code></td><td>ちょうど1</td></tr>
+        <tr><td><code>0..1</code></td><td>0または1</td></tr>
+        <tr><td><code>1..*</code></td><td>1以上</td></tr>
+        <tr><td><code>*</code></td><td>0以上</td></tr>
+      </tbody>
+    </table></div>
+    <p class="code-label">転記用テンプレート</p>
+    <pre><code>Customer "1" ──────&lt; "*" Order
+     │                    │
+     │                    │ 1
+     │                    ◆─────── "*" OrderLine
+     │                    （コンポジション）
+     └──────────────────────────┘</code></pre>
+
+    <h2 id="sec-4"><span class="num">4.</span>依存（Dependency）</h2>
+    <p><strong>依存</strong> は、メソッドの引数や処理の中で一時的に相手を使う関係です。関連より弱いつながりです。</p>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="上段：PlaceOrderController から Order へ点線矢印（uses）、Order から Inventory へ点線矢印（canFulfill）。下段：OrderService から インターフェースの OrderRepository へ実線矢印。SqlOrderRepository から OrderRepository へ白い三角付きの実線（implements）">
+      <defs><marker id="arr-903a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="tri-903a" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="10" markerHeight="10" orient="auto"><path d="M1,1 L11,6 L1,11 z" class="d-box"/></marker></defs>
+      <rect x="10" y="20" width="220" height="50" rx="4" class="d-box"/>
+      <text x="120" y="50" text-anchor="middle" class="d-text-bold">PlaceOrderController</text>
+      <rect x="300" y="20" width="140" height="50" rx="4" class="d-box-accent"/>
+      <text x="370" y="50" text-anchor="middle" class="d-text-bold">Order</text>
+      <rect x="530" y="20" width="170" height="50" rx="4" class="d-box"/>
+      <text x="615" y="50" text-anchor="middle" class="d-text-bold">Inventory</text>
+      <line x1="230" y1="45" x2="296" y2="45" class="d-line-dash" marker-end="url(#arr-903a)"/>
+      <text x="263" y="36" text-anchor="middle" class="d-text-sub">uses</text>
+      <line x1="440" y1="45" x2="526" y2="45" class="d-line-dash" marker-end="url(#arr-903a)"/>
+      <text x="485" y="36" text-anchor="middle" class="d-text-sub">canFulfill</text>
+      <rect x="10" y="150" width="200" height="50" rx="4" class="d-box"/>
+      <text x="110" y="180" text-anchor="middle" class="d-text-bold">OrderService</text>
+      <rect x="300" y="143" width="220" height="64" rx="4" class="d-box-purple"/>
+      <text x="410" y="167" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="410" y="191" text-anchor="middle" class="d-text-bold">OrderRepository</text>
+      <line x1="210" y1="175" x2="296" y2="175" class="d-line" marker-end="url(#arr-903a)"/>
+      <rect x="300" y="265" width="220" height="50" rx="4" class="d-box"/>
+      <text x="410" y="295" text-anchor="middle" class="d-text-bold">SqlOrderRepository</text>
+      <line x1="410" y1="265" x2="410" y2="209" class="d-line" marker-end="url(#tri-903a)"/>
+      <text x="422" y="244" class="d-text-sub">implements</text>
+    </svg>
+    <figcaption>図3：依存と実装。点線矢印は一時利用、白い三角は「インターフェースを実装する」</figcaption>
+    </figure>
+    <div class="grid c2">
+      <div class="card"><h4>点線矢印 <code>..&gt;</code></h4><p><strong>依存</strong>（一時利用）。</p></div>
+      <div class="card purple"><h4>実線 + 三角</h4><p><strong>実装・継承</strong>。</p></div>
+    </div>
+    <p class="code-label">転記用テンプレート</p>
+    <pre><code>PlaceOrderController ..&gt; Order : uses
+Order ..&gt; Inventory : canFulfill
+OrderService ──→ OrderRepository &lt;&lt;interface&gt;&gt;
+                      △
+                      │ implements
+               SqlOrderRepository</code></pre>
+    <p><code>OrderService</code> はインターフェースだけを知り、DB を使う具体的な <code>SqlOrderRepository</code> を知りません。これが依存性逆転の原則（DIP）の形です（<a href="30-3_インターフェースと抽象化.html">インターフェースと抽象化</a>）。</p>
+
+    <h2 id="sec-5"><span class="num">5.</span>継承と実装</h2>
+    <p>白い三角の矢印は、子クラスから親クラス（またはインターフェース）へ向けて描きます。</p>
+    <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="左：インターフェース PaymentStrategy を CardPayment と BankPayment が実装する。中央：Animal を Dog が継承する1階層の浅い継承。右：インターフェース Shape を Rectangle と Square が実装する。どれも白い三角の矢印が子から親へ向く">
+      <defs><marker id="tri-903b" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="10" markerHeight="10" orient="auto"><path d="M1,1 L11,6 L1,11 z" class="d-box"/></marker></defs>
+      <rect x="60" y="20" width="200" height="58" rx="4" class="d-box-purple"/>
+      <text x="160" y="43" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="160" y="66" text-anchor="middle" class="d-text-bold">PaymentStrategy</text>
+      <rect x="10" y="180" width="140" height="44" rx="4" class="d-box"/>
+      <text x="80" y="207" text-anchor="middle" class="d-text">CardPayment</text>
+      <rect x="170" y="180" width="140" height="44" rx="4" class="d-box"/>
+      <text x="240" y="207" text-anchor="middle" class="d-text">BankPayment</text>
+      <line x1="80" y1="180" x2="128" y2="80" class="d-line" marker-end="url(#tri-903b)"/>
+      <line x1="240" y1="180" x2="192" y2="80" class="d-line" marker-end="url(#tri-903b)"/>
+      <rect x="345" y="20" width="110" height="58" rx="4" class="d-box"/>
+      <text x="400" y="54" text-anchor="middle" class="d-text-bold">Animal</text>
+      <rect x="345" y="180" width="110" height="44" rx="4" class="d-box"/>
+      <text x="400" y="207" text-anchor="middle" class="d-text">Dog</text>
+      <line x1="400" y1="180" x2="400" y2="80" class="d-line" marker-end="url(#tri-903b)"/>
+      <rect x="530" y="20" width="150" height="58" rx="4" class="d-box-purple"/>
+      <text x="605" y="43" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="605" y="66" text-anchor="middle" class="d-text-bold">Shape</text>
+      <rect x="490" y="180" width="110" height="44" rx="4" class="d-box"/>
+      <text x="545" y="207" text-anchor="middle" class="d-text">Rectangle</text>
+      <rect x="610" y="180" width="100" height="44" rx="4" class="d-box"/>
+      <text x="660" y="207" text-anchor="middle" class="d-text">Square</text>
+      <line x1="545" y1="180" x2="585" y2="80" class="d-line" marker-end="url(#tri-903b)"/>
+      <line x1="660" y1="180" x2="625" y2="80" class="d-line" marker-end="url(#tri-903b)"/>
+      <text x="160" y="244" text-anchor="middle" class="d-text-sub">インターフェース + 実装</text>
+      <text x="400" y="244" text-anchor="middle" class="d-text-sub">浅い継承</text>
+      <text x="605" y="244" text-anchor="middle" class="d-text-sub">疑わしければこちら</text>
+    </svg>
+    <figcaption>図4：継承と実装。継承は浅く、迷ったらインターフェース + 実装にする</figcaption>
+    </figure>
+    <p class="code-label">転記用テンプレート</p>
+    <pre><code>        &lt;&lt;interface&gt;&gt;
+      PaymentStrategy
+       △           △
+       │           │
+  CardPayment   BankPayment
+
+
+      Animal
+        △
+        │
+       Dog</code></pre>
+    <p>継承は <strong>浅く</strong>。疑わしければ、次のようにインターフェース + 実装にします。</p>
+    <pre><code>      &lt;&lt;interface&gt;&gt;
+         Shape
+       △     △
+       │     │
+  Rectangle  Square</code></pre>
+    <p>正方形（Square）を長方形（Rectangle）の子クラスにすると、「幅だけ変える」といった長方形の約束を正方形が守れず、置き換えたときに壊れる有名な例があります。そこで両方を <code>Shape</code> の実装として並べます（<a href="40-3_リスコフの置換原則.html">リスコフの置換原則</a>、<a href="30-4_継承より合成.html">継承より合成</a>）。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>パッケージ（モジュール内配置）</h2>
+    <p>パッケージの中で、クラスをどのフォルダに置き、どちら向きに依存させるかを表します。</p>
+    <figure>
+    <svg viewBox="0 0 720 220" role="img" aria-label="order パッケージの中に domain と infrastructure がある。domain には Order、infrastructure には SqlOrderRepo が入り、infrastructure から domain へ矢印が向く。依存の向きは内側（domain）へ">
+      <defs><marker id="arr-903b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead-accent"/></marker></defs>
+      <rect x="40" y="10" width="640" height="170" rx="8" class="d-box"/>
+      <text x="60" y="38" class="d-text-bold">order パッケージ</text>
+      <rect x="90" y="60" width="200" height="90" rx="6" class="d-box-accent"/>
+      <text x="190" y="96" text-anchor="middle" class="d-text-bold">domain</text>
+      <text x="190" y="124" text-anchor="middle" class="d-text">Order</text>
+      <rect x="430" y="60" width="220" height="90" rx="6" class="d-box"/>
+      <text x="540" y="96" text-anchor="middle" class="d-text-bold">infrastructure</text>
+      <text x="540" y="124" text-anchor="middle" class="d-text">SqlOrderRepo</text>
+      <line x1="430" y1="105" x2="294" y2="105" class="d-line-accent" marker-end="url(#arr-903b)"/>
+      <text x="360" y="208" text-anchor="middle" class="d-text-sub">↑ 依存の向きは内側へ</text>
+    </svg>
+    <figcaption>図5：パッケージ内の配置。技術詳細（infrastructure）がドメインに依存し、逆はない</figcaption>
+    </figure>
+    <p class="code-label">転記用テンプレート</p>
+    <pre><code>  ┌─────────────────────────────────────┐
+  │  order パッケージ                    │
+  │  ┌─────────┐    ┌────────────────┐ │
+  │  │ domain  │    │ infrastructure │ │
+  │  │ Order   │←───│ SqlOrderRepo   │ │
+  │  └─────────┘    └────────────────┘ │
+  └─────────────────────────────────────┘
+         ↑ 依存の向きは内側へ</code></pre>
+    <p>この図は、モジュールの境界の内側で使います（モジュールの境界そのものは <a href="../43_モジュール設計/00-1_モジュール設計の全体像.html">モジュール設計の全体像（43章）</a>）。クラスの配置の考え方は <a href="70-3_命名とクラス構成.html">命名とクラス構成</a> も参照してください。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>Strategy パターン（構造）</h2>
+    <p><strong>Strategy</strong> は、同じインターフェースの裏で振る舞いを差し替えるパターンです。呼び出し側はインターフェースだけを使います。</p>
+    <figure>
+    <svg viewBox="0 0 720 280" role="img" aria-label="CheckoutService がインターフェース PaymentStrategy を使う（uses）。PaymentStrategy を Card、Bank、Invoice の3つのクラスが実装し、白い三角の矢印が各クラスから PaymentStrategy へ向く">
+      <defs><marker id="arr-903c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      <marker id="tri-903c" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="10" markerHeight="10" orient="auto"><path d="M1,1 L11,6 L1,11 z" class="d-box"/></marker></defs>
+      <rect x="250" y="10" width="220" height="50" rx="4" class="d-box-accent"/>
+      <text x="360" y="40" text-anchor="middle" class="d-text-bold">CheckoutService</text>
+      <line x1="360" y1="60" x2="360" y2="106" class="d-line" marker-end="url(#arr-903c)"/>
+      <text x="372" y="88" class="d-text-sub">uses</text>
+      <rect x="230" y="110" width="260" height="60" rx="4" class="d-box-purple"/>
+      <text x="360" y="133" text-anchor="middle" class="d-text-sub">«interface»</text>
+      <text x="360" y="157" text-anchor="middle" class="d-text-bold">PaymentStrategy</text>
+      <rect x="110" y="220" width="130" height="44" rx="4" class="d-box-good"/>
+      <text x="175" y="247" text-anchor="middle" class="d-text">Card</text>
+      <rect x="295" y="220" width="130" height="44" rx="4" class="d-box-good"/>
+      <text x="360" y="247" text-anchor="middle" class="d-text">Bank</text>
+      <rect x="480" y="220" width="130" height="44" rx="4" class="d-box-good"/>
+      <text x="545" y="247" text-anchor="middle" class="d-text">Invoice</text>
+      <line x1="175" y1="220" x2="300" y2="172" class="d-line" marker-end="url(#tri-903c)"/>
+      <line x1="360" y1="220" x2="360" y2="172" class="d-line" marker-end="url(#tri-903c)"/>
+      <line x1="545" y1="220" x2="420" y2="172" class="d-line" marker-end="url(#tri-903c)"/>
+    </svg>
+    <figcaption>図6：Strategy パターンの構造。支払い方法を増やしても CheckoutService は変わらない</figcaption>
+    </figure>
+    <p class="code-label">転記用テンプレート</p>
+    <pre><code>  CheckoutService
+        │
+        │ uses
+        ▼
+  PaymentStrategy &lt;&lt;interface&gt;&gt;
+     △      △      △
+     │      │      │
+   Card   Bank  Invoice</code></pre>
+    <p>実際のコードと、生成を受け持つ Factory との組み合わせは <a href="80-1_ケーススタディ.html">ケーススタディ</a>、パターンそのものは <a href="50-5_振る舞いパターン.html">振る舞いパターン</a> で扱っています。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「クラス図は UML の記法を正確に守らないと意味がない」</summary><div class="body"><p>このページのテンプレートは、議論のための簡略な図です。ホワイトボードやコードブロックに素早く描いて、関係の種類（関連・依存・実装）と依存の向きが伝われば十分役に立ちます。</p></div></details>
+    <details open><summary>誤解2：「矢印の向きは、処理やデータが流れる向き」</summary><div class="body"><p>クラス図の矢印は「誰が誰を知っているか（依存しているか）」の向きです。パッケージの図では、データは domain から保存されていくように見えても、矢印は infrastructure から domain に向きます。</p></div></details>
+    <details open><summary>誤解3：「正方形は長方形の一種なので、継承で表すのが自然」</summary><div class="body"><p>日常の言葉では「一種」でも、長方形の操作（幅だけを変える）を正方形は守れません。継承は浅くし、疑わしければ <code>Shape</code> のようなインターフェース + 実装にします。</p></div></details>
+
+    <h2 id="sec-9"><span class="num">9.</span>まとめ</h2>
+    <ul>
+      <li>クラス図はクラス名・属性・操作の3段。<code>-</code> private、<code>+</code> public、<code>#</code> protected</li>
+      <li>関連は実線と多重度（<code>1</code>、<code>0..1</code>、<code>1..*</code>、<code>*</code>）、コンポジションは黒い菱形</li>
+      <li>点線矢印 <code>..&gt;</code> は依存（一時利用）、実線 + 三角は実装・継承</li>
+      <li>継承は浅く。疑わしければインターフェース + 実装</li>
+      <li>パッケージ内の依存の向きは内側（domain）へ。Strategy は呼び出し側がインターフェースだけを使う</li>
+    </ul>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：44_クラス設計・デザインパターン/90_付録/付録F_参考図解</li>
+      <li>関連ページ：<a href="10-2_クラスとオブジェクトの基本.html">クラスとオブジェクトの基本</a>、<a href="30-1_クラス間の関係.html">クラス間の関係</a>、<a href="../42_ソフトウェア設計/90-3_DDD早見表と参考図解.html">DDD早見表と参考図解（42章）</a>、<a href="../43_モジュール設計/00-1_モジュール設計の全体像.html">モジュール設計の全体像（43章）</a></li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="90-2_チェックリストとアンチパターン.html"><span class="lbl">← 前のページ</span>チェックリストとアンチパターン</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <span class="empty"></span>
+    </nav>
+    <footer class="page-foot">44_クラス設計・デザインパターン ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>
