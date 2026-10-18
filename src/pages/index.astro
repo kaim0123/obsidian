@@ -1,10 +1,23 @@
 ---
 import { getCollection } from 'astro:content';
+import { getExplainers } from '../lib/explainers';
 
-// Step 1 の仮トップ：先頭100件のノートへのリンクを並べるだけ（Step 3 で本実装に置き換える）
+// 仮トップ：全ノートをトップフォルダごとに折りたたんで表示＋解説HTMLの一覧（Step 3 で本実装に置き換える）
 const notes = (await getCollection('notes')).sort((a, b) =>
   a.id.localeCompare(b.id, 'ja', { numeric: true }),
 );
+
+const groups = new Map<string, typeof notes>();
+for (const entry of notes) {
+  const top = entry.id.includes('/') ? entry.id.split('/')[0] : '（ルート）';
+  groups.set(top, [...(groups.get(top) ?? []), entry]);
+}
+
+// ファイル名の ? # % が URL の区切りとして解釈されないよう、各パス要素をエンコードする（Step 2 で idToUrl に置き換える）
+const noteUrl = (id: string) => `/notes/${id.split('/').map(encodeURIComponent).join('/')}`;
+
+const explainers = getExplainers();
+const explainerCount = explainers.reduce((n, f) => n + f.pages.length, 0);
 ---
 <html lang="ja">
   <head>
@@ -14,12 +27,28 @@ const notes = (await getCollection('notes')).sort((a, b) =>
   </head>
   <body>
     <h1>Knowledge</h1>
-    <p>ノート {notes.length} 件（先頭100件を表示）</p>
     <p><a href="/history/">Git 履歴（ローカル専用）</a></p>
-    <ul>
-      {notes.slice(0, 100).map((entry) => (
-        <li><a href={`/notes/${entry.id}`}>{entry.id}</a></li>
-      ))}
-    </ul>
+
+    <h2>解説ページ（{explainerCount} 件）</h2>
+    {explainers.map((f) => (
+      <details>
+        <summary>{f.folder}（{f.pages.length}）</summary>
+        <ul>
+          {f.pages.map((p) => <li><a href={p.url}>{p.name}</a></li>)}
+        </ul>
+      </details>
+    ))}
+
+    <h2>ノート（{notes.length} 件）</h2>
+    {[...groups].map(([top, entries]) => (
+      <details>
+        <summary>{top}（{entries.length}）</summary>
+        <ul>
+          {entries.map((entry) => (
+            <li><a href={noteUrl(entry.id)}>{entry.id.slice(top.length + 1) || entry.id}</a></li>
+          ))}
+        </ul>
+      </details>
+    ))}
   </body>
 </html>
