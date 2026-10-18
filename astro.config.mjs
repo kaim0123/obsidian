@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import { extractGitHistory } from './scripts/extract-git-history.mjs';
 import explainerNav from './src/integrations/explainer-nav.ts';
+import remarkWikilink, { wikilinkReport } from './src/plugins/remark-wikilink.ts';
 
 // Always refresh stub or full history before pages resolve.
 extractGitHistory({
@@ -10,5 +11,9 @@ extractGitHistory({
 
 // https://astro.build/config
 export default defineConfig({
-  integrations: [explainerNav()],
+  integrations: [explainerNav(), wikilinkReport()],
+  markdown: {
+    shikiConfig: { theme: 'github-dark-default' },
+    remarkPlugins: [remarkWikilink],
+  },
 });

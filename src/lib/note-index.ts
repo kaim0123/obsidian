@@ -6,7 +6,9 @@ export {
   allFolders,
   findFolder,
   positionInFolder,
+  resolveWikilink,
   type NoteRef,
+  type OutLink,
   type NoteIndex,
   type FolderNode,
 } from './notes';

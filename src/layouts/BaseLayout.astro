@@ -2,6 +2,7 @@
 import FolderTree from '../components/FolderTree.astro';
 import Header from '../components/Header.astro';
 import StatusBar from '../components/StatusBar.astro';
+import '../styles/global.css';
 
 interface Props {
   title: string;
@@ -53,7 +54,6 @@ const hasAside = Astro.slots.has('aside');
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    font-family: "IBM Plex Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
   }
   .workbench {
     flex: 1;

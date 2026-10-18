@@ -1,0 +1,101 @@
+---
+import type { MarkdownHeading } from 'astro';
+import { findFolder, folderOf, type OutLink } from '../lib/notes';
+
+interface Props {
+  /** h2・h3 の見出し */
+  outline: MarkdownHeading[];
+  outLinks: OutLink[];
+  id: string;
+  tags: string[];
+}
+const { outline, outLinks, id, tags } = Astro.props;
+const folderPath = folderOf(id);
+const folderUrl = findFolder(folderPath)?.url ?? '/notes/';
+---
+<div class="note-aside">
+  {outline.length > 0 && (
+    <section>
+      <div class="aside-heading">アウトライン</div>
+      <ul class="outline">
+        {outline.map((h) => (
+          <li class={h.depth === 3 ? 'h3' : undefined}>
+            <a href={`#${h.slug}`}>{h.text}</a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+
+  {outLinks.length > 0 && (
+    <section>
+      <div class="aside-heading">リンク先 {outLinks.length}</div>
+      <ul class="links">
+        {outLinks.map((l) => (
+          <li>
+            {l.url ? (
+              <a href={l.url}>{l.label}</a>
+            ) : (
+              <span class="wikilink-unresolved" title="未作成のノート">{l.label}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+
+  <section>
+    <div class="aside-heading">プロパティ</div>
+    <dl class="props">
+      <dt>path</dt>
+      <dd><a href={folderUrl}>{folderPath || 'docs'}</a></dd>
+      <dt>tags</dt>
+      <dd>{tags.length > 0 ? tags.join(', ') : '—'}</dd>
+    </dl>
+  </section>
+</div>
+
+<style>
+  .note-aside {
+    position: sticky;
+    top: 16px;
+    font-size: 13px;
+  }
+  section + section {
+    margin-top: 20px;
+  }
+  .aside-heading {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  li {
+    padding: 3px 0;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+  .outline .h3 {
+    padding-left: 14px;
+  }
+  .props {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .props dt {
+    color: var(--text-3);
+  }
+  .props dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+</style>

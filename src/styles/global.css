@@ -1,0 +1,290 @@
+/* 共通スタイル：A ワークベンチ案・ダークのみ（UI 設計 05 §3〜§5） */
+
+:root {
+  color-scheme: dark;
+  /* 面 */
+  --bg: #14161b;
+  --surface: #1b1e25;
+  --surface-2: #181b21;
+  --code-bg: #0f1115;
+  --selected: #2a3240;
+  /* 線 */
+  --border: #2b2f39;
+  --border-soft: #262a33;
+  /* 文字 */
+  --text: #e4e6eb;
+  --text-2: #a3a9b5;
+  --text-3: #8d94a1;
+  --text-4: #6f7684; /* 件数・未作成リンク（補助表示のみ） */
+  /* 強調 */
+  --accent: #7cb7ec;
+  --accent-hover: #a8d0f5;
+  --status-bg: #2a5b86;
+  --status-text: #e8f1fa;
+  /* Callout */
+  --good: #7fd3a2;   --good-soft: #1a2620;   --good-border: #2c4a3a;
+  --warn: #e8a34a;   --warn-soft: #2a2216;   --warn-border: #4a3a22;
+  --bad: #ef8a8a;    --bad-soft: #2c1c1e;    --bad-border: #4a2c2f;
+  --info: #7cb7ec;   --info-soft: #18222e;   --info-border: #2a3e54;
+  --purple: #c9a0f0; --purple-soft: #241d30; --purple-border: #3e3152;
+  /* 書体 */
+  --font: "IBM Plex Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+  --mono: "JetBrains Mono", "Consolas", monospace;
+}
+
+/* ---------- 土台 ---------- */
+html {
+  background: var(--bg);
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-x: hidden;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+::selection {
+  background: #2a4a6a;
+}
+
+/* ---------- 枠（Header・ツリー・右パネル・ステータスバー） ---------- */
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.header .logo {
+  color: var(--text);
+}
+.header .logo svg {
+  color: var(--accent);
+}
+.header .search input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: var(--font);
+  font-size: 13px;
+}
+.header .search input::placeholder {
+  color: var(--text-3);
+}
+.header .search kbd {
+  font-family: var(--mono);
+  color: var(--text-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.sidebar {
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+}
+.tree {
+  color: var(--text-2);
+}
+.tree-heading,
+.aside-heading {
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+.tree .row:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.tree .row[aria-current='page'] {
+  background: var(--selected);
+  color: #fff;
+}
+.tree .num {
+  color: var(--text-3);
+  opacity: 1;
+}
+.tree .count {
+  color: var(--text-4);
+  opacity: 1;
+}
+.aside {
+  border-left: 1px solid var(--border);
+}
+.statusbar {
+  background: var(--status-bg);
+  color: var(--status-text);
+  font-family: var(--mono);
+}
+.pathbar,
+.breadcrumb {
+  font-family: var(--mono);
+  color: var(--text-3);
+}
+.pathbar a,
+.breadcrumb a {
+  color: var(--text-2);
+}
+.pathbar a:hover,
+.breadcrumb a:hover {
+  color: var(--accent-hover);
+}
+
+/* ---------- 本文 ---------- */
+.content h1 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0 0 12px;
+}
+.content h2 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 32px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.content h3 {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  margin: 24px 0 8px;
+}
+.content h4,
+.content h5,
+.content h6 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 20px 0 6px;
+}
+.content p,
+.content ul,
+.content ol {
+  margin: 0 0 12px;
+}
+.content li + li {
+  margin-top: 2px;
+}
+.content hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+.content blockquote {
+  margin: 0 0 12px;
+  padding: 4px 16px;
+  border-left: 3px solid var(--border);
+  color: var(--text-2);
+}
+.content img {
+  max-width: 100%;
+  height: auto;
+}
+.content strong {
+  color: #f2f3f5;
+}
+
+/* 表：横スクロールの枠に入れる（表そのものを block にしてはみ出しを抑える） */
+.content table {
+  display: block;
+  width: fit-content; /* 枠を表の幅に合わせ、収まらないときだけ折り返し・横スクロール */
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 0 16px;
+}
+.content th,
+.content td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: top;
+  min-width: 4em; /* スマホ幅で1文字ずつ縦に折り返さない */
+}
+.content th {
+  background: var(--surface);
+  font-weight: 500;
+  color: var(--text);
+}
+.content tr:last-child td {
+  border-bottom: 0;
+}
+
+/* コード */
+.content code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.content :not(pre) > code {
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.content pre {
+  background: var(--code-bg) !important; /* Shiki のインライン背景を上書き */
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  line-height: 1.7;
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+
+/* ウィキリンク（Step 4 で出力） */
+.wikilink-unresolved {
+  color: var(--text-4);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+/* Callout（Step 5 で出力）。未知の種類は note と同じ見た目 */
+.callout {
+  --c: var(--info);
+  --c-soft: var(--info-soft);
+  --c-border: var(--info-border);
+  background: var(--c-soft);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0 0 16px;
+}
+.callout-title {
+  color: var(--c);
+  font-weight: 500;
+}
+details.callout > summary.callout-title {
+  cursor: pointer;
+}
+.callout-body > :last-child {
+  margin-bottom: 0;
+}
+.callout-abstract, .callout-summary, .callout-tldr, .callout-example {
+  --c: var(--purple); --c-soft: var(--purple-soft); --c-border: var(--purple-border);
+}
+.callout-tip, .callout-hint, .callout-important {
+  --c: var(--good); --c-soft: var(--good-soft); --c-border: var(--good-border);
+}
+.callout-warning, .callout-caution, .callout-attention {
+  --c: var(--warn); --c-soft: var(--warn-soft); --c-border: var(--warn-border);
+}
+.callout-danger, .callout-error {
+  --c: var(--bad); --c-soft: var(--bad-soft); --c-border: var(--bad-border);
+}
+
+/* 件数などの補助表示 */
+.count {
+  font-family: var(--mono);
+  color: var(--text-4);
+}

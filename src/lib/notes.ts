@@ -11,6 +11,12 @@ export interface NoteRef {
   url: string;
 }
 
+/** ノート本文から出ているウィキリンク（url が null なら未作成） */
+export interface OutLink {
+  label: string;
+  url: string | null;
+}
+
 export interface FolderNode {
   path: string;
   name: string;
@@ -285,4 +291,53 @@ export function breadcrumb(id: string): { label: string; url: string }[] {
     crumbs.push({ label, url });
   }
   return crumbs;
+}
+
+function commonDepth(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const pa = a.split('/');
+  const pb = b.split('/');
+  let n = 0;
+  while (n < pa.length && n < pb.length && pa[n] === pb[n]) n++;
+  return n;
+}
+
+/** ウィキリンクのリンク先を解決する（Obsidian の「最短パス」に近い規則。詳細設計 §4.2） */
+export function resolveWikilink(target: string, fromId: string): NoteRef | undefined {
+  const index = getNoteIndex();
+  const key = target
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.?\/+/, '')
+    .replace(/\.md$/i, '')
+    .toLowerCase();
+  if (!key) return undefined;
+
+  if (key.includes('/')) {
+    const exact = index.byPath.get(key);
+    if (exact) return exact;
+    const suffix = `/${key}`;
+    const matches = [...index.byPath.entries()].filter(([p]) => p.endsWith(suffix));
+    if (matches.length === 1) return matches[0][1];
+  }
+
+  const candidates = index.byName.get(key);
+  if (!candidates || candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+
+  const fromFolder = folderOf(fromId);
+  const score = (ref: NoteRef) => ({
+    same: ref.folder === fromFolder ? 1 : 0,
+    depth: commonDepth(ref.folder, fromFolder),
+  });
+  return [...candidates].sort((a, b) => {
+    const sa = score(a);
+    const sb = score(b);
+    return (
+      sb.same - sa.same ||
+      sb.depth - sa.depth ||
+      a.id.length - b.id.length ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    );
+  })[0];
 }

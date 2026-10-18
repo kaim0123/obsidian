@@ -2,6 +2,7 @@
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import PathBar from '../../components/PathBar.astro';
+import NoteAside from '../../components/NoteAside.astro';
 import {
   allFolders,
   findFolder,
@@ -9,7 +10,9 @@ import {
   positionInFolder,
   urlPathOf,
   type FolderNode,
+  type OutLink,
 } from '../../lib/note-index';
+import type { MarkdownHeading } from 'astro';
 
 type Props =
   | { kind: 'note'; entry: CollectionEntry<'notes'> }
@@ -61,13 +64,29 @@ export async function getStaticPaths() {
 const props = Astro.props;
 
 // --- ノートページ ---
-let note: { title: string; hasH1: boolean; Content: any; id: string } | null = null;
+let note: {
+  title: string;
+  hasH1: boolean;
+  Content: any;
+  id: string;
+  outline: MarkdownHeading[];
+  outLinks: OutLink[];
+  tags: string[];
+} | null = null;
 if (props.kind === 'note') {
   const { entry } = props;
-  const { Content, headings } = await render(entry);
+  const { Content, headings, remarkPluginFrontmatter } = await render(entry);
   const name = entry.id.split('/').pop() ?? entry.id;
   const title = entry.data.title ?? headings.find((h) => h.depth === 1)?.text ?? name;
-  note = { title, hasH1: headings.some((h) => h.depth === 1), Content, id: entry.id };
+  note = {
+    title,
+    hasH1: headings.some((h) => h.depth === 1),
+    Content,
+    id: entry.id,
+    outline: headings.filter((h) => h.depth === 2 || h.depth === 3),
+    outLinks: (remarkPluginFrontmatter.outLinks as OutLink[] | undefined) ?? [],
+    tags: entry.data.tags,
+  };
 }
 
 // --- フォルダページ ---
@@ -90,7 +109,7 @@ const folderUrlOf = (p: string) => findFolder(p)?.url ?? '/notes/';
     title={note.title}
     current={note.id}
     kind="note"
-    status={[positionInFolder(note.id)]}
+    status={[positionInFolder(note.id), `見出し ${note.outline.length}`, `リンク ${note.outLinks.length}`]}
     statusRight="Markdown"
   >
     <PathBar id={note.id} />
@@ -98,6 +117,7 @@ const folderUrlOf = (p: string) => findFolder(p)?.url ?? '/notes/';
     <article class="note-body">
       <note.Content />
     </article>
+    <NoteAside slot="aside" outline={note.outline} outLinks={note.outLinks} id={note.id} tags={note.tags} />
   </BaseLayout>
 ) : props.kind === 'folder' && (
   <BaseLayout
@@ -175,11 +195,10 @@ const folderUrlOf = (p: string) => findFolder(p)?.url ?? '/notes/';
   .count {
     margin-left: 8px;
     font-size: 12px;
-    opacity: 0.7;
   }
   .desc {
     margin: 2px 0 6px;
     font-size: 13px;
-    opacity: 0.8;
+    color: var(--text-2);
   }
 </style>

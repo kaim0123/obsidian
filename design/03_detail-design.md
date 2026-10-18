@@ -38,6 +38,7 @@
 |---|---|---|
 | `unist-util-visit`、`github-slugger` | プラグイン実装（Astro に同梱だが、直接 import するので明示的に追加） | 1 |
 | `@types/mdast` | プラグインの型 | 1（dev） |
+| `@astrojs/markdown-remark` | remark プラグインの実行（Astro 7 の既定 Markdown 処理は Sätteri になり、`markdown.remarkPlugins` を使うにはこのパッケージが必要） | 1 |
 | `mermaid` | 図の描画（`theme: 'dark'` で初期化） | 2 |
 | `pagefind` | 全文検索 | 3（dev） |
 | `remark-math`、`rehype-katex`、`katex` | 数式 | 4 |
