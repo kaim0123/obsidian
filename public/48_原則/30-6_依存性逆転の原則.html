@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>依存性逆転の原則（DIP） — 詳細ではなく抽象に依存する｜原則解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">原則解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 30 オブジェクト指向の原則 › DIP</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">30 オブジェクト指向の原則</span>
+      <h1>依存性逆転の原則（DIP） — 詳細ではなく抽象に依存する</h1>
+      <p class="lead">SOLID 原則の最後、<strong>依存性逆転の原則（Dependency Inversion Principle, DIP）</strong> を学びます。ビジネスロジックがデータベースなどの「実装の詳細」に直接ぶら下がるのをやめ、間に <strong>抽象（インターフェース）</strong> を挟んで依存の向きをひっくり返す考え方です。DIP を実現する技術である <strong>依存性注入（DI）</strong> の 3 つのやり方、DI コンテナとファクトリー、テストでの活用までを扱います。</p>
+      <p class="meta">もとにしたノート：05_DIP (依存性逆転の原則)</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>大事なロジック（高レベル）が、交換されうる技術（低レベル）を <strong>直接 <code>new</code> しない</strong> ようにする原則です。両者の間に抽象（インターフェース）を置き、<strong>高レベル → 抽象 ← 低レベル</strong> の形にします。具体的な実装は外から渡す（依存性注入）ので、データベースを替えても、テストでモックに差し替えても、ロジック側は変わりません。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <ul>
+      <li>DIP とは何か — 高レベル・低レベル・抽象</li>
+      <li>なぜ重要なのか — 直接依存の問題と、抽象に依存するメリット</li>
+      <li>悪い例と良い例 — データベース、メール送信、テスト</li>
+      <li>依存性注入のパターン（コンストラクタ・セッター・メソッド引数）</li>
+      <li>実装パターン — DI コンテナ、ファクトリー</li>
+      <li>判断基準・適用のヒント・よくある間違い</li>
+    </ul>
+    <p>アーキテクチャ全体での DIP（なぜ「逆転」と呼ぶのか、インターフェースをどこに置くか、クリーンアーキテクチャとの関係）は 41 章の「<a href="../41_アーキテクチャ/24-1_依存性逆転の原則.html">依存性逆転の原則</a>」で詳しく扱っています。このページは原則の定義とコードレベルの基本形が中心です。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>DIP とは</h2>
+    <p><strong>Dependency Inversion Principle（DIP）</strong> は、<a href="30-1_SOLIDの全体像.html">SOLID 原則</a> の最後の原則です。</p>
+    <blockquote><strong>「高レベルのモジュールは低レベルのモジュールに依存すべきではない。両方とも抽象（インターフェース）に依存すべきである」</strong></blockquote>
+    <p>つまり：</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>用語</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td><strong>高レベルのモジュール</strong></td><td>ビジネスロジックなど、アプリケーションの核心部分</td></tr>
+        <tr><td><strong>低レベルのモジュール</strong></td><td>データベース、ファイルシステム、外部 API など、実装の詳細</td></tr>
+        <tr><td><strong>抽象（インターフェース）</strong></td><td>両者をつなぐ契約</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>依存の方向を逆転させる</strong> ことで、高レベルのモジュールが低レベルのモジュールの実装詳細に依存しないようにします。ここでいう「A が B に <strong>依存する</strong>」とは、「A のコードが B の名前を知っていて、B が変わると A も直す必要が出る」関係のことです。</p>
+
+    <h2 id="sec-3"><span class="num">3.</span>なぜ重要なのか</h2>
+    <div class="grid c2">
+      <div class="card bad">
+        <h4>問題点（高レベルが低レベルに直接依存すると）</h4>
+        <ul>
+          <li><strong>結合度が高い</strong> — 実装の詳細に強く結びついている</li>
+          <li><strong>テストが困難</strong> — 実際のデータベースや外部サービスが必要</li>
+          <li><strong>変更に弱い</strong> — 低レベルの実装を変更すると、高レベルのコードも変更が必要</li>
+          <li><strong>再利用性が低い</strong> — 高レベルのロジックを他の環境で使えない</li>
+        </ul>
+      </div>
+      <div class="card good">
+        <h4>メリット（抽象に依存すると）</h4>
+        <ul>
+          <li><strong>疎結合</strong> — 実装の詳細から独立している</li>
+          <li><strong>テストしやすい</strong> — モックやスタブを使いやすい</li>
+          <li><strong>変更に強い</strong> — 低レベルの実装を変更しても、高レベルのコードは変更不要</li>
+          <li><strong>再利用性が高い</strong> — 高レベルのロジックを他の環境でも使える</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>結合度</strong> は部品どうしの結びつきの強さ、<strong>疎結合</strong> はその結びつきが弱い状態です（43 章「<a href="../43_モジュール設計/20-2_結合度.html">結合度</a>」）。<strong>モック・スタブ</strong> は、テストのときに本物の代わりに使う偽物の部品です。</p>
+
+    <h2 id="sec-4"><span class="num">4.</span>悪い例 — 低レベルへの直接依存</h2>
+    <h3 id="sec-4-1">4.1 例1：高レベルのモジュールが低レベルのモジュールに直接依存</h3>
+    <span class="code-label bad">✕ 悪い例：UserService が MySQLDatabase を直接 new している</span>
+    <pre><code>// ❌ 悪い例: 高レベルのモジュールが低レベルのモジュールに直接依存
+
+// 低レベルのモジュール（実装の詳細）
+class MySQLDatabase {
+  connect() {
+    console.log('Connecting to MySQL database...');
+  }
+
+  query(sql) {
+    console.log(`Executing query: ${sql}`);
+    return [{ id: 1, name: 'John' }];
+  }
+
+  disconnect() {
+    console.log('Disconnecting from MySQL database...');
+  }
+}
+
+// 高レベルのモジュール（ビジネスロジック）
+class UserService {
+  constructor() {
+    // 直接MySQLDatabaseに依存している ❌
+    this.database = new MySQLDatabase();
+  }
+
+  getUser(id) {
+    this.database.connect();
+    const result = this.database.query(`SELECT * FROM users WHERE id = ${id}`);
+    this.database.disconnect();
+    return result[0];
+  }
+}
+
+// 問題点:
+// 1. UserServiceがMySQLDatabaseに直接依存している
+// 2. データベースをPostgreSQLに変更する場合、UserServiceも変更が必要
+// 3. テストするために実際のMySQLデータベースが必要
+// 4. UserServiceを他の環境で使えない</code></pre>
+    <p><strong>問題点:</strong></p>
+    <ul>
+      <li><code>UserService</code> が <code>MySQLDatabase</code> に直接依存している</li>
+      <li>データベースを変更する場合、<code>UserService</code> も変更が必要</li>
+      <li>テストが困難（実際のデータベースが必要）</li>
+    </ul>
+    <div class="callout warn">
+      <p class="callout-title">注意：SQL の組み立て方</p>
+      <p>このページのコードは DIP の説明に集中するため、<code>`SELECT * FROM users WHERE id = ${id}`</code> のように値を SQL 文字列へ直接埋め込んでいます。実際のコードでこう書くと <strong>SQL インジェクション</strong>（入力値で SQL を書き換えられる攻撃）の原因になります。実務ではプレースホルダ（<code>?</code> などの穴に値を別途渡す仕組み）を使ってください（72 章「<a href="../72_Web脆弱性対策/20-3_SQLインジェクション.html">SQL インジェクション</a>」）。</p>
+    </div>
+
+    <h2 id="sec-5"><span class="num">5.</span>良い例 — 抽象（インターフェース）に依存する</h2>
+    <figure>
+    <svg viewBox="0 0 760 330" role="img" aria-label="左の適用前：UserService が MySQLDatabase を直接 new して依存しており、データベースを替えると UserService も直す必要がある。右の適用後：UserService は抽象の Database インターフェースだけに依存し、MySQLDatabase と PostgreSQLDatabase がその Database を実装する。低レベル側の矢印が抽象に向くので、依存の向きが逆転している。">
+      <defs>
+        <marker id="arw48-306a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <text x="175" y="26" text-anchor="middle" class="d-text-bold">✕ 適用前：直接依存</text>
+      <rect x="65" y="46" width="220" height="64" rx="8" class="d-box-accent"/>
+      <text x="175" y="74" text-anchor="middle" class="d-text">UserService</text>
+      <text x="175" y="96" text-anchor="middle" class="d-text-sub">高レベル（ビジネスロジック）</text>
+      <line x1="175" y1="110" x2="175" y2="216" class="d-line" marker-end="url(#arw48-306a)"/>
+      <text x="187" y="160" class="d-text-sub">new して直接依存</text>
+      <rect x="65" y="220" width="220" height="64" rx="8" class="d-box-bad"/>
+      <text x="175" y="248" text-anchor="middle" class="d-text">MySQLDatabase</text>
+      <text x="175" y="270" text-anchor="middle" class="d-text-sub">低レベル（実装の詳細）</text>
+      <text x="175" y="314" text-anchor="middle" class="d-text-sub">高レベル → 低レベル</text>
+
+      <line x1="380" y1="20" x2="380" y2="314" class="d-line-dash"/>
+
+      <text x="575" y="26" text-anchor="middle" class="d-text-bold">◯ 適用後：抽象に依存</text>
+      <rect x="465" y="40" width="220" height="56" rx="8" class="d-box-accent"/>
+      <text x="575" y="64" text-anchor="middle" class="d-text">UserService</text>
+      <text x="575" y="85" text-anchor="middle" class="d-text-sub">高レベル</text>
+      <line x1="575" y1="96" x2="575" y2="132" class="d-line" marker-end="url(#arw48-306a)"/>
+      <rect x="465" y="136" width="220" height="56" rx="8" class="d-box-purple"/>
+      <text x="575" y="160" text-anchor="middle" class="d-text">Database</text>
+      <text x="575" y="181" text-anchor="middle" class="d-text-sub">抽象（インターフェース）</text>
+      <rect x="400" y="236" width="160" height="52" rx="8" class="d-box"/>
+      <text x="480" y="259" text-anchor="middle" class="d-text">MySQLDatabase</text>
+      <text x="480" y="278" text-anchor="middle" class="d-text-sub">低レベル</text>
+      <rect x="580" y="236" width="170" height="52" rx="8" class="d-box"/>
+      <text x="665" y="259" text-anchor="middle" class="d-text">PostgreSQLDatabase</text>
+      <text x="665" y="278" text-anchor="middle" class="d-text-sub">低レベル</text>
+      <line x1="480" y1="236" x2="545" y2="196" class="d-line-dash" marker-end="url(#arw48-306a)"/>
+      <line x1="665" y1="236" x2="605" y2="196" class="d-line-dash" marker-end="url(#arw48-306a)"/>
+      <text x="575" y="314" text-anchor="middle" class="d-text-sub">高レベル → 抽象 ← 低レベル（点線＝実装する）</text>
+    </svg>
+    <figcaption>図：依存の向きが逆転する様子</figcaption>
+    </figure>
+    <span class="code-label good">◯ 良い例：UserService は Database（抽象）だけを知り、実装は外から受け取る</span>
+    <pre><code>// ✅ 良い例: 抽象（インターフェース）に依存
+
+// 抽象（インターフェース）を定義
+class Database {
+  connect() {
+    throw new Error('connect must be implemented');
+  }
+
+  query(sql) {
+    throw new Error('query must be implemented');
+  }
+
+  disconnect() {
+    throw new Error('disconnect must be implemented');
+  }
+}
+
+// 低レベルのモジュール（実装の詳細）
+class MySQLDatabase extends Database {
+  connect() {
+    console.log('Connecting to MySQL database...');
+  }
+
+  query(sql) {
+    console.log(`Executing query: ${sql}`);
+    return [{ id: 1, name: 'John' }];
+  }
+
+  disconnect() {
+    console.log('Disconnecting from MySQL database...');
+  }
+}
+
+class PostgreSQLDatabase extends Database {
+  connect() {
+    console.log('Connecting to PostgreSQL database...');
+  }
+
+  query(sql) {
+    console.log(`Executing query: ${sql}`);
+    return [{ id: 1, name: 'John' }];
+  }
+
+  disconnect() {
+    console.log('Disconnecting from PostgreSQL database...');
+  }
+}
+
+// 高レベルのモジュール（ビジネスロジック）
+class UserService {
+  constructor(database) {
+    // 抽象（Databaseインターフェース）に依存している ✅
+    this.database = database;
+  }
+
+  getUser(id) {
+    this.database.connect();
+    const result = this.database.query(`SELECT * FROM users WHERE id = ${id}`);
+    this.database.disconnect();
+    return result[0];
+  }
+}
+
+// 使用例
+const mysqlDb = new MySQLDatabase();
+const userService1 = new UserService(mysqlDb);
+userService1.getUser(1);
+
+// データベースを変更しても、UserServiceは変更不要 ✅
+const postgresDb = new PostgreSQLDatabase();
+const userService2 = new UserService(postgresDb);
+userService2.getUser(1);</code></pre>
+    <p><strong>メリット:</strong></p>
+    <ul>
+      <li><code>UserService</code> が抽象（<code>Database</code> インターフェース）に依存している</li>
+      <li>データベースを変更しても、<code>UserService</code> は変更不要</li>
+      <li>テスト時にモックデータベースを使える</li>
+    </ul>
+    <p>なぜ「逆転」と呼ぶのか、抽象を高レベル側（使う側）に置く理由は 41 章の「<a href="../41_アーキテクチャ/24-1_依存性逆転の原則.html">依存性逆転の原則</a>」で図とともに説明しています。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>実践的な例</h2>
+    <h3 id="sec-6-1">6.1 例2：依存性注入（Dependency Injection）</h3>
+    <p><strong>依存性注入（DI）</strong> とは、クラスが使う部品を自分で <code>new</code> せず、<strong>外から渡してもらう</strong> ことです。DIP を実現するための代表的なテクニックです。</p>
+    <span class="code-label bad">✕ 悪い例：内部でインスタンスを作成</span>
+    <pre><code>// ❌ 悪い例: 内部でインスタンスを作成
+class EmailService {
+  constructor() {
+    // 直接SMTPSenderに依存している ❌
+    this.sender = new SMTPSender();
+  }
+
+  sendEmail(to, subject, body) {
+    this.sender.send(to, subject, body);
+  }
+}
+
+class SMTPSender {
+  send(to, subject, body) {
+    console.log(`Sending email via SMTP to ${to}: ${subject}`);
+  }
+}</code></pre>
+    <span class="code-label good">◯ 良い例：依存性を注入する</span>
+    <pre><code>// ✅ 良い例: 依存性を注入する
+class EmailSender {
+  send(to, subject, body) {
+    throw new Error('send must be implemented');
+  }
+}
+
+class SMTPSender extends EmailSender {
+  send(to, subject, body) {
+    console.log(`Sending email via SMTP to ${to}: ${subject}`);
+  }
+}
+
+class SendGridSender extends EmailSender {
+  send(to, subject, body) {
+    console.log(`Sending email via SendGrid to ${to}: ${subject}`);
+  }
+}
+
+class EmailService {
+  constructor(sender) {
+    // 抽象（EmailSenderインターフェース）に依存している ✅
+    // 依存性を外部から注入（Dependency Injection）
+    this.sender = sender;
+  }
+
+  sendEmail(to, subject, body) {
+    this.sender.send(to, subject, body);
+  }
+}
+
+// 使用例
+const smtpSender = new SMTPSender();
+const emailService1 = new EmailService(smtpSender);
+emailService1.sendEmail('user@example.com', 'Hello', 'Hello World');
+
+// 送信方法を変更しても、EmailServiceは変更不要 ✅
+const sendGridSender = new SendGridSender();
+const emailService2 = new EmailService(sendGridSender);
+emailService2.sendEmail('user@example.com', 'Hello', 'Hello World');</code></pre>
+
+    <h3 id="sec-6-2">6.2 例3：テストでの活用</h3>
+    <p>抽象に依存していれば、テストのときだけ本物のデータベースの代わりに <strong>モック</strong> を渡せます。</p>
+    <span class="code-label good">◯ 良い例：テストでモックを使える</span>
+    <pre><code>// ✅ 良い例: テストでモックを使える
+
+// 抽象（インターフェース）
+class UserRepository {
+  findById(id) {
+    throw new Error('findById must be implemented');
+  }
+
+  save(user) {
+    throw new Error('save must be implemented');
+  }
+}
+
+// 実装（低レベルのモジュール）
+class DatabaseUserRepository extends UserRepository {
+  constructor(database) {
+    super();
+    this.database = database;
+  }
+
+  findById(id) {
+    // データベースから取得
+    return this.database.query(`SELECT * FROM users WHERE id = ${id}`);
+  }
+
+  save(user) {
+    // データベースに保存
+    this.database.query(`INSERT INTO users ...`);
+  }
+}
+
+// 高レベルのモジュール
+class UserService {
+  constructor(userRepository) {
+    // 抽象（UserRepositoryインターフェース）に依存している ✅
+    this.userRepository = userRepository;
+  }
+
+  getUser(id) {
+    return this.userRepository.findById(id);
+  }
+
+  createUser(userData) {
+    const user = { ...userData, id: Date.now() };
+    this.userRepository.save(user);
+    return user;
+  }
+}
+
+// テスト用のモック（低レベルのモジュール）
+class MockUserRepository extends UserRepository {
+  constructor() {
+    super();
+    this.users = [];
+  }
+
+  findById(id) {
+    return this.users.find(u =&gt; u.id === id);
+  }
+
+  save(user) {
+    this.users.push(user);
+  }
+}
+
+// テスト
+describe('UserService', () =&gt; {
+  it('should get user by id', () =&gt; {
+    // 実際のデータベースは不要 ✅
+    const mockRepo = new MockUserRepository();
+    mockRepo.save({ id: 1, name: 'John' });
+
+    const userService = new UserService(mockRepo);
+    const user = userService.getUser(1);
+
+    expect(user.name).toBe('John');
+  });
+});</code></pre>
+    <p><code>UserRepository</code> のように「ユーザーを探す・保存する」という <strong>業務の言葉</strong> で書かれた抽象は、SQL や接続の手順を知りません。高レベル側が必要とする形で抽象を作ると、DIP の効果が大きくなります（<a href="#sec-11">11. よくある誤解</a> の誤解1も参照）。</p>
+
+    <h2 id="sec-7"><span class="num">7.</span>依存性注入のパターン</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>パターン</th><th>渡し方</th></tr></thead>
+      <tbody>
+        <tr><td>1. コンストラクタインジェクション</td><td>生成時にコンストラクタの引数で渡す</td></tr>
+        <tr><td>2. セッターインジェクション</td><td>生成後にセッターメソッドで渡す</td></tr>
+        <tr><td>3. インターフェースインジェクション</td><td>メソッドの引数で渡す</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-7-1">7.1 コンストラクタインジェクション</h3>
+    <pre><code>// コンストラクタで依存性を注入
+class Service {
+  constructor(dependency) {
+    this.dependency = dependency;
+  }
+}
+
+const dependency = new Dependency();
+const service = new Service(dependency);</code></pre>
+    <h3 id="sec-7-2">7.2 セッターインジェクション</h3>
+    <pre><code>// セッターメソッドで依存性を注入
+class Service {
+  setDependency(dependency) {
+    this.dependency = dependency;
+  }
+}
+
+const service = new Service();
+service.setDependency(new Dependency());</code></pre>
+    <h3 id="sec-7-3">7.3 インターフェースインジェクション</h3>
+    <pre><code>// メソッドの引数で依存性を注入
+class Service {
+  doSomething(dependency) {
+    dependency.method();
+  }
+}
+
+const service = new Service();
+service.doSomething(new Dependency());</code></pre>
+    <p>※ メソッドの引数で渡すこの形は、一般には <strong>メソッドインジェクション</strong> とも呼ばれます。Martin Fowler の記事（参考資料）でいう「インターフェースインジェクション」は、注入を受けるための専用インターフェース（例：<code>injectFinder()</code> を持つ）をクラスに実装させる別の方式を指すので、資料を読むときは注意してください。</p>
+
+    <h2 id="sec-8"><span class="num">8.</span>実装パターン</h2>
+    <h3 id="sec-8-1">8.1 依存性注入コンテナ（DI Container）</h3>
+    <p><strong>DI コンテナ</strong> は、「どのクラスにどの部品を渡すか」を登録しておき、必要なときに組み立てて渡してくれる仕組みです。</p>
+    <pre><code>// シンプルなDIコンテナの例
+class DIContainer {
+  constructor() {
+    this.services = {};
+  }
+
+  register(name, factory) {
+    this.services[name] = factory;
+  }
+
+  resolve(name) {
+    const factory = this.services[name];
+    if (!factory) {
+      throw new Error(`Service ${name} not found`);
+    }
+    return factory(this);
+  }
+}
+
+// 使用例
+const container = new DIContainer();
+
+container.register('database', () =&gt; new MySQLDatabase());
+container.register('userRepository', (container) =&gt; {
+  return new DatabaseUserRepository(container.resolve('database'));
+});
+container.register('userService', (container) =&gt; {
+  return new UserService(container.resolve('userRepository'));
+});
+
+const userService = container.resolve('userService');</code></pre>
+    <h3 id="sec-8-2">8.2 ファクトリーパターン</h3>
+    <p><strong>ファクトリー</strong> は、オブジェクトの組み立て方を 1 か所にまとめた「工場」役のクラスや関数です。</p>
+    <pre><code>// ファクトリーで依存性を管理
+class UserServiceFactory {
+  static create(databaseType = 'mysql') {
+    let database;
+    if (databaseType === 'mysql') {
+      database = new MySQLDatabase();
+    } else if (databaseType === 'postgresql') {
+      database = new PostgreSQLDatabase();
+    }
+
+    const userRepository = new DatabaseUserRepository(database);
+    return new UserService(userRepository);
+  }
+}
+
+// 使用例
+const userService = UserServiceFactory.create('mysql');</code></pre>
+    <p>DI コンテナやファクトリーのように「組み立てを 1 か所に集める」考え方（Composition Root）は、41 章の「<a href="../41_アーキテクチャ/24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root</a>」で詳しく扱っています。</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>判断基準</h2>
+    <p>DIP を適用すべきか判断する質問です。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>質問</th><th>DIP を適用</th><th>現状のままで良い</th></tr></thead>
+      <tbody>
+        <tr><td>1. 高レベルのモジュールが低レベルのモジュールに直接依存しているか？</td><td>依存している</td><td>依存していない</td></tr>
+        <tr><td>2. テストが困難か？</td><td>困難</td><td>容易</td></tr>
+        <tr><td>3. 実装の詳細を変更する場合、高レベルのモジュールも変更が必要か？</td><td>必要</td><td>不要</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-10"><span class="num">10.</span>適用のヒント</h2>
+    <h3 id="sec-10-1">10.1 new キーワードに注意</h3>
+    <pre><code>// newキーワードで直接インスタンスを作成している場合、依存性を注入することを検討
+class Service {
+  constructor() {
+    this.dependency = new ConcreteDependency();  // ← 注意
+  }
+}</code></pre>
+    <h3 id="sec-10-2">10.2 抽象化のタイミング</h3>
+    <ul>
+      <li><strong>最初から抽象化する必要はない</strong> — <a href="10-1_DRY・KISS・YAGNI.html">YAGNI 原則</a>（今必要でないものは作らない）を考慮</li>
+      <li><strong>変更が必要になったときに抽象化する</strong> — リファクタリングのタイミングで</li>
+    </ul>
+    <h3 id="sec-10-3">10.3 依存性の方向を確認</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>依存の向き</th></tr></thead>
+      <tbody>
+        <tr><td>✕ 悪い</td><td>高レベル → 低レベル</td></tr>
+        <tr><td>◯ 良い</td><td>高レベル → 抽象 ← 低レベル</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-11"><span class="num">11.</span>よくある誤解</h2>
+    <p>ノートの「よくある間違い」をもとにしています。</p>
+    <details open><summary>誤解1：「インターフェースを 1 枚挟めば、中身は MySQL 専用でもよい」</summary><div class="body">
+      <span class="code-label bad">✕ 悪い例：抽象が具体的すぎる</span>
+    <pre><code>// ❌ 悪い例: 抽象が具体的すぎる
+class MySQLDatabaseInterface {
+  connectToMySQL() { }  // MySQL固有のメソッド
+  queryMySQL(sql) { }   // MySQL固有のメソッド
+}</code></pre>
+      <span class="code-label good">◯ 良い例：抽象は一般的に</span>
+    <pre><code>// ✅ 良い例: 抽象は一般的に
+class Database {
+  connect() { }
+  query(sql) { }
+}</code></pre>
+      <p>抽象に特定の技術の名前や手順が出てくると、技術を替えたときに抽象ごと作り直すことになり、DIP の意味がなくなります。</p>
+    </div></details>
+    <details open><summary>誤解2：「引数で受け取れるようにしたが、中で new してもかまわない」</summary><div class="body">
+      <span class="code-label bad">✕ 悪い例：内部でインスタンスを作成</span>
+    <pre><code>// ❌ 悪い例: 内部でインスタンスを作成
+class Service {
+  constructor() {
+    this.dependency = new ConcreteDependency();  // ❌
+  }
+}</code></pre>
+      <span class="code-label good">◯ 良い例：外部から注入</span>
+    <pre><code>// ✅ 良い例: 外部から注入
+class Service {
+  constructor(dependency) {
+    this.dependency = dependency;  // ✅
+  }
+}</code></pre>
+      <p>クラスの中で具体クラスを <code>new</code> した時点で、そのクラスは具体クラスに依存します。インスタンスを作るのは外側（DI コンテナやファクトリー、アプリの起動処理）の仕事です。</p>
+    </div></details>
+    <details open><summary>誤解3：「DIP のために、すべてのクラスに最初からインターフェースを用意する」</summary><div class="body"><p>ノートの「抽象化のタイミング」にあるとおり、<strong>最初から抽象化する必要はありません</strong>。データベースや外部 API のように「替わりうる・テストで差し替えたい」低レベルの部品に対して、必要になったときに抽象化します。使わない抽象は、読む人の負担を増やすだけです。</p></div></details>
+
+    <h2 id="sec-12"><span class="num">12.</span>まとめ</h2>
+    <h3 id="sec-12-1">12.1 重要なポイント</h3>
+    <ol>
+      <li><strong>高レベルのモジュールは抽象に依存</strong> — 実装の詳細に依存しない</li>
+      <li><strong>低レベルのモジュールも抽象に依存</strong> — インターフェースを実装する</li>
+      <li><strong>依存性を注入する</strong> — 外部から依存性を提供する</li>
+      <li><strong>テストしやすくする</strong> — モックやスタブを使いやすくする</li>
+    </ol>
+    <h3 id="sec-12-2">12.2 チェックリスト</h3>
+    <ul>
+      <li>☐ 高レベルのモジュールが低レベルのモジュールに直接依存していないか？</li>
+      <li>☐ 抽象（インターフェース）を定義しているか？</li>
+      <li>☐ 依存性を外部から注入しているか？</li>
+      <li>☐ テストでモックを使えるか？</li>
+    </ul>
+    <h3 id="sec-12-3">12.3 関連原則</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原則・技術</th><th>DIP との関係</th></tr></thead>
+      <tbody>
+        <tr><td><a href="30-3_開放閉鎖の原則.html">Open/Closed Principle（OCP）</a></td><td>DIP を守ることで、OCP も守りやすくなる</td></tr>
+        <tr><td><a href="30-5_インターフェース分離の原則.html">Interface Segregation Principle（ISP）</a></td><td>適切なインターフェース設計が DIP を守る助けになる</td></tr>
+        <tr><td>Dependency Injection（DI）</td><td>DIP を実現するためのテクニック</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-12-4">12.4 関連ページ</h3>
+    <ul>
+      <li><a href="../43_モジュール設計/40-4_疎結合・DIP・DIの整理.html">疎結合・DIP・DI の整理（43 モジュール設計）</a> — 疎結合・インターフェース・DIP・DI の関係</li>
+      <li><a href="../43_モジュール設計/40-2_依存関係の管理.html">依存関係の管理（43 モジュール設計）</a> — モジュール単位での DIP の実現</li>
+      <li><a href="../41_アーキテクチャ/24-1_依存性逆転の原則.html">依存性逆転の原則（41 アーキテクチャ）</a> — アーキテクチャ視点</li>
+      <li><a href="../41_アーキテクチャ/24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root（41 アーキテクチャ）</a> — DI の詳細</li>
+      <li><a href="../41_アーキテクチャ/24-3_インターフェースと抽象化.html">インターフェースと抽象化（41 アーキテクチャ）</a></li>
+      <li><a href="30-1_SOLIDの全体像.html">SOLID の全体像</a> — 5 原則の一覧</li>
+    </ul>
+
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：48_原則/30_オブジェクト指向の原則/SOLID/05_DIP (依存性逆転の原則)</li>
+      <li>Robert C. Martin, "Clean Architecture"</li>
+      <li>Martin Fowler, "Inversion of Control Containers and the Dependency Injection pattern"</li>
+      <li>"Design Patterns: Elements of Reusable Object-Oriented Software" by Gang of Four</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="30-5_インターフェース分離の原則.html"><span class="lbl">← 前のページ</span>ISP</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="40-1_パッケージ・アーキテクチャの原則への案内.html"><span class="lbl">次のページ →</span>パッケージ・アーキテクチャの原則</a>
+    </nav>
+    <footer class="page-foot">48_原則 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

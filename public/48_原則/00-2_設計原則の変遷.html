@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設計原則の変遷 — KISS から SOLID まで、何を解決してきたか｜原則解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">原則解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › 設計原則の変遷</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>設計原則の変遷 — KISS から SOLID まで、何を解決してきたか</h1>
+      <p class="lead">ソフトウェア設計の原則は、<strong>過去の現場で繰り返し起きた失敗</strong> を教訓に、時代とともに積み重ねられてきました。このページでは代表的な6つ（KISS・高凝集/低結合・関心の分離・YAGNI・DRY・SOLID）を <strong>提唱・体系化された西暦順</strong> に並べ、それぞれ <strong>何が課題だったのか</strong> と <strong>どう解決しようとしたのか</strong> を整理します。</p>
+      <p class="meta">もとにしたノート：00_設計原則の変遷</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>原則は「その時代の困りごと」への答えとして生まれました。<strong>KISS（1960年頃）</strong> は複雑さそのものを疑い、<strong>高凝集・低結合</strong> と <strong>関心の分離（1974年）</strong> は分け方の物差しと考え方を与え、<strong>YAGNI（1996年頃）</strong> は先回り実装を止め、<strong>DRY（1999年）</strong> は知識の重複をなくし、<strong>SOLID（2000年）</strong> はそれらをクラス設計の言葉にしました。原則同士は置き換え関係ではなく、<strong>効くレイヤーが違う</strong> ものです。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p>このページは48章の <strong>年表</strong> です。各原則の詳しい定義や誤解は、それぞれのページで扱います。ここでは「なぜその原則が必要になったのか」に注目します。</p>
+    <ul>
+      <li>6つの原則の年表（提唱・体系化の時期と主な提唱者）</li>
+      <li>各原則の <strong>背景となった課題</strong>・<strong>何を解決しようとしたか</strong>・<strong>解決の考え方</strong></li>
+      <li>原則同士の関係（時代の流れ、効くレイヤー、向いている方向）</li>
+    </ul>
+    <p>48章全体の地図は <a href="00-1_原則の全体像.html">原則の全体像</a> を見てください。</p>
+
+    <h2 id="sec-2"><span class="num">2.</span>6つの原則の年表</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>順</th><th>原則</th><th>略称</th><th>提唱・体系化</th><th>主な提唱者</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Keep It Simple, Stupid</td><td><strong>KISS</strong></td><td>1960年頃</td><td>Kelly Johnson（Lockheed Skunk Works）</td></tr>
+        <tr><td>2</td><td>高凝集・低結合</td><td><strong>Cohesion / Coupling</strong></td><td>1960年代中盤（1974年に体系化）</td><td>Larry L. Constantine ほか</td></tr>
+        <tr><td>3</td><td>関心の分離</td><td><strong>SoC</strong></td><td>1974年</td><td>Edsger W. Dijkstra</td></tr>
+        <tr><td>4</td><td>You Aren't Gonna Need It</td><td><strong>YAGNI</strong></td><td>1996年頃</td><td>Kent Beck（XP ／ C3プロジェクト）</td></tr>
+        <tr><td>5</td><td>Don't Repeat Yourself</td><td><strong>DRY</strong></td><td>1999年</td><td>Andy Hunt, Dave Thomas</td></tr>
+        <tr><td>6</td><td>SOLID</td><td><strong>SOLID</strong></td><td>2000年（略語は2004年頃）</td><td>Robert C. Martin（略語：Michael Feathers）</td></tr>
+      </tbody>
+    </table></div>
+    <figure>
+    <svg viewBox="0 0 720 330" role="img" aria-label="縦の時間軸に6つの原則を並べた年表。1960年：KISS、複雑さそのものを疑う。1960年代から1974年：高凝集・低結合、モジュール分割の評価尺度。1974年：SoC（関心の分離）、思考と設計の整理技法。1996年：YAGNI、過剰設計・先回り実装への反発。1999年：DRY、知識の重複と変更コスト。2000年：SOLID、オブジェクト指向設計の具体的ガイドライン">
+      <path d="M170,20 L170,312" class="d-line"/>
+      <text x="155" y="44" text-anchor="end" class="d-text-bold">1960</text>
+      <rect x="164" y="34" width="12" height="12" rx="6" class="d-box-accent"/>
+      <rect x="190" y="20" width="515" height="38" rx="6" class="d-box"/>
+      <text x="205" y="44" class="d-text-bold">KISS</text>
+      <text x="330" y="44" class="d-text-sub">複雑さそのものを疑う</text>
+
+      <text x="155" y="94" text-anchor="end" class="d-text-bold">1960s〜1974</text>
+      <rect x="164" y="84" width="12" height="12" rx="6" class="d-box-accent"/>
+      <rect x="190" y="70" width="515" height="38" rx="6" class="d-box"/>
+      <text x="205" y="94" class="d-text-bold">高凝集・低結合</text>
+      <text x="330" y="94" class="d-text-sub">モジュール分割の評価尺度</text>
+
+      <text x="155" y="144" text-anchor="end" class="d-text-bold">1974</text>
+      <rect x="164" y="134" width="12" height="12" rx="6" class="d-box-accent"/>
+      <rect x="190" y="120" width="515" height="38" rx="6" class="d-box"/>
+      <text x="205" y="144" class="d-text-bold">SoC</text>
+      <text x="330" y="144" class="d-text-sub">思考と設計の整理技法（関心の分離）</text>
+
+      <text x="155" y="194" text-anchor="end" class="d-text-bold">1996</text>
+      <rect x="164" y="184" width="12" height="12" rx="6" class="d-box-accent"/>
+      <rect x="190" y="170" width="515" height="38" rx="6" class="d-box"/>
+      <text x="205" y="194" class="d-text-bold">YAGNI</text>
+      <text x="330" y="194" class="d-text-sub">過剰設計・先回り実装への反発</text>
+
+      <text x="155" y="244" text-anchor="end" class="d-text-bold">1999</text>
+      <rect x="164" y="234" width="12" height="12" rx="6" class="d-box-accent"/>
+      <rect x="190" y="220" width="515" height="38" rx="6" class="d-box"/>
+      <text x="205" y="244" class="d-text-bold">DRY</text>
+      <text x="330" y="244" class="d-text-sub">知識の重複と変更コスト</text>
+
+      <text x="155" y="294" text-anchor="end" class="d-text-bold">2000</text>
+      <rect x="164" y="284" width="12" height="12" rx="6" class="d-box-accent"/>
+      <rect x="190" y="270" width="515" height="38" rx="6" class="d-box"/>
+      <text x="205" y="294" class="d-text-bold">SOLID</text>
+      <text x="330" y="294" class="d-text-sub">オブジェクト指向設計の具体的ガイドライン</text>
+    </svg>
+    <figcaption>図：設計原則の歴史的流れ（上から古い順）</figcaption>
+    </figure>
+
+    <h2 id="sec-3"><span class="num">3.</span>KISS（1960年頃）</h2>
+    <p><strong>Keep It Simple, Stupid</strong> — 「シンプルに保て」。米国の航空機メーカー Lockheed の開発部門（Skunk Works）の技術者 Kelly Johnson の言葉とされます。</p>
+    <h3 id="sec-3-1">3.1 背景となった課題</h3>
+    <ul>
+      <li>高度な技術ほど複雑になりがちで、<strong>現場で修理・運用できない</strong> 設計が増えていた</li>
+      <li>複雑さはバグ・故障・コスト増の温床になる</li>
+      <li>ソフトウェアでも、1960〜70年代に <strong>複雑さがプロジェクト失敗の主因</strong> だと認識され始めた</li>
+    </ul>
+    <h3 id="sec-3-2">3.2 何を解決しようとしたか</h3>
+    <p><strong>「動くが複雑すぎて使えない・直せない」</strong> という問題に対し、設計段階から <strong>不要な複雑さを排除する</strong> ことを目標にしました。</p>
+    <ul>
+      <li>平均的な技術者が、限られた道具で <strong>現場で修理できる</strong> レベルまで単純化する（航空機設計の文脈）</li>
+      <li>ソフトウェアでは、<strong>読みやすさ・保守性・信頼性</strong> を優先し、賢さより分かりやすさを選ぶ</li>
+    </ul>
+    <h3 id="sec-3-3">3.3 解決の考え方</h3>
+    <ul>
+      <li>必要以上の抽象化・最適化・機能追加を避ける</li>
+      <li>1つの関数・モジュールは <strong>1つのこと</strong> だけを行う</li>
+      <li>将来の拡張を理由にした <strong>今の複雑化</strong> を疑う</li>
+    </ul>
+    <p>→ 詳細：<a href="10-1_DRY・KISS・YAGNI.html#sec-4">DRY・KISS・YAGNI の「KISS 原則」</a></p>
+
+    <h2 id="sec-4"><span class="num">4.</span>高凝集・低結合（1960年代中盤〜1974年）</h2>
+    <p><strong>High Cohesion / Low Coupling</strong> — モジュール内はまとまりよく、モジュール間はゆるやかにつなぐ。<strong>モジュール</strong> は、プログラムを分けたときの1つのまとまり（関数・クラス・ファイル・パッケージなど）のことです。</p>
+    <h3 id="sec-4-1">4.1 背景となった課題</h3>
+    <ul>
+      <li>ソフトウェア規模が拡大し、<strong>スパゲッティコード</strong>（goto 多用・全体が絡み合った構造）が保守不能に</li>
+      <li>1か所を直すと <strong>どこまで影響するか分からない</strong> 変更が日常化</li>
+      <li>「良いプログラム」と「壊れやすいプログラム」の違いを <strong>客観的に語る尺度</strong> がなかった</li>
+    </ul>
+    <h3 id="sec-4-2">4.2 何を解決しようとしたか</h3>
+    <p><strong>「変更しやすいモジュール分割の基準は何か」</strong> という問題に対し、2つの尺度を提示しました。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>尺度</th><th>悪い状態</th><th>良い状態</th></tr></thead>
+      <tbody>
+        <tr><td><strong>凝集度</strong></td><td>関係のない処理が1モジュールに混在（低凝集）</td><td>同じ目的の処理だけが集まる（高凝集）</td></tr>
+        <tr><td><strong>結合度</strong></td><td>モジュール同士が内部まで知り合い（密結合）</td><td>必要最小限のインターフェースだけで接続（疎結合）</td></tr>
+      </tbody>
+    </table></div>
+    <h3 id="sec-4-3">4.3 解決の考え方</h3>
+    <ul>
+      <li><strong>高凝集</strong>：変更の理由が同じものは1モジュールにまとめ、影響を局所化する</li>
+      <li><strong>低結合</strong>：モジュール間は抽象（インターフェース）越しに接続し、差し替え・テスト・再利用を容易にする</li>
+      <li>1968年に初出、1974年の <em>Structured Design</em>（Stevens, Myers, Constantine）で広く知られるようになった</li>
+    </ul>
+    <p>→ 詳細：41 の <a href="../41_アーキテクチャ/13-1_モジュール性と疎結合高凝集.html">モジュール性と疎結合・高凝集</a>。分類の詳細は 43 の <a href="../43_モジュール設計/20-1_凝集度.html">凝集度</a>・<a href="../43_モジュール設計/20-2_結合度.html">結合度</a>、設計の基本としては 42 の <a href="../42_ソフトウェア設計/10-4_凝集度と結合度.html">凝集度と結合度</a></p>
+
+    <h2 id="sec-5"><span class="num">5.</span>関心の分離 SoC（1974年）</h2>
+    <p><strong>Separation of Concerns</strong> — 異なる関心（目的・責任）は別の場所に分ける。</p>
+    <h3 id="sec-5-1">5.1 背景となった課題</h3>
+    <ul>
+      <li>プログラムの <strong>正しさ・効率・望ましさ</strong> など、評価軸が異なる性質を <strong>同時に扱おうとすると思考が混乱</strong> する</li>
+      <li>1つの関数・モジュールに <strong>表示・検証・永続化・通知</strong> など目的の異なる処理が混在する（<strong>永続化</strong>は、データベースなどにデータを保存すること）</li>
+      <li><strong>構造化プログラミング</strong>（goto を使わず、順次・分岐・繰り返しの組み合わせで書く方法）以降、<strong>複雑さをどう整理して考えるか</strong> の方法論が求められていた</li>
+    </ul>
+    <h3 id="sec-5-2">5.2 何を解決しようとしたか</h3>
+    <p><strong>「複数の観点を一度に扱うと、どれも中途半端になる」</strong> という認知的な問題に対し、<strong>1つの観点に集中して考える</strong> 技法を提唱しました。</p>
+    <ul>
+      <li>正しさだけを見る日、効率だけを見る日、と <strong>関心ごとに分けて検討</strong> する</li>
+      <li>設計では、<strong>異なる目的・責任を別モジュール・別レイヤーに分離</strong> する（後世のソフトウェア設計への展開）</li>
+    </ul>
+    <h3 id="sec-5-3">5.3 解決の考え方</h3>
+    <ul>
+      <li>「ユーザー登録」という流れの中でも、<strong>表示・検証・保存・通知</strong> は別の関心として切り出す</li>
+      <li>1か所の変更が他の関心に波及しないよう、<strong>境界</strong> を設ける</li>
+      <li>高凝集・低結合と組み合わさり、レイヤードアーキテクチャや MVC の根底にある（<strong>レイヤードアーキテクチャ</strong>は表示・業務ロジック・データアクセスなどを層に分ける構成、<strong>MVC</strong> は Model・View・Controller に分ける構成）</li>
+    </ul>
+    <p>→ 詳細：<a href="20-1_関心の分離.html">関心の分離</a>（設計の基礎としては 42 の <a href="../42_ソフトウェア設計/10-3_関心の分離.html">関心の分離</a>）</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>YAGNI（1996年頃）</h2>
+    <p><strong>You Aren't Gonna Need It</strong> — 今いらない機能は作らない。</p>
+    <h3 id="sec-6-1">6.1 背景となった課題</h3>
+    <ul>
+      <li>1990年代、<strong>綿密な事前設計</strong> が主流で、「将来の拡張性」の名のもと <strong>使われない機能を先回り実装</strong> する傾向が強かった</li>
+      <li>作った機能の多くは <strong>実際には使われず</strong>、テスト・保守コストだけが残る</li>
+      <li>要件は開発中に変わるため、先回りした設計が <strong>すぐ陳腐化</strong> する</li>
+    </ul>
+    <h3 id="sec-6-2">6.2 何を解決しようとしたか</h3>
+    <p><strong>「将来必要になるかもしれない」という理由での過剰実装</strong> を止め、<strong>今の問題だけを今解く</strong> ことを促しました。</p>
+    <ul>
+      <li>Chrysler C3 給与プロジェクト（1996年〜）で Kent Beck が Chet Hendrickson の先回り提案に繰り返し使ったフレーズが起源</li>
+      <li><strong>エクストリーム・プログラミング（XP）</strong>（短い周期で動くものを作り、テストとリファクタリングを重ねるアジャイル開発の手法）の <strong>Simple Design（単純な設計）</strong> の中核</li>
+    </ul>
+    <h3 id="sec-6-3">6.3 解決の考え方</h3>
+    <ul>
+      <li>今のテストを通す最小の実装に集中する</li>
+      <li>「いつか必要になる」機能は、<strong>本当に必要になったとき</strong> に追加する</li>
+      <li>ただし <strong>変更しやすい構造</strong> を作ることと、<strong>未使用機能を作ること</strong> は別（構造の柔軟性は残す）</li>
+    </ul>
+    <p>→ 詳細：<a href="10-1_DRY・KISS・YAGNI.html#sec-5">DRY・KISS・YAGNI の「YAGNI 原則」</a>、<a href="10-2_DRY・YAGNIの落とし穴と実践的判断.html">DRY・YAGNI の落とし穴と実践的判断</a></p>
+
+    <h2 id="sec-7"><span class="num">7.</span>DRY（1999年）</h2>
+    <p><strong>Don't Repeat Yourself</strong> — 同じ知識を二重に持たない。</p>
+    <h3 id="sec-7-1">7.1 背景となった課題</h3>
+    <ul>
+      <li>同じロジック・仕様・知識が <strong>コード・コメント・DB スキーマ・テスト・ドキュメント</strong> など複数箇所に散在する（<strong>DB スキーマ</strong>は、データベースの表や列の定義）</li>
+      <li>1か所だけ直して <strong>他を直し忘れる</strong> と、システム内で矛盾が生じる（「いつ忘れるか」の問題）</li>
+      <li>「コピペを避ける」だけでは、<strong>見た目は違うが意味は同じ</strong> 重複を見逃す</li>
+    </ul>
+    <h3 id="sec-7-2">7.2 何を解決しようとしたか</h3>
+    <p><strong>「知識の重複」</strong> そのものを排除し、<strong>変更は1か所で済む</strong> 状態を目指しました。</p>
+    <ul>
+      <li>Andy Hunt と Dave Thomas が『達人プログラマー』（1999年）で体系化</li>
+      <li>コピペ防止にとどまらず、<strong>意図・仕様・データ定義</strong> の単一の正（Single Source of Truth）を保つ</li>
+    </ul>
+    <h3 id="sec-7-3">7.3 解決の考え方</h3>
+    <ul>
+      <li>「この仕様が変わったら、何か所直す必要があるか？」が acid test（それで本物かどうかが分かる決め手の試験）</li>
+      <li>定数化・関数化・コード生成・自動テスト生成など、<strong>表現形式が違っても知識は1つ</strong> にまとめる</li>
+      <li>ただし <strong>たまたま似ているだけ</strong> のコードを無理に統合すると、かえって複雑になる（DRY の誤用に注意）</li>
+    </ul>
+    <p>→ 詳細：<a href="10-1_DRY・KISS・YAGNI.html#sec-3">DRY・KISS・YAGNI の「DRY 原則」</a>、<a href="10-3_コードの重複とDRY原則違反.html">コードの重複と DRY 原則違反</a></p>
+
+    <h2 id="sec-8"><span class="num">8.</span>SOLID（2000年）</h2>
+    <p><strong>S</strong>ingle Responsibility ／ <strong>O</strong>pen-Closed ／ <strong>L</strong>iskov Substitution ／ <strong>I</strong>nterface Segregation ／ <strong>D</strong>ependency Inversion の頭文字です。</p>
+    <h3 id="sec-8-1">8.1 背景となった課題</h3>
+    <ul>
+      <li>オブジェクト指向（OO）普及後、<strong>継承の乱用・巨大クラス・具体クラスへの直接依存</strong> により、ソフトウェアが <strong>変更に弱く腐敗（software rot）</strong> していく</li>
+      <li>モジュール分割の原則（SoC、高凝集・低結合）はあるが、<strong>クラス設計レベルでどう実践するか</strong> の指針が不足していた</li>
+      <li>小さな変更が <strong>連鎖的に広がる</strong> 依存関係の設計が問題だった</li>
+    </ul>
+    <h3 id="sec-8-2">8.2 何を解決しようとしたか</h3>
+    <p><strong>「変更に強い OO 設計」</strong> のための5原則を1つの枠組みにまとめました。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>原則</th><th>解決する課題</th><th>解決の方向</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SRP</strong></td><td>1クラスに複数の変更理由が混在</td><td>1クラス1責任に分割</td></tr>
+        <tr><td><strong>OCP</strong></td><td>機能追加のたびに既存コードを書き換える</td><td>拡張で対応し、修正は閉じる</td></tr>
+        <tr><td><strong>LSP</strong></td><td>サブタイプが親の契約を破る</td><td>置換可能な継承関係を保つ</td></tr>
+        <tr><td><strong>ISP</strong></td><td>使わないメソッドへの依存を強いられる</td><td>小さく分割したインターフェース</td></tr>
+        <tr><td><strong>DIP</strong></td><td>上位が下位の具体実装に依存</td><td>抽象に依存し、具体は注入する</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li>Robert C. Martin が 2000年の論文 <em>Design Principles and Design Patterns</em> で整理</li>
+      <li>略語 <strong>SOLID</strong> は Michael Feathers が 2004年頃に提案（個々の原則はそれ以前から存在）</li>
+    </ul>
+    <h3 id="sec-8-3">8.3 解決の考え方</h3>
+    <ul>
+      <li>クラス単位で <strong>関心の分離（SRP）</strong> と <strong>依存の向きの制御（DIP）</strong> を実践する</li>
+      <li>高凝集・低結合を <strong>OO の文法（クラス・インターフェース・継承）</strong> で具体化したもの</li>
+      <li>デザインパターンやクリーンアーキテクチャの土台になる</li>
+    </ul>
+    <p>→ 詳細：<a href="30-2_単一責任の原則.html">SRP（単一責任の原則）</a>、<a href="30-3_開放閉鎖の原則.html">OCP（開放閉鎖の原則）</a>、<a href="30-4_リスコフの置換原則.html">LSP（リスコフの置換原則）</a>、<a href="30-5_インターフェース分離の原則.html">ISP（インターフェース分離の原則）</a>、<a href="30-6_依存性逆転の原則.html">DIP（依存性逆転の原則）</a>（入口は <a href="30-1_SOLIDの全体像.html">SOLID の全体像</a>）</p>
+
+    <h2 id="sec-9"><span class="num">9.</span>原則の関係 — 時代の流れとレイヤー</h2>
+    <p><a href="#sec-2">年表の図</a>のとおり、原則は「複雑さを疑う → 分け方の物差し → 考え方の整理 → 作りすぎの抑制 → 知識の重複の排除 → OO 設計への具体化」と積み重なってきました。ただし、原則同士は <strong>置き換え関係ではなく、効くレイヤーが違う</strong> ことが多いです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>レベル</th><th>主な原則</th></tr></thead>
+      <tbody>
+        <tr><td>思想・全般</td><td>KISS</td></tr>
+        <tr><td>アーキテクチャ・モジュール</td><td>SoC、高凝集・低結合</td></tr>
+        <tr><td>クラス設計（OO）</td><td>SOLID</td></tr>
+        <tr><td>実装・日々の判断</td><td>DRY、KISS、YAGNI</td></tr>
+      </tbody>
+    </table></div>
+    <p>向いている方向でも分けられます。</p>
+    <div class="grid c3">
+      <div class="card warn"><h4>作らない・複雑にしない</h4><p><strong>KISS</strong> と <strong>YAGNI</strong></p></div>
+      <div class="card accent"><h4>整理して変更しやすくする</h4><p><strong>DRY</strong> と <strong>SoC</strong> と <strong>SOLID</strong></p></div>
+      <div class="card good"><h4>良し悪しを測る物差し</h4><p><strong>高凝集・低結合</strong>（「整理して変更しやすくする」方向の評価に使う）</p></div>
+    </div>
+
+    <h2 id="sec-10"><span class="num">10.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「新しい原則は古い原則を置き換えたもの」</summary><div class="body"><p>SOLID は KISS や高凝集・低結合を時代遅れにしたわけではありません。SOLID は <strong>高凝集・低結合をオブジェクト指向の文法で具体化</strong> したもので、KISS は今も思想・全般のレベルで、DRY・YAGNI は日々の実装判断のレベルで効いています。原則同士は <strong>効くレイヤーが違う</strong> と考えます。</p></div></details>
+    <details open><summary>誤解2：「YAGNI は変更しやすい構造も作らなくてよい、という意味」</summary><div class="body"><p>YAGNI が止めるのは <strong>未使用の機能を先回りで作ること</strong> です。<strong>変更しやすい構造</strong> を作ることとは別で、構造の柔軟性は残します。詳しくは <a href="10-2_DRY・YAGNIの落とし穴と実践的判断.html">DRY・YAGNI の落とし穴と実践的判断</a>。</p></div></details>
+    <details open><summary>誤解3：「DRY はコピペを禁止する原則」</summary><div class="body"><p>DRY が排除したいのは <strong>知識の重複</strong> です。コピペ防止にとどまらず、コード・コメント・DB スキーマ・ドキュメントなど <strong>表現形式が違っても同じ知識</strong> なら1つにまとめます。逆に、<strong>たまたま似ているだけ</strong> のコードを無理に統合するのは誤用です。</p></div></details>
+
+    <h2 id="sec-11"><span class="num">11.</span>まとめ</h2>
+    <ul>
+      <li><strong>KISS（1960年頃）</strong>：「動くが複雑すぎて直せない」に対し、不要な複雑さを設計段階から排除する</li>
+      <li><strong>高凝集・低結合（1960年代中盤〜1974年）</strong>：変更しやすいモジュール分割を語る <strong>客観的な尺度</strong> を与えた</li>
+      <li><strong>SoC（1974年）</strong>：複数の観点を一度に扱わず、<strong>1つの関心に集中</strong> して考え、設計でも分ける</li>
+      <li><strong>YAGNI（1996年頃）</strong>：「将来必要かも」の過剰実装を止め、<strong>今の問題だけを今解く</strong></li>
+      <li><strong>DRY（1999年）</strong>：<strong>知識の重複</strong> を排除し、変更を1か所で済ませる</li>
+      <li><strong>SOLID（2000年）</strong>：変更に強い OO 設計の5原則。高凝集・低結合をクラス設計の言葉にしたもの</li>
+      <li>KISS・YAGNI は「作らない・複雑にしない」方向、DRY・SoC・SOLID は「整理して変更しやすくする」方向、高凝集・低結合はその <strong>物差し</strong></li>
+    </ul>
+    <p>関連：アーキテクチャに効く原則は 41 の <a href="../41_アーキテクチャ/12-3_トレードオフと原則.html">トレードオフと原則</a>、オブジェクト指向と SOLID の関係は 42 の <a href="../42_ソフトウェア設計/20-5_SOLIDとオブジェクト指向.html">SOLID とオブジェクト指向</a> で扱っています。</p>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：00_全体像/00_設計原則の変遷</li>
+      <li>W. P. Stevens, G. J. Myers, L. L. Constantine "Structured Design", IBM Systems Journal, 1974</li>
+      <li>Andrew Hunt, David Thomas『達人プログラマー』（The Pragmatic Programmer）, 1999</li>
+      <li>Robert C. Martin "Design Principles and Design Patterns", 2000</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-1_原則の全体像.html"><span class="lbl">← 前のページ</span>全体像</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="10-1_DRY・KISS・YAGNI.html"><span class="lbl">次のページ →</span>DRY・KISS・YAGNI</a>
+    </nav>
+    <footer class="page-foot">48_原則 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原則の全体像 — KISS・DRY・SOLID をどこで学び、どこで使うか｜原則解説</title>
+<style>
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface-2:#f0eee8; --border:#dedad0;
+  --text:#22211d; --text-2:#5d5a52; --text-3:#8a867c;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --accent-text:#244a6f;
+  --good:#2e7d4f; --good-soft:#e2f2e8;
+  --warn:#a5661a; --warn-soft:#f8eddc;
+  --bad:#b03a3a; --bad-soft:#f7e3e3;
+  --purple:#6b4fa0; --purple-soft:#ece6f6;
+  --code-bg:#f2f0ea; --code-text:#2b2a26;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.04);
+  --radius:10px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Consolas","Menlo","Noto Sans Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+    --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+    --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+    --good:#6cc191; --good-soft:#1c3226;
+    --warn:#e0a85c; --warn-soft:#3a2d1a;
+    --bad:#e88080; --bad-soft:#3d2222;
+    --purple:#b49ae0; --purple-soft:#2c2540;
+    --code-bg:#262521; --code-text:#e6e4dd;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --surface:#1f1e1b; --surface-2:#282723; --border:#3a3833;
+  --text:#ecebe6; --text-2:#b5b2a9; --text-3:#85827a;
+  --accent:#7fb0e0; --accent-soft:#1f2f40; --accent-text:#a9cbee;
+  --good:#6cc191; --good-soft:#1c3226;
+  --warn:#e0a85c; --warn-soft:#3a2d1a;
+  --bad:#e88080; --bad-soft:#3d2222;
+  --purple:#b49ae0; --purple-soft:#2c2540;
+  --code-bg:#262521; --code-text:#e6e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+
+/* ===== Base ===== */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+img,svg{max-width:100%}
+::selection{background:var(--accent-soft)}
+
+/* ===== Top bar ===== */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.topbar-inner{max-width:1240px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;font-size:14px}
+.topbar .site{font-weight:700;color:var(--text);text-decoration:none;white-space:nowrap}
+.topbar .crumb{color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.topbar .crumb a{color:var(--text-2);text-decoration:none}
+.theme-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.toc-btn{display:none;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+
+/* ===== Layout ===== */
+.layout{max-width:1240px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:48px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow:auto;padding:28px 0 40px;font-size:13.5px;line-height:1.55}
+.toc-title{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.08em;margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0}
+.toc a{display:block;padding:5px 10px;border-left:2px solid var(--border);color:var(--text-2);text-decoration:none}
+.toc a.lv3{padding-left:22px;font-size:12.5px;color:var(--text-3)}
+.toc a:hover{color:var(--text);border-left-color:var(--text-3)}
+.toc a.active{color:var(--accent-text);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+main{min-width:0;padding:36px 0 80px;max-width:820px}
+
+/* ===== Hero ===== */
+.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+.hero h1{font-size:clamp(26px,4.2vw,36px);line-height:1.35;margin:14px 0 12px;letter-spacing:.01em}
+.lead{font-size:17px;color:var(--text-2);margin:0}
+.meta{margin-top:14px;font-size:13px;color:var(--text-3)}
+
+/* ===== Headings & text ===== */
+h2{font-size:24px;line-height:1.45;margin:56px 0 16px;padding-top:12px;scroll-margin-top:80px}
+h2 .num{color:var(--accent);margin-right:.35em;font-variant-numeric:tabular-nums}
+h3{font-size:19px;line-height:1.5;margin:36px 0 10px;scroll-margin-top:80px}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:1.4em}
+li{margin:4px 0}
+li::marker{color:var(--text-3)}
+strong{font-weight:700}
+mark{background:var(--warn-soft);color:inherit;padding:0 .2em;border-radius:3px}
+hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+blockquote{margin:18px 0;padding:12px 18px;border-left:4px solid var(--accent);background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;color:var(--text-2)}
+blockquote p:last-child{margin:0}
+.muted{color:var(--text-3)}
+.small{font-size:13.5px}
+
+/* ===== Code ===== */
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-text);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.65;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:inherit}
+.code-label{display:inline-block;font-size:12px;font-weight:700;color:var(--text-3);margin:0 0 4px}
+.code-label.bad{color:var(--bad)} .code-label.good{color:var(--good)}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;margin:0 0 20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.stars{color:var(--warn);letter-spacing:1px;white-space:nowrap}
+
+/* ===== Callouts ===== */
+.callout{border:1px solid var(--border);border-left-width:4px;border-radius:var(--radius);padding:14px 18px;margin:18px 0;background:var(--surface)}
+.callout > :last-child{margin-bottom:0}
+.callout-title{font-weight:700;font-size:14.5px;margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.callout.key{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.key .callout-title{color:var(--accent-text)}
+.callout.tip{border-left-color:var(--good);background:var(--good-soft)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.bad .callout-title{color:var(--bad)}
+
+/* ===== Cards & grids ===== */
+.grid{display:grid;gap:14px;margin:0 0 20px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h4{margin:0 0 6px;font-size:15.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.good{border-top:3px solid var(--good)} .card.bad{border-top:3px solid var(--bad)} .card.accent{border-top:3px solid var(--accent)} .card.warn{border-top:3px solid var(--warn)} .card.purple{border-top:3px solid var(--purple)}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle}
+.badge.accent{background:var(--accent-soft);color:var(--accent-text);border-color:transparent}
+.badge.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.badge.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+
+/* ===== Details (accordion) ===== */
+details{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin:0 0 12px}
+summary{cursor:pointer;padding:12px 16px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--text-3);transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details > .body{padding:0 18px 14px}
+
+/* ===== Steps / timeline ===== */
+.steps{counter-reset:step;list-style:none;padding:0;margin:0 0 20px}
+.steps > li{counter-increment:step;position:relative;padding:0 0 14px 44px;margin:0}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps > li::after{content:"";position:absolute;left:13.5px;top:32px;bottom:0;width:1px;background:var(--border)}
+.steps > li:last-child::after{display:none}
+
+/* ===== Figures (inline SVG diagrams) ===== */
+figure{margin:20px 0 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+figure svg{display:block;width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--text-3);text-align:center;margin-top:10px}
+/* SVG classes: use these so diagrams follow light/dark theme */
+.d-box{fill:var(--surface-2);stroke:var(--border);stroke-width:1.5}
+.d-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-box-good{fill:var(--good-soft);stroke:var(--good);stroke-width:1.5}
+.d-box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.d-box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.5}
+.d-box-purple{fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5}
+.d-line{stroke:var(--text-3);stroke-width:1.5;fill:none}
+.d-line-accent{stroke:var(--accent);stroke-width:2;fill:none}
+.d-line-dash{stroke:var(--text-3);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+.d-text{fill:var(--text);font-family:var(--font);font-size:14px}
+.d-text-sub{fill:var(--text-2);font-family:var(--font);font-size:12px}
+.d-text-bold{fill:var(--text);font-family:var(--font);font-size:14px;font-weight:700}
+.d-text-accent{fill:var(--accent-text);font-family:var(--font);font-size:13px;font-weight:700}
+.d-arrowhead{fill:var(--text-3)}
+.d-arrowhead-accent{fill:var(--accent)}
+
+/* ===== Page nav ===== */
+.pager{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;margin:64px 0 0;padding-top:24px;border-top:1px solid var(--border)}
+.pager a{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--text);font-size:14px;line-height:1.5}
+.pager a:hover{border-color:var(--accent)}
+.pager .lbl{display:block;font-size:12px;color:var(--text-3)}
+.pager .next{text-align:right}
+.pager .idx{align-self:center;text-align:center}
+.pager .empty{visibility:hidden}
+.sources{font-size:13.5px;color:var(--text-2)}
+.sources li{margin:3px 0;word-break:break-all}
+footer.page-foot{margin-top:28px;font-size:12.5px;color:var(--text-3)}
+
+/* ===== Responsive ===== */
+@media (max-width: 960px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:0;padding:0 16px}
+  .toc{position:fixed;top:52px;left:0;right:0;max-height:70vh;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:none;z-index:15;box-shadow:var(--shadow)}
+  .toc.open{display:block}
+  .toc-btn{display:inline-block}
+  main{padding-top:24px}
+  .grid.c2,.grid.c3{grid-template-columns:minmax(0,1fr)}
+  .pager{grid-template-columns:1fr}
+  .pager .next{text-align:left}
+  .topbar-inner{padding:10px 16px}
+}
+@media print{
+  .topbar,.toc,.pager{display:none}
+  .layout{display:block}
+  body{background:#fff}
+}
+</style>
+<!-- workbench-theme:start -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* 解説HTML 用「A ワークベンチ」テーマ（ダークのみ）。design/05_ui-design.md に合わせる。
+   このファイルが正。scripts/apply-explainer-theme.mjs で各ページ／style.css に書き込む。
+   :root を3回重ねて、ページ側の :root[data-theme="dark"] や :root:not([data-theme="light"]) より優先させる。 */
+:root:root:root{
+  color-scheme:dark;
+  --bg:#14161b; --surface:#1b1e25; --surface-2:#23272f; --border:#2b2f39;
+  --text:#e4e6eb; --text-2:#a3a9b5; --text-3:#8d94a1;
+  --accent:#7cb7ec; --accent-soft:#1c2a3a; --accent-text:#a8d0f5;
+  --good:#7fd3a2; --good-soft:#1a2620;
+  --warn:#e8a34a; --warn-soft:#2a2216;
+  --bad:#ef8a8a; --bad-soft:#2c1c1e;
+  --purple:#c9a0f0; --purple-soft:#241d30;
+  --code-bg:#0f1115; --code-text:#e4e6eb;
+  --shadow:none; --radius:6px;
+  --font:"IBM Plex Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Consolas","Menlo",monospace;
+  /* Web脆弱性対策_入門.html だけが使う変数名 */
+  --muted:#a3a9b5; --line:#2b2f39; --danger:#ef8a8a; --danger-soft:#2c1c1e;
+  --wb-selected:#2a3240;
+}
+html body{font-family:var(--font);font-size:15px;background:var(--bg);color:var(--text)}
+::selection{background:#2a3e54}
+a:hover{color:var(--accent-text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 上部バー：ワークベンチのヘッダー */
+.topbar{background:var(--surface);backdrop-filter:none;border-bottom:1px solid var(--border)}
+.topbar .site{color:var(--text)}
+.topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.topbar .crumb a{color:var(--text-3)}
+.topbar .crumb a:hover{color:var(--accent)}
+.theme-btn{display:none !important}
+.toc-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);border-radius:6px}
+
+/* ページ内目次：エクスプローラー風 */
+.toc-title{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-3)}
+.toc a{border-left:0;border-radius:4px;padding:5px 10px;color:var(--text-2)}
+.toc a:hover{background:var(--surface);color:var(--text)}
+.toc a.lv3{padding-left:24px;color:var(--text-3)}
+.toc a.active{background:var(--wb-selected);color:#fff;font-weight:500;border-left:0}
+
+/* 冒頭 */
+.hero{border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 8px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--text-3)}
+
+/* 見出し */
+h2{font-size:22px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h2 .num{font-family:var(--mono);color:var(--accent)}
+h3{font-size:17px}
+
+/* コード */
+code{font-family:var(--mono);background:var(--surface);color:var(--code-text)}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:6px}
+pre code{background:none}
+
+/* 表 */
+.table-wrap{background:transparent;border-color:var(--border);border-radius:6px}
+th{background:var(--surface)}
+th,td{border-bottom-color:#262a33}
+
+/* 囲み：左の太線をやめ、枠線1px＋種類の色のタイトル */
+.callout{border:1px solid var(--border);border-left-width:1px;border-radius:6px;background:var(--surface)}
+.callout.key{border-color:#2a3e54;background:#18222e}
+.callout.tip{border-color:#2c4a3a;background:var(--good-soft)}
+.callout.warn{border-color:#4a3a22;background:var(--warn-soft)}
+.callout.bad{border-color:#4a2c2f;background:var(--bad-soft)}
+.callout.key .callout-title{color:var(--accent)}
+.callout.tip .callout-title{color:var(--good)}
+.callout.warn .callout-title{color:var(--warn)}
+.callout.bad .callout-title{color:var(--bad)}
+.callout-title{font-weight:500}
+
+/* カード・折りたたみ・図・前後ページ */
+.card,details,figure,.pager a{background:var(--surface);border-color:var(--border);border-radius:8px;box-shadow:none}
+summary{font-weight:500}
+.pager .lbl{font-family:var(--mono);font-size:11px}
+figcaption{font-family:var(--mono);font-size:12px}
+</style>
+<!-- workbench-theme:end -->
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="site" href="00-0_目次.html">原則解説</a>
+    <span class="crumb"><a href="00-0_目次.html">目次</a> › 00 全体像 › 全体像</span>
+    <button class="toc-btn" type="button" aria-controls="toc">目次</button>
+    <button class="theme-btn" type="button" aria-label="表示テーマ切替">テーマ</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="このページの目次">
+    <p class="toc-title">このページの目次</p>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <span class="eyebrow">00 全体像</span>
+      <h1>原則の全体像 — KISS・DRY・SOLID をどこで学び、どこで使うか</h1>
+      <p class="lead">48章は、KISS・DRY・SOLID のような <strong>設計・プログラミングの原則そのもの</strong>（定義・背景・誤解・使いどころ）を集めた章です。このページでは、フォルダがどんな考え方で分かれ、それぞれがどんな問いに答えるのか、新しい話題がどこに入るのか、そして「メソッドでの使い方」「クラスでの使い方」などを書いている隣の章（41〜46）とどう分担しているのかをまとめます。各ページへ進む前に、ここで48章の地図を持っておきましょう。</p>
+      <p class="meta">もとにしたノート：MOC_原則体系</p>
+    </div>
+
+    <div class="callout key">
+      <p class="callout-title">ひとことで言うと</p>
+      <p>48章は <strong>原則の定義・背景・誤解・衝突の本拠地</strong> です。フォルダは <strong>原則が効く範囲</strong>（汎用 → 構造 → オブジェクト指向 → パッケージ・アーキテクチャ）で分け、そのあとに性格の違う <strong>法則・経験則</strong> と <strong>思想・美徳</strong> を置いています。「その単位（メソッド・クラス・モジュール・アーキテクチャ）でどう使うか」は 41〜46章が担当し、48章からはリンクでつなぎます。</p>
+    </div>
+
+    <!-- ===== 本文ここから ===== -->
+
+    <h2 id="sec-1"><span class="num">1.</span>このページで扱うこと</h2>
+    <p><a href="00-0_目次.html">目次</a>が「どこに何があるか」の一覧、<a href="00-2_設計原則の変遷.html">設計原則の変遷</a>が「原則がどの順に生まれてきたか」の年表だとすれば、このページは <strong>「48章全体の地図」</strong> です。読み終えたときに、次の問いに答えられることを目標にします。</p>
+    <ol class="steps">
+      <li><strong>48章は何を扱うのか</strong>、フォルダはどんな考え方で分けているのか</li>
+      <li><strong>フォルダごとの問い</strong>。どのフォルダが、どんな問いに答えているのか</li>
+      <li><strong>新しいノート（話題）の置き場所</strong>。ある原則・法則の話が48章のどこに入るのか、それとも別の章なのか</li>
+      <li><strong>他の章との分担</strong>。メソッド単位・クラス単位などでの使い方はどこにあるのか（本拠地の表）</li>
+      <li><strong>各ページへの入口</strong>。フォルダごとのページ一覧と、まだ書かれていないテーマ</li>
+    </ol>
+
+    <h2 id="sec-2"><span class="num">2.</span>48章が扱うもの</h2>
+    <h3 id="sec-2-1">2.1 原則の「一般論」をここに集める</h3>
+    <p>ここでいう <strong>原則</strong> は、「重複させない（DRY）」「シンプルに保つ（KISS）」「1つのクラスには変更理由を1つだけ（SRP）」のような、<strong>良い設計に近づくための指針</strong> のことです。48章では、原則ごとに次の4つを扱います。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>扱うこと</th><th>中身</th></tr></thead>
+      <tbody>
+        <tr><td><strong>定義</strong></td><td>その原則は何を言っているのか</td></tr>
+        <tr><td><strong>背景</strong></td><td>どんな問題を解決するために生まれたのか</td></tr>
+        <tr><td><strong>誤解</strong></td><td>よくある間違った理解と、正しい理解</td></tr>
+        <tr><td><strong>使いどころ</strong></td><td>いつ効いて、いつ効かないのか（他の原則と衝突する場面を含む）</td></tr>
+      </tbody>
+    </table></div>
+    <p>41〜47 の各設計の章（アーキテクチャ・ソフトウェア設計・モジュール・クラス・API・メソッド・フロントエンド）は、<strong>「その単位での使い方」</strong> を書いています。原則の一般論は48章に集め、各章からはここを参照する、という分担です（<a href="#sec-5">本拠地の表</a>）。</p>
+
+    <h3 id="sec-2-2">2.2 フォルダの分け方 — 原則が効く範囲</h3>
+    <p>フォルダは <strong>原則が効く範囲</strong> の広い順に分けています。</p>
+    <ol class="steps">
+      <li><strong>汎用</strong>：どの単位のコードにも効く（KISS・DRY・YAGNI など）</li>
+      <li><strong>構造</strong>：分け方・つなぎ方に効く（関心の分離・デメテルの法則など）</li>
+      <li><strong>オブジェクト指向</strong>：クラス・インターフェースに効く（SOLID など）</li>
+      <li><strong>パッケージ・アーキテクチャ</strong>：大きな単位に効く（パッケージ原則・依存ルール）</li>
+    </ol>
+    <p>そのあとに、設計原則とは性格が違う2つを置いています。</p>
+    <ul>
+      <li><strong>法則・経験則</strong>：「〜すべき」という指針ではなく、「〜になりがち」という <strong>観察</strong>（コンウェイの法則など）</li>
+      <li><strong>思想・美徳</strong>：作り手の <strong>姿勢・哲学</strong>（プログラマの三大美徳、銀の弾丸はない など）</li>
+    </ul>
+    <p>この分類は、次の2つを参考にしています。</p>
+    <ul>
+      <li>英語圏で定番の並び：<strong>KISS / DRY / YAGNI → SoC / 凝集・結合 / デメテル → SOLID</strong>（SoC は Separation of Concerns ＝関心の分離）</li>
+      <li>上田勲『プリンシプル オブ プログラミング』の章立て：<strong>前提・原則・思想・視点・習慣・手法・法則</strong></li>
+    </ul>
+
+    <h2 id="sec-3"><span class="num">3.</span>フォルダ構成 — フォルダごとの問い</h2>
+    <h3 id="sec-3-1">3.1 フォルダと問いの一覧</h3>
+    <p>各フォルダは、原則についての1つの問いに答えます。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>フォルダ</th><th>役割</th><th>問い</th></tr></thead>
+      <tbody>
+        <tr><td><strong>00 全体像</strong></td><td>このページ・年表（<a href="00-2_設計原則の変遷.html">設計原則の変遷</a>）</td><td>—</td></tr>
+        <tr><td><strong>10 汎用原則</strong></td><td>どの単位のコードにも効く原則（KISS ／ DRY ／ YAGNI ／ 驚き最小）</td><td>作りすぎていないか・重複していないか</td></tr>
+        <tr><td><strong>20 構造の原則</strong></td><td>分け方・つなぎ方の原則（関心の分離 ／ 高凝集・低結合 ／ 情報隠蔽 ／ デメテル ／ CQS）</td><td>どう分けて、どうつなぐか</td></tr>
+        <tr><td><strong>30 オブジェクト指向の原則</strong></td><td>クラス・インターフェースの原則（SOLID ／ 継承より合成 ／ ハリウッド原則）</td><td>OOP の道具でどう実現するか</td></tr>
+        <tr><td><strong>40 パッケージ・アーキテクチャの原則</strong></td><td>パッケージ原則・依存ルールへの案内（本体は 43 ／ 41）</td><td>大きな単位ではどうなるか</td></tr>
+        <tr><td><strong>50 法則・経験則</strong></td><td>観察から得られた法則（コンウェイ ／ ブルックス ／ ハイラム ／ ポステル …）</td><td>現場で何が起きがちか</td></tr>
+        <tr><td><strong>60 思想・美徳</strong></td><td>考え方・哲学（UNIX 哲学 ／ 三大美徳 ／ 銀の弾丸 ／ Worse is Better）</td><td>どういう姿勢で作るか</td></tr>
+        <tr><td><strong>90 付録</strong></td><td>用語集・原則同士の衝突表など</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <p>表に出てくる言葉は、それぞれのページで詳しく説明します。ここでは一言だけ紹介します。</p>
+    <ul>
+      <li><strong>驚き最小の原則</strong>：使う人が「えっ」と驚かない、予想どおりの振る舞いにする原則</li>
+      <li><strong>高凝集・低結合</strong>：1つのまとまりの中身は同じ目的にそろえ（凝集）、まとまり同士の依存はゆるくする（結合）</li>
+      <li><strong>情報隠蔽</strong>：変わりやすい内部の事情を外から見えないように隠すこと</li>
+      <li><strong>CQS</strong>（コマンド・クエリ分離）：値を返す処理（クエリ）と、状態を変える処理（コマンド）を分けること</li>
+      <li><strong>OOP</strong>（オブジェクト指向プログラミング）：データと処理をクラス・オブジェクトにまとめて組み立てる書き方</li>
+      <li><strong>ハリウッド原則</strong>：「電話してこないで、こちらから呼ぶから」。部品が枠組みを呼ぶのではなく、枠組みが部品を呼ぶ（制御の反転）</li>
+      <li><strong>UNIX 哲学</strong>・<strong>Worse is Better</strong>：小さく単純な道具を組み合わせる、完璧さより単純さと早さを選ぶ、という作り方の思想</li>
+    </ul>
+
+    <h3 id="sec-3-2">3.2 ノートの並べ方のルール</h3>
+    <p>もとになっている Obsidian ノートには、次の運用ルールがあります。解説ページのファイル名（<code>10-1_…</code> など）もこの順番に合わせています。</p>
+    <ul>
+      <li>ファイル名は各フォルダ内で <strong>読む順に <code>01_</code> から連番</strong>。動画・記事のクリップ（<code>source</code> プロパティ付きのノート）は元のタイトルのまま置く</li>
+      <li>動画シリーズ（プリンシプルオブライフ など）は <strong>フォルダにせず、内容で振り分ける</strong>。出典は <code>author</code> ／ <code>source</code> プロパティで持つ</li>
+      <li>SOLID は5原則をまとめて読むことが多いので、<code>30_オブジェクト指向の原則/SOLID/</code> にまとめる。入口は <a href="30-1_SOLIDの全体像.html">SOLID の全体像</a></li>
+    </ul>
+
+    <h2 id="sec-4"><span class="num">4.</span>新しいノートの置き場所 — この話はどこに入る？</h2>
+    <p>原則や法則についての話題が48章のどこに入るか（あるいは別の章に入るか）は、次の2つの問いで決めます。ページを探すときの手がかりにもなります。</p>
+    <ol class="steps">
+      <li><strong>どんな種類の話か？</strong>「〜すべき」という指針なら次の問いへ。「〜になりがち」という観察なら 50、姿勢・哲学・格言なら 60。特定の単位での使い方の話なら、本拠地の表で別の章へ</li>
+      <li><strong>（指針なら）どの単位に効くか？</strong> 単位を問わないなら 10、分割・依存・情報の隠し方なら 20、クラス・継承・インターフェースなら 30、パッケージ・レイヤー・サービスなら 40（本体は 43 ／ 41）</li>
+    </ol>
+    <figure>
+    <svg viewBox="0 0 720 360" role="img" aria-label="原則・法則についてのノートから始まる判断フロー。最初の問い「どんな種類？」で4つに分かれる。「〜すべき」という指針なら次の問い「どの単位に効く？」へ。「〜になりがち」という観察なら50 法則・経験則へ。姿勢・哲学・格言なら60 思想・美徳へ。特定の単位での使い方の話なら本拠地の表へ。「どの単位に効く？」では、単位を問わないなら10 汎用原則、分割・依存・情報の隠し方なら20 構造の原則、クラス・継承・インターフェースなら30 オブジェクト指向の原則、パッケージ・レイヤー・サービスなら40 パッケージ・アーキテクチャの原則（本体は43と41）へ進む">
+      <defs>
+        <marker id="arw48-001a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker>
+      </defs>
+      <rect x="200" y="8" width="320" height="40" rx="8" class="d-box"/>
+      <text x="360" y="33" text-anchor="middle" class="d-text-bold">原則・法則についてのノート</text>
+
+      <path d="M360,48 L360,74" class="d-line" marker-end="url(#arw48-001a)"/>
+
+      <rect x="250" y="76" width="220" height="44" rx="8" class="d-box-warn"/>
+      <text x="360" y="103" text-anchor="middle" class="d-text-bold">どんな種類？</text>
+
+      <path d="M300,120 L118,154" class="d-line" marker-end="url(#arw48-001a)"/>
+      <path d="M340,120 L305,154" class="d-line" marker-end="url(#arw48-001a)"/>
+      <path d="M390,120 L475,154" class="d-line" marker-end="url(#arw48-001a)"/>
+      <path d="M440,120 L630,154" class="d-line" marker-end="url(#arw48-001a)"/>
+
+      <rect x="10" y="156" width="205" height="62" rx="8" class="d-box-warn"/>
+      <text x="112" y="178" text-anchor="middle" class="d-text-sub">「〜すべき」という指針</text>
+      <text x="112" y="204" text-anchor="middle" class="d-text-bold">どの単位に効く？</text>
+      <rect x="225" y="156" width="160" height="62" rx="8" class="d-box-accent"/>
+      <text x="305" y="178" text-anchor="middle" class="d-text-sub">「〜になりがち」観察</text>
+      <text x="305" y="204" text-anchor="middle" class="d-text-bold">50 法則・経験則</text>
+      <rect x="395" y="156" width="160" height="62" rx="8" class="d-box-accent"/>
+      <text x="475" y="178" text-anchor="middle" class="d-text-sub">姿勢・哲学・格言</text>
+      <text x="475" y="204" text-anchor="middle" class="d-text-bold">60 思想・美徳</text>
+      <rect x="565" y="156" width="148" height="62" rx="8" class="d-box-purple"/>
+      <text x="639" y="178" text-anchor="middle" class="d-text-sub">特定の単位での使い方</text>
+      <text x="639" y="204" text-anchor="middle" class="d-text-bold">本拠地の表へ</text>
+
+      <path d="M112,218 L112,240" class="d-line" marker-end="url(#arw48-001a)"/>
+
+      <path d="M4,244 H716 V350 H4 Z" class="d-line-dash"/>
+
+      <rect x="12" y="254" width="168" height="86" rx="8" class="d-box-accent"/>
+      <text x="96" y="276" text-anchor="middle" class="d-text-sub">単位を問わない</text>
+      <text x="96" y="304" text-anchor="middle" class="d-text-bold">10</text>
+      <text x="96" y="326" text-anchor="middle" class="d-text">汎用原則</text>
+      <rect x="188" y="254" width="168" height="86" rx="8" class="d-box-accent"/>
+      <text x="272" y="276" text-anchor="middle" class="d-text-sub">分割・依存・情報の隠し方</text>
+      <text x="272" y="304" text-anchor="middle" class="d-text-bold">20</text>
+      <text x="272" y="326" text-anchor="middle" class="d-text">構造の原則</text>
+      <rect x="364" y="254" width="168" height="86" rx="8" class="d-box-accent"/>
+      <text x="448" y="270" text-anchor="middle" class="d-text-sub">クラス・継承・</text>
+      <text x="448" y="286" text-anchor="middle" class="d-text-sub">インターフェース</text>
+      <text x="448" y="308" text-anchor="middle" class="d-text-bold">30</text>
+      <text x="448" y="328" text-anchor="middle" class="d-text">オブジェクト指向の原則</text>
+      <rect x="540" y="254" width="168" height="86" rx="8" class="d-box-accent"/>
+      <text x="624" y="270" text-anchor="middle" class="d-text-sub">パッケージ・レイヤー・</text>
+      <text x="624" y="286" text-anchor="middle" class="d-text-sub">サービス</text>
+      <text x="624" y="308" text-anchor="middle" class="d-text-bold">40</text>
+      <text x="624" y="328" text-anchor="middle" class="d-text">→ 本体は 43 ／ 41</text>
+    </svg>
+    <figcaption>図：新しいノートの置き場所。まず種類で分け、「〜すべき」という指針なら効く単位で 10〜40 に振り分ける（紫の箱は48章の外）</figcaption>
+    </figure>
+    <p>同じ内容を表にすると、次のとおりです。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>問い</th><th>答え</th><th>置き場所</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="4">「〜すべき」という指針 → どの単位に効く？</td><td>単位を問わない</td><td><strong>10 汎用原則</strong></td></tr>
+        <tr><td>分割・依存・情報の隠し方</td><td><strong>20 構造の原則</strong></td></tr>
+        <tr><td>クラス・継承・インターフェース</td><td><strong>30 オブジェクト指向の原則</strong></td></tr>
+        <tr><td>パッケージ・レイヤー・サービス</td><td><strong>40</strong>（本体は 43 ／ 41）</td></tr>
+        <tr><td rowspan="3">どんな種類？</td><td>「〜になりがち」という観察</td><td><strong>50 法則・経験則</strong></td></tr>
+        <tr><td>姿勢・哲学・格言</td><td><strong>60 思想・美徳</strong></td></tr>
+        <tr><td>特定の単位での使い方の話</td><td>下の <a href="#sec-5">本拠地の表</a> へ</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="sec-5"><span class="num">5.</span>他の章との分担（本拠地の表）</h2>
+    <p>原則の話題は、メソッド・クラス・モジュール・アーキテクチャなど多くの章と重なります。48章は <strong>原則の定義・背景・誤解・衝突</strong> に絞り、「その単位でどう使うか」は次の章（<strong>本拠地</strong>）に任せています。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>テーマ</th><th>本拠地</th></tr></thead>
+      <tbody>
+        <tr><td>原則の定義・背景・誤解・衝突</td><td><strong>48_原則（ここ）</strong></td></tr>
+        <tr><td>メソッド単位での使い方（KISS・DRY・CQS をメソッドでどう守るか）</td><td>46_メソッド設計（<a href="../46_メソッド設計/20-3_KISS・DRY・YAGNI.html">KISS・DRY・YAGNI</a>、<a href="../46_メソッド設計/50-1_CQS.html">CQS</a>、<a href="../46_メソッド設計/30-3_情報隠蔽.html">情報隠蔽</a> など）</td></tr>
+        <tr><td>クラス単位での使い方（SOLID の適用・GRASP）</td><td>44_クラス設計・デザインパターン の「40 SOLID の適用」「20 責務の割り当て」（<a href="../44_クラス設計・デザインパターン/40-1_単一責任の原則.html">単一責任の原則</a>〜<a href="../44_クラス設計・デザインパターン/40-5_SOLIDの統合と判断.html">SOLID の統合と判断</a>、<a href="../44_クラス設計・デザインパターン/20-2_GRASP.html">GRASP</a>）</td></tr>
+        <tr><td>凝集度・結合度の詳しい分類、パッケージ原則（REP/CCP/CRP/ADP/SDP/SAP）</td><td>43_モジュール設計 の「20 凝集と結合」「50 パッケージ原則」（<a href="../43_モジュール設計/20-1_凝集度.html">凝集度</a>、<a href="../43_モジュール設計/20-2_結合度.html">結合度</a>、<a href="../43_モジュール設計/50-1_パッケージ設計の原則.html">パッケージ設計の原則</a>）</td></tr>
+        <tr><td>アーキテクチャに効く原則・依存性逆転の実装・DI</td><td>41_アーキテクチャ の「10 基礎」「24 依存性の管理」（<a href="../41_アーキテクチャ/12-3_トレードオフと原則.html">トレードオフと原則</a>、<a href="../41_アーキテクチャ/24-1_依存性逆転の原則.html">依存性逆転の原則</a>、<a href="../41_アーキテクチャ/24-2_DI・IoC・CompositionRoot.html">DI・IoC・Composition Root</a>）</td></tr>
+        <tr><td>パラダイム（手続き・OOP・関数型）との関係</td><td>42_ソフトウェア設計 の「20 パラダイム」（<a href="../42_ソフトウェア設計/20-8_パラダイムの選び方と比較.html">パラダイムの選び方と比較</a> など）</td></tr>
+        <tr><td>チームのコーディング規約</td><td>59_AI開発ツール・コーディング規約 の「コーディング規約」</td></tr>
+      </tbody>
+    </table></div>
+    <p>表の略語を一言で説明します。<strong>GRASP</strong> は「どのクラスに責務（仕事）を持たせるか」を決めるための9つの指針、<strong>DI</strong>（依存性の注入）は使う部品を外から渡す手法です。REP・CCP・CRP（凝集の3原則）と ADP・SDP・SAP（結合の3原則）は、パッケージをどうまとめ、どう依存させるかの原則で、43章の <a href="../43_モジュール設計/50-2_凝集の3原則.html">凝集の3原則</a> と <a href="../43_モジュール設計/50-3_結合の3原則と循環依存.html">結合の3原則と循環依存</a> で扱います。</p>
+
+    <h2 id="sec-6"><span class="num">6.</span>各ページへの入口</h2>
+    <p>「（未作成）」と書いたものは、まだノートがないテーマです。他の章のノートのうち解説ページがあるものはリンクしています。</p>
+
+    <h3 id="sec-6-1">6.1 00 全体像</h3>
+    <ul>
+      <li><a href="00-2_設計原則の変遷.html">設計原則の変遷</a> — KISS（1960）〜 SOLID（2000）を西暦順に、何の課題を解決したかで整理</li>
+      <li><a href="00-0_目次.html">目次</a> — この章のページ一覧</li>
+    </ul>
+
+    <h3 id="sec-6-2">6.2 10 汎用原則</h3>
+    <ul>
+      <li><a href="10-1_DRY・KISS・YAGNI.html">DRY・KISS・YAGNI</a> — 3 原則の定義・関係・よくある誤解（入口）と、適用例・注意点</li>
+      <li><a href="10-2_DRY・YAGNIの落とし穴と実践的判断.html">DRY・YAGNI の落とし穴と実践的判断</a> — DRY と SRP の衝突、「間違った抽象化より重複のほうが安い」</li>
+      <li><a href="10-3_コードの重複とDRY原則違反.html">コードの重複と DRY 原則違反</a> — AI 生成コードに出がちな重複のパターンとチェックリスト</li>
+      <li>（未作成）驚き最小の原則（Principle of Least Astonishment）</li>
+      <li>（未作成）ボーイスカウトの規則</li>
+    </ul>
+
+    <h3 id="sec-6-3">6.3 20 構造の原則</h3>
+    <ul>
+      <li><a href="20-1_関心の分離.html">関心の分離</a> — 「違うことは違う場所に書く」、分ける軸と分けすぎ</li>
+      <li><a href="20-2_デメテルの法則.html">デメテルの法則</a> — 直接の友達とだけ話す、Tell, Don't Ask</li>
+      <li>（未作成）高凝集・低結合 — 詳しい分類は 43 の <a href="../43_モジュール設計/20-1_凝集度.html">凝集度</a>・<a href="../43_モジュール設計/20-2_結合度.html">結合度</a>、41 の <a href="../41_アーキテクチャ/13-1_モジュール性と疎結合高凝集.html">モジュール性と疎結合・高凝集</a></li>
+      <li>（未作成）情報隠蔽（Parnas 1972）</li>
+      <li>（未作成）コマンド・クエリ分離（CQS） — メソッドでの使い方は 46 の <a href="../46_メソッド設計/50-1_CQS.html">CQS</a></li>
+      <li>（未作成）機構と方針の分離</li>
+    </ul>
+
+    <h3 id="sec-6-4">6.4 30 オブジェクト指向の原則</h3>
+    <ul>
+      <li><a href="30-1_SOLIDの全体像.html">SOLID の全体像</a> — SOLID の入口
+        <ul>
+          <li><a href="30-2_単一責任の原則.html">SRP（単一責任の原則）</a></li>
+          <li><a href="30-3_開放閉鎖の原則.html">OCP（開放閉鎖の原則）</a></li>
+          <li><a href="30-4_リスコフの置換原則.html">LSP（リスコフの置換原則）</a></li>
+          <li><a href="30-5_インターフェース分離の原則.html">ISP（インターフェース分離の原則）</a></li>
+          <li><a href="30-6_依存性逆転の原則.html">DIP（依存性逆転の原則）</a></li>
+        </ul>
+      </li>
+      <li>（未作成）継承より合成（Composition over Inheritance）</li>
+      <li>（未作成）ハリウッド原則・制御の反転（IoC）</li>
+      <li>（未作成）GRASP の原則としての位置づけ — クラス設計での使い方は 44 の <a href="../44_クラス設計・デザインパターン/20-2_GRASP.html">GRASP</a></li>
+    </ul>
+
+    <h3 id="sec-6-5">6.5 40 パッケージ・アーキテクチャの原則</h3>
+    <ul>
+      <li><a href="40-1_パッケージ・アーキテクチャの原則への案内.html">パッケージ・アーキテクチャの原則への案内</a> — 43 ／ 41 にある本体へのリンク集</li>
+    </ul>
+
+    <h3 id="sec-6-6">6.6 50 法則・経験則</h3>
+    <p>このフォルダのノートはまだありません。予定しているテーマは次のとおりです。</p>
+    <ul>
+      <li>（未作成）コンウェイの法則 — アーキテクチャとの関係は 41 の <a href="../41_アーキテクチャ/70-3_コンウェイの法則とTeamTopologies.html">コンウェイの法則と Team Topologies</a></li>
+      <li>（未作成）ブルックスの法則・銀の弾丸はない</li>
+      <li>（未作成）ハイラムの法則</li>
+      <li>（未作成）ポステルの法則（堅牢性原則）</li>
+      <li>（未作成）90 対 90 の法則・ホフスタッターの法則</li>
+    </ul>
+
+    <h3 id="sec-6-7">6.7 60 思想・美徳</h3>
+    <ul>
+      <li><a href="60-1_銀の弾丸はない.html">銀の弾丸はない</a> — 「人生に、銀の弾丸はないよ」（動画）</li>
+      <li><a href="60-2_情報隠蔽は正義.html">情報隠蔽は正義</a> — 情報隠蔽を人生に当てはめる（動画）</li>
+      <li><a href="60-3_プログラマの三大美徳.html">プログラマの三大美徳</a> — 怠惰・短気・傲慢（動画）</li>
+      <li>（未作成）UNIX 哲学</li>
+      <li>（未作成）Worse is Better</li>
+      <li>（未作成）Zen of Python</li>
+    </ul>
+
+    <h3 id="sec-6-8">6.8 90 付録</h3>
+    <ul>
+      <li>（未作成）原則の用語集</li>
+      <li>（未作成）原則同士の衝突と使い分け（DRY vs SRP、YAGNI vs OCP など） — DRY と SRP の衝突は <a href="10-2_DRY・YAGNIの落とし穴と実践的判断.html">DRY・YAGNI の落とし穴と実践的判断</a> で扱っています</li>
+    </ul>
+
+    <h2 id="sec-7"><span class="num">7.</span>よくある誤解</h2>
+    <details open><summary>誤解1：「SOLID や DRY の使い方は、48章を読めば全部わかる」</summary><div class="body"><p>48章が扱うのは <strong>原則そのもの</strong>（定義・背景・誤解・衝突）です。メソッドの中で DRY をどう守るかは <a href="../46_メソッド設計/20-3_KISS・DRY・YAGNI.html">46 の KISS・DRY・YAGNI</a>、クラスに SOLID をどう当てはめるかは <a href="../44_クラス設計・デザインパターン/40-5_SOLIDの統合と判断.html">44 の SOLID の統合と判断</a> のように、単位ごとの使い方は本拠地の章にあります（<a href="#sec-5">本拠地の表</a>）。</p></div></details>
+    <details open><summary>誤解2：「法則・経験則や思想も、守るべきルールの一種」</summary><div class="body"><p>50 の法則・経験則は「〜すべき」ではなく「〜になりがち」という <strong>観察</strong> です。60 の思想・美徳は作り手の <strong>姿勢</strong> の話です。どちらも設計原則とは性格が違うので、フォルダを分けています。「守る・破る」ではなく、現場で起きることを予想したり、判断の拠り所にしたりするために使います。</p></div></details>
+    <details open><summary>誤解3：「パッケージやアーキテクチャの原則は 40 フォルダに全部書いてある」</summary><div class="body"><p>40 フォルダは <strong>案内</strong> だけです。パッケージ原則（REP/CCP/CRP/ADP/SDP/SAP）の本体は 43_モジュール設計、依存性逆転の実装や DI は 41_アーキテクチャ にあります。詳しくは <a href="40-1_パッケージ・アーキテクチャの原則への案内.html">パッケージ・アーキテクチャの原則への案内</a> を見てください。</p></div></details>
+
+    <h2 id="sec-8"><span class="num">8.</span>まとめ</h2>
+    <ul>
+      <li>48章は、KISS・DRY・SOLID のような <strong>原則そのもの</strong>（定義・背景・誤解・使いどころ）を集めた入口。41〜47 の各章は「その単位での使い方」を書く</li>
+      <li>フォルダは <strong>原則が効く範囲</strong>（10 汎用 → 20 構造 → 30 オブジェクト指向 → 40 パッケージ・アーキテクチャ）で分け、そのあとに性格の違う <strong>50 法則・経験則</strong> と <strong>60 思想・美徳</strong>、<strong>90 付録</strong> を置く</li>
+      <li>分類は英語圏の定番の並びと、上田勲『プリンシプル オブ プログラミング』の章立てを参考にしている</li>
+      <li>新しい話題は「どんな種類か（指針・観察・姿勢・単位での使い方）」→「どの単位に効くか」の2つの問いで置き場所を決める</li>
+      <li>メソッドは 46、クラスは 44、モジュール・パッケージ原則は 43、アーキテクチャ・DI は 41、パラダイムは 42、規約は 59 が本拠地。48章からはリンクでつなぐ</li>
+    </ul>
+    <!-- ===== 本文ここまで ===== -->
+
+    <h2 id="sources">参考資料</h2>
+    <ul class="sources">
+      <li>ノート：00_全体像/MOC_原則体系</li>
+      <li>上田勲『プリンシプル オブ プログラミング 3年目までに身につけたい 一生役立つ101の原理原則』秀和システム, 2016</li>
+    </ul>
+
+    <nav class="pager" aria-label="ページ移動">
+      <a class="prev" href="00-0_目次.html"><span class="lbl">← 前のページ</span>目次</a>
+      <a class="idx" href="00-0_目次.html">目次</a>
+      <a class="next" href="00-2_設計原則の変遷.html"><span class="lbl">次のページ →</span>設計原則の変遷</a>
+    </nav>
+    <footer class="page-foot">48_原則 ノートをもとに作成（2026-10-18）</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle (remembers choice per browser; works without storage) ----
+  var root=document.documentElement, KEY="arch-guide-theme";
+  try{var saved=localStorage.getItem(KEY); if(saved) root.setAttribute("data-theme",saved);}catch(e){}
+  document.querySelector(".theme-btn").addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){cur=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+    var next=cur==="dark"?"light":"dark";
+    root.setAttribute("data-theme",next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  // ---- Build TOC from h2/h3 inside main ----
+  var list=document.getElementById("toc-list"), heads=document.querySelectorAll("main h2, main h3"), links=[];
+  heads.forEach(function(h,i){
+    if(!h.id) h.id="h-"+i;
+    var a=document.createElement("a");
+    a.href="#"+h.id; a.textContent=h.textContent.replace(/^(\d+(?:\.\d+)*\.?)\s*/,"$1 "); if(h.tagName==="H3") a.className="lv3";
+    var li=document.createElement("li"); li.appendChild(a); list.appendChild(li); links.push([h,a]);
+  });
+  // ---- Scrollspy ----
+  function spy(){
+    var y=window.scrollY+100, cur=null;
+    links.forEach(function(p){ if(p[0].offsetTop<=y) cur=p; });
+    links.forEach(function(p){ p[1].classList.toggle("active",p===cur); });
+  }
+  window.addEventListener("scroll",spy,{passive:true}); spy();
+  // ---- Mobile TOC toggle ----
+  var toc=document.getElementById("toc");
+  document.querySelector(".toc-btn").addEventListener("click",function(){toc.classList.toggle("open");});
+  toc.addEventListener("click",function(e){ if(e.target.tagName==="A") toc.classList.remove("open"); });
+})();
+</script>
+</body>
+</html>
