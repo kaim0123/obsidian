@@ -203,6 +203,53 @@ Set-Cookie: session=xyz; HttpOnly; Secure; SameSite=Lax
 {"id": 999, "status": "created"}
 ```
 
+## 発展：REST API のリクエストとヘッダ
+
+REST API（ネットワークコントローラなど）を呼ぶときのリクエスト／レスポンスの構成と、よく使うヘッダを整理します。ステータスコードの読み方は [[13HTTPステータスコード]] の「発展」節にあります。
+
+### HTTPヘッダ（REST API での使い方）
+
+#### HTTP リクエスト／レスポンスの構成
+
+HTTP のリクエストは **メソッドと URI、ヘッダ、本文（ボディ）** で構成されます。
+
+```
+ ── リクエスト ─────────────────────────────
+ POST /api/v1/vlans HTTP/1.1          ← メソッド + URI（リクエスト行）
+ Host: controller.example.com          ┐
+ Content-Type: application/json        │ ヘッダ
+ Accept: application/json              │
+ Authorization: Bearer eyJhbGci...     ┘
+                                       ← 空行
+ {"vlan": 20, "name": "Eng"}           ← 本文（ボディ）
+
+ ── レスポンス ─────────────────────────────
+ HTTP/1.1 201 Created                  ← ステータスコード
+ Content-Type: application/json        ← ヘッダ
+
+ {"vlan": 20, "name": "Eng"}           ← 本文
+```
+
+#### よく使う HTTP ヘッダ
+
+| ヘッダ | 方向 | 意味 | 例 |
+| --- | --- | --- | --- |
+| **Content-Type** | 送る側 | **送る本文の形式** | `Content-Type: application/json`（XML なら `application/xml`） |
+| **Accept** | リクエスト | **受け取りたい応答の形式** | `Accept: application/json` |
+| **Authorization** | リクエスト | 認証情報 | `Authorization: Basic YWRtaW46Q2lzY28xMjM=` / `Authorization: Bearer <トークン>` |
+| User-Agent | リクエスト | リクエストを送ったソフトウェアの種類 | `User-Agent: python-requests/2.31` |
+| X-Auth-Token | リクエスト | Catalyst Center などで使うトークン用ヘッダ | `X-Auth-Token: eyJ...` |
+
+**Content-Type（送る形式）と Accept（受け取りたい形式）** は混同しやすいポイントです。「POST の本文が JSON であることを伝える」のは **Content-Type** です。
+
+#### ひっかけポイント・よくある誤解
+
+- 本文の形式は **Content-Type**。Accept は受け取りたい形式、Authorization は認証、User-Agent はソフトウェアの種類。
+
+#### 押さえておくポイント
+
+- Content-Type ＝ 送る形式、Accept ＝ 受け取りたい形式。
+
 ## まとめ
 - ヘッダーは通信の**メタ情報**を伝えるキー・バリュー
 - リクエスト/レスポンス/共通で役割が分かれる

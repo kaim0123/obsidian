@@ -457,6 +457,173 @@ flowchart LR
 - Ansible でも EC2 を作れますが（`amazon.aws` コレクション）、状態管理がないので削除や差分把握が苦手です
 - **イミュータブル** にしたい場合は、Ansible を Packer から実行して AMI に焼き込み、Terraform はその AMI を使うだけにします（[[02_IaCとは]]）
 
+## 発展：構成管理ツールの比較（ネットワーク自動化の観点）
+
+ネットワーク機器の自動化の観点から、Ansible・Terraform・Puppet・Chef の方式と使い分けを比較します。
+
+### 構成管理ツール：Ansible・Terraform・Puppet・Chef
+
+#### 構成管理ツールとは
+
+**構成管理ツール** は、機器やサーバの「あるべき設定」をコード（ファイル）として記述し、そのとおりに自動で設定・維持するツールです。代表は **Ansible・Terraform**、比較対象として **Puppet・Chef** です。
+
+#### プッシュ型とプル型
+
+```
+ プッシュ型（Ansible）                     プル型（Puppet / Chef）
+                                         
+  管理サーバ ──SSHで接続して設定を送る──>   管理サーバ <──定期的に設定を取りに行く── エージェント
+       │                    機器             (Puppet Master /          (各機器に
+       ├──────────────────> 機器              Chef Server)              インストール)
+       └──────────────────> 機器
+  ・管理サーバが主体                        ・機器側のエージェントが主体
+  ・エージェント不要                        ・エージェントが必要
+```
+
+| 方式 | 動作 | 代表例 |
+| --- | --- | --- |
+| **プッシュ型** | **管理サーバが主体** となって機器に接続し、設定を送り込む | **Ansible** |
+| **プル型** | 機器に入れた **エージェント** が、定期的に管理サーバへ設定を **取りに行く** | **Puppet、Chef** |
+
+ネットワーク機器には追加のソフト（エージェント）を入れられないことが多いため、**エージェント不要のプッシュ型（Ansible）はネットワークの自動化と相性がよい** のです。
+（「ブロードキャスト型」「ピアツーピア型」は構成管理ツールの方式を表す用語ではありません。）
+
+#### ツール比較
+
+| 項目 | **Ansible** | **Terraform** | Puppet | Chef |
+| --- | --- | --- | --- | --- |
+| 方式 | **プッシュ型** | プッシュ型（API 経由） | プル型 | プル型 |
+| エージェント | **不要**（SSH / API で接続） | 不要（プロバイダが API を呼ぶ） | 必要 | 必要 |
+| 記述言語 | **YAML**（プレイブック） | **HCL** | Puppet 独自 DSL（マニフェスト） | **Ruby**（レシピ／クックブック） |
+| 記述スタイル | 主に **手順的**（タスクを順に実行） | **宣言的**（あるべき状態を書く） | 宣言的 | 手順的 |
+| 状態の記録 | なし | **ステートファイル** | ― | ― |
+| よく使う用途 | **機器の設定変更** | **リソースの構築**（クラウド、ネットワーク） | サーバ構成管理 | サーバ構成管理 |
+
+> 補足：Ansible のモジュール自体は冪等に作られており「あるべき状態」を書く側面もありますが、プレイブックはタスクを上から順に実行する手順的な記述です。学習上は「Ansible＝YAML のプレイブックで処理の手順を記述」「Terraform＝HCL で宣言的」と区別します。
+
+#### Ansible の構成要素
+
+| 要素 | 内容 |
+| --- | --- |
+| **インベントリ** | 管理対象の機器の **ホスト名・IPアドレス・グループ**（routers、switches 等）を書く一覧。「**どの機器に**」 |
+| **プレイブック** | 実行する処理の内容と手順を **YAML** で書くファイル。「**何をするか**」 |
+| モジュール | 個々の処理の部品（例：`cisco.ios.ios_vlans`、`ios_config`） |
+| 変数・テンプレート | 機器ごとに違う値（ホスト名、IP など）の扱い。テンプレートは Jinja2 |
+
+インベントリの例（INI 形式）：
+
+```ini
+[routers]
+R1 ansible_host=10.1.1.1
+R2 ansible_host=10.1.1.2
+
+[switches]
+SW1 ansible_host=10.1.1.11
+SW2 ansible_host=10.1.1.12
+
+[all:vars]
+ansible_network_os=cisco.ios.ios
+ansible_connection=ansible.netcommon.network_cli
+```
+
+プレイブックの例（YAML）：
+
+```yaml
+---
+- name: VLANを作成
+  hosts: switches            # インベントリのグループ名 → SW1, SW2 の全台に実行
+  gather_facts: false
+  tasks:
+    - name: VLAN 10 Sales を作る
+      cisco.ios.ios_vlans:
+        config:
+          - vlan_id: 10
+            name: Sales
+        state: merged
+```
+
+実行：
+
+```
+$ ansible-playbook -i inventory.ini vlan.yml
+```
+
+プレイブックで **グループ名を指定すると、そのグループのすべての機器に同じ処理を実行** できます。
+
+Ansible の特徴まとめ：
+- **エージェント不要**、**SSH** で接続（API 接続も可）
+- **YAML** のプレイブック
+- **プッシュ型**
+- 監視ツールではなく、主に **設定の自動化** ツール（SNMP 監視専用ツールではない）
+
+#### Terraform
+
+- インフラの「**あるべき状態**」を **HCL（HashiCorp Configuration Language）** で **宣言的** に記述し、その状態になるようにリソースを作成・変更する。
+- **宣言的** ＝「どういう手順で作るか」ではなく「**最終的にどうなっていてほしいか**」を書く。
+- 現在の状態を **ステートファイル**（terraform.tfstate）に記録し、書かれた状態との **差分だけを適用** する。
+- クラウドやネットワークのリソースをコードで構築・管理する **IaC（Infrastructure as Code）** の代表的ツール。
+
+HCL の例：
+
+```hcl
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+}
+
+resource "aws_subnet" "web" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+}
+```
+
+##### Terraform の基本ワークフロー
+
+```
+ terraform init  ──>  terraform plan  ──>  terraform apply   (… terraform destroy)
+   準備                変更内容の確認          適用                 全削除
+ (プロバイダ取得)     (差分の一覧を表示)
+```
+
+| コマンド | 役割 |
+| --- | --- |
+| `terraform init` | 作業ディレクトリを初期化し、必要な **プロバイダ（プラグイン）** を準備 |
+| **`terraform plan`** | 現在の状態と設定ファイルの差分から、**何が作成・変更・削除されるかを表示**（実際には変更しない） |
+| `terraform apply` | 変更を **実際に適用** |
+| `terraform destroy` | 管理しているリソースを **すべて削除** |
+
+`plan` で **意図しない削除などがないかを確認してから `apply`** することで、作業ミスによる事故を防げます。
+
+```
+$ terraform plan
+  + resource "aws_subnet" "web" { cidr_block = "10.0.1.0/24" ... }
+  - resource "aws_subnet" "old" { ... }      ← 意図しない削除がないか確認！
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+#### Ansible と Terraform の使い分け
+
+| | Ansible | Terraform |
+| --- | --- | --- |
+| 得意 | 既存機器の **設定変更** | リソース（VM、VPC、ネットワーク）の **構築** |
+| ファイル | インベントリ ＋ プレイブック（YAML） | 設定ファイル（HCL）＋ ステートファイル |
+| スタイル | 手順を記述 | あるべき状態を宣言 |
+
+#### ひっかけポイント・よくある誤解
+
+- 「機器ごとにエージェントが必要」は **Puppet / Chef** の特徴。Ansible は **エージェント不要**。
+- 「Ruby で記述」は **Chef**。Ansible は YAML。
+- Ansible は監視ツールではない。
+- 「HCL で宣言的」＝ **Terraform**。Ansible は YAML のプレイブックで手順を記述。Syslog / NTP はプロトコル。
+- Ansible ＝ **プッシュ型**。プル型は Puppet / Chef。ブロードキャスト型・ピアツーピア型という方式名はない。
+- 機器の一覧＝**インベントリ**、処理内容＝**プレイブック**、Terraform の状態記録＝**ステートファイル**、running-config は Cisco 機器の動作中の設定。
+- 変更前の確認＝ **`terraform plan`**。apply は適用、init は準備、destroy は全削除。
+
+#### 押さえておくポイント
+
+- **Ansible：エージェントレス・SSH・YAML プレイブック・プッシュ型・インベントリ**。
+- **Puppet / Chef：エージェント型・プル型。Chef は Ruby**。
+- **Terraform：HCL・宣言的・ステートファイル・init → plan → apply**。
+
 ## よくある誤解・つまずき
 
 - ❌ `shell` / `command` で手順書のコマンドを並べれば Ansible 化できる

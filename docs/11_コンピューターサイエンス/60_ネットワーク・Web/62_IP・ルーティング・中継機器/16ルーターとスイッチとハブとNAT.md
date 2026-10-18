@@ -156,6 +156,344 @@ Wi-Fi電波を発して有線LANへ橋渡しする装置。
 - **DHCPサーバー**（IP配布）
 - **簡易ファイアウォール**
 
+## 発展：ネットワーク機器の役割
+
+ルーター・スイッチ以外の機器（IPS・IDS・NGFW）や、L3スイッチとSVI、PoEなど、機器の役割をもう一段詳しく整理します。
+
+### 主な機器と動作する層
+
+| 機器 | 層 | 何を見て動くか | 主な役割 |
+| --- | --- | --- | --- |
+| リピータ | L1 | 何も見ない | 弱くなった信号を増幅して伝送距離を延ばす |
+| ハブ | L1 | 何も見ない | 受信した信号を全ポートにそのまま流す（古い機器。半二重で衝突が起きる） |
+| L2スイッチ | L2 | 宛先MACアドレス | 同じVLAN内でフレームを必要なポートだけに転送 |
+| L3スイッチ | L2＋L3 | MACアドレス＋IPアドレス | スイッチングに加えて、SVIによるVLAN間ルーティングを高速に実行 |
+| ルータ | L3 | 宛先IPアドレス | 異なるネットワーク間のルーティング、WAN/インターネット接続、NAT、VPN |
+| ファイアウォール | L3〜L4 | IP・ポート・セッションの状態 | 許可/拒否のポリシーで通信を制御（ステートフルインスペクション） |
+| **NGFW**（次世代ファイアウォール） | 〜L7 | アプリケーション、ユーザー、通信内容 | 従来FW＋**IPS**＋アプリケーションの識別・制御、URLフィルタなど |
+| **IPS**（侵入防止システム） | 〜L7 | 通信の中身とシグネチャ | 攻撃を検知し**その場で遮断** |
+| IDS（侵入検知システム） | 〜L7 | 通信の中身とシグネチャ | 攻撃を検知し**通知するだけ**（遮断しない） |
+| 無線アクセスポイント（AP） | L2 | — | 無線の端末を有線ネットワークにつなぐ |
+| WLC（無線LANコントローラ） | — | — | 多数のAPを集中管理 |
+| エンドポイント・サーバ | — | — | PC、IP電話、プリンタ、サーバなど通信の端点 |
+
+### IPS・IDS・NGFW
+
+IPSは**シグネチャ**（既知の攻撃の特徴をまとめたデータ）と通過する通信の中身を照合して、一致したら遮断します。そのためには通信の**経路上（インライン）**に置く必要があります。
+
+```
+【IPS（インライン配置）】                    【IDS（コピーを受信）】
+Internet ─ FW ─ [IPS] ─ 社内LAN              Internet ─ FW ─ SW ─ 社内LAN
+                  ↑ ここで遮断                                │ ミラーポート（SPAN）
+                                                            [IDS] → 管理者に通知のみ
+```
+
+- **IPS**: Intrusion **Prevention** System → 防止（遮断）まで行う
+- **IDS**: Intrusion **Detection** System → 検知して通知するだけ
+- **NGFW**: 従来のファイアウォール（IP・ポートでの制御、ステートフルインスペクション）に加えて、IPS、アプリケーションの識別・制御、URLフィルタリング、マルウェア対策などを1台にまとめた機器。Ciscoでは Secure Firewall（旧Firepower）が該当します。
+
+L2スイッチはMACアドレスを見てフレームを転送するだけで、**通信の中身は検査しません**。無線アクセスポイントは無線の端末を有線ネットワークにつなぐ機器、DHCPサーバは端末にIPアドレスなどを自動配布するサーバ（IPサービス分野）で、どちらも攻撃を遮断する機能ではありません。
+
+### L3スイッチとSVI
+
+L2スイッチはVLANが異なる端末同士の通信（VLAN間通信）を中継できません。VLAN間通信にはL3の処理（ルーティング）が必要です。L3スイッチは、**VLANごとにSVI（Switch Virtual Interface：VLANの仮想インターフェース）**を作ってIPアドレスを設定し、そのSVIを各VLANのデフォルトゲートウェイにすることで、VLAN間ルーティングを行います。
+
+```
+! L3スイッチでのVLAN間ルーティング設定例
+Switch(config)# ip routing                        ! ルーティング機能を有効化
+Switch(config)# interface vlan 10
+Switch(config-if)# ip address 192.168.10.1 255.255.255.0
+Switch(config-if)# no shutdown
+Switch(config-if)# interface vlan 20
+Switch(config-if)# ip address 192.168.20.1 255.255.255.0
+Switch(config-if)# no shutdown
+```
+
+```
+Switch# show ip route connected
+...
+      192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+C        192.168.10.0/24 is directly connected, Vlan10
+L        192.168.10.1/32 is directly connected, Vlan10
+      192.168.20.0/24 is variably subnetted, 2 subnets, 2 masks
+C        192.168.20.0/24 is directly connected, Vlan20
+L        192.168.20.1/32 is directly connected, Vlan20
+```
+
+L3スイッチは、ルーティングの処理を**専用のハードウェア（ASIC）**で行うので、多数のポートで高速にVLAN間ルーティングができます。そのため社内LANの中心（**ディストリビューション層やコア層**）によく使われます。一方、インターネットとの接続や、NAT・VPNなどのWAN向けの機能は主に**ルータ**が担います。
+
+### PoE（Power over Ethernet）
+
+PoEは、**LANケーブル1本でデータと電力を同時に送る**技術です。スイッチ（PSE：給電側機器）から、AP・IP電話・監視カメラ（PD：受電機器）へ電力を供給します。天井や壁など電源を確保しにくい場所の機器に便利で、電源工事が不要になります。
+
+| 規格 | 通称 | 給電側の最大出力 |
+| --- | --- | --- |
+| IEEE 802.3af | PoE | 15.4W |
+| IEEE 802.3at | PoE+ | 30W |
+| IEEE 802.3bt | PoE++（Type 3 / Type 4） | 60W / 90W |
+
+Cisco独自の UPOE（60W）や UPOE+（90W）もあります。
+
+```
+Switch# show power inline
+Module   Available     Used     Remaining
+          (Watts)     (Watts)    (Watts)
+------   ---------   --------   ---------
+1           370.0       25.4       344.6
+Interface Admin  Oper       Power   Device              Class Max
+                            (Watts)
+--------- ------ ---------- ------- ------------------- ----- ----
+Gi1/0/1   auto   on         15.4    AIR-AP2802I-Q-K9    4     30.0
+Gi1/0/2   auto   on         10.0    IP Phone 8865       3     30.0
+Gi1/0/3   auto   off        0.0     n/a                 n/a   30.0
+```
+
+紛らわしい用語との区別:
+
+| 用語 | 正体 | 分野 |
+| --- | --- | --- |
+| **PoE** | LANケーブルで給電 | ネットワーク基礎 |
+| EtherChannel | 複数の物理リンクを束ねて1本の論理リンクとして扱う | ネットワークアクセス |
+| Auto-MDIX | ケーブルの種類（ストレート/クロス）を自動判別して送受信を切り替える | ネットワーク基礎 |
+| CDP | 隣接するCisco機器の情報を取得するプロトコル | ネットワークアクセス |
+
+### ひっかけポイント・よくある誤解
+
+- **IDSとIPSの混同。** 検知して通知だけ＝IDS、検知してその場で遮断＝IPS。問題文に「遮断する」とあればIPS。
+- **L2スイッチが通信の中身を検査する、は誤り。** L2スイッチはMACアドレスだけを見る。
+- **L2スイッチでVLAN間ルーティングができる、は誤り。** VLAN間ルーティングにはL3の機能（ルータまたはL3スイッチ）が必要。
+- **ハブ・リピータの役割の混同。** ハブ＝全ポートに流すだけ、リピータ＝信号を増幅して距離を延ばす。どちらもL1。
+- **PoE と EtherChannel / Auto-MDIX / CDP の混同。** 「電力」と書いてあればPoE。
+- **NGFWは単なるFWの別名ではない。** IPSやアプリケーションの識別・制御を統合した機器。
+
+### 押さえておくポイント
+
+- IPS＝シグネチャと照合して攻撃を遮断（インライン配置）／IDS＝検知・通知のみ
+- NGFW＝従来FW＋IPS＋アプリケーションの識別・制御などを1台に統合
+- L3スイッチ＝SVIでVLAN間ルーティングを専用ハードウェアで高速処理。ディストリビューション層・コア層で使う
+- ルータ＝WAN/インターネット接続、NAT、VPN
+- PoE: 802.3af（15.4W）、802.3at／PoE+（30W）、802.3bt（60W/90W）
+
+## 発展：NAT / PAT
+
+NAT / PAT について、アドレスの4つの用語、3つの種類、Cisco IOS での設定・確認方法まで詳しく見ていきます。
+
+### NATが必要な理由
+
+社内のPCには、通常 **プライベートIPアドレス**（RFC 1918）が設定されています。
+
+| クラス | 範囲 |
+|---|---|
+| A | 10.0.0.0/8 |
+| B | 172.16.0.0/12（172.16.0.0〜172.31.255.255） |
+| C | 192.168.0.0/16 |
+
+プライベートアドレスは組織内で自由に使えますが、**インターネット上ではルーティングされません**（どの組織でも同じアドレスを使っているため、インターネットのルータは宛先を決められない）。そこで、インターネットとの境界にあるルータで、プライベートアドレスを **グローバル（パブリック）アドレス** に変換します。これが **NAT（Network Address Translation）** です。NATはIPv4アドレスの枯渇対策としても重要な役割を果たしています。
+
+### NATの4つのアドレス用語
+
+NATの用語は **2つの言葉の組み合わせ** で考えます。
+
+- **inside / outside**: 「**どちら側の端末か**」（社内の端末か、外部の端末か）
+- **local / global**: 「**どこから見たアドレスか**」（社内＝local から見た値か、インターネット＝global から見た値か）
+
+```
+        社内 (inside)                    NATルータ                  インターネット (outside)
+  +-----------------+          +-----------------------+          +--------------------+
+  |  PC             |          |                       |          |  Webサーバ          |
+  |  192.168.1.10   |--------->| inside      outside   |--------->|  198.51.100.80     |
+  +-----------------+          +-----------------------+          +--------------------+
+
+  変換前（社内側で見えるパケット）       変換後（インターネット側で見えるパケット）
+   送信元 192.168.1.10   ←inside local     送信元 203.0.113.5    ←inside global
+   宛先   198.51.100.80  ←outside local    宛先   198.51.100.80  ←outside global
+```
+
+| 用語 | 意味 | 上の例 |
+|---|---|---|
+| **inside local**（内部ローカル） | 社内の端末に **実際に設定されている** 変換前のアドレス | 192.168.1.10 |
+| **inside global**（内部グローバル） | 社内の端末が **外部からどう見えるか**（変換後のアドレス） | 203.0.113.5 |
+| **outside local**（外部ローカル） | 外部の相手が **社内からどう見えるか** | 198.51.100.80（通常は outside global と同じ） |
+| **outside global**（外部グローバル） | 外部の相手（例：Webサーバ）に **実際に設定されている** アドレス | 198.51.100.80 |
+
+一般的な「社内からインターネットへ出る」NATでは、outside local と outside global は同じ値になります（外部側のアドレスは変換しないため）。
+
+### NATの3つの種類
+
+| 種類 | 対応関係 | 変換が作られるタイミング | 主な用途 |
+|---|---|---|---|
+| **スタティックNAT** | 1対1・**固定** | 設定した時点から常に存在 | 外部に公開するサーバ（外部から通信を始める必要がある） |
+| **ダイナミックNAT** | 1対1・**プールから動的に** 割り当て | 社内から通信を始めたとき | 少数のグローバルアドレスを順番に使う（同時接続数はプールのアドレス数まで） |
+| **PAT（NATオーバーロード）** | 多対1（**アドレス＋ポート番号** で区別） | 社内から通信を始めたとき | 多数の端末で1つ（または少数）のグローバルアドレスを共有。家庭用ルータでも一般的 |
+
+#### PATの仕組み
+
+PATは、IPアドレスだけでなく **送信元ポート番号も変換・記録** します。「グローバルIPアドレス＋ポート番号」の組み合わせで各端末の通信を区別できるので、1つのグローバルアドレスで多数の端末が同時に通信できます。
+
+```
+ 社内                              PATルータ (外側 203.0.113.5)          インターネット
+ 192.168.1.10:51000  ─┐
+ 192.168.1.11:51000  ─┼──>  203.0.113.5:51000  ┐
+ 192.168.1.12:49152  ─┘     203.0.113.5:51001  ├──> 198.51.100.80:443
+                            203.0.113.5:49152  ┘
+   (192.168.1.11 のポートは重複するので 51001 に変換して区別)
+   戻りのパケットは宛先ポートを見て、どの社内端末に返すかを判断する
+```
+
+Ciscoでは `ip nat inside source ...` の **最後に `overload` を付けるとPAT** になります。
+
+### NATの設定：2つのステップ
+
+NATの設定は大きく2つに分けられます。
+
+1. **インターフェースごとに内側と外側を指定する**: 社内（LAN）側に `ip nat inside`、インターネット側に `ip nat outside`
+2. **グローバル設定で変換ルールを作る**: `ip nat inside source ...`
+
+**inside と outside の指定を逆にすると変換されません**。NATは「insideで受信して outside へ送る」「outside で受信して inside へ送る」パケットに対して働くからです。
+
+#### (1) スタティックNAT
+
+社内のWebサーバ（192.168.1.10）を、インターネットから常に 203.0.113.10 でアクセスできるようにする例です。
+
+```
+R1(config)# interface GigabitEthernet0/0
+R1(config-if)# ip address 192.168.1.1 255.255.255.0
+R1(config-if)# ip nat inside
+R1(config-if)# interface GigabitEthernet0/1
+R1(config-if)# ip address 203.0.113.2 255.255.255.0
+R1(config-if)# ip nat outside
+R1(config-if)# exit
+R1(config)# ip nat inside source static 192.168.1.10 203.0.113.10
+```
+
+- 書式は `ip nat inside source static <inside local> <inside global>`。**先に社内側（変換前）、後に変換後** の順です。逆に書くと意味が変わってしまいます。
+- 変換が常に存在するので、**外部から通信を始める** ことができます。PATやダイナミックNATは社内から通信を始めたときにだけ変換が作られるため、外部から特定サーバへのアクセスには使えません。
+- `ip route 203.0.113.10 255.255.255.255 192.168.1.10` のようなホストルートはルーティングの設定で、アドレスの変換は行いません。
+
+#### (2) ダイナミックNAT
+
+```
+R1(config)# ip nat pool GLOBAL 203.0.113.1 203.0.113.5 netmask 255.255.255.248
+R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+R1(config)# ip nat inside source list 1 pool GLOBAL
+R1(config)# interface GigabitEthernet0/0
+R1(config-if)# ip nat inside
+R1(config-if)# interface GigabitEthernet0/1
+R1(config-if)# ip nat outside
+```
+
+手順:
+
+1. `ip nat pool` で変換後のアドレスの **プール** を作る（ここでは 203.0.113.1〜.5 の5個）。
+2. `access-list 1 permit ...` で **変換対象（社内の送信元）** を決める。
+3. `ip nat inside source list 1 pool GLOBAL` で **ACLとプールを結び付ける**。
+4. インターフェースに `ip nat inside` / `ip nat outside`。
+
+末尾に `overload` を付ける（`ip nat inside source list 1 pool GLOBAL overload`）と、プールのアドレスを使ったPATになります。
+
+**プールが足りなくなるとどうなるか**: ダイナミックNATはプールのアドレスを **1対1で貸し出す** ため、同時に通信できる台数はプールのアドレス数までです。プールに3つしかなく3台が通信中なら、4台目は変換に使えるアドレスがないので **通信できません**（どれかの変換がタイムアウトで解放されるまで待つ）。
+
+- overload がなければ、ポート番号で既存のアドレスを共有することはない。
+- 変換されずにプライベートアドレスのまま出ていっても、インターネットではルーティングされないので通信できない。
+- ルータがプールのアドレスを自動で増やすことはない。
+
+#### (3) PAT（インターフェースのアドレスを共有）
+
+最も一般的な形です。外側インターフェース自身のアドレス1つを全員で共有します。
+
+```
+R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+R1(config)# ip nat inside source list 1 interface GigabitEthernet0/1 overload
+R1(config)# interface GigabitEthernet0/0
+R1(config-if)# ip nat inside
+R1(config-if)# interface GigabitEthernet0/1
+R1(config-if)# ip nat outside
+```
+
+`interface GigabitEthernet0/1` は「変換後のアドレスとして G0/1 のアドレスを使う」という意味です。G0/1 が `ip address dhcp` でISPからアドレスを取得していても、そのアドレスが使われます。
+
+#### NATで使うACLの役割
+
+`ip nat inside source list 1 ...` の **ACL 1 は、NATで変換する対象の、社内側の「送信元」アドレスを指定** します。
+
+- ACLはパケットフィルタ（許可・拒否）だけでなく、「**条件に一致する通信を選ぶ**」道具としても使われます。NATのACLは通信を拒否するためのものではありません。
+- ACLで permit した送信元からの通信だけが変換されます。permit していないアドレスは **変換されないまま** インターネットへ出ていきます（プライベートアドレスなので多くの場合、通信できない）。
+- 変換後のアドレスはACLではなく、`interface ...` や `pool ...` で指定します。
+- 宛先アドレスを選ぶものでもありません。
+
+#### inside source と outside source
+
+- `ip nat inside source` … **社内（inside）の送信元アドレス** を変換する。通常使うのはこちら。
+- `ip nat outside source` … **外部（outside）のアドレス** を変換する特殊な設定（アドレスが重複するネットワーク同士の接続など）。社内アドレスの変換には使わない。
+
+### NATの確認とトラブルシューティング
+
+| コマンド | 内容 |
+|---|---|
+| `show ip nat translations` | 現在の変換の一覧（NATテーブル）。inside local ⇔ inside global の対応 |
+| `show ip nat statistics` | 変換の件数、inside/outside に設定されたインターフェース、ヒット数など |
+| `clear ip nat translation *` | **動的な** 変換をすべて削除（スタティックは消えない） |
+| `debug ip nat` | 変換の様子をリアルタイムに表示 |
+
+```
+R1# show ip nat translations
+Pro Inside global        Inside local         Outside local        Outside global
+tcp 203.0.113.2:51000    192.168.1.10:51000   198.51.100.80:443    198.51.100.80:443
+tcp 203.0.113.2:51001    192.168.1.11:51000   198.51.100.80:443    198.51.100.80:443
+--- 203.0.113.10         192.168.1.10         ---                  ---
+```
+
+- 3行目の `---` が付いた行はスタティックNATのエントリ（常に存在）。
+- 上2行はPATの動的エントリ。同じ inside global アドレスをポート番号で区別しています。
+
+```
+R1# show ip nat statistics
+Total active translations: 3 (1 static, 2 dynamic; 2 extended)
+Outside interfaces:
+  GigabitEthernet0/1
+Inside interfaces:
+  GigabitEthernet0/0
+Hits: 1520  Misses: 4
+Dynamic mappings:
+-- Inside Source
+[Id: 1] access-list 1 interface GigabitEthernet0/1 refcount 2
+```
+
+**変換が表示されないとき** は、次を確認します。
+
+1. `ip nat inside` / `ip nat outside` がそれぞれ正しいインターフェースに付いているか（逆になっていないか）→ `show ip nat statistics`
+2. ACLの範囲に送信元が含まれているか（ワイルドカードマスクの誤り）
+3. プールのアドレス・ `overload` の有無
+
+**clear ip nat translation \* を使う場面**: 動的な変換は、通信がなくなると一定時間後に自動で削除されます。NATの設定を変更した直後は **古い変換が残っていて期待どおりに動かない** ことがあるため、`clear ip nat translation *` で消去してから確認します。ただし通信中のセッションは切れるので、実務では影響に注意します。
+
+- `show ip nat translations` は表示するだけで、消去はしない。
+- `no ip nat inside` はインターフェースの inside 指定を外す設定変更で、既存の変換を消去するコマンドではない。
+- `clear ip route *` はルーティングテーブルを再構築するコマンドで、NATの変換は消えない。
+
+### ひっかけポイント・よくある誤解
+
+- **1つのグローバルアドレスを多数の端末で共有するのはPAT（overload）**。スタティックNATは1対1固定、ダイナミックNATはプールから1対1（同時接続はプール数まで）。DNSはアドレス変換ではない。
+- **用語**: 社内PCの変換前＝inside local、変換後＝inside global。outside local＝外部の相手が社内からどう見えるか、outside global＝外部の相手の実アドレス。「inside/outside＝どちら側の端末」「local/global＝どこから見た値」。
+- **インターネット側は `ip nat outside`、LAN側は `ip nat inside`**。`ip nat inside source ...` はグローバル設定でインターフェースには付けない。`ip helper-address` はDHCPリレーでNATと無関係。
+- **スタティックNATの順番は inside local → inside global**。逆に書くのは誤り。
+- **外部からサーバへアクセスさせるにはスタティックNAT**。PAT/ダイナミックNATは社内から通信を始めたときだけ変換ができる。スタティックルートは変換しない。
+- **ダイナミックNATは `list 1 pool GLOBAL`**。`static` は1台固定、`interface ... overload` はPAT、`outside source` は外部アドレスの変換。
+- **NATのACLは変換対象の「社内側の送信元」を選ぶ**。通信の拒否・変換後アドレスの指定・宛先の指定ではない。
+- **ダイナミックNATのプール枯渇時は通信できない**。overload なしではポート共有しない。プライベートのまま出ても通信できない。プールは自動で増えない。
+- **NATの確認は `show ip nat translations`**。`show ip route`（ルーティング）、`show ip interface brief`（IFの状態）、`show arp`（ARP）ではない。
+- **変換の消去は `clear ip nat translation *`**。動的のみ消え、スタティックは残る。
+
+### 押さえておくポイント
+
+- NATの3種類（スタティック／ダイナミック／PAT）の違いと用途。
+- 4つの用語（inside local / inside global / outside local / outside global）を例から即答できること。
+- 設定は「IFに inside/outside」＋「グローバルで `ip nat inside source`」の2ステップ。
+- `static <inside local> <inside global>`、`list <ACL> pool <名前>`、`list <ACL> interface <IF> overload`。
+- `overload` を付けるとPAT。
+- ACLは変換対象の送信元を選ぶ。
+- 確認 `show ip nat translations` / `show ip nat statistics`、消去 `clear ip nat translation *`。
+
 ## まとめ
 - **ハブ → スイッチ → ルーター**の順で扱う階層が高くなる
 - スイッチはMAC、ルーターはIPで経路判断

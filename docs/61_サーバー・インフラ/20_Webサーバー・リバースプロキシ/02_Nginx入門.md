@@ -315,7 +315,7 @@ sudo awk '$9 ~ /^5/' /var/log/nginx/shop.access.log | tail -20
 sudo tail -50 /var/log/nginx/shop.error.log
 ```
 
-エラーログには「なぜ失敗したか」が書かれます。例えば `open() "/var/www/shop/foo" failed (2: No such file or directory)` なら Nginx が探したパスがそのまま分かるので、`root` の設定ミスにすぐ気付けます。ログは `logrotate` で日次ローテーションされます（`/etc/logrotate.d/nginx`）。ログの集約や監視は [[13-監視・ログ]]、[[04_ログ集約基盤]] を参照してください。
+エラーログには「なぜ失敗したか」が書かれます。例えば `open() "/var/www/shop/foo" failed (2: No such file or directory)` なら Nginx が探したパスがそのまま分かるので、`root` の設定ミスにすぐ気付けます。ログは `logrotate` で日次ローテーションされます（`/etc/logrotate.d/nginx`）。ログの集約や監視は [[04_サーバー監視とログ管理の基本]]、[[04_ログ集約基盤]] を参照してください。
 
 ## 7. よく使うディレクティブと root / alias の罠
 
@@ -414,7 +414,7 @@ namei -l /var/www/shop/index.html   # 経路上の各ディレクトリの権限
 - [[06_HTTPキャッシュと圧縮]] — 静的アセットのキャッシュヘッダーと gzip
 - [[04_プロセス管理とsystemd]] — `systemctl` の仕組み
 - [[03_ファイアウォールとネットワーク制御]] — 80/443 番の開放
-- [[13-監視・ログ]] — ログの監視
+- [[04_サーバー監視とログ管理の基本]] — ログの監視
 
 ## 参考
 

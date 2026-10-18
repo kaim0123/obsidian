@@ -154,6 +154,159 @@ POST /users/42/orders         ← ユーザー42に注文を追加
 
 要件（クライアント多様性・パフォーマンス・リアルタイム性）で選択します。
 
+## 発展：REST API の基礎（URI・CRUD・PUT と PATCH）
+
+ネットワークコントローラ（Catalyst Center など）の API を例に、REST API の特徴・URI の構造・HTTP メソッドと CRUD の対応を整理します。
+
+### REST APIの基礎：特徴・URI・HTTPメソッドとCRUD
+
+#### API と REST
+
+**API（Application Programming Interface）** は、プログラム同士がやり取りするための窓口です。人が GUI や CLI を操作する代わりに、プログラムが API を呼び出して情報取得や設定変更を行います。
+
+**REST（REpresentational State Transfer）** は、**HTTP を使った API の設計方式** です。REST の考え方に沿った API を REST API（RESTful API）と呼びます。Catalyst Center のノースバウンドAPI や RESTCONF などで使われます。
+
+REST では、リクエストを次の2つで表します。
+
+- **どのリソースに** → **URI**（例：`/api/v1/network-device`）
+- **何をするか** → **HTTP メソッド**（例：`GET`）
+
+#### REST の主な特徴
+
+| 特徴 | 説明 |
+| --- | --- |
+| **ステートレス** | サーバは **前のリクエストの状態を保持しない**。1つ1つのリクエストに、処理に必要な情報（**認証情報** など）をすべて含める |
+| クライアント／サーバ | クライアント（スクリプト等）がリクエストし、サーバ（コントローラ等）が応答する |
+| 統一インターフェース | リソースを URI で識別し、HTTP メソッドで操作する |
+| キャッシュ可能 | 応答がキャッシュ可能かどうかを示せる |
+| 階層化システム | 間にプロキシやロードバランサがあってもよい |
+
+**なぜステートレスが嬉しいのか**：サーバがクライアントごとのセッション状態を覚えていなくてよいので、どのサーバがリクエストを受けても処理できます。結果として **負荷分散がしやすく、構成をシンプルにできます**。代わりに、毎回のリクエストにトークンなどの認証情報を付ける必要があります。
+
+その他の重要事項：
+
+- REST API は **HTTP/HTTPS を使うので、TCP 上で動作**します（HTTPS は通常 TCP 443）。「必ず UDP を使う」は誤り。
+- データ形式は **JSON がよく使われる** が、**XML など他の形式も使える**。「XML しか使えない」は誤り。
+
+#### URI の構造
+
+```
+ GET https://controller.example.com/api/v1/network-device?family=Switches
+     └─┬─┘   └────────┬──────────┘ └────────┬─────────┘ └──────┬───────┘
+     スキーム        ホスト                 パス           クエリパラメータ
+   （プロトコル）  （サーバ）    （操作の対象となるリソース） （絞り込み条件）
+```
+
+| 部分 | 例 | 意味 |
+| --- | --- | --- |
+| スキーム | `https` | 通信方式 |
+| ホスト | `controller.example.com` | API サーバ（コントローラ） |
+| パス | `/api/v1/network-device` | **操作の対象となるリソース**（ここではネットワーク機器の一覧） |
+| クエリパラメータ | `?family=Switches` | 条件による絞り込み（`?キー=値`、複数は `&` で連結） |
+
+- パスに `v1` のような **バージョン** を入れておくと、API の仕様が変わっても古いバージョンを使い続けられます。
+- **操作の種類は URI ではなく HTTP メソッド** で表します。
+- **認証情報は URI に含めず、HTTP ヘッダ**（`Authorization` など）で送るのが通常です。
+- **希望する応答のデータ形式は `Accept` ヘッダ** などで指定します。
+
+#### HTTP メソッドと CRUD
+
+データに対する基本操作 **Create（作成）・Read（取得）・Update（更新）・Delete（削除）** をまとめて **CRUD** と呼びます。REST では CRUD を HTTP メソッドに対応させます。
+
+| CRUD | HTTP メソッド | 動作 | データを変更するか |
+| --- | --- | --- | --- |
+| **C**reate | **POST** | 新しいリソースを作成 | する |
+| **R**ead | **GET** | リソースを取得 | **しない** |
+| **U**pdate | **PUT** | 既存リソースを **全体置き換え** | する |
+| **U**pdate | **PATCH** | 既存リソースの **一部の項目だけ** 更新 | する |
+| **D**elete | **DELETE** | リソースを削除 | する |
+
+##### PUT と PATCH の違い
+
+元のリソース：
+
+```json
+{"vlan": 10, "name": "Sales", "description": "3F"}
+```
+
+**PATCH** で `name` だけを送る → 送った項目だけ変わる：
+
+```http
+PATCH /api/v1/vlans/10
+Content-Type: application/json
+
+{"name": "Sales-JP"}
+```
+
+結果：`{"vlan": 10, "name": "Sales-JP", "description": "3F"}`
+
+**PUT** で同じように一部だけ送る → リソース全体が送った内容で置き換わる：
+
+```http
+PUT /api/v1/vlans/10
+Content-Type: application/json
+
+{"vlan": 10, "name": "Sales-JP"}
+```
+
+結果：`{"vlan": 10, "name": "Sales-JP"}` ← **送らなかった description は消えたり初期値に戻ったりする**
+
+つまり PUT と PATCH の違いは **更新の範囲が全体か一部か** です。
+
+#### リクエストと応答の例
+
+機器一覧を取得する（Read）：
+
+```http
+GET /api/v1/network-device HTTP/1.1
+Host: controller.example.com
+Accept: application/json
+X-Auth-Token: eyJ0eXAiOiJKV1Qi...
+```
+
+応答：
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "response": [
+    {"hostname": "SW1", "managementIpAddress": "10.1.1.11", "family": "Switches and Hubs"},
+    {"hostname": "R1",  "managementIpAddress": "10.1.1.1",  "family": "Routers"}
+  ]
+}
+```
+
+Python（requests ライブラリ）で書くと次のようになります。
+
+```python
+import requests
+
+url = "https://controller.example.com/api/v1/network-device"
+headers = {"Accept": "application/json", "X-Auth-Token": token}
+r = requests.get(url, headers=headers)
+if r.status_code == 200:          # ステータスコードで成功を判定（[[13HTTPステータスコード]]）
+    for dev in r.json()["response"]:
+        print(dev["hostname"])
+```
+
+#### ひっかけポイント・よくある誤解
+
+- 取得は **GET**。POST（作成）、PUT（更新・置き換え）、DELETE（削除）と混同しない。
+- 一部だけ更新は **PATCH**。PUT は全体置き換えで、送らなかった項目は消えたり初期値に戻ったりする。
+- GET は **データを変更しない**。
+- 「サーバがセッション状態を保持し続ける」はステートフルの説明。REST は **ステートレス**。
+- 「REST は必ず UDP」は誤り。**HTTP/HTTPS ＝ TCP**。
+- 「XML しか使えない」は誤り。**JSON が主流**、XML も可。
+- URI のパスは **リソース**。操作の種類（メソッド）、認証情報（ヘッダ）、応答形式（Accept ヘッダ）ではない。
+
+#### 押さえておくポイント
+
+- REST ＝ HTTP ベース、**ステートレス**、URI でリソース、メソッドで操作。
+- CRUD：**Create=POST / Read=GET / Update=PUT(全体)・PATCH(一部) / Delete=DELETE**。
+- URI：スキーム・ホスト・パス・クエリ。パスにバージョン（v1）を含めることが多い。
+
 ## まとめ
 - HTTPメソッドは**動詞**、URLは**名詞（リソース）**
 - **冪等性と安全性**を意識すると設計が整う
